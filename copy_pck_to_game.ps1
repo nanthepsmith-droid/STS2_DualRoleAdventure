@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $modName = "DualRoleAdventure"
-$targetDir = "C:\Program Files (x86)\Steam\steamapps\common\Slay the Spire 2\mods\$modName"
+$targetDir = "D:\SteamLibrary\steamapps\common\Slay the Spire 2\mods\$modName"
 $sourceDllPath = Join-Path $PSScriptRoot "$modName.dll"
 $sourceJsonPath = Join-Path $PSScriptRoot "$modName.json"
 
