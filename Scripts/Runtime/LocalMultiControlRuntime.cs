@@ -508,6 +508,66 @@ internal static class LocalMultiControlRuntime
             $"检测到手动出牌上下文漂移，已强制校正: {previousNetId?.ToString() ?? "null"} -> {playerId}, source={source}");
     }
 
+    public static bool TryEnsureForegroundForPlayer(Player player, string source)
+    {
+        if (!LocalSelfCoopContext.IsEnabled || !RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)
+        {
+            return false;
+        }
+
+        if (player?.Creature == null || player.Creature.CombatState == null)
+        {
+            return false;
+        }
+
+        if (!LocalSelfCoopContext.LocalPlayerIds.Contains(player.NetId))
+        {
+            return false;
+        }
+
+        NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+        if (combatUi == null)
+        {
+            return false;
+        }
+
+        NPlayerHand hand = combatUi.Hand;
+        if (hand.InCardPlay || hand.IsInCardSelection || (NTargetManager.Instance?.IsInSelection ?? false))
+        {
+            LocalMultiControlLogger.Info(
+                $"自动切前台延后（当前有进行中的出牌/选牌/瞄准流程）: target={player.NetId}, source={source}");
+            return false;
+        }
+
+        ulong previousPlayerId = Session.CurrentControlledPlayerId
+            ?? LocalContext.NetId
+            ?? LocalSelfCoopContext.PrimaryPlayerId;
+        if (previousPlayerId == player.NetId)
+        {
+            return true;
+        }
+
+        LocalMultiControlLogger.Info(
+            $"检测到后台角色触发战斗效果/选牌，自动切换前台: from={previousPlayerId}, to={player.NetId}, source={source}");
+
+        if (!Session.TrySetCurrentPlayer(player.NetId))
+        {
+            return false;
+        }
+
+        ApplyControlContext($"auto-foreground-{source}");
+
+        bool switched = Session.CurrentControlledPlayerId == player.NetId && LocalContext.NetId == player.NetId;
+        if (!switched)
+        {
+            LocalMultiControlLogger.Warn(
+                $"自动切前台失败，已回滚会话控制索引: target={player.NetId}, source={source}");
+            Session.TrySetCurrentPlayer(previousPlayerId);
+        }
+
+        return switched;
+    }
+
     private static void TrySetLocalPlayerId(object? target, ulong playerId, string componentName)
     {
         if (target == null)
