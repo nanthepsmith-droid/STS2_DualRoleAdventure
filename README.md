@@ -1,5 +1,7 @@
 # DualRoleAdventure (LocalMultiControl)
 
+English | [简体中文](README.zh-CN.md)
+
 A **Slay the Spire 2** mod that turns the official online multiplayer into a *local* multi-character experience: one player controls **2–12 characters** on a single machine (duplicate characters allowed), switching between them at any time, while the game still runs the real multiplayer flow underneath — no networking involved.
 
 > **Maintained fork.** The original mod was created by [liwenhao0427](https://github.com/liwenhao0427) and discontinued at v1.30 (June 2026). This fork continues maintenance and distribution with the original author's written permission; they link to this version from the [original Workshop item](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947). Thank you for building this, 磁石战士Ω!
@@ -18,7 +20,7 @@ See the **[Player Guide](PLAYER_GUIDE.md)** for installation, controls, and game
 
 ## Compatibility
 
-Currently built against game version **v0.109.0** (July 2026). When the game patches, expect a short turnaround for a compatibility release — that is this fork's primary job.
+Currently built against game version **v0.111.0** (August 2026). When the game patches, expect a short turnaround for a compatibility release — that is this fork's primary job.
 
 ## Installation
 
@@ -75,5 +77,9 @@ Please open a [GitHub issue](https://github.com/nanthepsmith-droid/STS2_DualRole
 
 - Maintainer (v1.31): [GuyGinat](https://github.com/GuyGinat) — first community-maintained release, English docs, Workshop item 3772900244
 - Maintainer (v1.32+): [nanthepsmith-droid](https://github.com/nanthepsmith-droid) — game v0.110/0.111 adaptations, combat card-selection serialization & foreground fixes
+
+### AI-assisted development
+
+The v1.32+ maintenance is developed **with heavy AI assistance** (AI coding agents) under human direction: every change is reviewed, playtested and released by the human maintainer. The collaboration rules given to the agents live in [`AGENTS.md`](AGENTS.md); the v1.32 analysis that drove this release is documented in [`docs/维护现状分析.md`](docs/维护现状分析.md).
 
 There is no formal open-source license yet; the original author granted written permission (2026-07-27) for this fork to maintain and distribute the mod. Until a LICENSE file lands, treat the source as *source-available for personal use* — ask before redistributing derivatives.
