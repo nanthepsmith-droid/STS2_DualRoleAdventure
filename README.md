@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 A **Slay the Spire 2** mod that turns the official online multiplayer into a *local* multi-character experience: one player controls **2–12 characters** on a single machine (duplicate characters allowed), switching between them at any time, while the game still runs the real multiplayer flow underneath — no networking involved.
 
-> **Maintained fork.** The original mod was created by [liwenhao0427](https://github.com/liwenhao0427) and discontinued at v1.30 (June 2026). This repository continues maintenance and distribution as an independent community continuation ([original Workshop item](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)). Thank you for building this, 磁石战士Ω!
+> **Maintained fork.** The original mod was created by [liwenhao0427](https://github.com/liwenhao0427) and discontinued at v1.30 (June 2026). This repository continues maintenance and distribution as an independent community continuation ([original Workshop item](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)). Thank you for building this, 磁石战士Ω — and [GuyGinat](https://github.com/GuyGinat) for the first community continuation!
 
 ## Features
 

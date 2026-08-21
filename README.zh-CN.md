@@ -4,7 +4,7 @@
 
 一个《杀戮尖塔 2》（Slay the Spire 2）Mod：把官方联机多人流程改造成**本地**多角色体验——一名玩家在一台机器上操控 **2~12 名角色**（可重复选角），随时切换；游戏底层仍运行真实的多人流程，但**不经过任何网络**。
 
-> **接续维护的分支。** 原作者为 [liwenhao0427](https://github.com/liwenhao0427)（磁石战士Ω），维护至 v1.30（2026 年 6 月）后停更。本仓库作为独立的社区接续分支继续维护与分发（[原创意工坊条目](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)）。感谢磁石战士Ω 打下的基础！
+> **接续维护的分支。** 原作者为 [liwenhao0427](https://github.com/liwenhao0427)（磁石战士Ω），维护至 v1.30（2026 年 6 月）后停更。本仓库作为独立的社区接续分支继续维护与分发（[原创意工坊条目](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)）。感谢磁石战士Ω 打下的基础，也感谢 [GuyGinat](https://github.com/GuyGinat) 的 v1.31 社区接续！
 
 ## 功能特性
 
