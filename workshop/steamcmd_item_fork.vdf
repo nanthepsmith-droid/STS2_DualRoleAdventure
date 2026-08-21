@@ -19,13 +19,13 @@ Play Slay the Spire 2's official multiplayer entirely by yourself: control 2–1
 [/list]
 
 [h2]Heritage[/h2]
-Created by 磁石战士Ω (liwenhao0427), who designed and built everything up to v1.30 before discontinuing in June 2026. They gave written permission for this continuation and link here from the original item. This version (v1.31+) is actively maintained — currently updated for game v0.111.0. Original item: https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947
+Created by 磁石战士Ω (liwenhao0427), who designed and built everything up to v1.30 before discontinuing in June 2026. This version (v1.31+) is maintained by the community as an independent continuation — currently updated for game v0.111.0. Original item: https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947
 
 [h2]Feedback & source[/h2]
 https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure — report bugs via GitHub Issues with your act, screen, steps, and the log from %APPDATA%/SlayTheSpire2/logs/godot.log
 
 [h2]中文简介[/h2]
-单人操控 2–12 名角色的本地多控 Mod。进入方式：多人模式 → 创建 → 单人多角色；Tab 切换角色，F8 显示队友手牌。原作者 磁石战士Ω 已授权本条目接手维护（原版条目见上方链接）；反馈请到 GitHub Issues。"
+单人操控 2–12 名角色的本地多控 Mod。进入方式：多人模式 → 创建 → 单人多角色；Tab 切换角色，F8 显示队友手牌。本条目为社区接续维护版本（原版条目见上方链接）；反馈请到 GitHub Issues。"
 	"changenote"		"v1.32: updated for game v0.111.0; combat card-selection serialization, backgrounded-character turn fixes, end-turn button fixes."
 	"publishedfileid"		"3772900244"
 }

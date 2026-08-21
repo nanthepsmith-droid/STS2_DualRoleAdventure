@@ -2,6 +2,8 @@
 
 Working folder for publishing this mod to the Steam Workshop (appid `2868840`).
 
+> **Note (2026-08-21, current maintainer):** There are no plans to publish new versions to the Steam Workshop; distribution happens via [GitHub Releases](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/releases). This folder is kept as-is for reference from the previous maintainer (GuyGinat, item 3772900244). Any "written permission" wording that appeared in these files referred to the previous maintainer's claim and is not asserted by the current maintainer.
+
 ## Layout
 
 - `content/` — the files actually uploaded: `DualRoleAdventure.dll` + `DualRoleAdventure.json`. Overwrite with the latest release build before each upload.

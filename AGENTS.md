@@ -64,11 +64,13 @@ When the game updates and the mod breaks:
 
 ## 7. Release flow
 
+> 2026-08-21：当前维护者**不计划上传创意工坊**，发布以 GitHub Releases 为准；第 3–4 步仅作参考保留。
+
 1. Bump the version: `DualRoleAdventure.json` (`x.y.z` semver — the game warns on non-semver), `mod_manifest.json`, Workshop title `Vx.xx`, `Entry.cs` build marker.
 2. Update `CHANGELOG.md` (cut a dated release section) and `PLAYER_GUIDE.md` if player-facing behavior changed.
 3. `dotnet build -c Release`; copy `DualRoleAdventure.dll` + `DualRoleAdventure.json` into `workshop/content/`.
 4. Update `workshop/steamcmd_item_fork.vdf` (`changenote`; `publishedfileid` stays once assigned). The **maintainer** runs the SteamCMD upload — it needs their Steam login.
-5. Commit, push to `fork`, optionally create a GitHub release (zip via `Scripts/Tools/BuildRelease.ps1`).
+5. Commit, push to `origin`, optionally create a GitHub release (zip via `Scripts/Tools/BuildRelease.ps1`).
 6. Never touch the original author's Workshop item (3747538947).
 
 ## 8. Documentation map
