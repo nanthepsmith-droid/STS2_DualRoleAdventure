@@ -4,6 +4,18 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+## [v1.33] - 2026-08-21
+
+### Added
+- Built-in Oddmelt compatibility: Oddmelt's hidden Gauge input cards (GaugeSummonActionCard /
+  GaugeUltimateActionCard / GaugeBurstActionCard) are deliberately registered in no card pool, so
+  rebuilding the combat hand UI on character switch called `NCard.Create` on them and hit
+  "is not in any card pool!" (`InvalidProgramException`), rolling the switch back. A guard prefix on
+  the game's `NCard.Create` (`NCardCreateHiddenCardGuardPatch`) now returns null for cards whose
+  pool cannot be resolved; every caller already null-checks, so such cards are skipped exactly as
+  Oddmelt intends. Without Oddmelt installed the guard is a no-op. This supersedes the separate
+  `OddmeltGaugeCardRenderFix` mod, which is no longer needed.
+
 ## [v1.32] - 2026-08-21
 
 ### Fixed
