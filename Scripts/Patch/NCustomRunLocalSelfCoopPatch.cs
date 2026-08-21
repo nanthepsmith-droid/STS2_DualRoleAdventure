@@ -52,7 +52,7 @@ internal static class NMultiplayerHostSubmenuCustomRunPatch
         LocalSelfCoopContext.Enable(netService);
 
         NCustomRunScreen customRunScreen = stack.GetSubmenuType<NCustomRunScreen>();
-        customRunScreen.InitializeMultiplayerAsHost(netService, LocalSelfCoopContext.LocalPlayerIds.Count);
+        customRunScreen.InitializeMultiplayerAsHost(netService, LocalSelfCoopContext.MaxLocalPlayerCount);
         stack.Push(customRunScreen);
         NGame.Instance?.AddChildSafely(NFullscreenTextVfx.Create(LocalModText.EnteredLocalSelfCoopHint));
         return false;
@@ -172,13 +172,8 @@ internal static class NCustomRunScreenLocalPlayersPatch
 
     private static void EnsureLobbyMaxCapacity(StartRunLobby lobby)
     {
-        const int maxLocalPlayerCount = 12;
-        if (lobby.MaxPlayers >= maxLocalPlayerCount)
-        {
-            return;
-        }
-
-        AccessTools.Field(typeof(StartRunLobby), "<MaxPlayers>k__BackingField")?.SetValue(lobby, maxLocalPlayerCount);
+        // beta111 起 StartRunLobby 的 _maxPlayers 为构造函数中一次性传入的 readonly 字段，
+        // 无法再通过反射调整。本地多控大厅创建时统一以 MaxLocalPlayerCount 初始化，无需再扩容。
     }
 }
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
+using MegaCrit.Sts2.Core.Multiplayer;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
 using MegaCrit.Sts2.Core.Multiplayer.Messages.Game;
 using MegaCrit.Sts2.Core.Multiplayer.Messages.Game.Sync;
@@ -43,6 +44,8 @@ internal sealed class LocalLoopbackHostGameService : INetHostGameService
 
     public PlatformType Platform => PlatformType.None;
 
+    public PeerVersionInfo LocalVersion => PeerVersionInfo.LocalDefault();
+
     public IReadOnlyList<NetClientData> ConnectedPeers => _connectedPeers;
 
     public NetHost? NetHost => null;
@@ -52,6 +55,12 @@ internal sealed class LocalLoopbackHostGameService : INetHostGameService
     public event Action<ulong>? ClientConnected;
 
     public event Action<ulong, NetErrorInfo>? ClientDisconnected;
+
+    // Required by INetHostGameService. The loopback service never goes through a socket
+    // handshake, so this event is intentionally never raised.
+#pragma warning disable CS0067
+    public event Action<ulong, NetErrorInfo>? ClientConnectionFailed;
+#pragma warning restore CS0067
 
     public void SetCurrentSenderId(ulong playerId)
     {
@@ -181,6 +190,11 @@ internal sealed class LocalLoopbackHostGameService : INetHostGameService
     public string? GetRawLobbyIdentifier()
     {
         return "local-self-coop";
+    }
+
+    public PeerVersionInfo? GetVersionInfoForPeer(ulong peerId)
+    {
+        return null;
     }
 
     public void DisconnectClient(ulong peerId, NetError reason, bool now = false)

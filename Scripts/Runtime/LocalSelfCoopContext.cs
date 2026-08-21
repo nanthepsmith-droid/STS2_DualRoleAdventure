@@ -21,7 +21,7 @@ namespace LocalMultiControl.Scripts.Runtime;
 internal static class LocalSelfCoopContext
 {
     private const int MinLocalPlayerCount = 2;
-    private const int MaxLocalPlayerCount = 12;
+    public const int MaxLocalPlayerCount = 12;
     private const int MaxLocalAscensionLevel = 10;
 
     private static readonly List<ulong> _localPlayerIds = new() { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
@@ -543,14 +543,13 @@ internal static class LocalSelfCoopContext
 
     private static void EnsureLobbyMaxCapacity(StartRunLobby lobby)
     {
-        if (lobby.MaxPlayers >= MaxLocalPlayerCount)
+        // beta111 起 StartRunLobby 的 _maxPlayers 为构造函数中一次性传入的 readonly
+        // 字段，已无法通过反射调整。本地多控大厅在创建时统一以 MaxLocalPlayerCount 初始化，
+        // 因此这里只需确认目标人数不超过已设定的容量即可。
+        if (_desiredLocalPlayerCount > MaxLocalPlayerCount)
         {
-            return;
+            LocalMultiControlLogger.Warn($"本地多控目标人数超过大厅容量上限: {_desiredLocalPlayerCount} > {MaxLocalPlayerCount}");
         }
-
-        int oldMaxPlayers = lobby.MaxPlayers;
-        AccessTools.Field(typeof(StartRunLobby), "<MaxPlayers>k__BackingField")?.SetValue(lobby, MaxLocalPlayerCount);
-        LocalMultiControlLogger.Info($"宸叉彁鍗囧ぇ鍘呮渶澶у閲? {oldMaxPlayers} -> {MaxLocalPlayerCount}");
     }
 
     private static void EnsureLobbyEditingPlayerIsValid()

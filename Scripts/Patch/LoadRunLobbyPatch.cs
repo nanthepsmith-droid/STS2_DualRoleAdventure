@@ -46,7 +46,7 @@ internal static class LoadRunLobbyPatch
                     LoadRunLobbyPlayer newPlayer = new()
                     {
                         id = playerId,
-                        versionInfo = PeerVersionInfo.LocalDefault(),
+                        isModded = __instance.NetService.LocalVersion.IsModded(),
                         isReady = true
                     };
                     __instance.Players.Add(newPlayer);

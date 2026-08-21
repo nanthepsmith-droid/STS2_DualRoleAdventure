@@ -1,19 +1,39 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using System.Threading.Tasks;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Players;
-using MegaCrit.Sts2.Core.Helpers;
 
 namespace LocalMultiControl.Scripts.Patch;
 
 [HarmonyPatch(typeof(CombatManager), nameof(CombatManager.SetReadyToBeginEnemyTurn))]
 internal static class CombatManagerReadyEnemyTurnPatch
 {
+    private static object? GetTurnState(CombatManager combatManager)
+    {
+        return AccessTools.Field(typeof(CombatManager), "_turnState")?.GetValue(combatManager);
+    }
+
+    private static HashSet<Player>? GetPlayersReadyToBeginEnemyTurn(CombatManager combatManager)
+    {
+        // beta110 moved the ready set off CombatManager onto the turn state; check the modern path first,
+        // fall back to the pre-beta110 field for older game builds.
+        object? turnState = GetTurnState(combatManager);
+        if (turnState != null)
+        {
+            HashSet<Player>? viaProperty = AccessTools.Property(turnState.GetType(), "PlayersReadyToBeginEnemyTurn")?.GetValue(turnState) as HashSet<Player>;
+            if (viaProperty != null)
+            {
+                return viaProperty;
+            }
+        }
+
+        return AccessTools.Field(typeof(CombatManager), "_playersReadyToBeginEnemyTurn")?.GetValue(combatManager) as HashSet<Player>;
+    }
+
     [HarmonyPrefix]
     private static void Prefix(CombatManager __instance, Player player, Func<Task>? actionDuringEnemyTurn)
     {
@@ -28,7 +48,7 @@ internal static class CombatManagerReadyEnemyTurnPatch
             return;
         }
 
-        HashSet<Player>? readySet = AccessTools.Field(typeof(CombatManager), "_playersReadyToBeginEnemyTurn")?.GetValue(__instance) as HashSet<Player>;
+        HashSet<Player>? readySet = GetPlayersReadyToBeginEnemyTurn(__instance);
         if (readySet == null)
         {
             return;
@@ -50,34 +70,4 @@ internal static class CombatManagerReadyEnemyTurnPatch
         }
     }
 
-    [HarmonyPostfix]
-    private static void Postfix(CombatManager __instance, Func<Task>? actionDuringEnemyTurn)
-    {
-        if (!LocalSelfCoopContext.IsEnabled)
-        {
-            return;
-        }
-
-        CombatState? state = __instance.DebugOnlyGetState();
-        if (state == null)
-        {
-            return;
-        }
-
-        HashSet<Player>? readySet = AccessTools.Field(typeof(CombatManager), "_playersReadyToBeginEnemyTurn")?.GetValue(__instance) as HashSet<Player>;
-        if (readySet == null)
-        {
-            return;
-        }
-
-        if (!__instance.EndingPlayerTurnPhaseTwo && state.CurrentSide == CombatSide.Player && readySet.Count >= state.Players.Count)
-        {
-            MethodInfo? afterAllReadyMethod = AccessTools.Method(typeof(CombatManager), "AfterAllPlayersReadyToBeginEnemyTurn");
-            if (afterAllReadyMethod?.Invoke(__instance, new object?[] { actionDuringEnemyTurn }) is Task task)
-            {
-                LocalMultiControlLogger.Info("检测到敌方回合未推进，触发本地兜底推进。");
-                TaskHelper.RunSafely(task);
-            }
-        }
-    }
 }
