@@ -20,13 +20,14 @@ See the **[Player Guide](PLAYER_GUIDE.md)** for installation, controls, and game
 
 ## Compatibility
 
-Currently built against game version **v0.111.0** (August 2026). When the game patches, expect a short turnaround for a compatibility release — that is this fork's primary job.
+- Currently built against game version **v0.111.0** (August 2026). When the game patches, expect a short turnaround for a compatibility release — that is this fork's primary job.
+- **Oddmelt**: compatible since v1.33 — a built-in guard skips Oddmelt's hidden Gauge input cards during combat UI rebuilds (previously these broke character switching); no separate fix mod is needed.
 
 ## Installation
 
-**Steam Workshop (recommended):** subscribe to the Workshop item, then enable the mod in `Settings → Mods`.
+**Steam Workshop:** watch the original author's Workshop item ([3747538947](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)) — the original author may resume updating it when the game reaches its full release.
 
-**Manual:** download `DualRoleAdventure.dll` + `DualRoleAdventure.json` from [Releases](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/releases) and place both in:
+**Manual (this fork's builds):** download `DualRoleAdventure.dll` + `DualRoleAdventure.json` from [Releases](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/releases) and place both in:
 
 ```
 <Slay the Spire 2 install>\mods\DualRoleAdventure\

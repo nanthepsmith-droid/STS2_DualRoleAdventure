@@ -18,15 +18,16 @@
 
 安装、操作与玩法细节见**[玩家指南](PLAYER_GUIDE.md)**（英文）。
 
-## 兼容版本
+## 兼容性
 
-当前针对游戏版本 **v0.111.0**（2026 年 8 月）。游戏每次更新后本仓库会尽快发布适配版——这是本分支的首要职责。
+- 当前针对游戏版本 **v0.111.0**（2026 年 8 月）。游戏每次更新后本仓库会尽快发布适配版——这是本分支的首要职责。
+- **Oddmelt**：自 v1.33 起内置兼容守卫——重建战斗手牌 UI 时自动跳过 Oddmelt 未注册卡池的隐藏 Gauge 输入卡（此前会导致切人失败回滚），无需再安装单独的修复 mod。
 
 ## 安装
 
-**Steam 创意工坊（推荐）：** 订阅工坊条目，然后在 `设置 → Mods` 中启用。
+**Steam 创意工坊：** 可关注原作者的工坊条目（[3747538947](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)）——游戏正式版更新时原作者可能会恢复更新该条目。
 
-**手动安装：** 从 [Releases](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/releases) 下载 `DualRoleAdventure.dll` + `DualRoleAdventure.json`，放入：
+**手动安装（本仓库构建）：** 从 [Releases](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/releases) 下载 `DualRoleAdventure.dll` + `DualRoleAdventure.json`，放入：
 
 ```
 <杀戮尖塔2安装目录>\mods\DualRoleAdventure\
