@@ -440,17 +440,27 @@ internal static class LocalMultiControlRuntime
         bool combatUiRefreshSucceeded = RefreshCombatUiForControlledPlayer(currentControlledPlayerId.Value);
         if (CombatManager.Instance.IsInProgress && !combatUiRefreshSucceeded)
         {
-            // 风险点：若 LocalContext 已切换但战斗UI刷新失败，会导致“逻辑 owner 与显示 owner”分离。
-            // 该状态会把后续出牌入队到错误玩家队列，因此这里必须立即回滚上下文。
-            LocalMultiControlLogger.Warn($"控制上下文切换回滚：战斗UI刷新失败，target={currentControlledPlayerId.Value}");
-            LocalContext.NetId = previousNetId;
-            if (previousNetId.HasValue)
+            // 进行中的出牌/选牌流程只是瞬时占用，战斗UI稍后可安全重建。此时不再回滚上下文，
+            // 保持已切换的 LocalContext/NetId，并延后到流程结束后补刷战斗UI与回合结束按钮状态，
+            // 否则切人后回合结束按钮会消失/回滚且选牌弹窗展示错误角色的手牌。
+            if (IsCombatUiInPickFlow())
             {
-                LocalSelfCoopContext.NetService?.SetCurrentSenderId(previousNetId.Value);
-                SyncRunSynchronizerLocalPlayerId(previousNetId.Value);
+                ScheduleDeferredCombatUiRefresh(currentControlledPlayerId.Value);
             }
+            else
+            {
+                // 非瞬时失败：若 LocalContext 已切换但战斗UI刷新失败，会导致“逻辑 owner 与显示 owner”分离，
+                // 该状态会把后续出牌入队到错误玩家队列，因此这里必须立即回滚上下文。
+                LocalMultiControlLogger.Warn($"控制上下文切换回滚：战斗UI刷新失败，target={currentControlledPlayerId.Value}");
+                LocalContext.NetId = previousNetId;
+                if (previousNetId.HasValue)
+                {
+                    LocalSelfCoopContext.NetService?.SetCurrentSenderId(previousNetId.Value);
+                    SyncRunSynchronizerLocalPlayerId(previousNetId.Value);
+                }
 
-            return;
+                return;
+            }
         }
 
         RefreshTopBarForControlledPlayer(currentControlledPlayerId.Value);
@@ -566,6 +576,51 @@ internal static class LocalMultiControlRuntime
         }
 
         return switched;
+    }
+
+    /// <summary>
+    /// 按玩家ID解析当前战斗中的 Player（仅战斗进行中有效）。供 hook 入队等仅有 NetId 的挂点使用。
+    /// </summary>
+    internal static Player? TryGetCombatPlayer(ulong playerId)
+    {
+        if (!RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)
+        {
+            return null;
+        }
+
+        NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+        if (combatUi == null)
+        {
+            return null;
+        }
+
+        CombatState? combatState = TryGetCombatState(combatUi);
+        return combatState?.GetPlayer(playerId);
+    }
+
+    /// <summary>
+    /// 按玩家ID把前台/控制上下文切到指定角色，适用于只有 NetId、没有现成 Player 引用的挂点
+    /// （如 ActionQueueSynchronizer.EnqueueHookAction 入队瞬间，仅有 GenericHookGameAction.OwnerId）。
+    /// </summary>
+    internal static bool TryEnsureForegroundForPlayerId(ulong playerId, string source)
+    {
+        if (!LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.UseSingleAdventureMode)
+        {
+            return false;
+        }
+
+        if (!LocalSelfCoopContext.LocalPlayerIds.Contains(playerId))
+        {
+            return false;
+        }
+
+        Player? player = TryGetCombatPlayer(playerId);
+        if (player == null)
+        {
+            return false;
+        }
+
+        return TryEnsureForegroundForPlayer(player, source);
     }
 
     private static void TrySetLocalPlayerId(object? target, ulong playerId, string componentName)
@@ -1082,6 +1137,80 @@ internal static class LocalMultiControlRuntime
         return AccessTools.Field(typeof(NEndTurnButton), "_combatState")?.GetValue(combatUi.EndTurnButton) as CombatState;
     }
 
+    private static bool IsCombatUiInPickFlow()
+    {
+        NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+        if (combatUi == null)
+        {
+            return false;
+        }
+
+        NPlayerHand hand = combatUi.Hand;
+        return hand.InCardPlay || hand.IsInCardSelection || (NTargetManager.Instance?.IsInSelection ?? false);
+    }
+
+    private const int MaxCombatUiRefreshDeferTries = 40;
+    private static ulong? _pendingCombatUiRefreshTarget;
+    private static int _pendingCombatUiRefreshTries;
+    private static long _lastPendingCombatUiRefreshLogMs;
+    private const long PendingCombatUiRefreshLogIntervalMs = 1500L;
+
+    /// <summary>
+    /// 控制上下文已切换但战斗UI因进行中的出牌/选牌流程暂时无法重建时，把刷新延后到流程结束后执行，
+    /// 不再回滚上下文。延后补刷会顺带重跑 ReevaluateEndTurnButtonState，避免切人后回合结束按钮消失/状态陈旧。
+    /// </summary>
+    private static void ScheduleDeferredCombatUiRefresh(ulong targetPlayerId)
+    {
+        if (_pendingCombatUiRefreshTarget == targetPlayerId)
+        {
+            return;
+        }
+
+        _pendingCombatUiRefreshTarget = targetPlayerId;
+        _pendingCombatUiRefreshTries = 0;
+        Callable.From(RunDeferredCombatUiRefresh).CallDeferred();
+        LocalMultiControlLogger.Info($"控制上下文已切换，战斗UI刷新顺延到选牌/出牌流程结束后: player={targetPlayerId}");
+    }
+
+    private static void RunDeferredCombatUiRefresh()
+    {
+        ulong? target = _pendingCombatUiRefreshTarget;
+        _pendingCombatUiRefreshTarget = null;
+        if (!target.HasValue)
+        {
+            return;
+        }
+
+        if (_pendingCombatUiRefreshTries >= MaxCombatUiRefreshDeferTries)
+        {
+            LocalMultiControlLogger.Warn($"战斗UI延后补刷已达上限，放弃: player={target.Value}, tries={_pendingCombatUiRefreshTries}");
+            return;
+        }
+
+        if (IsCombatUiInPickFlow())
+        {
+            _pendingCombatUiRefreshTries++;
+            long nowMs = (long)Time.GetTicksMsec();
+            if (nowMs - _lastPendingCombatUiRefreshLogMs >= PendingCombatUiRefreshLogIntervalMs)
+            {
+                _lastPendingCombatUiRefreshLogMs = nowMs;
+                LocalMultiControlLogger.Info($"战斗UI延后补刷等待中，流程仍占用: player={target.Value}, tries={_pendingCombatUiRefreshTries}");
+            }
+
+            _pendingCombatUiRefreshTarget = target;
+            Callable.From(RunDeferredCombatUiRefresh).CallDeferred();
+            return;
+        }
+
+        if (!RefreshCombatUiForControlledPlayer(target.Value) && IsCombatUiInPickFlow())
+        {
+            _pendingCombatUiRefreshTries++;
+            _pendingCombatUiRefreshTarget = target;
+            _lastPendingCombatUiRefreshLogMs = (long)Time.GetTicksMsec();
+            Callable.From(RunDeferredCombatUiRefresh).CallDeferred();
+        }
+    }
+
     private static bool RefreshCombatUiForControlledPlayer(ulong playerId)
     {
         if (!CombatManager.Instance.IsInProgress)
@@ -1110,14 +1239,13 @@ internal static class LocalMultiControlRuntime
 
         try
         {
-            NPlayerHand hand = combatUi.Hand;
-            if (hand.InCardPlay || hand.IsInCardSelection || (NTargetManager.Instance?.IsInSelection ?? false))
+            if (IsCombatUiInPickFlow())
             {
-                // 风险点：此时重建手牌容器会销毁仍在生命周期中的 holder/cardplay 节点。
                 LocalMultiControlLogger.Info($"战斗UI刷新延后：当前有进行中的出牌/选牌操作，player={playerId}");
                 return false;
             }
 
+            NPlayerHand hand = combatUi.Hand;
             CardPile handPile = PileType.Hand.GetPile(player);
             AccessTools.Field(typeof(NEndTurnButton), "_playerHand")?.SetValue(combatUi.EndTurnButton, handPile);
             combatUi.DrawPile.Initialize(player);
@@ -1583,23 +1711,88 @@ internal static class LocalMultiControlRuntime
 
         try
         {
+            NEndTurnButton button = combatUi.EndTurnButton;
+            Player? me = LocalContext.GetMe(combatState);
             bool shouldDisable = CombatManager.Instance.IsPlayerReadyToEndTurn(currentPlayer);
+            bool canTakeAction = me != null && me.Creature != null && me.Creature.IsAlive && !shouldDisable;
+
             AccessTools.PropertySetter(typeof(CombatManager), "PlayerActionsDisabled")?.Invoke(CombatManager.Instance, new object[] { shouldDisable });
 
             Type? stateType = AccessTools.Inner(typeof(NEndTurnButton), "State");
+            FieldInfo? stateField = AccessTools.Field(typeof(NEndTurnButton), "_state");
             MethodInfo? setStateMethod = AccessTools.Method(typeof(NEndTurnButton), "SetState");
-            if (stateType != null && setStateMethod != null)
+            int oldState = -1;
+            if (stateField != null && stateField.GetValue(button) != null)
             {
-                bool canTakeAction = !shouldDisable;
-                object stateValue = Enum.ToObject(stateType, canTakeAction ? 0 : 1);
-                setStateMethod.Invoke(combatUi.EndTurnButton, new object[] { stateValue });
+                oldState = Convert.ToInt32(stateField.GetValue(button));
             }
 
-            combatUi.EndTurnButton.RefreshEnabled();
+            if (stateType != null && setStateMethod != null)
+            {
+                object stateValue = Enum.ToObject(stateType, canTakeAction ? 0 : 1);
+                setStateMethod.Invoke(button, new object[] { stateValue });
+            }
+
+            int newState = -1;
+            if (stateField != null && stateField.GetValue(button) != null)
+            {
+                newState = Convert.ToInt32(stateField.GetValue(button));
+            }
+
+            if (canTakeAction && newState == 0)
+            {
+                TryRepairEndTurnButtonOffscreenPosition(button, stateType != null && oldState != 0);
+            }
+
+            button.RefreshEnabled();
+
+            string handMode = "?";
+            try
+            {
+                handMode = combatUi.Hand.CurrentMode.ToString();
+            }
+            catch
+            {
+                // ignore
+            }
+
+            LocalMultiControlLogger.Info(
+                $"回合结束按钮重评: player={currentPlayer.NetId}, me={me?.NetId.ToString() ?? "null"}, ready={shouldDisable}, actionsDisabled={CombatManager.Instance.PlayerActionsDisabled}, state={oldState}->{newState}, handMode={handMode}, inCardSel={combatUi.Hand.IsInCardSelection}, y={button.Position.Y:0.0}");
         }
         catch (Exception exception)
         {
             LocalMultiControlLogger.Warn($"刷新回合结束按钮状态失败: {exception.Message}");
+        }
+    }
+
+    private static void TryRepairEndTurnButtonOffscreenPosition(NEndTurnButton button, bool forceAnimateIn)
+    {
+        try
+        {
+            PropertyInfo? showPosProperty = AccessTools.Property(typeof(NEndTurnButton), "ShowPos");
+            PropertyInfo? hidePosProperty = AccessTools.Property(typeof(NEndTurnButton), "HidePos");
+            if (showPosProperty == null || hidePosProperty == null)
+            {
+                return;
+            }
+
+            Vector2 showPos = (Vector2)(showPosProperty.GetValue(button) ?? default(Vector2));
+            Vector2 hidePos = (Vector2)(hidePosProperty.GetValue(button) ?? default(Vector2));
+            if (showPos == default(Vector2) && hidePos == default(Vector2))
+            {
+                return;
+            }
+
+            // 状态已是 Enabled 但节点仍停留在屏幕下方（AnimOut 残留/AnimIn 曾被跳过）时，强制补一次 AnimIn。
+            if (forceAnimateIn && button.Position.Y >= hidePos.Y - 2f && button.Position.Y > showPos.Y)
+            {
+                AccessTools.Method(typeof(NEndTurnButton), "AnimIn")?.Invoke(button, null);
+                LocalMultiControlLogger.Info($"回合结束按钮离屏自修复：重新 AnimIn y={button.Position.Y:0.0}");
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"回合结束按钮离屏自修复失败: {exception.Message}");
         }
     }
 
