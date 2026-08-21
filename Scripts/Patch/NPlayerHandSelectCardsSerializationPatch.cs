@@ -1,0 +1,157 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using HarmonyLib;
+using LocalMultiControl.Scripts.Runtime;
+using MegaCrit.Sts2.Core.CardSelection;
+using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Multiplayer.Game;
+using MegaCrit.Sts2.Core.Nodes.Combat;
+using MegaCrit.Sts2.Core.Runs;
+
+namespace LocalMultiControl.Scripts.Patch;
+
+/// <summary>
+/// 本地双角色模式下，两个本地角色可能在同一个同步点（例如双方同时持有灵乌路空「炉心融解」时回合开始
+/// 各自触发一次 FromHand 选牌）先后调用 NPlayerHand.SelectCards。NPlayerHand 只有单个
+/// _selectionCompletionSource（NPlayerHand.cs 的 SelectCards 里会被每次调用覆盖），第二次调用会覆盖第一次
+/// 正在等待的 TCS，导致第一个角色的选择永远无法完成（软锁：角色无法出牌/结束回合）。
+///
+/// 本类把战斗内手牌选牌串行化：同一时刻只允许一个 SelectCards 进行中，后到的选牌先异步等待前一个结束
+/// （SemaphoreSlim 闸门），并在展示前把前台/控制上下文切到本次选择所属角色，保证弹窗展示的是正确角色的手牌，
+/// 且两个角色的选牌都能依次完成。
+///
+/// 重入判定使用 AsyncLocal 而非静态标志：包装任务在「重入原始 SelectCards 等待玩家选择」期间，AsyncLocal
+/// 只沿自身异步链向下流动；来自 ActionExecutor 的兄弟调用链看不到该值，因此会被正确拦下并等待闸门。
+/// 若用静态标志，第一个包装任务等待玩家选择期间标志恒为 true，第二个 SelectCards 会绕过串行化直接执行，
+/// 重新覆盖第一个的 TCS，死锁原样复现。
+/// </summary>
+[HarmonyPatch(typeof(NPlayerHand), nameof(NPlayerHand.SelectCards))]
+internal static class NPlayerHandSelectCardsSerializationPatch
+{
+    /// <summary>全局选牌闸门：同一时刻只允许一个 SelectCards 进行中。</summary>
+    private static readonly System.Threading.SemaphoreSlim _selectionGate = new System.Threading.SemaphoreSlim(1, 1);
+
+    /// <summary>
+    /// 标记「本次 SelectCards 是包装任务重入原始实现的调用」。为 true 时前缀直接放行原始逻辑，
+    /// 避免无限递归；兄弟调用链（ActionExecutor 发起的下一次选牌）看不到该值，会走串行化等待。
+    /// </summary>
+    private static readonly System.Threading.AsyncLocal<bool> _inSerialized = new System.Threading.AsyncLocal<bool>();
+
+    [HarmonyPriority(Priority.High)]
+    [HarmonyPrefix]
+    private static bool SelectCardsPrefix(
+        NPlayerHand __instance,
+        CardSelectorPrefs prefs,
+        Func<CardModel, bool>? filter,
+        AbstractModel? source,
+        NPlayerHand.Mode mode,
+        ref Task<IEnumerable<CardModel>> __result)
+    {
+        if (!LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.UseSingleAdventureMode)
+        {
+            return true;
+        }
+
+        if (RunManager.Instance.NetService is not LocalLoopbackHostGameService)
+        {
+            return true;
+        }
+
+        if (_inSerialized.Value)
+        {
+            LocalMultiControlLogger.Info($"战斗内手牌选牌串行化: 重入原始实现(包装内), mode={mode}");
+            return true;
+        }
+
+        __result = SerializedSelectCardsAsync(__instance, prefs, filter, source, mode);
+        return false;
+    }
+
+    private static async Task<IEnumerable<CardModel>> SerializedSelectCardsAsync(
+        NPlayerHand hand,
+        CardSelectorPrefs prefs,
+        Func<CardModel, bool>? filter,
+        AbstractModel? source,
+        NPlayerHand.Mode mode)
+    {
+        bool gateAcquired = false;
+        try
+        {
+            await _selectionGate.WaitAsync();
+            gateAcquired = true;
+
+            ulong? ownerId = ResolveSelectionOwnerId(source);
+            if (ownerId.HasValue)
+            {
+                bool switched = LocalMultiControlRuntime.TryEnsureForegroundForPlayerId(ownerId.Value, "select-serialized");
+                if (switched)
+                {
+                    LocalMultiControlLogger.Info($"选牌展示前已切换前台到所属角色: player={ownerId.Value}");
+                }
+            }
+
+            LocalMultiControlLogger.Info(
+                $"战斗内手牌选牌串行化: 已进入选牌, mode={mode}, owner={ownerId}, source={source?.GetType().Name}");
+
+            _inSerialized.Value = true;
+            try
+            {
+                return await hand.SelectCards(prefs, filter, source, mode);
+            }
+            finally
+            {
+                _inSerialized.Value = false;
+            }
+        }
+        finally
+        {
+            if (gateAcquired)
+            {
+                _selectionGate.Release();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 解析本次选牌所属角色 NetId：优先取当前异步链的选牌角色（由 CardSelectForegroundSwitchPatch 在
+    /// FromHand 等入口记录，沿链流动，能正确处理双方同时选牌的交错场景），再退回 source 模型的 owner。
+    /// </summary>
+    private static ulong? ResolveSelectionOwnerId(AbstractModel? source)
+    {
+        ulong? ownerId = CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value;
+        if (!ownerId.HasValue || !LocalSelfCoopContext.LocalPlayerIds.Contains(ownerId.Value))
+        {
+            ownerId = ResolveOwnerIdFromSource(source);
+        }
+
+        if (ownerId.HasValue && LocalSelfCoopContext.LocalPlayerIds.Contains(ownerId.Value))
+        {
+            return ownerId;
+        }
+
+        return null;
+    }
+
+    private static ulong? ResolveOwnerIdFromSource(AbstractModel? source)
+    {
+        if (source == null)
+        {
+            return null;
+        }
+
+        Player? owner = source switch
+        {
+            CardModel card => card.Owner,
+            RelicModel relic => relic.Owner,
+            PotionModel potion => potion.Owner,
+            AfflictionModel affliction => affliction.Card?.Owner,
+            EnchantmentModel enchantment => enchantment.Card?.Owner,
+            PowerModel power => power.Owner?.Player,
+            _ => null
+        };
+
+        return owner?.NetId;
+    }
+}

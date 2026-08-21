@@ -7,7 +7,7 @@ Rules for automated coding agents (and humans) working in this repository. Goal:
 - Modify only mod code and mod metadata: `Scripts/`, `*.csproj`, `*.json`, docs, `workshop/`.
 - `src/` is decompiled game source — **read-only reference, never committed** (gitignored). Regenerate it after each game patch (see §5).
 - No destructive git operations (`reset --hard`, force-push, `checkout --` over user changes). Never push to `origin` (the original author's repo); pushes go to `fork`.
-- Language: **English** for all new code comments, commits, logs, and documentation. Original Chinese documents are preserved under `docs/archive/`.
+- Language: **Chinese** for all new code comments, commits, logs, and documentation. Original Chinese documents are preserved under `docs/archive/`.
 - Commit after each logical change with a clear message.
 
 ## 2. Build, format, deploy

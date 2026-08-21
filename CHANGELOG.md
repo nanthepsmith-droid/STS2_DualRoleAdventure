@@ -4,6 +4,56 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+### Fixed
+- Local multiplayer: `[HarmonyPatch]` attributes placed only on methods (inside a class without a
+  class-level `[HarmonyPatch]`) were silently skipped by `PatchAll`, so several patches never ran —
+  including the combat card-selection foreground switch and the serialized hand selection. All patch
+  classes now carry a class-level `[HarmonyPatch]` marker/target (`CardSelectForegroundSwitchPatch`,
+  `NPlayerHandSelectCardsSerializationPatch`). Init now logs the patched-method census.
+- Local multiplayer: `NPlayerHand.SelectCards` prefix no longer uses `ref bool __runOriginal`
+  (Harmony 2.4.2 generated invalid wrapper IL for this method, crashing mod init with
+  `InvalidProgramException`); it now uses the proven bool-return + `ref Task<...> __result` pattern.
+- Local multiplayer: when two locally-controlled characters both need a hand-card choice at the same
+  sync point (e.g. both characters holding the GensokyoSpire boss Utsuho's "Meltdown" buff select a
+  card to exhaust at turn start), the second `NPlayerHand.SelectCards` overwrote the single shared
+  `_selectionCompletionSource`, permanently orphaning the first choice and softlocking that character
+  (unable to play cards or end turn). Combat hand selections are now serialized: only one selection is
+  active at a time, the later one asynchronously waits its turn, and the foreground is switched to the
+  selecting character right before its prompt is shown. The selection's owner is tracked per async
+  chain from the `FromHand`/`FromSimpleGrid` entry (an `AsyncLocal` in
+  `CardSelectForegroundSwitchPatch`), falling back to the triggering model's owner, so interleaved
+  selections from both characters are each shown against the right hand. The wrapper's re-entry guard
+  also uses an `AsyncLocal` so sibling `SelectCards` calls from the action executor are still serialized
+  while the first prompt is on screen (`NPlayerHandSelectCardsSerializationPatch`).
+- Local multiplayer: turn-end / turn-start card-choice effects belonging to a backgrounded
+  character no longer hang or get skipped. The game builds `HookPlayerChoiceContext` with
+  `LocalContext.NetId` as `_localPlayerId`, so when the last-visible character differs from the
+  character whose choice is running, `_gameAction.OwnerId != _localPlayerId` and the hook action is
+  never enqueued locally (`HookPlayerChoiceContext.cs:194/206`). The mod now:
+  - Forces `_localPlayerId` to the choice owner inside every `HookPlayerChoiceContext` constructor
+    (`HookPlayerChoiceContextLocalPatch`), so the choice is enqueued and runs on the loopback.
+  - Auto-aligns the controlled foreground (hand / local context / top bar) to each character in the
+    turn loop before `SetupPlayerTurn`, `DoTurnEnd` and `FlushPlayerHand`, and synchronously before
+    `CardSelectCmd.FromHand`/`FromHandForUpgrade`/`FromSimpleGrid`/`FromChooseACardScreen`/
+    `FromCombatPile`. The previous deferred (`CallDeferred`) foreground switch could miss the
+    synchronous wait for the choice, so it has been replaced with a synchronous switch guarded by the
+    same in-play/in-selection/target-selection checks (`CardSelectForegroundSwitchPatch`,
+    `CombatManagerTurnHookForegroundPatch`, `LocalMultiControlRuntime.TryEnsureForegroundForPlayer`).
+
+## [v1.32] - 2026-08-14
+
+### Fixed
+- Adapted to game v0.111.0 (beta111, 2026-08-13). The mod previously failed to load with
+  `ReflectionTypeLoadException`. Changes:
+  - `INetGameService`/`INetHostGameService` gained net-new members in v0.111.0. The local
+    loopback host service (`LocalLoopbackHostGameService`) now implements `LocalVersion`,
+    `ClientConnectionFailed` and `GetVersionInfoForPeer`.
+  - `LoadRunLobbyPlayer` replaced its `versionInfo` field with a flat `isModded` bool; the
+    load-lobby auto-ready patch now writes `isModded` from the net service's local version.
+  - `StartRunLobby.MaxPlayers` was replaced by a constructor-injected readonly `_maxPlayers`
+    (no auto-property backing field). Local self-coop lobbies are now created at the full 12-player
+    capacity up front and the reflection-based `EnsureLobbyMaxCapacity` resize was removed.
+
 ## [v1.31] - 2026-07-27
 
 First community-maintained release. The original author (liwenhao0427) discontinued

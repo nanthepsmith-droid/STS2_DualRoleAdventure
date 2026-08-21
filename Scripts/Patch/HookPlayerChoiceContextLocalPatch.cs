@@ -18,6 +18,8 @@ namespace LocalMultiControl.Scripts.Patch;
 [HarmonyPatch(typeof(HookPlayerChoiceContext))]
 internal static class HookPlayerChoiceContextLocalPatch
 {
+    private static string? _lastForceOwnerLogKey;
+
     private static void ForceLocalOwnerIfNeeded(HookPlayerChoiceContext context)
     {
         if (!LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.UseSingleAdventureMode)
@@ -44,7 +46,14 @@ internal static class HookPlayerChoiceContextLocalPatch
         }
 
         field.SetValue(context, owner.NetId);
-        LocalMultiControlLogger.Warn(
+        string logKey = $"{currentLocalPlayerId}->{owner.NetId}";
+        if (_lastForceOwnerLogKey == logKey)
+        {
+            return;
+        }
+
+        _lastForceOwnerLogKey = logKey;
+        LocalMultiControlLogger.Info(
             $"本地多控：hook 选择上下文 _localPlayerId 已强制归属到所选角色 {currentLocalPlayerId} -> {owner.NetId}，确保选择动作可本地入队执行。");
     }
 
