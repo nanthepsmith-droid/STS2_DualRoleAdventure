@@ -6,7 +6,7 @@ Working folder for publishing this mod to the Steam Workshop (appid `2868840`).
 
 - `content/` — the files actually uploaded: `DualRoleAdventure.dll` + `DualRoleAdventure.json`. Overwrite with the latest release build before each upload.
 - `preview.jpg` — the item's preview image.
-- `steamcmd_item_fork.vdf` — upload config for **this fork's** Workshop item (maintained by GuyGinat). After the first upload SteamCMD writes the assigned `publishedfileid` back into this file — commit that change.
+- `steamcmd_item_fork.vdf` — upload config for **this fork's** Workshop item (`publishedfileid` 3772900244, first created by GuyGinat). After each upload SteamCMD writes the assigned `publishedfileid` back into this file — commit that change.
 - `steamcmd_item.vdf` / `mod_id.txt` / `workshop.json` / `image.png` — the **original author's** upload workspace for item [3747538947](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947), kept for reference. Never upload with the original vdf.
 
 ## Upload procedure (maintainer)

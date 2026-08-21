@@ -4,6 +4,8 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+## [v1.32] - 2026-08-21
+
 ### Fixed
 - Local multiplayer: `[HarmonyPatch]` attributes placed only on methods (inside a class without a
   class-level `[HarmonyPatch]`) were silently skipped by `PatchAll`, so several patches never ran —
@@ -39,11 +41,15 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     synchronous wait for the choice, so it has been replaced with a synchronous switch guarded by the
     same in-play/in-selection/target-selection checks (`CardSelectForegroundSwitchPatch`,
     `CombatManagerTurnHookForegroundPatch`, `LocalMultiControlRuntime.TryEnsureForegroundForPlayer`).
+- Character switching during an in-progress card play / card selection no longer rolls back the
+  control context; the combat UI refresh is deferred until the flow finishes (bounded retries), and a
+  stuck off-screen end-turn button is re-animated in (`LocalMultiControlRuntime`).
+- Hook actions (e.g. Mini-Hakkero's turn-end hand selection for a backgrounded character) switch the
+  foreground to their owner at enqueue time, before the selection UI appears
+  (`HookEnqueueForegroundPatch`).
 
-## [v1.32] - 2026-08-14
-
-### Fixed
-- Adapted to game v0.111.0 (beta111, 2026-08-13). The mod previously failed to load with
+### Adapted
+- Game v0.111.0 (beta111, 2026-08-13). The mod previously failed to load with
   `ReflectionTypeLoadException`. Changes:
   - `INetGameService`/`INetHostGameService` gained net-new members in v0.111.0. The local
     loopback host service (`LocalLoopbackHostGameService`) now implements `LocalVersion`,
@@ -53,6 +59,8 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   - `StartRunLobby.MaxPlayers` was replaced by a constructor-injected readonly `_maxPlayers`
     (no auto-property backing field). Local self-coop lobbies are now created at the full 12-player
     capacity up front and the reflection-based `EnsureLobbyMaxCapacity` resize was removed.
+  - `CombatManager`'s ready-to-begin-enemy-turn set moved onto the turn state; the ready-set lookup
+    tries the new location first and falls back to the pre-beta110 field.
 
 ## [v1.31] - 2026-07-27
 
@@ -159,7 +167,8 @@ Final release by the original author. (Summarized from the archived player-updat
 - Minimal usable loop for local multi-control.
 - Basic input switching, key synchronization chains, and the core patch framework.
 
-[Unreleased]: https://github.com/GuyGinat/STS2_DualRoleAdventure/compare/v1.31...HEAD
+[Unreleased]: https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/compare/v1.32...HEAD
+[v1.32]: https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/releases/tag/v1.32
 [v1.31]: https://github.com/GuyGinat/STS2_DualRoleAdventure/releases/tag/v1.31
 [v1.30]: https://github.com/liwenhao0427/STS2_DualRoleAdventure/releases/tag/v1.30
 [v1.17]: https://github.com/liwenhao0427/STS2_DualRoleAdventure/releases/tag/v1.17

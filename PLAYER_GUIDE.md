@@ -61,5 +61,5 @@ Shows your backgrounded characters' hands behind and above your active hand, so 
 ## Troubleshooting & feedback
 
 - Log file: `%APPDATA%\SlayTheSpire2\logs\godot.log` — mod lines are prefixed `[LocalMultiControl]`.
-- If something breaks, note the **act, room/screen, and exact steps**, then open a [GitHub issue](https://github.com/GuyGinat/STS2_DualRoleAdventure/issues) with the log attached.
+- If something breaks, note the **act, room/screen, and exact steps**, then open a [GitHub issue](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/issues) with the log attached.
 - Known issues under investigation are tracked in [TODO.md](TODO.md).

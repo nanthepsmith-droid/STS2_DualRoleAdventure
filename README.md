@@ -24,7 +24,7 @@ Currently built against game version **v0.109.0** (July 2026). When the game pat
 
 **Steam Workshop (recommended):** subscribe to the Workshop item, then enable the mod in `Settings → Mods`.
 
-**Manual:** download `DualRoleAdventure.dll` + `DualRoleAdventure.json` from [Releases](https://github.com/GuyGinat/STS2_DualRoleAdventure/releases) and place both in:
+**Manual:** download `DualRoleAdventure.dll` + `DualRoleAdventure.json` from [Releases](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/releases) and place both in:
 
 ```
 <Slay the Spire 2 install>\mods\DualRoleAdventure\
@@ -55,7 +55,7 @@ cp -r /tmp/sts2-src/MegaCrit/Sts2/. src/
 
 ## Reporting issues
 
-Please open a [GitHub issue](https://github.com/GuyGinat/STS2_DualRoleAdventure/issues) and include: act number, screen/room, exact steps, and if possible the log file at `%APPDATA%\SlayTheSpire2\logs\godot.log` (mod entries are prefixed `[LocalMultiControl]`).
+Please open a [GitHub issue](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/issues) and include: act number, screen/room, exact steps, and if possible the log file at `%APPDATA%\SlayTheSpire2\logs\godot.log` (mod entries are prefixed `[LocalMultiControl]`).
 
 ## Documentation
 
@@ -73,6 +73,7 @@ Please open a [GitHub issue](https://github.com/GuyGinat/STS2_DualRoleAdventure/
 
   <img src="donate-original-author.jpeg" alt="Donate to the original author" width="200" />
 
-- Maintainer (v1.31+): [GuyGinat](https://github.com/GuyGinat)
+- Maintainer (v1.31): [GuyGinat](https://github.com/GuyGinat) — first community-maintained release, English docs, Workshop item 3772900244
+- Maintainer (v1.32+): [nanthepsmith-droid](https://github.com/nanthepsmith-droid) — game v0.110/0.111 adaptations, combat card-selection serialization & foreground fixes
 
 There is no formal open-source license yet; the original author granted written permission (2026-07-27) for this fork to maintain and distribute the mod. Until a LICENSE file lands, treat the source as *source-available for personal use* — ask before redistributing derivatives.
