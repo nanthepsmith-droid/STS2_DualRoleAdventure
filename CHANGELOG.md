@@ -4,6 +4,39 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+## [v1.34] - 2026-08-22
+
+### Fixed
+- Relic "Silken Tress" (华美发束): the promised Glam enchantment never reached the card rewards
+  you actually see, while the relic itself was already marked as used up after the first combat.
+  Root cause: vanilla `CombatRoom.OfferRoomEndRewards` pre-generates a reward set per character,
+  and one-shot relic hooks (Silken Tress's `IsUsed`, egg upgrade counters, Silver Crucible, …) were
+  consumed there — enchanting cards that were then thrown away. The mod's merged-rewards screen
+  regenerated fresh sets afterwards with every relic already spent. A new intercept on
+  `CombatRoom.OfferRoomEndRewards` (`CombatRoomOfferRoomEndRewardsPatch`) now generates each
+  character's rewards exactly once in local self-coop and preserves the vanilla
+  `Hook.BeforeCombatRewardOffered` step, so Silken Tress enchants the displayed rewards and other
+  modify-once relics apply correctly too.
+- Crystal Sphere event: only the first character could complete their divination — finishing it
+  ended the event for everyone. Two causes: the divination overlay stayed on the overlay stack
+  after completion (the event auto-switch chain defers while overlays are open), and the overlay's
+  own PROCEED button called `ProceedFromTerminalRewardsScreen`, opening the map directly. The event
+  option handlers now close finished divination overlays when they complete so the existing
+  auto-switch chain walks to the next character, and the minigame PROCEED is intercepted while any
+  character still has an unfinished Crystal Sphere (switching to them instead of leaving the room).
+
+### Changed
+- Crystal Sphere settlement is now strictly per-character: paying "Uncover Future", the Payment
+  Plan Debt curse, and revealed gold/relic/potion/card rewards stay with the revealing character.
+  This supersedes the original author's mirror-settlement design (everyone pays together, loot is
+  copied to everyone); all cross-player mirroring for this event is disabled behind the
+  `CrystalSphereMirrorRuntime.CrossPlayerMirroringEnabled` switch (= false) if shared settlement
+  is ever wanted back.
+- Character hotkey switching (Tab / Shift+Tab / legacy keys) is ignored while a divination
+  minigame is in progress. Switching away previously left the minigame completing under another
+  character's context, failing its owner check in `DoLocalCrystalSphereRewards`, so the event could
+  never finish (softlock).
+
 ## [v1.33] - 2026-08-21
 
 ### Added

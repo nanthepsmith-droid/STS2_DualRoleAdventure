@@ -32,6 +32,7 @@ Any character can be handed to the built-in autoplayer ("Vakuu"):
 - **Combat:** play each character's turn, switching freely; end turn per character.
 - **Rewards:** loot is generated per character and shown as one combined list, each entry prefixed with its owner (e.g. `[Player 2]`). Claim with the matching character.
 - **Events:** by default each character resolves the event independently — the mod walks you through them one by one. Shared-event votes are auto-completed where the game requires everyone to vote.
+- **Crystal Sphere:** each character pays for and divines on their own turn; revealed rewards (and the Payment Plan curse) belong only to the revealing character. Character switching is locked while a divination is in progress — finish your divinations first, the mod switches automatically.
 - **Rest sites:** each character chooses in sequence (rest, upgrade, etc.).
 - **Shops:** purchases and card removal are billed to the character currently in control.
 - **Map:** picking the next node auto-completes the "everyone must vote" step.
