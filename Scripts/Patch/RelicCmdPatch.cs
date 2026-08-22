@@ -68,7 +68,9 @@ internal static class RelicCmdObtainPatch
         }
 
         bool isCombatRewardContext = player.RunState.CurrentRoom is CombatRoom && !CombatManager.Instance.IsInProgress;
-        bool isCrystalSphereContext = CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(player);
+        // 每角色独立结算：占卜遗物只归揭示者，不再镜像到其余角色
+        bool isCrystalSphereContext = CrystalSphereMirrorRuntime.CrossPlayerMirroringEnabled
+            && CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(player);
         if (!isCombatRewardContext && !isCrystalSphereContext)
         {
             return obtainedRelic;
@@ -152,7 +154,9 @@ internal static class RelicCmdRemovePatch
         }
 
         bool isCombatRewardContext = removedRelic.Owner.RunState.CurrentRoom is CombatRoom && !CombatManager.Instance.IsInProgress;
-        bool isCrystalSphereContext = CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(removedRelic.Owner);
+        // 每角色独立结算：占卜遗物移除同样只作用于本人
+        bool isCrystalSphereContext = CrystalSphereMirrorRuntime.CrossPlayerMirroringEnabled
+            && CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(removedRelic.Owner);
         if (!isCombatRewardContext && !isCrystalSphereContext)
         {
             return;

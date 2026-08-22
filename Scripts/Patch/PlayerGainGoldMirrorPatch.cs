@@ -74,7 +74,9 @@ internal static class PlayerGainGoldMirrorPatch
         }
 
         bool isCombatRewardContext = player.RunState.CurrentRoom is CombatRoom && !CombatManager.Instance.IsInProgress;
-        bool isCrystalSphereContext = CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(player);
+        // 每角色独立结算：占卜奖励金币只归拾取者，不再镜像到其余角色
+        bool isCrystalSphereContext = CrystalSphereMirrorRuntime.CrossPlayerMirroringEnabled
+            && CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(player);
         if (!isCombatRewardContext && !isCrystalSphereContext)
         {
             return;

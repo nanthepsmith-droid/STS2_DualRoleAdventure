@@ -381,6 +381,20 @@ internal static class LocalSelfCoopContext
         return true;
     }
 
+    /// <summary>
+    /// 主动作废待触发的事件自动切换（含未消费的请求来源角色）。
+    /// 用于调用方自行切换角色的场景，避免弹层移除后的自动切换链再次切人造成来回跳。
+    /// </summary>
+    public static void CancelPendingEventAutoSwitch()
+    {
+        if (_eventAutoSwitchPending || _pendingEventAutoSwitchPlayerId.HasValue)
+        {
+            _eventAutoSwitchPending = false;
+            _pendingEventAutoSwitchPlayerId = null;
+            LocalMultiControlLogger.Info("已作废待触发的事件自动切换请求。");
+        }
+    }
+
     public static bool BootstrapSecondPlayer(NCharacterSelectScreen characterSelectScreen)
     {
         // 保留旧方法名，兼容已有调用。

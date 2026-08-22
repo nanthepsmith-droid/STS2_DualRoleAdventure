@@ -27,7 +27,10 @@ internal static class RewardCardMirrorPatch
         }
 
         Player? sourcePlayer = ResolveSourcePlayer(__instance);
-        if (sourcePlayer == null || !CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(sourcePlayer))
+        if (sourcePlayer == null
+            // 每角色独立结算：占卜卡牌奖励只归拾取者，不再镜像到其余角色
+            || !CrystalSphereMirrorRuntime.CrossPlayerMirroringEnabled
+            || !CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(sourcePlayer))
         {
             return;
         }

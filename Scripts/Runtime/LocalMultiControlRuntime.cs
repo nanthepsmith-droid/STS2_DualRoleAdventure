@@ -115,6 +115,13 @@ internal static class LocalMultiControlRuntime
             return;
         }
 
+        // 占卜进行中禁止切换：切走后完成回调会因 owner 与本地玩家不符而失败，事件卡死（软锁）
+        if (CrystalSphereMirrorRuntime.HasActiveDivinationOverlay())
+        {
+            LocalMultiControlLogger.Info($"占卜小游戏进行中，已忽略切换请求: source={source}");
+            return;
+        }
+
         if (CombatManager.Instance.IsInProgress)
         {
             // 风险点：战斗中如果按“会话顺序”盲切，可能切到不在当前 CombatState 的角色，
@@ -140,6 +147,13 @@ internal static class LocalMultiControlRuntime
     {
         if (!RunManager.Instance.IsInProgress)
         {
+            return;
+        }
+
+        // 占卜进行中禁止切换（风险同 SwitchNextControlledPlayer）
+        if (CrystalSphereMirrorRuntime.HasActiveDivinationOverlay())
+        {
+            LocalMultiControlLogger.Info($"占卜小游戏进行中，已忽略切换请求: source={source}");
             return;
         }
 
@@ -466,6 +480,9 @@ internal static class LocalMultiControlRuntime
         RefreshTopBarForControlledPlayer(currentControlledPlayerId.Value);
         RefreshDeckViewForControlledPlayer(currentControlledPlayerId.Value);
         RefreshRestSiteForControlledPlayer(currentControlledPlayerId.Value);
+        // 切人前先收掉其他角色遗留的"已完成占卜"水晶球弹层，避免挡住当前角色的事件界面；
+        // 同时吃掉待触发的事件自动切换标记，防止与本次手动/流程切换来回跳。
+        CrystalSphereMirrorRuntime.CloseFinishedMinigameOverlays($"apply-control-{source}", consumePendingSwitch: true);
         RefreshEventRoomForControlledPlayer(currentControlledPlayerId.Value);
         LocalMerchantInventoryRuntime.RefreshShopRoomForPlayer(currentControlledPlayerId.Value);
         EnsureTreasureCursorVisibleAfterSwitch(source);

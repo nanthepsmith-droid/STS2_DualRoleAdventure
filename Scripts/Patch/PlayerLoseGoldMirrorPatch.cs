@@ -17,7 +17,9 @@ internal static class PlayerLoseGoldMirrorPatch
     [HarmonyPostfix]
     private static void Postfix(decimal amount, Player player, GoldLossType goldLossType, ref Task __result)
     {
-        if (!CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(player))
+        // 每角色独立结算：占卜付费只扣选择者自己的金币，不再镜像到其余角色
+        if (!CrystalSphereMirrorRuntime.CrossPlayerMirroringEnabled
+            || !CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(player))
         {
             return;
         }

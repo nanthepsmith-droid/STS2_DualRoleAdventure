@@ -43,7 +43,9 @@ internal static class RewardPotionMirrorPatch
         }
 
         bool isCombatRewardContext = sourcePlayer.RunState.CurrentRoom is CombatRoom && !CombatManager.Instance.IsInProgress;
-        bool isCrystalSphereContext = CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(sourcePlayer);
+        // 每角色独立结算：占卜药水奖励只归拾取者，不再镜像到其余角色
+        bool isCrystalSphereContext = CrystalSphereMirrorRuntime.CrossPlayerMirroringEnabled
+            && CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(sourcePlayer);
         if (!isCombatRewardContext && !isCrystalSphereContext)
         {
             return;
