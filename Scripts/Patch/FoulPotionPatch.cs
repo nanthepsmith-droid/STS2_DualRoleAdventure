@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using HarmonyLib;
 using Godot;
@@ -179,17 +180,33 @@ internal static class FoulPotionOnUsePatch
     /// </summary>
     private static async Task ThrowAtFakeMerchantAsync(FoulPotion potion, NFakeMerchant merchantNode)
     {
-        AccessTools.Method(typeof(FoulPotion), "ShowPotionVfx")?
-            .Invoke(potion, new object?[] { merchantNode.MerchantButton });
-
-        List<Task> throwTasks = new List<Task>();
-        foreach (Player player in potion.Owner.RunState.Players)
+        Interlocked.Increment(ref _activeThrowCount);
+        try
         {
-            if (RunManager.Instance.EventSynchronizer.GetEventForPlayer(player) is FakeMerchant fakeMerchant)
+            AccessTools.Method(typeof(FoulPotion), "ShowPotionVfx")?
+                .Invoke(potion, new object?[] { merchantNode.MerchantButton });
+
+            List<Task> throwTasks = new List<Task>();
+            foreach (Player player in potion.Owner.RunState.Players)
             {
-                throwTasks.Add(fakeMerchant.FoulPotionThrown(potion));
+                if (RunManager.Instance.EventSynchronizer.GetEventForPlayer(player) is FakeMerchant fakeMerchant)
+                {
+                    throwTasks.Add(fakeMerchant.FoulPotionThrown(potion));
+                }
             }
+            await Task.WhenAll(throwTasks);
         }
-        await Task.WhenAll(throwTasks);
+        finally
+        {
+            Interlocked.Decrement(ref _activeThrowCount);
+        }
     }
+
+    /// <summary>
+    /// 投掷结算进行中禁止切人：假商人界面节点正在播台词动画，此时按角色重建事件房间
+    /// 会释放节点并取消等待，导致部分角色的战斗就绪信号丢失（事件软锁）。
+    /// </summary>
+    internal static bool IsThrowInProgress => Volatile.Read(ref _activeThrowCount) > 0;
+
+    private static int _activeThrowCount;
 }
