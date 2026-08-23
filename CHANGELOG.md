@@ -4,6 +4,25 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+### Fixed
+- Fake Merchant (商人？？？) event: purchases were always charged to and granted to the character
+  that entered the room (usually character 1), no matter who was browsing the rug. The shop UI
+  binds to that instance's `MerchantInventory`, whose entries hard-wire their buyer at creation.
+  Shared custom-layout events are now rebuilt per foreground character on switch
+  (`RefreshEventRoomForControlledPlayer`), so each character browses and buys from their own
+  stock with their own gold, matching vanilla multiplayer semantics.
+- Fake Merchant event: only the first character could throw the Foul Potion (浑浊药水)
+  to start the fight; with the second character controlled, the potion popup's throw button stayed
+  disabled and a forced use would consume the potion with no effect. Root cause: character
+  switching re-points `EventSynchronizer._localPlayerId` at the foreground player, but this shared
+  custom-layout event attaches its `NFakeMerchant` UI node only to the event instance of whoever
+  entered the room, so `EventRoom.LocalMutableEvent.Node` was null for the other character.
+  New `FoulPotionPatch` falls back to the live custom-event screen / sibling instances when
+  resolving the merchant button (`GetFoulPotionMerchantTarget`) and completes the throw on behalf
+  of the vanilla branch in `FoulPotion.OnUse`; combat and real-shop branches are untouched.
+  Character switching is also ignored while a throw settlement is in flight so the fight can
+  never lose a combat-ready signal.
+
 ## [v1.34] - 2026-08-22
 
 ### Fixed

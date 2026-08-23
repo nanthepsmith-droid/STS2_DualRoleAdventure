@@ -9,7 +9,7 @@ namespace LocalMultiControl.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    private const string BuildMarker = "Revival v1.33 loaded (game v0.111.0, marker=2026-08-22-r3)";
+    private const string BuildMarker = "Revival v1.34 loaded (game v0.111.0, marker=2026-08-23-r2)";
 
     private static Harmony? _harmony;
 

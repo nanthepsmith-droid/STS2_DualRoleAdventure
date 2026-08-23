@@ -122,6 +122,13 @@ internal static class LocalMultiControlRuntime
             return;
         }
 
+        // 假商人药水投掷结算进行中禁止切换：界面节点正在播台词动画，重建房间会丢失战斗就绪信号
+        if (FoulPotionOnUsePatch.IsThrowInProgress)
+        {
+            LocalMultiControlLogger.Info($"假商人药水投掷结算进行中，已忽略切换请求: source={source}");
+            return;
+        }
+
         if (CombatManager.Instance.IsInProgress)
         {
             // 风险点：战斗中如果按“会话顺序”盲切，可能切到不在当前 CombatState 的角色，
@@ -154,6 +161,13 @@ internal static class LocalMultiControlRuntime
         if (CrystalSphereMirrorRuntime.HasActiveDivinationOverlay())
         {
             LocalMultiControlLogger.Info($"占卜小游戏进行中，已忽略切换请求: source={source}");
+            return;
+        }
+
+        // 假商人药水投掷结算进行中禁止切换（风险同 SwitchNextControlledPlayer）
+        if (FoulPotionOnUsePatch.IsThrowInProgress)
+        {
+            LocalMultiControlLogger.Info($"假商人药水投掷结算进行中，已忽略切换请求: source={source}");
             return;
         }
 
@@ -1580,7 +1594,7 @@ internal static class LocalMultiControlRuntime
 
         NEventRoom? eventRoom = NEventRoom.Instance;
         EventSynchronizer synchronizer = RunManager.Instance.EventSynchronizer;
-        if (eventRoom == null || synchronizer.IsShared)
+        if (eventRoom == null)
         {
             return;
         }
@@ -1593,8 +1607,20 @@ internal static class LocalMultiControlRuntime
         }
 
         EventModel targetEvent = synchronizer.GetEventForPlayer(player);
+
+        // 共享事件默认所有角色共用同一界面；但自定义布局的共享事件（如假商人）把商店库存
+        // 绑定在“进房时前台角色”的事件实例上，不按角色重建的话，购买会扣错金币、遗物进错兜。
+        // 因此共享事件里只有 Custom 布局需要重建，且仅当当前确实处于事件房间时执行。
+        if (synchronizer.IsShared)
+        {
+            if (targetEvent.LayoutType != EventLayoutType.Custom || runState.CurrentRoom is not EventRoom)
+            {
+                return;
+            }
+        }
+
         EventModel? currentEvent = AccessTools.Field(typeof(NEventRoom), "_event")?.GetValue(eventRoom) as EventModel;
-        if (currentEvent == null || currentEvent == targetEvent)
+        if (currentEvent == null || currentEvent.Owner == null || currentEvent == targetEvent)
         {
             return;
         }
@@ -1619,11 +1645,12 @@ internal static class LocalMultiControlRuntime
 
             NRun.Instance?.SetCurrentRoom(refreshedRoom);
             LocalWakuuRelicRuntime.ProbeAndRecoverSelectorStack($"event-refresh-after-{playerId}", allowRecover: true);
-            LocalMultiControlLogger.Info($"非共享事件房间已按当前角色重建: player={playerId}, event={targetEvent.Id.Entry}");
+            string scopeLabel = synchronizer.IsShared ? "共享自定义事件界面" : "非共享事件房间";
+            LocalMultiControlLogger.Info($"{scopeLabel}已按当前角色重建: player={playerId}, event={targetEvent.Id.Entry}");
         }
         catch (Exception exception)
         {
-            LocalMultiControlLogger.Warn($"切换非共享事件视图失败: {exception.Message}");
+            LocalMultiControlLogger.Warn($"切换事件视图失败: {exception.Message}");
         }
     }
 
