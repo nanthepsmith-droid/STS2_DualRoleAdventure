@@ -2,7 +2,7 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
-## [Unreleased]
+## [v1.35] - 2026-08-23
 
 ### Fixed
 - Fake Merchant (商人？？？) event: purchases were always charged to and granted to the character

@@ -34,7 +34,7 @@ Any character can be handed to the built-in autoplayer ("Vakuu"):
 - **Events:** by default each character resolves the event independently — the mod walks you through them one by one. Shared-event votes are auto-completed where the game requires everyone to vote.
 - **Crystal Sphere:** each character pays for and divines on their own turn; revealed rewards (and the Payment Plan curse) belong only to the revealing character. Character switching is locked while a divination is in progress — finish your divinations first, the mod switches automatically.
 - **Rest sites:** each character chooses in sequence (rest, upgrade, etc.).
-- **Shops:** purchases and card removal are billed to the character currently in control.
+- **Shops:** purchases and card removal are billed to the character currently in control. The Fake Merchant event (商人？？？) works the same way — each character browses and buys from their own stock with their own gold, and either character can throw the Foul Potion (浑浊药水) at the merchant to start the fight.
 - **Map:** picking the next node auto-completes the "everyone must vote" step.
 - **Save & continue:** quit normally; `Multiplayer → Load` resumes the run and auto-readies all local characters.
 
