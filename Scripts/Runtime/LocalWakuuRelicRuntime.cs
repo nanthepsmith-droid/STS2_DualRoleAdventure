@@ -20,6 +20,7 @@ using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Relics;
 using MegaCrit.Sts2.Core.Nodes.Combat;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
+using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
 using MegaCrit.Sts2.Core.Nodes.Vfx;
 using MegaCrit.Sts2.Core.Runs;
 using Godot;
@@ -29,6 +30,10 @@ namespace LocalMultiControl.Scripts.Runtime;
 internal static class LocalWakuuRelicRuntime
 {
     private const int MaxCardsToPlay = 13;
+
+    // 瓦库形态"打光所有手牌"模式的硬护栏上限：正常牌组远达不到，只为防御异常效果导致的死循环。
+    private const int MaxCardsToPlayForm = 60;
+
     private const long WatchdogRestartCooldownMs = 300L;
 
     private static readonly Dictionary<string, long> _watchdogLastRunAt = new();
@@ -59,13 +64,78 @@ internal static class LocalWakuuRelicRuntime
         return player.GetRelicById(ModelDb.GetId<LocalWakuuStarterRelic>()) as LocalWakuuStarterRelic;
     }
 
+    public static LocalWakuuFormRelic? TryGetWakuuFormRelic(Player player)
+    {
+        return player.GetRelicById(ModelDb.GetId<LocalWakuuFormRelic>()) as LocalWakuuFormRelic;
+    }
+
+    /// <summary>瓦库接管遗物 = 旧的"永久低语耳环"或新的【瓦库形态】任一。</summary>
+    public static RelicModel? TryGetTakeoverRelic(Player player)
+    {
+        return (RelicModel?)TryGetWakuuRelic(player) ?? TryGetWakuuFormRelic(player);
+    }
+
+    /// <summary>该角色是否处于瓦库形态新模式（持有形态遗物且总开关开启）。</summary>
+    public static bool IsVakuuFormMode(Player player)
+    {
+        return LocalWakuuAutopilotConfig.UseVakuuForm && TryGetWakuuFormRelic(player) != null;
+    }
+
+    /// <summary>
+    /// 按 NetId 判断是否处于瓦库形态模式。用于选牌入口等只有 NetId 的场景；
+    /// 找不到玩家模型时按 false 处理（宁可走正常 UI 也不误伤）。
+    /// </summary>
+    public static bool IsVakuuFormModeById(ulong netId)
+    {
+        if (!LocalWakuuAutopilotConfig.UseVakuuForm)
+        {
+            return false;
+        }
+
+        try
+        {
+            Player? player = RunManager.Instance.DebugOnlyGetState()?.GetPlayer(netId);
+            return player != null && TryGetWakuuFormRelic(player) != null;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 后台托管判定：瓦库形态玩家且后台模式开启时，不再为其自动切换前台。
+    /// <paramref name="onlyWhenSelectorActive"/> 为 true 时仅当存在全局选择器
+    /// （选牌会被自动作答、不弹 UI）才免切换；无选择器时保留切换作为防软锁兜底，
+    /// 由交互安全网负责超时后的二次救援。
+    /// </summary>
+    public static bool ShouldSuppressForegroundSwitch(Player? player, bool onlyWhenSelectorActive)
+    {
+        if (player == null || !LocalSelfCoopContext.IsEnabled)
+        {
+            return false;
+        }
+
+        if (!LocalWakuuAutopilotConfig.BackgroundMode || !IsVakuuFormMode(player))
+        {
+            return false;
+        }
+
+        if (onlyWhenSelectorActive && CardSelectCmd.Selector == null)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
     public static bool HasWakuuRelic(Player player)
     {
-        return TryGetWakuuRelic(player) != null;
+        return TryGetTakeoverRelic(player) != null;
     }
 
     public static async Task ExecuteBeforePlayPhaseStartAsync(
-        LocalWakuuStarterRelic relic,
+        RelicModel relic,
         PlayerChoiceContext choiceContext,
         Player player)
     {
@@ -89,6 +159,14 @@ internal static class LocalWakuuRelicRuntime
         EnsureWakuuPerspective(player, "before-play-phase");
         relic.Flash();
 
+        bool formFullPlay = IsVakuuFormMode(player) && LocalWakuuAutopilotConfig.PlayAllCards;
+        int maxCardsThisTurn = formFullPlay ? MaxCardsToPlayForm : MaxCardsToPlay;
+        if (formFullPlay)
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库形态全量出牌模式: player={player.NetId}, round={combatState.RoundNumber}, cap={maxCardsThisTurn}");
+        }
+
         bool reachedPlayLimit;
         int cardsPlayed;
         bool gateEntered = false;
@@ -110,7 +188,7 @@ internal static class LocalWakuuRelicRuntime
                 SelectorStackSnapshot pushSnapshot = SnapshotSelectorStack();
                 LocalMultiControlLogger.Info(
                     $"瓦库选择器作用域进入: player={player.NetId}, round={combatState.RoundNumber}, selectorStackCount={pushSnapshot.Count}, selectorStackTop={pushSnapshot.TopType}");
-                for (cardsPlayed = 0; cardsPlayed < MaxCardsToPlay; cardsPlayed++)
+                for (cardsPlayed = 0; cardsPlayed < maxCardsThisTurn; cardsPlayed++)
                 {
                     if (TryGetAutoplayUnsafeReason(combatState, out string unsafeReason))
                     {
@@ -144,7 +222,14 @@ internal static class LocalWakuuRelicRuntime
                     await CardCmd.AutoPlay(choiceContext, card, target, AutoPlayType.Default, skipXCapture: true);
                 }
 
-                reachedPlayLimit = cardsPlayed >= MaxCardsToPlay;
+                reachedPlayLimit = cardsPlayed >= maxCardsThisTurn;
+                if (reachedPlayLimit && formFullPlay)
+                {
+                    // 全量模式触到护栏上限：大概率是异常效果反复生成可出牌，记录日志便于排查。
+                    LocalMultiControlLogger.Warn(
+                        $"瓦库形态全量出牌触及护栏上限: player={player.NetId}, round={combatState.RoundNumber}, cap={maxCardsThisTurn}");
+                }
+
                 SelectorStackSnapshot popSnapshot = SnapshotSelectorStack();
                 LocalMultiControlLogger.Info(
                     $"瓦库选择器作用域退出: player={player.NetId}, round={combatState.RoundNumber}, cardsPlayed={cardsPlayed}, reachedLimit={reachedPlayLimit}, selectorStackCount={popSnapshot.Count}, selectorStackTop={popSnapshot.TopType}");
@@ -208,7 +293,14 @@ internal static class LocalWakuuRelicRuntime
             return false;
         }
 
-        LocalWakuuStarterRelic? relic = TryGetWakuuRelic(player);
+        // 有弹层打开（含真人的牌堆/发现选牌）时不起看门狗，避免打断交互。
+        if ((NOverlayStack.Instance?.ScreenCount ?? 0) > 0)
+        {
+            reason = "overlay-open";
+            return false;
+        }
+
+        RelicModel? relic = TryGetTakeoverRelic(player);
         if (relic == null)
         {
             reason = "no-wakuu-relic";
@@ -246,7 +338,7 @@ internal static class LocalWakuuRelicRuntime
 
     private static async Task RunWatchdogAsync(
         string key,
-        LocalWakuuStarterRelic relic,
+        RelicModel relic,
         Player player,
         ICombatState combatState,
         string source)
@@ -280,7 +372,6 @@ internal static class LocalWakuuRelicRuntime
             {
                 return;
             }
-
             if (!PileType.Hand.GetPile(player).Cards.Any((card) => card.CanPlay()))
             {
                 return;
@@ -315,6 +406,12 @@ internal static class LocalWakuuRelicRuntime
 
             Callable.From(delegate
             {
+                // 后台托管模式下前台从未切到瓦库，不需要也不应该再自动切走。
+                if (ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: false))
+                {
+                    return;
+                }
+
                 LocalMultiControlRuntime.RequestAutoSwitchToNonWakuuOncePerRound($"wakuu-watchdog-{source}");
             }).CallDeferred();
             ProbeAndRecoverSelectorStack($"wakuu-watchdog-finally-{player.NetId}-{combatState.RoundNumber}-{source}", allowRecover: true);
@@ -417,6 +514,14 @@ internal static class LocalWakuuRelicRuntime
 
     private static void EnsureWakuuPerspective(Player player, string source)
     {
+        // 后台托管模式：瓦库形态角色不再切前台，直接以临时 owner 上下文出牌。
+        if (ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: false))
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库形态后台模式，跳过自动切换视角: player={player.NetId}, source={source}");
+            return;
+        }
+
         ulong currentControlledPlayerId = LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId
             ?? LocalContext.NetId
             ?? player.NetId;
@@ -454,6 +559,14 @@ internal static class LocalWakuuRelicRuntime
         if (combatUi == null)
         {
             reason = "combat-ui-null";
+            return true;
+        }
+
+        // 任何弹层（牌堆选牌/发现/确认框等）打开期间一律暂停自动出牌：
+        // 既可能是真人正在交互（如酒狐合成选牌），也防止全局选择器被抢答。
+        if ((NOverlayStack.Instance?.ScreenCount ?? 0) > 0)
+        {
+            reason = $"overlay-open({NOverlayStack.Instance?.ScreenCount})";
             return true;
         }
 

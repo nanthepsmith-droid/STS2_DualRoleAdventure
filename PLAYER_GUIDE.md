@@ -25,6 +25,23 @@ Any character can be handed to the built-in autoplayer ("Vakuu"):
 - Controller: `Y` toggles the highlighted character, `LT + Y` toggles everyone.
 - Vakuu characters play their turns automatically; when no Vakuu character can act, control returns to you.
 
+### Vakuu Form (new in v1.36, off by default)
+
+Optional upgraded hosting mode. When enabled, checked characters receive a separate relic
+【瓦库形态 / Vakuu Form】("Letting Vakuu play counts as you winning") instead of the
+permanent earring, and Vakuu plays **in the background** — the game no longer switches
+to them, and they play their entire hand every turn.
+
+Configure via `%APPDATA%\SlayTheSpire2\vakuu_autopilot.json`
+(reloaded at the start of each run):
+
+| Key | Default | Effect |
+|---|---|---|
+| `useVakuuForm` | `false` | Master switch. `false` = classic permanent-earring behavior |
+| `playAllCards` | `true` | Play the whole hand (hard cap 60 cards as a safety fuse) |
+| `backgroundMode` | `true` | Never switch foreground to Vakuu; a safety net hands control back if a dialog stalls >12s (combat) / >8s (event) |
+| `suppressVanillaEarring` | `true` | Suppress the vanilla Whispering Earring auto-play hook for Form holders (+1 energy kept) |
+
 ## During a run
 
 - **Switch characters:** `Tab` (next) / `Shift+Tab` (previous). Legacy keys `]` `R` `/` (next) and `[` `T` (previous) still work.

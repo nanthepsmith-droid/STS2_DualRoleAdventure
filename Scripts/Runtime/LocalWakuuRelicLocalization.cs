@@ -44,22 +44,39 @@ internal static class LocalWakuuRelicLocalization
     {
         try
         {
-            string entry = ModelDb.GetId<LocalWakuuStarterRelic>().Entry;
-            Dictionary<string, string> customEntries = new()
+            string starterEntry = ModelDb.GetId<LocalWakuuStarterRelic>().Entry;
+            Dictionary<string, string> starterEntries = new()
             {
-                [$"{entry}.title"] = LocalModText.Select("永久低语耳环", "Permanent Whispering Earring"),
-                [$"{entry}.description"] = LocalModText.Select(
+                [$"{starterEntry}.title"] = LocalModText.Select("永久低语耳环", "Permanent Whispering Earring"),
+                [$"{starterEntry}.description"] = LocalModText.Select(
                     "永久让瓦库接管你的回合。",
                     "Vakuu permanently takes over your turns."),
-                [$"{entry}.eventDescription"] = LocalModText.Select(
+                [$"{starterEntry}.eventDescription"] = LocalModText.Select(
                     "永久让瓦库接管你的回合。",
                     "Vakuu permanently takes over your turns."),
-                [$"{entry}.flavor"] = LocalModText.Select(
+                [$"{starterEntry}.flavor"] = LocalModText.Select(
                     "它不再只接管第一回合，而是接管每一回合。",
                     "No longer just the first turn. Vakuu takes every turn.")
             };
 
-            locManager.GetTable("relics").MergeWith(customEntries);
+            locManager.GetTable("relics").MergeWith(starterEntries);
+
+            string formEntry = ModelDb.GetId<LocalWakuuFormRelic>().Entry;
+            Dictionary<string, string> formEntries = new()
+            {
+                [$"{formEntry}.title"] = LocalModText.Select("瓦库形态", "Vakuu Form"),
+                [$"{formEntry}.description"] = LocalModText.Select(
+                    "瓦库将接管你的每一个回合，自动从左到右出牌，直到打光所有手牌。你的最大能量 +1。",
+                    "Vakuu takes over all of your turns, playing every card from left to right. Max energy +1."),
+                [$"{formEntry}.eventDescription"] = LocalModText.Select(
+                    "瓦库将接管你的每一个回合，自动从左到右出牌，直到打光所有手牌。你的最大能量 +1。",
+                    "Vakuu takes over all of your turns, playing every card from left to right. Max energy +1."),
+                [$"{formEntry}.flavor"] = LocalModText.Select(
+                    "让瓦库玩算你赢了。",
+                    "Letting Vakuu play counts as you winning.")
+            };
+
+            locManager.GetTable("relics").MergeWith(formEntries);
         }
         catch (Exception exception)
         {

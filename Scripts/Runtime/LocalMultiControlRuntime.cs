@@ -22,6 +22,7 @@ using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
 using MegaCrit.Sts2.Core.Nodes.Screens;
 using MegaCrit.Sts2.Core.Nodes.Screens.Capstones;
+using MegaCrit.Sts2.Core.Nodes.Screens.Map;
 using MegaCrit.Sts2.Core.Nodes.TopBar;
 using MegaCrit.Sts2.Core.Nodes.Vfx;
 using MegaCrit.Sts2.Core.Models;
@@ -62,7 +63,27 @@ internal static class LocalMultiControlRuntime
     public static void OnRunLaunched(RunState runState)
     {
         LocalWakuuRelicLocalization.Initialize();
-        LocalMultiControlLogger.Info("检测到 RunManager.Launch，开始初始化本地多控会话。");
+        try
+        {
+            LocalWakuuAutopilotConfig.Reload("run-launched");
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"瓦库托管配置加载异常(已忽略): {exception.Message}");
+        }
+
+        try
+        {
+            LocalWakuuSafetyNet.EnsureTicker();
+        }
+        catch (Exception exception)
+        {
+            // 安全网挂载失败不能影响开局/读档主流程。
+            LocalMultiControlLogger.Warn($"安全网挂载异常(已忽略): {exception.Message}");
+        }
+
+        LocalMultiControlLogger.Info(
+            $"检测到 RunManager.Launch，开始初始化本地多控会话。 players={runState.Players.Count}, floor={runState.TotalFloor}");
         if (LocalSelfCoopContext.IsEnabled)
         {
             RunManager.Instance.CombatStateSynchronizer.IsDisabled = true;
@@ -416,17 +437,35 @@ internal static class LocalMultiControlRuntime
                 continue;
             }
 
-            if (LocalWakuuRelicRuntime.TryGetWakuuRelic(player) != null)
+            bool useForm = LocalWakuuAutopilotConfig.UseVakuuForm;
+            RelicModel? existing = useForm
+                ? (RelicModel?)LocalWakuuRelicRuntime.TryGetWakuuFormRelic(player)
+                : LocalWakuuRelicRuntime.TryGetWakuuRelic(player);
+            if (existing != null)
             {
                 continue;
             }
 
-            RelicModel relic = ModelDb.Relic<LocalWakuuStarterRelic>().ToMutable();
-            relic.FloorAddedToDeck = Math.Max(1, runState.TotalFloor);
-            player.AddRelicInternal(relic);
-            SaveManager.Instance.MarkRelicAsSeen(relic);
-            await relic.AfterObtained();
-            LocalMultiControlLogger.Info($"已为瓦库角色自动发放瓦库专用遗物: player={playerId}, relic={relic.Id.Entry}");
+            // 跨开关切换旧存档时可能两件遗物并存（+1 能量叠加），打日志说明即可，不做自动拆除。
+            RelicModel? other = useForm
+                ? (RelicModel?)LocalWakuuRelicRuntime.TryGetWakuuRelic(player)
+                : (RelicModel?)LocalWakuuRelicRuntime.TryGetWakuuFormRelic(player);
+            if (other != null)
+            {
+                LocalMultiControlLogger.Warn(
+                    $"检测到玩家同时持有两种瓦库遗物（跨开关切换存档导致），能量将叠加: player={playerId}, "
+                    + $"mode={(useForm ? "瓦库形态" : "永久低语耳环")}");
+            }
+
+            RelicModel granted = useForm
+                ? ModelDb.Relic<LocalWakuuFormRelic>().ToMutable()
+                : ModelDb.Relic<LocalWakuuStarterRelic>().ToMutable();
+            granted.FloorAddedToDeck = Math.Max(1, runState.TotalFloor);
+            player.AddRelicInternal(granted);
+            SaveManager.Instance.MarkRelicAsSeen(granted);
+            await granted.AfterObtained();
+            LocalMultiControlLogger.Info(
+                $"已为瓦库角色自动发放托管遗物: player={playerId}, relic={granted.Id.Entry}, mode={(useForm ? "瓦库形态" : "永久低语耳环")}");
         }
     }
 
@@ -612,6 +651,157 @@ internal static class LocalMultiControlRuntime
     /// <summary>
     /// 按玩家ID解析当前战斗中的 Player（仅战斗进行中有效）。供 hook 入队等仅有 NetId 的挂点使用。
     /// </summary>
+    /// <summary>
+    /// 确保奖励界面弹出时没有被地图/角色面板遮挡。
+    /// NOverlayStack.Push 在 StackIsCovered（NMapScreen 打开或 NCapstoneContainer 占用）时
+    /// 会立即调用 screen.AfterOverlayHidden() 把弹层 Visible=false——读档重放路径会先恢复
+    /// 地图/界面状态，导致战后奖励界面"黑屏"（弹层在栈上但不可见，仅模组自有按钮可见）。
+    /// </summary>
+    public static void EnsureOverlayNotCoveredForRewards(string source)
+    {
+        try
+        {
+            NMapScreen? map = NMapScreen.Instance;
+            bool mapOpen = map != null && map.IsOpen;
+            bool capstoneInUse = NCapstoneContainer.Instance?.InUse ?? false;
+            LocalMultiControlLogger.Info(
+                $"奖励遮挡检查({source}): mapOpen={mapOpen}, capstoneInUse={capstoneInUse}");
+            if (mapOpen && map != null)
+            {
+                map.Close(animateOut: false);
+                LocalMultiControlLogger.Info($"奖励弹出前关闭处于打开状态的地图界面: source={source}");
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"奖励遮挡检查异常(已忽略): {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 当前是否处于读档重放的转场黑幕遮盖期。
+    /// 原版读档链路：StartRun 先 FadeOut 变黑，随后 LoadRun 内部进入 PreFinishedRoom
+    /// 并重放战后奖励，全部完成后才 FadeIn 亮屏。若此期间任何代码同步等待玩家
+    /// 操作（如我们的合并奖励界面 await），FadeIn 将永远无法执行，表现为永久黑屏。
+    /// 原版自身对此的处理是 reward.Offer() fire-and-forget 不等待。
+    /// </summary>
+    public static bool IsLoadReplayTransitionCovering()
+    {
+        try
+        {
+            NTransition? transition = NGame.Instance?.Transition;
+            return transition != null && transition.Visible && transition.InTransition;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 打印某个控件从自身到场景根的可见性链（Visible/透明度/位置/尺寸），
+    /// 用于定位"逻辑存在但渲染不可见"的黑屏类问题。
+    /// </summary>
+    public static void DumpControlVisibilityChain(Godot.Control? control, string source)
+    {
+        try
+        {
+            if (control == null)
+            {
+                LocalMultiControlLogger.Info($"可见性诊断({source}): 控件为 null");
+                return;
+            }
+
+            List<string> chain = new();
+            Godot.Node node = control;
+            int depth = 0;
+            while (node != null && depth < 24)
+            {
+                string entry = node switch
+                {
+                    Godot.Control c => $"{node.GetType().Name}[{node.Name}] Visible={c.Visible} ModulateA={c.Modulate.A:F2} Scale={c.Scale} Pos={c.Position} Size={c.Size}",
+                    Godot.CanvasLayer l => $"{node.GetType().Name}[{node.Name}] Layer={l.Layer} Visible={l.Visible}",
+                    _ => $"{node.GetType().Name}[{node.Name}]"
+                };
+                chain.Add(entry);
+                node = node.GetParent();
+                depth++;
+            }
+
+            LocalMultiControlLogger.Info($"可见性诊断({source}): {string.Join(" <- ", chain)}");
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"可见性诊断异常(已忽略): {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 扫描整棵场景树里的转场黑幕（NTransition）与加载遮罩（NLoadingOverlay）节点，
+    /// 输出其可见状态——用于诊断"逻辑正常但画面全黑"的读档问题：
+    /// 若 FadeOut 后配对的 FadeIn 未执行，NTransition 这个全屏 ColorRect 会永久盖住画面。
+    /// </summary>
+    public static void DumpTransitionOverlayState(string source)
+    {
+        try
+        {
+            Godot.Node? game = NGame.Instance;
+            if (game == null)
+            {
+                LocalMultiControlLogger.Info($"转场扫描({source}): NGame 不存在");
+                return;
+            }
+
+            List<string> found = new();
+            CollectTransitionNodes(game, found, source);
+            if (found.Count == 0)
+            {
+                LocalMultiControlLogger.Info($"转场扫描({source}): 场景中无 NTransition/NLoadingOverlay 节点");
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"转场扫描异常(已忽略): {exception.Message}");
+        }
+    }
+
+    private static void CollectTransitionNodes(Godot.Node node, List<string> found, string source)
+    {
+        string typeName = node.GetType().Name;
+        if (typeName == "NTransition" && node is Godot.ColorRect rect)
+        {
+            float simpleAlpha = -1f;
+            float gradientAlpha = -1f;
+            foreach (Godot.Node child in node.GetChildren())
+            {
+                if (child is Godot.Control cc && cc.Name == "SimpleTransition")
+                {
+                    simpleAlpha = cc.Modulate.A;
+                }
+                else if (child is Godot.Control gc && gc.Name == "GradientTransition")
+                {
+                    gradientAlpha = gc.Modulate.A;
+                }
+            }
+
+            found.Add("hit");
+            LocalMultiControlLogger.Info(
+                $"转场扫描({source}): NTransition Visible={rect.Visible} ModulateA={rect.Modulate.A:F2} "
+                + $"SimpleA={simpleAlpha:F2} GradientA={gradientAlpha:F2} Size={rect.Size} InTree={node.IsInsideTree()}");
+        }
+        else if (typeName == "NLoadingOverlay" && node is Godot.Control loading)
+        {
+            found.Add("hit");
+            LocalMultiControlLogger.Info(
+                $"转场扫描({source}): NLoadingOverlay Visible={loading.Visible} ModulateA={loading.Modulate.A:F2} Size={loading.Size}");
+        }
+
+        foreach (Godot.Node child in node.GetChildren())
+        {
+            CollectTransitionNodes(child, found, source);
+        }
+    }
+
     internal static Player? TryGetCombatPlayer(ulong playerId)
     {
         if (!RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)
