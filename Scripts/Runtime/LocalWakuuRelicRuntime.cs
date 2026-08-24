@@ -29,6 +29,10 @@ namespace LocalMultiControl.Scripts.Runtime;
 internal static class LocalWakuuRelicRuntime
 {
     private const int MaxCardsToPlay = 13;
+
+    // 瓦库形态"打光所有手牌"模式的硬护栏上限：正常牌组远达不到，只为防御异常效果导致的死循环。
+    private const int MaxCardsToPlayForm = 60;
+
     private const long WatchdogRestartCooldownMs = 300L;
 
     private static readonly Dictionary<string, long> _watchdogLastRunAt = new();
@@ -106,6 +110,14 @@ internal static class LocalWakuuRelicRuntime
         EnsureWakuuPerspective(player, "before-play-phase");
         relic.Flash();
 
+        bool formFullPlay = IsVakuuFormMode(player) && LocalWakuuAutopilotConfig.PlayAllCards;
+        int maxCardsThisTurn = formFullPlay ? MaxCardsToPlayForm : MaxCardsToPlay;
+        if (formFullPlay)
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库形态全量出牌模式: player={player.NetId}, round={combatState.RoundNumber}, cap={maxCardsThisTurn}");
+        }
+
         bool reachedPlayLimit;
         int cardsPlayed;
         bool gateEntered = false;
@@ -127,7 +139,7 @@ internal static class LocalWakuuRelicRuntime
                 SelectorStackSnapshot pushSnapshot = SnapshotSelectorStack();
                 LocalMultiControlLogger.Info(
                     $"瓦库选择器作用域进入: player={player.NetId}, round={combatState.RoundNumber}, selectorStackCount={pushSnapshot.Count}, selectorStackTop={pushSnapshot.TopType}");
-                for (cardsPlayed = 0; cardsPlayed < MaxCardsToPlay; cardsPlayed++)
+                for (cardsPlayed = 0; cardsPlayed < maxCardsThisTurn; cardsPlayed++)
                 {
                     if (TryGetAutoplayUnsafeReason(combatState, out string unsafeReason))
                     {
@@ -161,7 +173,14 @@ internal static class LocalWakuuRelicRuntime
                     await CardCmd.AutoPlay(choiceContext, card, target, AutoPlayType.Default, skipXCapture: true);
                 }
 
-                reachedPlayLimit = cardsPlayed >= MaxCardsToPlay;
+                reachedPlayLimit = cardsPlayed >= maxCardsThisTurn;
+                if (reachedPlayLimit && formFullPlay)
+                {
+                    // 全量模式触到护栏上限：大概率是异常效果反复生成可出牌，记录日志便于排查。
+                    LocalMultiControlLogger.Warn(
+                        $"瓦库形态全量出牌触及护栏上限: player={player.NetId}, round={combatState.RoundNumber}, cap={maxCardsThisTurn}");
+                }
+
                 SelectorStackSnapshot popSnapshot = SnapshotSelectorStack();
                 LocalMultiControlLogger.Info(
                     $"瓦库选择器作用域退出: player={player.NetId}, round={combatState.RoundNumber}, cardsPlayed={cardsPlayed}, reachedLimit={reachedPlayLimit}, selectorStackCount={popSnapshot.Count}, selectorStackTop={popSnapshot.TopType}");
