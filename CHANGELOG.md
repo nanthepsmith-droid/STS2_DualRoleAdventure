@@ -4,6 +4,18 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+### Added
+- 瓦库形态托管（feat/vakuu-form-autopilot 分支，默认关闭）：新增独立遗物【瓦库形态】
+  （+1 能量 + 接管所有回合自动出牌，描述"让瓦库玩算你赢了"），与旧的"永久低语耳环"
+  路径并存。总开关及各子开关集中在 `%APPDATA%\SlayTheSpire2\vakuu_autopilot.json`
+  （`useVakuuForm` 默认 false = 完全保持原版瓦库行为；每次开局重新加载）：
+  - `playAllCards`：打光所有手牌（上限 60 张护栏防死循环）；
+  - `backgroundMode`：后台托管——回合钩子/出牌不再把前台切给瓦库角色；
+    选牌在自动出牌作用域内自动作答免切换，作用域外保留切换兜底；
+  - `suppressVanillaEarring`：压制原版低语耳环的自动出牌钩子（+1 能量保留）；
+  - 交互安全网：后台瓦库被弹层卡住（战斗滞留 12 秒 / 事件滞留 8 秒）时自动切前台
+    并全屏提示，交由人工处理。
+
 ### Changed
 - Hardened `LocalLoopbackHostGameService.GetVersionInfoForPeer` to return the local version info
   instead of null (same as upstream's v1.32): the game's three lobby join handlers call
