@@ -4,14 +4,17 @@ using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
 using LocalMultiControl.Scripts.UI;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
+using MegaCrit.Sts2.Core.Nodes.Screens;
+using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.Settings;
 
 namespace LocalMultiControl.Scripts.Patch;
 
 /// <summary>
 /// 往游戏"设置 → 常规（GeneralSettings）"页注入一行【瓦库托管】入口按钮，
-/// 点击弹出自家开关面板（LocalWakuuConfigPanel），改动写回 vakuu_autopilot.json。
-/// 注入方式照搬"古明地恋"mod 的 KoishiConfigMenuPatch：
+/// 点击把 LocalWakuuConfigSubmenu 推入原版子菜单栈（见 NSubmenuStackGetSubmenuTypePatch），
+/// 改动写回 vakuu_autopilot.json。
+/// 按钮行注入方式沿用社区通用做法（BaseLib InjectSettingsModConfigPatch 同款）：
 /// 复制 SendFeedback 分隔线 + Modding 按钮行，改名换文案后接到 NButton.Released 上。
 /// 注意：复制体不携带运行期信号连接（原版 Modding 按钮 → 打开 Mod 页的连接是
 /// NSettingsScreen._Ready 在原实例上代码连接的），因此不会误开 Mod 页。
@@ -21,6 +24,9 @@ public static class NSettingsScreenConfigMenuPatch
 {
     private const string RowName = "VakuuConfig";
     private const string ButtonName = "VakuuConfigButton";
+
+    /// <summary>NSubmenu._stack 是 protected，反射缓存一次供点击时读取。</summary>
+    private static readonly System.Reflection.FieldInfo? _stackField = AccessTools.Field(typeof(NSubmenu), "_stack");
 
     public static void Postfix(NSettingsScreen __instance)
     {
@@ -92,19 +98,41 @@ public static class NSettingsScreenConfigMenuPatch
             buttonLabel.Text = "打开设置面板";
         }
 
-        button.Connect(NClickableControl.SignalName.Released, Callable.From<NClickableControl>(_ => OpenPanelSafe()));
+        button.Connect(NClickableControl.SignalName.Released, Callable.From<NClickableControl>(_ => OpenConfigSubmenu(settingsScreen)));
         LocalMultiControlLogger.Info("已在设置界面注入瓦库托管按钮");
     }
 
-    private static void OpenPanelSafe()
+    /// <summary>
+    /// 把瓦库托管设置页推入当前设置界面所在的子菜单栈（BaseLib 的做法）：
+    /// 主菜单与局内暂停菜单分别走 NMainMenuSubmenuStack / NRunSubmenuStack，
+    /// 两个栈的 GetSubmenuType 已由 NSubmenuStackGetSubmenuTypePatch 注册本 mod 的子菜单类型。
+    /// </summary>
+    private static void OpenConfigSubmenu(NSettingsScreen settingsScreen)
     {
         try
         {
-            LocalWakuuConfigPanel.OpenModal();
+            if (_stackField?.GetValue(settingsScreen) is not NSubmenuStack stack)
+            {
+                LocalMultiControlLogger.Warn("打开瓦库托管设置页失败：设置界面不在任何子菜单栈中");
+                return;
+            }
+
+            switch (stack)
+            {
+                case NMainMenuSubmenuStack mainMenuStack:
+                    mainMenuStack.PushSubmenuType<LocalWakuuConfigSubmenu>();
+                    break;
+                case NRunSubmenuStack runStack:
+                    runStack.PushSubmenuType<LocalWakuuConfigSubmenu>();
+                    break;
+                default:
+                    LocalMultiControlLogger.Warn($"打开瓦库托管设置页失败：未知子菜单栈 {stack.GetType().Name}");
+                    break;
+            }
         }
         catch (Exception exception)
         {
-            LocalMultiControlLogger.Warn($"打开瓦库托管设置面板失败: {exception.Message}");
+            LocalMultiControlLogger.Warn($"打开瓦库托管设置页异常: {exception.Message}");
         }
     }
 }
