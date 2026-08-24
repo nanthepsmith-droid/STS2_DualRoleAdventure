@@ -4,18 +4,6 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
-### Added
-- 瓦库形态托管（feat/vakuu-form-autopilot 分支，默认关闭）：新增独立遗物【瓦库形态】
-  （+1 能量 + 接管所有回合自动出牌，描述"让瓦库玩算你赢了"），与旧的"永久低语耳环"
-  路径并存。总开关及各子开关集中在 `%APPDATA%\SlayTheSpire2\vakuu_autopilot.json`
-  （`useVakuuForm` 默认 false = 完全保持原版瓦库行为；每次开局重新加载）：
-  - `playAllCards`：打光所有手牌（上限 60 张护栏防死循环）；
-  - `backgroundMode`：后台托管——回合钩子/出牌不再把前台切给瓦库角色；
-    选牌在自动出牌作用域内自动作答免切换，作用域外保留切换兜底；
-  - `suppressVanillaEarring`：压制原版低语耳环的自动出牌钩子（+1 能量保留）；
-  - 交互安全网：后台瓦库被弹层卡住（战斗滞留 12 秒 / 事件滞留 8 秒）时自动切前台
-    并全屏提示，交由人工处理。
-
 ### Changed
 - Hardened `LocalLoopbackHostGameService.GetVersionInfoForPeer` to return the local version info
   instead of null (same as upstream's v1.32): the game's three lobby join handlers call
@@ -23,6 +11,36 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   local self-coop today, but future game changes could start routing through them.
 - READMEs: GuyGinat's community Workshop item ([3772900244](https://steamcommunity.com/sharedfiles/filedetails/?id=3772900244))
   has resumed updating, so it is now recommended alongside the original item (3747538947).
+
+## [v1.36] - 2026-08-24
+
+### Added
+- 瓦库形态托管（默认关闭）：新增独立遗物【瓦库形态】（+1 能量 + 接管所有回合自动出牌），
+  与旧的"永久低语耳环"路径并存。总开关集中在 `%APPDATA%\SlayTheSpire2\vakuu_autopilot.json`
+  （`useVakuuForm` 默认 false = 完全保持原有瓦库行为；每次开局重新加载）：
+  - `playAllCards`：打光所有手牌（60 张护栏防死循环）；
+  - `backgroundMode`：后台托管——回合钩子/自动出牌不再把前台切给瓦库角色，
+    选牌在自动出牌作用域内自动作答免切换，作用域外保留切换兜底；
+  - `suppressVanillaEarring`：压制原版低语耳环的自动出牌钩子（+1 能量保留）；
+  - 交互安全网：后台瓦库被弹层卡住（战斗滞留 12 秒 / 事件滞留 8 秒）时自动切前台
+    并全屏提示，交由人工处理。
+
+### Fixed
+- 读档后奖励界面永久黑屏（v1.34 起）：读档链路 `StartRun: FadeOut → LoadRun（内部进入
+  PreFinished 房间并弹出战后奖励）→ FadeIn` 中，合并奖励补丁同步等待玩家领奖，阻塞了配对
+  的 FadeIn——全屏转场黑幕（NTransition SimpleA=1）永不撤除。现读档重放期间奖励改为后台
+  弹出、入口立即放行，与原版 fire-and-forget 语义一致；实时战斗路径行为不变。
+- 自定义遗物描述页异常（显示未解锁且无法退出/打开）：未加入任何遗物池的遗物在
+  `RelicModel.Pool` 处抛 `InvalidOperationException`，中断悬停提示构建。托管遗物现经
+  `ModHelper.AddModelToPool` 注册进事件遗物池（该池无随机奖励引用）。
+- 真人选牌被托管抢答：瓦库自动出牌进行中（全局选择器在栈上）时，真人打出的需要选牌的卡
+  （如酒狐合成）会被瞬间自动应答为第一张。现在 `CardSelectCmd.Selector` 加守卫——选牌归属者
+  非瓦库形态角色时强制走正常选牌 UI；另加"任何弹层打开即暂停自动出牌/看门狗"护栏。
+
+### Changed
+- 【瓦库形态】文案贴合实际效果（接管每回合从左到右出牌 + 最大能量 +1），flavor 为
+  "让瓦库玩算你赢了。"
+- 新增诊断日志三件套（可见性链/转场黑幕扫描/奖励遮挡检查），便于未来排查同类黑屏。
 
 ## [v1.35] - 2026-08-23
 
