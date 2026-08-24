@@ -22,6 +22,7 @@ using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
 using MegaCrit.Sts2.Core.Nodes.Screens;
 using MegaCrit.Sts2.Core.Nodes.Screens.Capstones;
+using MegaCrit.Sts2.Core.Nodes.Screens.Map;
 using MegaCrit.Sts2.Core.Nodes.TopBar;
 using MegaCrit.Sts2.Core.Nodes.Vfx;
 using MegaCrit.Sts2.Core.Models;
@@ -650,6 +651,33 @@ internal static class LocalMultiControlRuntime
     /// <summary>
     /// 按玩家ID解析当前战斗中的 Player（仅战斗进行中有效）。供 hook 入队等仅有 NetId 的挂点使用。
     /// </summary>
+    /// <summary>
+    /// 确保奖励界面弹出时没有被地图/角色面板遮挡。
+    /// NOverlayStack.Push 在 StackIsCovered（NMapScreen 打开或 NCapstoneContainer 占用）时
+    /// 会立即调用 screen.AfterOverlayHidden() 把弹层 Visible=false——读档重放路径会先恢复
+    /// 地图/界面状态，导致战后奖励界面"黑屏"（弹层在栈上但不可见，仅模组自有按钮可见）。
+    /// </summary>
+    public static void EnsureOverlayNotCoveredForRewards(string source)
+    {
+        try
+        {
+            NMapScreen? map = NMapScreen.Instance;
+            bool mapOpen = map != null && map.IsOpen;
+            bool capstoneInUse = NCapstoneContainer.Instance?.InUse ?? false;
+            LocalMultiControlLogger.Info(
+                $"奖励遮挡检查({source}): mapOpen={mapOpen}, capstoneInUse={capstoneInUse}");
+            if (mapOpen && map != null)
+            {
+                map.Close(animateOut: false);
+                LocalMultiControlLogger.Info($"奖励弹出前关闭处于打开状态的地图界面: source={source}");
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"奖励遮挡检查异常(已忽略): {exception.Message}");
+        }
+    }
+
     internal static Player? TryGetCombatPlayer(ulong playerId)
     {
         if (!RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)

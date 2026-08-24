@@ -121,6 +121,7 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
         }
 
         bool isTerminal = true; // CombatRoom 的奖励界面始终是 terminal
+        LocalMultiControlRuntime.EnsureOverlayNotCoveredForRewards("merged-rewards-offer-room-end");
         NRewardsScreen rewardScreen = NRewardsScreen.ShowScreen(displaySet, isTerminal, displayPlayer.RunState);
         await rewardScreen.ToSignal(rewardScreen, NRewardsScreen.SignalName.Completed);
     }

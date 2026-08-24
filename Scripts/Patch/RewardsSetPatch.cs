@@ -93,6 +93,7 @@ internal static class RewardsSetPatch
                 return;
             }
 
+            LocalMultiControlRuntime.EnsureOverlayNotCoveredForRewards("merged-rewards-offer-from-rewardsset");
             NRewardsScreen rewardScreen = NRewardsScreen.ShowScreen(displaySet, isTerminal: true, displayPlayer.RunState);
             await rewardScreen.ToSignal(rewardScreen, NRewardsScreen.SignalName.Completed);
         }
@@ -137,6 +138,7 @@ internal static class RewardsSetPatch
             return;
         }
 
+        LocalMultiControlRuntime.EnsureOverlayNotCoveredForRewards("rewards-offer-local");
         NRewardsScreen.ShowScreen(rewardsSet, isTerminal, rewardsSet.Player.RunState);
         await rewardsSetTask;
     }
