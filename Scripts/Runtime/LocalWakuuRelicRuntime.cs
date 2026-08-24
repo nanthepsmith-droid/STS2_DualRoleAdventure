@@ -82,6 +82,28 @@ internal static class LocalWakuuRelicRuntime
     }
 
     /// <summary>
+    /// 按 NetId 判断是否处于瓦库形态模式。用于选牌入口等只有 NetId 的场景；
+    /// 找不到玩家模型时按 false 处理（宁可走正常 UI 也不误伤）。
+    /// </summary>
+    public static bool IsVakuuFormModeById(ulong netId)
+    {
+        if (!LocalWakuuAutopilotConfig.UseVakuuForm)
+        {
+            return false;
+        }
+
+        try
+        {
+            Player? player = RunManager.Instance.DebugOnlyGetState()?.GetPlayer(netId);
+            return player != null && TryGetWakuuFormRelic(player) != null;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// 后台托管判定：瓦库形态玩家且后台模式开启时，不再为其自动切换前台。
     /// <paramref name="onlyWhenSelectorActive"/> 为 true 时仅当存在全局选择器
     /// （选牌会被自动作答、不弹 UI）才免切换；无选择器时保留切换作为防软锁兜底，

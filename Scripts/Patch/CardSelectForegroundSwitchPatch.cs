@@ -7,6 +7,8 @@ using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Relics;
+using MegaCrit.Sts2.Core.TestSupport;
 
 namespace LocalMultiControl.Scripts.Patch;
 
@@ -106,5 +108,40 @@ internal static class CardSelectForegroundSwitchPatch
     private static void FromCombatPileWithFilterPrefix(Player player)
     {
         EnsureForegroundForCombatChoice(player, "FromCombatPile");
+    }
+}
+
+/// <summary>
+/// 全局选择器抢答守卫：CardSelectCmd.Selector 返回栈顶选择器时，若当前异步链上的选牌
+/// 归属者不是瓦库形态角色（即真人正在选牌），则临时返回 null 让其走正常选牌 UI。
+/// 场景：瓦库自动出牌循环进行中（VakuuCardSelector 在栈上），真人同时打出需要选牌的卡
+/// （如酒狐合成），若不做此守卫，真人的选牌会被选择器瞬间抢答为第一张。
+/// CurrentChoicePlayerId 由上方各 From* 前缀在方法体读取 Selector 之前写入，时序可靠。
+/// </summary>
+[HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.Selector), MethodType.Getter)]
+internal static class CardSelectCmdSelectorGuardPatch
+{
+    [HarmonyPostfix]
+    private static void Postfix(ref ICardSelector? __result)
+    {
+        if (__result == null || __result is not VakuuCardSelector)
+        {
+            return;
+        }
+
+        ulong? chooserPlayerId = CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value;
+        if (!chooserPlayerId.HasValue)
+        {
+            return;
+        }
+
+        if (LocalWakuuRelicRuntime.IsVakuuFormModeById(chooserPlayerId.Value))
+        {
+            return;
+        }
+
+        LocalMultiControlLogger.Info(
+            $"检测到真人选牌请求，本次跳过瓦库选择器改走正常UI: chooser={chooserPlayerId.Value}");
+        __result = null;
     }
 }

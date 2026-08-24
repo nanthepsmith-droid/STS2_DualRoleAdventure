@@ -66,14 +66,14 @@ internal static class LocalWakuuRelicLocalization
             {
                 [$"{formEntry}.title"] = LocalModText.Select("瓦库形态", "Vakuu Form"),
                 [$"{formEntry}.description"] = LocalModText.Select(
-                    "让瓦库玩算你赢了。",
-                    "Letting Vakuu play counts as you winning."),
+                    "瓦库将接管你的每一个回合，自动从左到右出牌，直到打光所有手牌。你的最大能量 +1。",
+                    "Vakuu takes over all of your turns, playing every card from left to right. Max energy +1."),
                 [$"{formEntry}.eventDescription"] = LocalModText.Select(
-                    "让瓦库玩算你赢了。",
-                    "Letting Vakuu play counts as you winning."),
+                    "瓦库将接管你的每一个回合，自动从左到右出牌，直到打光所有手牌。你的最大能量 +1。",
+                    "Vakuu takes over all of your turns, playing every card from left to right. Max energy +1."),
                 [$"{formEntry}.flavor"] = LocalModText.Select(
-                    "赢了，但只赢了一半——毕竟出牌的不是你。",
-                    "You won, but only half of it — Vakuu did all the playing.")
+                    "让瓦库玩算你赢了。",
+                    "Letting Vakuu play counts as you winning.")
             };
 
             locManager.GetTable("relics").MergeWith(formEntries);
