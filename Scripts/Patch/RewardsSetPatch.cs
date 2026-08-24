@@ -140,6 +140,14 @@ internal static class RewardsSetPatch
 
         LocalMultiControlRuntime.EnsureOverlayNotCoveredForRewards("rewards-offer-local");
         NRewardsScreen.ShowScreen(rewardsSet, isTerminal, rewardsSet.Player.RunState);
+        // 读档重放窗口内不能等待玩家操作（会阻塞 LoadRun→FadeIn 导致永久黑屏），
+        // 奖励界面交由其自身流程管理，立即返回。
+        if (LocalMultiControlRuntime.IsLoadReplayTransitionCovering())
+        {
+            LocalMultiControlLogger.Info("读档重放路径检测到非战斗奖励，跳过同步等待。");
+            return;
+        }
+
         await rewardsSetTask;
     }
 }

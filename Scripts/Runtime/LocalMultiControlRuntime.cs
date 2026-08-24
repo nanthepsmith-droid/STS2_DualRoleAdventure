@@ -679,6 +679,26 @@ internal static class LocalMultiControlRuntime
     }
 
     /// <summary>
+    /// 当前是否处于读档重放的转场黑幕遮盖期。
+    /// 原版读档链路：StartRun 先 FadeOut 变黑，随后 LoadRun 内部进入 PreFinishedRoom
+    /// 并重放战后奖励，全部完成后才 FadeIn 亮屏。若此期间任何代码同步等待玩家
+    /// 操作（如我们的合并奖励界面 await），FadeIn 将永远无法执行，表现为永久黑屏。
+    /// 原版自身对此的处理是 reward.Offer() fire-and-forget 不等待。
+    /// </summary>
+    public static bool IsLoadReplayTransitionCovering()
+    {
+        try
+        {
+            NTransition? transition = NGame.Instance?.Transition;
+            return transition != null && transition.Visible && transition.InTransition;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// 打印某个控件从自身到场景根的可见性链（Visible/透明度/位置/尺寸），
     /// 用于定位"逻辑存在但渲染不可见"的黑屏类问题。
     /// </summary>
@@ -725,7 +745,7 @@ internal static class LocalMultiControlRuntime
     {
         try
         {
-            Godot.Node game = NGame.Instance;
+            Godot.Node? game = NGame.Instance;
             if (game == null)
             {
                 LocalMultiControlLogger.Info($"转场扫描({source}): NGame 不存在");

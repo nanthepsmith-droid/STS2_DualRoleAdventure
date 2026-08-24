@@ -7,6 +7,7 @@ using HarmonyLib;
 using LocalMultiControl.Scripts.Rewards;
 using LocalMultiControl.Scripts.Runtime;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Nodes.Screens;
 using MegaCrit.Sts2.Core.Rewards;
@@ -45,6 +46,19 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
         {
             LocalMultiControlLogger.Info($"检测到重复战后奖励入口调用，已忽略: room={__instance.RoomType}");
             __result = Task.CompletedTask;
+            return false;
+        }
+
+        // 读档重放路径（PreFinished 战斗房在转场黑幕遮盖下进入）：若同步等待玩家领奖，
+        // 会阻塞 LoadRun→FadeIn 链导致永久黑屏。改为后台执行合并奖励流程，立即返回
+        // 完成信号，与原版 reward.Offer() 的 fire-and-forget 语义保持一致。
+        if (__instance.IsPreFinished || LocalMultiControlRuntime.IsLoadReplayTransitionCovering())
+        {
+            LocalMultiControlLogger.Info(
+                $"读档重放路径检测到战后奖励，转为后台弹出: room={__instance.RoomType}, "
+                + $"isPreFinished={__instance.IsPreFinished}, transitionCovering={LocalMultiControlRuntime.IsLoadReplayTransitionCovering()}");
+            __result = Task.CompletedTask;
+            TaskHelper.RunSafely(OfferMergedRewardsGeneratedOnceAsync(__instance));
             return false;
         }
 
