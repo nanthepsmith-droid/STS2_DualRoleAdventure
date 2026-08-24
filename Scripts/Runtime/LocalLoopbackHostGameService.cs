@@ -192,9 +192,12 @@ internal sealed class LocalLoopbackHostGameService : INetHostGameService
         return "local-self-coop";
     }
 
+    // 上游 v1.32 同款加固：游戏的三个大厅加入处理器（StartRunLobby/LoadRunLobby/RunLobby）
+    // 会无保护地调用 GetVersionInfoForPeer(senderId).Value.IsModded()，回环模式下这些消息
+    // 理论上不可达，但为防游戏未来版本改变调用路径，这里统一返回本地版本信息（永不为 null）。
     public PeerVersionInfo? GetVersionInfoForPeer(ulong peerId)
     {
-        return null;
+        return LocalVersion;
     }
 
     public void DisconnectClient(ulong peerId, NetError reason, bool now = false)
