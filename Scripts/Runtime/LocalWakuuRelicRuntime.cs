@@ -59,13 +59,30 @@ internal static class LocalWakuuRelicRuntime
         return player.GetRelicById(ModelDb.GetId<LocalWakuuStarterRelic>()) as LocalWakuuStarterRelic;
     }
 
+    public static LocalWakuuFormRelic? TryGetWakuuFormRelic(Player player)
+    {
+        return player.GetRelicById(ModelDb.GetId<LocalWakuuFormRelic>()) as LocalWakuuFormRelic;
+    }
+
+    /// <summary>瓦库接管遗物 = 旧的"永久低语耳环"或新的【瓦库形态】任一。</summary>
+    public static RelicModel? TryGetTakeoverRelic(Player player)
+    {
+        return (RelicModel?)TryGetWakuuRelic(player) ?? TryGetWakuuFormRelic(player);
+    }
+
+    /// <summary>该角色是否处于瓦库形态新模式（持有形态遗物且总开关开启）。</summary>
+    public static bool IsVakuuFormMode(Player player)
+    {
+        return LocalWakuuAutopilotConfig.UseVakuuForm && TryGetWakuuFormRelic(player) != null;
+    }
+
     public static bool HasWakuuRelic(Player player)
     {
-        return TryGetWakuuRelic(player) != null;
+        return TryGetTakeoverRelic(player) != null;
     }
 
     public static async Task ExecuteBeforePlayPhaseStartAsync(
-        LocalWakuuStarterRelic relic,
+        RelicModel relic,
         PlayerChoiceContext choiceContext,
         Player player)
     {
@@ -208,7 +225,7 @@ internal static class LocalWakuuRelicRuntime
             return false;
         }
 
-        LocalWakuuStarterRelic? relic = TryGetWakuuRelic(player);
+        RelicModel? relic = TryGetTakeoverRelic(player);
         if (relic == null)
         {
             reason = "no-wakuu-relic";
@@ -246,7 +263,7 @@ internal static class LocalWakuuRelicRuntime
 
     private static async Task RunWatchdogAsync(
         string key,
-        LocalWakuuStarterRelic relic,
+        RelicModel relic,
         Player player,
         ICombatState combatState,
         string source)
@@ -279,9 +296,7 @@ internal static class LocalWakuuRelicRuntime
             if (player.Creature.CombatState != combatState || !HasWakuuRelic(player))
             {
                 return;
-            }
-
-            if (!PileType.Hand.GetPile(player).Cards.Any((card) => card.CanPlay()))
+            }            if (!PileType.Hand.GetPile(player).Cards.Any((card) => card.CanPlay()))
             {
                 return;
             }

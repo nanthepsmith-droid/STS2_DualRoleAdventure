@@ -17,6 +17,7 @@ public partial class Entry
     {
         LocalMultiControlLogger.Info("开始初始化 Harmony 补丁。");
         LocalMultiControlLogger.Info(BuildMarker);
+        LocalWakuuAutopilotConfig.Reload("entry-init");
         LocalWakuuRelicLocalization.Initialize();
         _harmony = new Harmony("sts2.dualroleadventure");
         _harmony.PatchAll();

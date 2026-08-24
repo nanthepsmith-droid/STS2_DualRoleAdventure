@@ -62,6 +62,7 @@ internal static class LocalMultiControlRuntime
     public static void OnRunLaunched(RunState runState)
     {
         LocalWakuuRelicLocalization.Initialize();
+        LocalWakuuAutopilotConfig.Reload("run-launched");
         LocalMultiControlLogger.Info("检测到 RunManager.Launch，开始初始化本地多控会话。");
         if (LocalSelfCoopContext.IsEnabled)
         {
@@ -416,17 +417,35 @@ internal static class LocalMultiControlRuntime
                 continue;
             }
 
-            if (LocalWakuuRelicRuntime.TryGetWakuuRelic(player) != null)
+            bool useForm = LocalWakuuAutopilotConfig.UseVakuuForm;
+            RelicModel? existing = useForm
+                ? (RelicModel?)LocalWakuuRelicRuntime.TryGetWakuuFormRelic(player)
+                : LocalWakuuRelicRuntime.TryGetWakuuRelic(player);
+            if (existing != null)
             {
                 continue;
             }
 
-            RelicModel relic = ModelDb.Relic<LocalWakuuStarterRelic>().ToMutable();
-            relic.FloorAddedToDeck = Math.Max(1, runState.TotalFloor);
-            player.AddRelicInternal(relic);
-            SaveManager.Instance.MarkRelicAsSeen(relic);
-            await relic.AfterObtained();
-            LocalMultiControlLogger.Info($"已为瓦库角色自动发放瓦库专用遗物: player={playerId}, relic={relic.Id.Entry}");
+            // 跨开关切换旧存档时可能两件遗物并存（+1 能量叠加），打日志说明即可，不做自动拆除。
+            RelicModel? other = useForm
+                ? (RelicModel?)LocalWakuuRelicRuntime.TryGetWakuuRelic(player)
+                : (RelicModel?)LocalWakuuRelicRuntime.TryGetWakuuFormRelic(player);
+            if (other != null)
+            {
+                LocalMultiControlLogger.Warn(
+                    $"检测到玩家同时持有两种瓦库遗物（跨开关切换存档导致），能量将叠加: player={playerId}, "
+                    + $"mode={(useForm ? "瓦库形态" : "永久低语耳环")}");
+            }
+
+            RelicModel granted = useForm
+                ? ModelDb.Relic<LocalWakuuFormRelic>().ToMutable()
+                : ModelDb.Relic<LocalWakuuStarterRelic>().ToMutable();
+            granted.FloorAddedToDeck = Math.Max(1, runState.TotalFloor);
+            player.AddRelicInternal(granted);
+            SaveManager.Instance.MarkRelicAsSeen(granted);
+            await granted.AfterObtained();
+            LocalMultiControlLogger.Info(
+                $"已为瓦库角色自动发放托管遗物: player={playerId}, relic={granted.Id.Entry}, mode={(useForm ? "瓦库形态" : "永久低语耳环")}");
         }
     }
 
