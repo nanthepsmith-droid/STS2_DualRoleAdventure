@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Godot;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Rewards;
 using LocalMultiControl.Scripts.Runtime;
@@ -123,6 +124,12 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
         bool isTerminal = true; // CombatRoom 的奖励界面始终是 terminal
         LocalMultiControlRuntime.EnsureOverlayNotCoveredForRewards("merged-rewards-offer-room-end");
         NRewardsScreen rewardScreen = NRewardsScreen.ShowScreen(displaySet, isTerminal, displayPlayer.RunState);
+        LocalMultiControlRuntime.DumpControlVisibilityChain(rewardScreen, "merged-rewards-offer-room-end");
+        Callable.From(delegate
+        {
+            // 延迟一帧再扫，捕捉"弹出后被转场层盖住"的时序。
+            LocalMultiControlRuntime.DumpTransitionOverlayState("merged-rewards-offer-room-end");
+        }).CallDeferred();
         await rewardScreen.ToSignal(rewardScreen, NRewardsScreen.SignalName.Completed);
     }
 }

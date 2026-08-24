@@ -678,6 +678,110 @@ internal static class LocalMultiControlRuntime
         }
     }
 
+    /// <summary>
+    /// 打印某个控件从自身到场景根的可见性链（Visible/透明度/位置/尺寸），
+    /// 用于定位"逻辑存在但渲染不可见"的黑屏类问题。
+    /// </summary>
+    public static void DumpControlVisibilityChain(Godot.Control? control, string source)
+    {
+        try
+        {
+            if (control == null)
+            {
+                LocalMultiControlLogger.Info($"可见性诊断({source}): 控件为 null");
+                return;
+            }
+
+            List<string> chain = new();
+            Godot.Node node = control;
+            int depth = 0;
+            while (node != null && depth < 24)
+            {
+                string entry = node switch
+                {
+                    Godot.Control c => $"{node.GetType().Name}[{node.Name}] Visible={c.Visible} ModulateA={c.Modulate.A:F2} Scale={c.Scale} Pos={c.Position} Size={c.Size}",
+                    Godot.CanvasLayer l => $"{node.GetType().Name}[{node.Name}] Layer={l.Layer} Visible={l.Visible}",
+                    _ => $"{node.GetType().Name}[{node.Name}]"
+                };
+                chain.Add(entry);
+                node = node.GetParent();
+                depth++;
+            }
+
+            LocalMultiControlLogger.Info($"可见性诊断({source}): {string.Join(" <- ", chain)}");
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"可见性诊断异常(已忽略): {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 扫描整棵场景树里的转场黑幕（NTransition）与加载遮罩（NLoadingOverlay）节点，
+    /// 输出其可见状态——用于诊断"逻辑正常但画面全黑"的读档问题：
+    /// 若 FadeOut 后配对的 FadeIn 未执行，NTransition 这个全屏 ColorRect 会永久盖住画面。
+    /// </summary>
+    public static void DumpTransitionOverlayState(string source)
+    {
+        try
+        {
+            Godot.Node game = NGame.Instance;
+            if (game == null)
+            {
+                LocalMultiControlLogger.Info($"转场扫描({source}): NGame 不存在");
+                return;
+            }
+
+            List<string> found = new();
+            CollectTransitionNodes(game, found, source);
+            if (found.Count == 0)
+            {
+                LocalMultiControlLogger.Info($"转场扫描({source}): 场景中无 NTransition/NLoadingOverlay 节点");
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"转场扫描异常(已忽略): {exception.Message}");
+        }
+    }
+
+    private static void CollectTransitionNodes(Godot.Node node, List<string> found, string source)
+    {
+        string typeName = node.GetType().Name;
+        if (typeName == "NTransition" && node is Godot.ColorRect rect)
+        {
+            float simpleAlpha = -1f;
+            float gradientAlpha = -1f;
+            foreach (Godot.Node child in node.GetChildren())
+            {
+                if (child is Godot.Control cc && cc.Name == "SimpleTransition")
+                {
+                    simpleAlpha = cc.Modulate.A;
+                }
+                else if (child is Godot.Control gc && gc.Name == "GradientTransition")
+                {
+                    gradientAlpha = gc.Modulate.A;
+                }
+            }
+
+            found.Add("hit");
+            LocalMultiControlLogger.Info(
+                $"转场扫描({source}): NTransition Visible={rect.Visible} ModulateA={rect.Modulate.A:F2} "
+                + $"SimpleA={simpleAlpha:F2} GradientA={gradientAlpha:F2} Size={rect.Size} InTree={node.IsInsideTree()}");
+        }
+        else if (typeName == "NLoadingOverlay" && node is Godot.Control loading)
+        {
+            found.Add("hit");
+            LocalMultiControlLogger.Info(
+                $"转场扫描({source}): NLoadingOverlay Visible={loading.Visible} ModulateA={loading.Modulate.A:F2} Size={loading.Size}");
+        }
+
+        foreach (Godot.Node child in node.GetChildren())
+        {
+            CollectTransitionNodes(child, found, source);
+        }
+    }
+
     internal static Player? TryGetCombatPlayer(ulong playerId)
     {
         if (!RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)
