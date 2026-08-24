@@ -1,6 +1,7 @@
 using System.Linq;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
+using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.GameActions;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
@@ -39,6 +40,16 @@ internal static class HookEnqueueForegroundPatch
 
         if (!LocalSelfCoopContext.LocalPlayerIds.Contains(gameAction.OwnerId))
         {
+            return;
+        }
+
+        // 瓦库形态后台托管：不为该角色在入队瞬间切前台。
+        // 若该 hook 稍后需要真实选牌，CardSelectForegroundSwitchPatch 会在无全局选择器时兜底切换。
+        Player? ownerPlayer = LocalMultiControlRuntime.TryGetCombatPlayer(gameAction.OwnerId);
+        if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(ownerPlayer, onlyWhenSelectorActive: false))
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库形态后台模式，跳过 Hook 入队切换: player={gameAction.OwnerId}, hook={gameAction.HookId}");
             return;
         }
 

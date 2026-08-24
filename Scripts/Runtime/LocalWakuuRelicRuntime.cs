@@ -80,6 +80,32 @@ internal static class LocalWakuuRelicRuntime
         return LocalWakuuAutopilotConfig.UseVakuuForm && TryGetWakuuFormRelic(player) != null;
     }
 
+    /// <summary>
+    /// 后台托管判定：瓦库形态玩家且后台模式开启时，不再为其自动切换前台。
+    /// <paramref name="onlyWhenSelectorActive"/> 为 true 时仅当存在全局选择器
+    /// （选牌会被自动作答、不弹 UI）才免切换；无选择器时保留切换作为防软锁兜底，
+    /// 由交互安全网负责超时后的二次救援。
+    /// </summary>
+    public static bool ShouldSuppressForegroundSwitch(Player? player, bool onlyWhenSelectorActive)
+    {
+        if (player == null || !LocalSelfCoopContext.IsEnabled)
+        {
+            return false;
+        }
+
+        if (!LocalWakuuAutopilotConfig.BackgroundMode || !IsVakuuFormMode(player))
+        {
+            return false;
+        }
+
+        if (onlyWhenSelectorActive && CardSelectCmd.Selector == null)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
     public static bool HasWakuuRelic(Player player)
     {
         return TryGetTakeoverRelic(player) != null;
@@ -349,6 +375,12 @@ internal static class LocalWakuuRelicRuntime
 
             Callable.From(delegate
             {
+                // 后台托管模式下前台从未切到瓦库，不需要也不应该再自动切走。
+                if (ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: false))
+                {
+                    return;
+                }
+
                 LocalMultiControlRuntime.RequestAutoSwitchToNonWakuuOncePerRound($"wakuu-watchdog-{source}");
             }).CallDeferred();
             ProbeAndRecoverSelectorStack($"wakuu-watchdog-finally-{player.NetId}-{combatState.RoundNumber}-{source}", allowRecover: true);
@@ -451,6 +483,14 @@ internal static class LocalWakuuRelicRuntime
 
     private static void EnsureWakuuPerspective(Player player, string source)
     {
+        // 后台托管模式：瓦库形态角色不再切前台，直接以临时 owner 上下文出牌。
+        if (ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: false))
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库形态后台模式，跳过自动切换视角: player={player.NetId}, source={source}");
+            return;
+        }
+
         ulong currentControlledPlayerId = LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId
             ?? LocalContext.NetId
             ?? player.NetId;

@@ -33,6 +33,16 @@ internal static class CardSelectForegroundSwitchPatch
         }
 
         CurrentChoicePlayerId.Value = player.NetId;
+
+        // 瓦库形态后台托管：存在全局选择器时该次选择会被自动作答、不会弹 UI，免切换；
+        // 无选择器（作用域外的真实交互）则保留切换作为防软锁兜底。
+        if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: true))
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库形态后台模式，选牌将自动作答，跳过切换: player={player.NetId}, source={source}");
+            return;
+        }
+
         LocalMultiControlRuntime.TryEnsureForegroundForPlayer(player, $"combat-choice-{source}");
     }
 
