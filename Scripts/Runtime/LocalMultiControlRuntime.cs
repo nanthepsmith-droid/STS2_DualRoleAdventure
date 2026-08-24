@@ -63,6 +63,7 @@ internal static class LocalMultiControlRuntime
     {
         LocalWakuuRelicLocalization.Initialize();
         LocalWakuuAutopilotConfig.Reload("run-launched");
+        LocalWakuuSafetyNet.EnsureTicker();
         LocalMultiControlLogger.Info("检测到 RunManager.Launch，开始初始化本地多控会话。");
         if (LocalSelfCoopContext.IsEnabled)
         {

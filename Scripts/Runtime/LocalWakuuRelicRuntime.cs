@@ -341,7 +341,8 @@ internal static class LocalWakuuRelicRuntime
             if (player.Creature.CombatState != combatState || !HasWakuuRelic(player))
             {
                 return;
-            }            if (!PileType.Hand.GetPile(player).Cards.Any((card) => card.CanPlay()))
+            }
+            if (!PileType.Hand.GetPile(player).Cards.Any((card) => card.CanPlay()))
             {
                 return;
             }
