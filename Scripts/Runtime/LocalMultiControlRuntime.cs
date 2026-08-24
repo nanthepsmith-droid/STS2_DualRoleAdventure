@@ -62,9 +62,27 @@ internal static class LocalMultiControlRuntime
     public static void OnRunLaunched(RunState runState)
     {
         LocalWakuuRelicLocalization.Initialize();
-        LocalWakuuAutopilotConfig.Reload("run-launched");
-        LocalWakuuSafetyNet.EnsureTicker();
-        LocalMultiControlLogger.Info("检测到 RunManager.Launch，开始初始化本地多控会话。");
+        try
+        {
+            LocalWakuuAutopilotConfig.Reload("run-launched");
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"瓦库托管配置加载异常(已忽略): {exception.Message}");
+        }
+
+        try
+        {
+            LocalWakuuSafetyNet.EnsureTicker();
+        }
+        catch (Exception exception)
+        {
+            // 安全网挂载失败不能影响开局/读档主流程。
+            LocalMultiControlLogger.Warn($"安全网挂载异常(已忽略): {exception.Message}");
+        }
+
+        LocalMultiControlLogger.Info(
+            $"检测到 RunManager.Launch，开始初始化本地多控会话。 players={runState.Players.Count}, floor={runState.TotalFloor}");
         if (LocalSelfCoopContext.IsEnabled)
         {
             RunManager.Instance.CombatStateSynchronizer.IsDisabled = true;

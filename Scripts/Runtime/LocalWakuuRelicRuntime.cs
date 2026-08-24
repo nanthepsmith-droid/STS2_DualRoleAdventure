@@ -20,6 +20,7 @@ using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Relics;
 using MegaCrit.Sts2.Core.Nodes.Combat;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
+using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
 using MegaCrit.Sts2.Core.Nodes.Vfx;
 using MegaCrit.Sts2.Core.Runs;
 using Godot;
@@ -267,6 +268,13 @@ internal static class LocalWakuuRelicRuntime
         if (combatState == null || combatState.CurrentSide != CombatSide.Player || CombatManager.Instance.IsOverOrEnding)
         {
             reason = "invalid-combat-state";
+            return false;
+        }
+
+        // 有弹层打开（含真人的牌堆/发现选牌）时不起看门狗，避免打断交互。
+        if ((NOverlayStack.Instance?.ScreenCount ?? 0) > 0)
+        {
+            reason = "overlay-open";
             return false;
         }
 
@@ -529,6 +537,14 @@ internal static class LocalWakuuRelicRuntime
         if (combatUi == null)
         {
             reason = "combat-ui-null";
+            return true;
+        }
+
+        // 任何弹层（牌堆选牌/发现/确认框等）打开期间一律暂停自动出牌：
+        // 既可能是真人正在交互（如酒狐合成选牌），也防止全局选择器被抢答。
+        if ((NOverlayStack.Instance?.ScreenCount ?? 0) > 0)
+        {
+            reason = $"overlay-open({NOverlayStack.Instance?.ScreenCount})";
             return true;
         }
 
