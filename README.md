@@ -25,7 +25,7 @@ See the **[Player Guide](PLAYER_GUIDE.md)** for installation, controls, and game
 
 ## Installation
 
-**Steam Workshop:** watch the original author's Workshop item ([3747538947](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)) — the original author may resume updating it when the game reaches its full release.
+**Steam Workshop:** [GuyGinat's community continuation](https://steamcommunity.com/sharedfiles/filedetails/?id=3772900244) has resumed updating — we recommend subscribing there. The original author's item ([3747538947](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)) may also see updates; watch it if you like, but note that this fork is distributed only via this repository's Releases.
 
 **Manual (this fork's builds):** download `DualRoleAdventure.dll` + `DualRoleAdventure.json` from [Releases](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/releases) and place both in:
 

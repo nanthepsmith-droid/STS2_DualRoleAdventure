@@ -25,7 +25,7 @@
 
 ## 安装
 
-**Steam 创意工坊：** 可关注原作者的工坊条目（[3747538947](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)）——游戏正式版更新时原作者可能会恢复更新该条目。
+**Steam 创意工坊：** [GuyGinat 的社区接续条目](https://steamcommunity.com/sharedfiles/filedetails/?id=3772900244)已恢复更新，推荐订阅该条目。原作者的工坊条目（[3747538947](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)）也可能继续更新，可自行关注；注意本仓库的修正版仅通过本仓库的 Releases 分发。
 
 **手动安装（本仓库构建）：** 从 [Releases](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/releases) 下载 `DualRoleAdventure.dll` + `DualRoleAdventure.json`，放入：
 

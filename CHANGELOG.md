@@ -2,6 +2,16 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
+## [Unreleased]
+
+### Changed
+- Hardened `LocalLoopbackHostGameService.GetVersionInfoForPeer` to return the local version info
+  instead of null (same as upstream's v1.32): the game's three lobby join handlers call
+  `GetVersionInfoForPeer(senderId).Value.IsModded()` unguarded. These messages are unreachable in
+  local self-coop today, but future game changes could start routing through them.
+- READMEs: GuyGinat's community Workshop item ([3772900244](https://steamcommunity.com/sharedfiles/filedetails/?id=3772900244))
+  has resumed updating, so it is now recommended alongside the original item (3747538947).
+
 ## [v1.35] - 2026-08-23
 
 ### Fixed
