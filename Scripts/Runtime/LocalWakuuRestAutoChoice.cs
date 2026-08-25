@@ -162,8 +162,7 @@ internal static class LocalWakuuRestAutoChoice
                 {
                     using (PushSelectorFor(choice, player))
                     {
-                        ulong? previousNetId = MegaCrit.Sts2.Core.Context.LocalContext.NetId;
-                        AlignLocalContext(ownerId);
+                        IsAwaitingOptionExecution = true;
                         try
                         {
                             object? result = _chooseOptionMethod?.Invoke(
@@ -172,10 +171,7 @@ internal static class LocalWakuuRestAutoChoice
                         }
                         finally
                         {
-                            if (previousNetId != null)
-                            {
-                                AlignLocalContext(previousNetId.Value);
-                            }
+                            IsAwaitingOptionExecution = false;
                         }
                     }
                 }
@@ -290,15 +286,22 @@ internal static class LocalWakuuRestAutoChoice
         return RunManager.Instance.RestSiteSynchronizer.GetOptionsForPlayer(playerId);
     }
 
-    private static void AlignLocalContext(ulong playerId)
-    {
-        if (MegaCrit.Sts2.Core.Context.LocalContext.NetId == playerId)
-        {
-            return;
-        }
+    /// <summary>
+    /// 仅在瓦库火堆选项执行期间为 true：供 WaitForRemoteChoice 拦截补丁判定
+    /// 该远端等待属于本流程（避免误伤事件/其他系统的同名等待）。
+    /// </summary>
+    internal static bool IsAwaitingOptionExecution { get; private set; }
 
-        MegaCrit.Sts2.Core.Context.LocalContext.NetId = playerId;
-        LocalSelfCoopContext.NetService?.SetCurrentSenderId(playerId);
+    /// <summary>
+    /// 为瓦库的"选一个队友"类等待指定目标：优先另一个存活玩家（即真人）。
+    /// 返回 null 表示没有可用队友（调用方可回退为无目标结果）。
+    /// </summary>
+    internal static ulong? GetPreferredTeammateNetId(Player owner)
+    {
+        RunState? runState = RunManager.Instance.DebugOnlyGetState();
+        Player? teammate = runState?.Players.FirstOrDefault((p) =>
+            p != null && p.NetId != owner.NetId && p.Creature?.IsDead != true);
+        return teammate?.NetId;
     }
 }
 
