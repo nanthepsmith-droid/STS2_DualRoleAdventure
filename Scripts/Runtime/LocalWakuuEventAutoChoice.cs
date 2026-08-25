@@ -36,6 +36,9 @@ internal static class LocalWakuuEventAutoChoice
     private const string NeowEventId = "NEOW";
     private const string CrystalSphereEventId = "CRYSTAL_SPHERE";
 
+    /// <summary>首页选项就绪等待上限（毫秒）。</summary>
+    private const int OptionsReadyTimeoutMs = 5000;
+
     /// <summary>正在自动选择的事件归属者（按玩家去重，双瓦库局互不阻塞）。</summary>
     private static readonly HashSet<ulong> _inFlightOwners = new();
     private static readonly object _flightLock = new();
@@ -83,6 +86,26 @@ internal static class LocalWakuuEventAutoChoice
         }
     }
 
+    /// <summary>
+    /// 扫描本局所有玩家事件，对满足条件的（瓦库角色、非共享、允许列表）启动自动选择。
+    /// 由 EventSynchronizerBeginEventPatch 在进事件房时调用。
+    /// </summary>
+    public static void TryBeginPendingEvents()
+    {
+        if (!LocalSelfCoopContext.IsEnabled
+            || !LocalWakuuAutopilotConfig.AutoChooseEvents
+            || !RunManager.Instance.IsInProgress
+            || RunManager.Instance.EventSynchronizer.IsShared)
+        {
+            return;
+        }
+
+        foreach (EventModel candidate in RunManager.Instance.EventSynchronizer.Events)
+        {
+            TryBegin(candidate);
+        }
+    }
+
     private static bool IsEventAllowed(EventModel eventModel)
     {
         string id = eventModel.Id.Entry.ToUpperInvariant();
@@ -97,6 +120,11 @@ internal static class LocalWakuuEventAutoChoice
         }
 
         return true;
+    }
+
+    private static bool HasSelectableOption(EventModel eventModel)
+    {
+        return eventModel.CurrentOptions.Any((o) => !o.IsLocked);
     }
 
     /// <summary>
@@ -152,6 +180,21 @@ internal static class LocalWakuuEventAutoChoice
             int page = 0;
             while (RunManager.Instance.IsInProgress && !eventModel.IsFinished)
             {
+                // 首页需等待事件模型异步初始化（EventSynchronizer.BeginEvent 内部
+                // 对 BeginEvent 是 fire-and-forget，CurrentOptions 稍后才填充）
+                if (page == 0)
+                {
+                    int waitedMs = 0;
+                    while (RunManager.Instance.IsInProgress
+                           && !eventModel.IsFinished
+                           && !HasSelectableOption(eventModel)
+                           && waitedMs < OptionsReadyTimeoutMs)
+                    {
+                        await Task.Delay(150);
+                        waitedMs += 150;
+                    }
+                }
+
                 List<EventOption> candidates = eventModel.CurrentOptions
                     .Where((o) => !o.IsLocked && !o.IsProceed)
                     .ToList();
