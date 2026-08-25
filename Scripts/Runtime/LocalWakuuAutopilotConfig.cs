@@ -28,6 +28,18 @@ internal static class LocalWakuuAutopilotConfig
     /// <summary>瓦库形态：压制原版低语耳环的自动出牌钩子（保留其 +1 能量）。</summary>
     public static bool SuppressVanillaEarring { get; private set; } = true;
 
+    /// <summary>瓦库形态：战后卡牌奖励自动领最左（仅瓦库角色自己的奖励）。</summary>
+    public static bool AutoClaimCards { get; private set; } = true;
+
+    /// <summary>瓦库形态：金币与遗物奖励自动领取（药水仍需手动）。</summary>
+    public static bool AutoClaimGoldRelics { get; private set; } = true;
+
+    /// <summary>瓦库形态：非共享事件自动选最上（复杂/进战斗选项即停，交还真人）。</summary>
+    public static bool AutoChooseEvents { get; private set; } = true;
+
+    /// <summary>涅奥（NEOW）开局奖励是否也自动选（默认关，已拍板 #3）。</summary>
+    public static bool NeowAutoChoose { get; private set; }
+
     public static string ConfigFilePath =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -36,7 +48,8 @@ internal static class LocalWakuuAutopilotConfig
 
     /// <summary>
     /// 设置界面专用：更新单个开关，立即刷新内存生效值并把完整配置写回 json。
-    /// key 取值与 json 字段一致：useVakuuForm / playAllCards / backgroundMode / suppressVanillaEarring。
+    /// key 取值与 json 字段一致（useVakuuForm / playAllCards / backgroundMode / suppressVanillaEarring /
+    /// autoClaimCards / autoClaimGoldRelics / autoChooseEvents / neowAutoChoose）。
     /// 返回 false 表示 key 未知或写盘失败（内存值也不会变）。
     /// </summary>
     public static bool TrySetAndSave(string key, bool value)
@@ -53,6 +66,10 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(ConfigData.playAllCards): data.playAllCards = value; break;
                     case nameof(ConfigData.backgroundMode): data.backgroundMode = value; break;
                     case nameof(ConfigData.suppressVanillaEarring): data.suppressVanillaEarring = value; break;
+                    case nameof(ConfigData.autoClaimCards): data.autoClaimCards = value; break;
+                    case nameof(ConfigData.autoClaimGoldRelics): data.autoClaimGoldRelics = value; break;
+                    case nameof(ConfigData.autoChooseEvents): data.autoChooseEvents = value; break;
+                    case nameof(ConfigData.neowAutoChoose): data.neowAutoChoose = value; break;
                     default:
                         LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：未知开关名 {key}");
                         return false;
@@ -141,13 +158,19 @@ internal static class LocalWakuuAutopilotConfig
         {
             LocalMultiControlLogger.Info(
                 $"瓦库托管生效配置: useVakuuForm={data.useVakuuForm}, playAllCards={data.playAllCards}, "
-                + $"backgroundMode={data.backgroundMode}, suppressVanillaEarring={data.suppressVanillaEarring}");
+                + $"backgroundMode={data.backgroundMode}, suppressVanillaEarring={data.suppressVanillaEarring}, "
+                + $"autoClaimCards={data.autoClaimCards}, autoClaimGoldRelics={data.autoClaimGoldRelics}, "
+                + $"autoChooseEvents={data.autoChooseEvents}, neowAutoChoose={data.neowAutoChoose}");
         }
 
         UseVakuuForm = data.useVakuuForm;
         PlayAllCards = data.playAllCards;
         BackgroundMode = data.backgroundMode;
         SuppressVanillaEarring = data.suppressVanillaEarring;
+        AutoClaimCards = data.autoClaimCards;
+        AutoClaimGoldRelics = data.autoClaimGoldRelics;
+        AutoChooseEvents = data.autoChooseEvents;
+        NeowAutoChoose = data.neowAutoChoose;
     }
 
     private static void WriteDefault(string path)
@@ -178,5 +201,13 @@ internal static class LocalWakuuAutopilotConfig
         public bool backgroundMode { get; set; } = true;
 
         public bool suppressVanillaEarring { get; set; } = true;
+
+        public bool autoClaimCards { get; set; } = true;
+
+        public bool autoClaimGoldRelics { get; set; } = true;
+
+        public bool autoChooseEvents { get; set; } = true;
+
+        public bool neowAutoChoose { get; set; }
     }
 }

@@ -122,6 +122,11 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
 
         // 切换到第一个存活角色的控制上下文来展示奖励界面
         Player? displayPlayer = allPlayers.FirstOrDefault((p) => p.Creature?.IsDead != true) ?? allPlayers[0];
+
+        // 瓦库角色的卡牌（最左）/金币/遗物奖励先自动结算并从展示列表移除（Phase 2），
+        // 失败或非瓦库奖励原样保留给真人。须在 Enter() 生效期间调用以抑制镜像复制。
+        mergedRewards = await LocalWakuuRewardAutoClaim.SettleAsync(mergedRewards);
+
         LocalMultiControlRuntime.SwitchControlledPlayerTo(displayPlayer.NetId, "merged-rewards-offer-room-end");
         RewardsSet displaySet = new RewardsSet(displayPlayer).WithCustomRewards(mergedRewards);
 

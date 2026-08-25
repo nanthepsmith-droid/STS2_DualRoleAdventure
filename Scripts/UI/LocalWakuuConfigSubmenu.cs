@@ -100,6 +100,24 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.SuppressVanillaEarring,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("suppressVanillaEarring", value));
 
+        column.AddChild(CreateSpacer(8));
+
+        AddToggleRow(column,
+            "卡牌奖励自动领（最左）",
+            "战后瓦库自己的卡牌奖励自动领最左边一张；金币与遗物同规则自动领取。",
+            () => LocalWakuuAutopilotConfig.AutoClaimCards,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("autoClaimCards", value));
+        AddToggleRow(column,
+            "事件自动选最上",
+            "非共享事件自动选第一个可用选项；触发战斗/小游戏/危险选项即停住等真人。",
+            () => LocalWakuuAutopilotConfig.AutoChooseEvents,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("autoChooseEvents", value));
+        AddToggleRow(column,
+            "涅奥开局自动选",
+            "允许自动选择涅奥（NEOW）开局奖励；默认关闭。",
+            () => LocalWakuuAutopilotConfig.NeowAutoChoose,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("neowAutoChoose", value));
+
         column.AddChild(CreateSpacer(6));
         column.AddChild(CreateDivider(new Color(0.35f, 0.35f, 0.35f, 0.7f)));
         column.AddChild(CreateLabel("点左下角返回按钮或再次打开本页可随时退出。", 18, new Color(0.6f, 0.6f, 0.6f)));

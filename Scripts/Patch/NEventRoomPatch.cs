@@ -29,6 +29,7 @@ internal static class NEventRoomPatch
 
         if (!LocalSelfCoopContext.ShouldQueueEventAutoSwitchAfterEventState(eventModel))
         {
+            LocalWakuuEventAutoChoice.TryBegin(eventModel);
             return;
         }
 
