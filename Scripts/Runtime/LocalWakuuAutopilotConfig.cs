@@ -37,6 +37,9 @@ internal static class LocalWakuuAutopilotConfig
     /// <summary>瓦库形态：非共享事件自动选最上（复杂/进战斗选项即停，交还真人）。</summary>
     public static bool AutoChooseEvents { get; private set; } = true;
 
+    /// <summary>瓦库形态：火堆自动选择（低血睡觉；高血按策略升级牌或用遗物选项；帐篷多选全拿）。</summary>
+    public static bool AutoRestChoice { get; private set; } = true;
+
     /// <summary>涅奥（NEOW）开局奖励是否也自动选（默认关，已拍板 #3）。</summary>
     public static bool NeowAutoChoose { get; private set; }
 
@@ -86,6 +89,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(ConfigData.autoClaimCards): data.autoClaimCards = value; break;
                     case nameof(ConfigData.autoClaimGoldRelics): data.autoClaimGoldRelics = value; break;
                     case nameof(ConfigData.autoChooseEvents): data.autoChooseEvents = value; break;
+                    case nameof(ConfigData.autoRestChoice): data.autoRestChoice = value; break;
                     case nameof(ConfigData.neowAutoChoose): data.neowAutoChoose = value; break;
                     default:
                         LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：未知开关名 {key}");
@@ -244,7 +248,8 @@ internal static class LocalWakuuAutopilotConfig
                 $"瓦库托管生效配置: useVakuuForm={data.useVakuuForm}, playAllCards={data.playAllCards}, "
                 + $"backgroundMode={data.backgroundMode}, suppressVanillaEarring={data.suppressVanillaEarring}, "
                 + $"autoClaimCards={data.autoClaimCards}, autoClaimGoldRelics={data.autoClaimGoldRelics}, "
-                + $"autoChooseEvents={data.autoChooseEvents}, neowAutoChoose={data.neowAutoChoose}, "
+                + $"autoChooseEvents={data.autoChooseEvents}, autoRestChoice={data.autoRestChoice}, "
+                + $"neowAutoChoose={data.neowAutoChoose}, "
                 + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}");
         }
 
@@ -255,6 +260,7 @@ internal static class LocalWakuuAutopilotConfig
         AutoClaimCards = data.autoClaimCards;
         AutoClaimGoldRelics = data.autoClaimGoldRelics;
         AutoChooseEvents = data.autoChooseEvents;
+        AutoRestChoice = data.autoRestChoice;
         NeowAutoChoose = data.neowAutoChoose;
         EventChoiceMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;
         CardPickMode = NormalizeChoiceMode(data.cardPickMode) ?? LastChoiceMode;
@@ -294,6 +300,8 @@ internal static class LocalWakuuAutopilotConfig
         public bool autoClaimGoldRelics { get; set; } = true;
 
         public bool autoChooseEvents { get; set; } = true;
+
+        public bool autoRestChoice { get; set; } = true;
 
         public bool neowAutoChoose { get; set; }
 
