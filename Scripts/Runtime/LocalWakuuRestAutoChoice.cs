@@ -13,6 +13,7 @@ using MegaCrit.Sts2.Core.Entities.RestSite;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
+using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.TestSupport;
 
@@ -103,12 +104,26 @@ internal static class LocalWakuuRestAutoChoice
 
     private static async Task RunAsync(Player player, ulong ownerId)
     {
+        // 本次访问中已证实不可用（失败/抛异常）的选项，重试时排除
+        HashSet<string> brokenOptionIds = new(StringComparer.OrdinalIgnoreCase);
+
         try
         {
             // 等待选项就绪（进房瞬间可能尚未生成）
             int waitedMs = 0;
             while (RunManager.Instance.IsInProgress
                    && GetOptions(player.NetId).Count == 0
+                   && waitedMs < OptionsReadyTimeoutMs)
+            {
+                await Task.Delay(150);
+                waitedMs += 150;
+            }
+
+            // 等待真正进入休息区房间：BeginRestSite 在转场期间就会触发，
+            // 此时房间尚未加载完成，立即选择会踩空引用（r9 实测异常交还真人）
+            waitedMs = 0;
+            while (RunManager.Instance.IsInProgress
+                   && RunManager.Instance.DebugOnlyGetState()?.CurrentRoom is not RestSiteRoom
                    && waitedMs < OptionsReadyTimeoutMs)
             {
                 await Task.Delay(150);
@@ -128,7 +143,7 @@ internal static class LocalWakuuRestAutoChoice
                     break; // 选完/被跳过补完，正常结束
                 }
 
-                RestSiteOption? choice = Decide(player, options);
+                RestSiteOption? choice = Decide(player, options, brokenOptionIds);
                 if (choice == null)
                 {
                     LocalMultiControlLogger.Info(
@@ -143,23 +158,36 @@ internal static class LocalWakuuRestAutoChoice
                 }
 
                 bool success;
-                using (PushSelectorFor(choice, player))
+                try
                 {
-                    ulong? previousNetId = MegaCrit.Sts2.Core.Context.LocalContext.NetId;
-                    AlignLocalContext(ownerId);
-                    try
+                    using (PushSelectorFor(choice, player))
                     {
-                        object? result = _chooseOptionMethod?.Invoke(
-                            RunManager.Instance.RestSiteSynchronizer, new object?[] { player, index });
-                        success = await (Task<bool>)(result ?? Task.FromResult(false));
-                    }
-                    finally
-                    {
-                        if (previousNetId != null)
+                        ulong? previousNetId = MegaCrit.Sts2.Core.Context.LocalContext.NetId;
+                        AlignLocalContext(ownerId);
+                        try
                         {
-                            AlignLocalContext(previousNetId.Value);
+                            object? result = _chooseOptionMethod?.Invoke(
+                                RunManager.Instance.RestSiteSynchronizer, new object?[] { player, index });
+                            success = await (Task<bool>)(result ?? Task.FromResult(false));
+                        }
+                        finally
+                        {
+                            if (previousNetId != null)
+                            {
+                                AlignLocalContext(previousNetId.Value);
+                            }
                         }
                     }
+                }
+                catch (Exception pickException)
+                {
+                    // 单个选项执行失败（转场期依赖未就绪 / mod 选项内部异常）：
+                    // 标记为不可用并换下一个，不再整轮放弃
+                    brokenOptionIds.Add(choice.OptionId);
+                    LocalMultiControlLogger.Warn(
+                        $"瓦库火堆选项执行异常，换下一个: player={ownerId}, option={choice.OptionId}, "
+                        + $"error={pickException.Message}");
+                    continue;
                 }
 
                 LocalMultiControlLogger.Info(
@@ -167,7 +195,9 @@ internal static class LocalWakuuRestAutoChoice
                     + $"hp={player.Creature?.CurrentHp}/{player.Creature?.MaxHp}, success={success}");
                 if (!success)
                 {
-                    return;
+                    // OnSelect 返回 false（选项自身判定不可用，如 CHH_MUTUAL_AID）：排除后换下一个
+                    brokenOptionIds.Add(choice.OptionId);
+                    continue;
                 }
 
                 await Task.Delay(400);
@@ -187,10 +217,13 @@ internal static class LocalWakuuRestAutoChoice
         }
     }
 
-    /// <summary>决策规则：返回要选的选项；null 表示交还真人。</summary>
-    private static RestSiteOption? Decide(Player player, IReadOnlyList<RestSiteOption> options)
+    /// <summary>决策规则：返回要选的选项；null 表示交还真人。brokenOptionIds 为本次已证实不可用的选项。</summary>
+    private static RestSiteOption? Decide(
+        Player player, IReadOnlyList<RestSiteOption> options, HashSet<string> brokenOptionIds)
     {
-        List<RestSiteOption> enabled = options.Where((o) => o.IsEnabled).ToList();
+        List<RestSiteOption> enabled = options
+            .Where((o) => o.IsEnabled && !brokenOptionIds.Contains(o.OptionId))
+            .ToList();
 
         RestSiteOption? heal = enabled.FirstOrDefault((o) => o.OptionId == HealOptionId);
         List<RestSiteOption> others = enabled.Where((o) => o.OptionId != HealOptionId).ToList();
