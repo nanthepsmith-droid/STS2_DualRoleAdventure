@@ -236,7 +236,7 @@ internal static class LocalWakuuRestAutoChoice
     }
 
     /// <summary>基础打击/防御识别：卡 id 含 STRIKE/DEFEND（覆盖各角色变体与酒狐等 mod 命名）。</summary>
-    private static bool IsBasicStrikeOrDefend(CardModel card)
+    internal static bool IsBasicStrikeOrDefend(CardModel card)
     {
         string id = card.Id.Entry.ToUpperInvariant();
         return id.Contains("STRIKE") || id.Contains("DEFEND");
@@ -270,9 +270,9 @@ internal static class LocalWakuuRestAutoChoice
 }
 
 /// <summary>
-/// 火堆锻造专用作答选择器：把游戏提供的可升级列表先滤掉打击/防御，
-/// 再取最后 SmithCount 张（默认升最后一张；一次升两张时取最后两张）。
-/// 过滤后为空则退化为纯取最后（此时外层规则通常已经改选睡觉，不会走到这）。
+/// 火堆锻造专用作答选择器：优先升级"打击/防御以外"的牌并取最后 SmithCount 张；
+/// 若这类牌不足 SmithCount 张（如只剩 1 张但本次可升 2 张），剩余槽位用打击/防御补齐
+/// （同样取最后）。全部都无候选时退化为纯取最后（此时外层规则通常已改选睡觉）。
 /// </summary>
 internal sealed class LocalWakuuSmithSelector : ICardSelector
 {
@@ -280,20 +280,24 @@ internal sealed class LocalWakuuSmithSelector : ICardSelector
 
     public LocalWakuuSmithSelector(int smithCount)
     {
-        _smithCount = smithCount;
+        _smithCount = Math.Max(1, smithCount);
     }
 
     public Task<IEnumerable<CardModel>> GetSelectedCards(IEnumerable<CardModel> options, int minSelect, int maxSelect)
     {
         List<CardModel> list = options.ToList();
-        List<CardModel> preferred = list.Where((c) =>
-        {
-            string id = c.Id.Entry.ToUpperInvariant();
-            return !id.Contains("STRIKE") && !id.Contains("DEFEND");
-        }).ToList();
+        List<CardModel> preferred = list.Where((c) => !LocalWakuuRestAutoChoice.IsBasicStrikeOrDefend(c)).ToList();
+        List<CardModel> fallback = list.Where(LocalWakuuRestAutoChoice.IsBasicStrikeOrDefend).ToList();
 
-        IEnumerable<CardModel> ordered = (preferred.Count > 0 ? preferred : list).AsEnumerable().Reverse();
-        return Task.FromResult(ordered.Take(Math.Max(_smithCount, minSelect)));
+        // 主选：非打击/防御的最后 N 张；不足的槽位用打击/防御的最后几张补齐
+        List<CardModel> selected = preferred.Skip(Math.Max(0, preferred.Count - _smithCount)).ToList();
+        int remaining = _smithCount - selected.Count;
+        if (remaining > 0)
+        {
+            selected.AddRange(fallback.Skip(Math.Max(0, fallback.Count - remaining)));
+        }
+
+        return Task.FromResult((IEnumerable<CardModel>)selected);
     }
 
     public CardRewardSelection GetSelectedCardReward(IReadOnlyList<CardCreationResult> options, IReadOnlyList<CardRewardAlternative> alternatives)
