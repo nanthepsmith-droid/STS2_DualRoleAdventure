@@ -36,9 +36,10 @@ internal static class CardSelectForegroundSwitchPatch
 
         CurrentChoicePlayerId.Value = player.NetId;
 
-        // 瓦库形态后台托管：存在全局选择器时该次选择会被自动作答、不会弹 UI，免切换；
-        // 无选择器（作用域外的真实交互）则保留切换作为防软锁兜底。
-        if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: true))
+        // 瓦库形态后台托管：选牌一律自动作答、免切换——
+        // 作用域内由栈顶选择器作答；作用域外（如酒狐初始遗物开局二选一）由
+        // Selector getter 兜底返回策略选择器作答（见 CardSelectCmdSelectorGuardPatch）。
+        if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitchForCardSelect(player))
         {
             LocalMultiControlLogger.Info(
                 $"瓦库形态后台模式，选牌将自动作答，跳过切换: player={player.NetId}, source={source}");
@@ -112,10 +113,14 @@ internal static class CardSelectForegroundSwitchPatch
 }
 
 /// <summary>
-/// 全局选择器抢答守卫：CardSelectCmd.Selector 返回栈顶选择器时，若当前异步链上的选牌
-/// 归属者不是瓦库形态角色（即真人正在选牌），则临时返回 null 让其走正常选牌 UI。
-/// 场景：瓦库自动出牌循环进行中（VakuuCardSelector 在栈上），真人同时打出需要选牌的卡
-/// （如酒狐合成），若不做此守卫，真人的选牌会被选择器瞬间抢答为第一张。
+/// 全局选择器守卫（两件事）：
+/// 1. 抢答保护：CardSelectCmd.Selector 返回栈顶选择器时，若当前异步链上的选牌
+///    归属者不是瓦库形态角色（即真人正在选牌），则临时返回 null 让其走正常选牌 UI。
+///    场景：瓦库自动出牌循环进行中（选择器在栈上），真人同时打出需要选牌的卡
+///    （如酒狐合成），若不做此守卫，真人的选牌会被选择器瞬间抢答为第一张。
+/// 2. 作用域外兜底：栈上没有选择器、但本次选牌链路归属瓦库形态角色时
+///    （典型：酒狐初始遗物在战斗开局弹出二选一，此时托管出牌循环尚未启动），
+///    返回策略选择器自动作答——否则弹出的选择界面无人点击，只能等安全网超时。
 /// CurrentChoicePlayerId 由上方各 From* 前缀在方法体读取 Selector 之前写入，时序可靠。
 /// </summary>
 [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.Selector), MethodType.Getter)]
@@ -124,24 +129,32 @@ internal static class CardSelectCmdSelectorGuardPatch
     [HarmonyPostfix]
     private static void Postfix(ref ICardSelector? __result)
     {
-        if (__result == null || __result is not VakuuCardSelector)
-        {
-            return;
-        }
-
         ulong? chooserPlayerId = CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value;
         if (!chooserPlayerId.HasValue)
         {
             return;
         }
 
-        if (LocalWakuuRelicRuntime.IsVakuuFormModeById(chooserPlayerId.Value))
+        // 1) 真人保护：栈顶是托管选择器但本次链路归属真人 → 改回正常 UI
+        if (__result is VakuuCardSelector or LocalWakuuStrategySelector
+            && !LocalWakuuRelicRuntime.IsVakuuFormModeById(chooserPlayerId.Value))
         {
+            LocalMultiControlLogger.Info(
+                $"检测到真人选牌请求，本次跳过瓦库选择器改走正常UI: chooser={chooserPlayerId.Value}");
+            __result = null;
             return;
         }
 
-        LocalMultiControlLogger.Info(
-            $"检测到真人选牌请求，本次跳过瓦库选择器改走正常UI: chooser={chooserPlayerId.Value}");
-        __result = null;
+        // 2) 作用域外兜底：无选择器且本次链路归属后台瓦库 → 策略选择器自动作答
+        if (__result == null
+            && LocalSelfCoopContext.UseSingleAdventureMode
+            && LocalWakuuAutopilotConfig.BackgroundMode
+            && LocalWakuuRelicRuntime.IsVakuuFormModeById(chooserPlayerId.Value))
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库作用域外选牌已由策略选择器自动作答: chooser={chooserPlayerId.Value}, "
+                + $"strategy={LocalWakuuAutopilotConfig.CardPickMode}");
+            __result = LocalWakuuStrategySelector.Shared;
+        }
     }
 }

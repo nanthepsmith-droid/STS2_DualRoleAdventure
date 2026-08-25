@@ -112,7 +112,16 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             "非共享事件按下方策略自动选择；触发战斗/小游戏/致死选项即停住等真人。",
             () => LocalWakuuAutopilotConfig.AutoChooseEvents,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("autoChooseEvents", value));
-        column.AddChild(CreateChoiceModeRow());
+        column.AddChild(CreateStrategyRow(
+            "事件选项策略",
+            "事件自动选择时挑哪个选项。很多事件一直选第一个会死，可切到最后一个或随机规避。",
+            "eventChoiceMode",
+            () => LocalWakuuAutopilotConfig.EventChoiceMode));
+        column.AddChild(CreateStrategyRow(
+            "战斗内选牌策略",
+            "效果类选牌（酒狐合成、开局遗物二选一、从手牌选 N 张等）取哪张。默认最后，卡牌奖励始终领最左。",
+            "cardPickMode",
+            () => LocalWakuuAutopilotConfig.CardPickMode));
         AddToggleRow(column,
             "涅奥开局自动选",
             "允许自动选择涅奥（NEOW）开局奖励；默认关闭。",
@@ -125,10 +134,10 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
     }
 
     /// <summary>
-    /// 事件选项策略行：右侧按钮循环切换 第一个 → 最后一个 → 随机。
-    /// 很多事件一直选第一个会送命，玩家可按喜好切换（改动即时写回 json）。
+    /// 策略切换行（通用）：右侧按钮在 第一个 → 最后一个 → 随机 间循环，
+    /// 按钮文本显示当前值，点击经 TrySetAndSaveString 即时写回 json。
     /// </summary>
-    private Control CreateChoiceModeRow()
+    private Control CreateStrategyRow(string title, string description, string configKey, Func<string> currentModeGetter)
     {
         HBoxContainer row = new();
         row.AddThemeConstantOverride("separation", 28);
@@ -138,13 +147,11 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         textColumn.SizeFlagsHorizontal = (SizeFlags)3; // ExpandFill
         textColumn.AddThemeConstantOverride("separation", 2);
 
-        Label titleLabel = CreateLabel("事件选项策略", 26, new Color(1f, 0.85f, 0.35f));
+        Label titleLabel = CreateLabel(title, 26, new Color(1f, 0.85f, 0.35f));
         titleLabel.HorizontalAlignment = HorizontalAlignment.Left;
         textColumn.AddChild(titleLabel);
 
-        Label descLabel = CreateLabel(
-            "自动选择时挑哪个选项。很多事件一直选第一个会死，可切到最后一个或随机规避。",
-            19, new Color(0.8f, 0.78f, 0.72f));
+        Label descLabel = CreateLabel(description, 19, new Color(0.8f, 0.78f, 0.72f));
         descLabel.HorizontalAlignment = HorizontalAlignment.Left;
         descLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         textColumn.AddChild(descLabel);
@@ -153,7 +160,7 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
 
         LocalSimpleTextButton modeButton = new()
         {
-            ButtonText = GetChoiceModeDisplayText(LocalWakuuAutopilotConfig.EventChoiceMode),
+            ButtonText = GetChoiceModeDisplayText(currentModeGetter()),
             FontSize = 24,
             SizeFlagsVertical = (SizeFlags)4, // ShrinkCenter
         };
@@ -161,10 +168,10 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         modeButton.Connect(NClickableControl.SignalName.Released, Callable.From<NClickableControl>(_ =>
         {
             string next = NextChoiceMode(modeButton.ButtonText);
-            if (LocalWakuuAutopilotConfig.TrySetAndSaveString("eventChoiceMode", next))
+            if (LocalWakuuAutopilotConfig.TrySetAndSaveString(configKey, next))
             {
-                modeButton.ButtonText = GetChoiceModeDisplayText(LocalWakuuAutopilotConfig.EventChoiceMode);
-                LocalMultiControlLogger.Info($"事件选项策略已切换为 {next}");
+                modeButton.ButtonText = GetChoiceModeDisplayText(currentModeGetter());
+                LocalMultiControlLogger.Info($"策略已切换: {configKey}={next}");
             }
         }));
         row.AddChild(modeButton);

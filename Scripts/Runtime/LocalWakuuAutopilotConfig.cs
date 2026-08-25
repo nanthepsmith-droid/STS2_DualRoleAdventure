@@ -46,6 +46,13 @@ internal static class LocalWakuuAutopilotConfig
     /// </summary>
     public static string EventChoiceMode { get; private set; } = FirstChoiceMode;
 
+    /// <summary>
+    /// 战斗内效果选牌策略（酒狐合成二选一、开局遗物二选一、"从手牌选 N 张"等）：
+    /// first=最前 / last=最后 / random=随机。默认 last，避免合成永远拿到排在最前的牌。
+    /// 卡牌奖励不受此影响（始终领最左）。
+    /// </summary>
+    public static string CardPickMode { get; private set; } = LastChoiceMode;
+
     public const string FirstChoiceMode = "first";
     public const string LastChoiceMode = "last";
     public const string RandomChoiceMode = "random";
@@ -107,17 +114,25 @@ internal static class LocalWakuuAutopilotConfig
         {
             try
             {
-                if (key == nameof(ConfigData.eventChoiceMode))
+                if (key is nameof(ConfigData.eventChoiceMode) or nameof(ConfigData.cardPickMode))
                 {
                     string? normalized = NormalizeChoiceMode(value);
                     if (normalized == null)
                     {
-                        LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：非法的事件选择策略 {value}");
+                        LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：非法的策略取值 {value}（key={key}）");
                         return false;
                     }
 
                     ConfigData data = ReadConfigDataOrThrow();
-                    data.eventChoiceMode = normalized;
+                    if (key == nameof(ConfigData.eventChoiceMode))
+                    {
+                        data.eventChoiceMode = normalized;
+                    }
+                    else
+                    {
+                        data.cardPickMode = normalized;
+                    }
+
                     WriteConfigData(data);
                     Apply(data, logChanges: true);
                     return true;
@@ -230,7 +245,7 @@ internal static class LocalWakuuAutopilotConfig
                 + $"backgroundMode={data.backgroundMode}, suppressVanillaEarring={data.suppressVanillaEarring}, "
                 + $"autoClaimCards={data.autoClaimCards}, autoClaimGoldRelics={data.autoClaimGoldRelics}, "
                 + $"autoChooseEvents={data.autoChooseEvents}, neowAutoChoose={data.neowAutoChoose}, "
-                + $"eventChoiceMode={data.eventChoiceMode}");
+                + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}");
         }
 
         UseVakuuForm = data.useVakuuForm;
@@ -242,6 +257,7 @@ internal static class LocalWakuuAutopilotConfig
         AutoChooseEvents = data.autoChooseEvents;
         NeowAutoChoose = data.neowAutoChoose;
         EventChoiceMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;
+        CardPickMode = NormalizeChoiceMode(data.cardPickMode) ?? LastChoiceMode;
     }
 
     private static void WriteDefault(string path)
@@ -282,5 +298,7 @@ internal static class LocalWakuuAutopilotConfig
         public bool neowAutoChoose { get; set; }
 
         public string eventChoiceMode { get; set; } = FirstChoiceMode;
+
+        public string cardPickMode { get; set; } = LastChoiceMode;
     }
 }

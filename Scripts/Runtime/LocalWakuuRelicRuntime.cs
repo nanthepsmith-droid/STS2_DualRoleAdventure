@@ -129,6 +129,21 @@ internal static class LocalWakuuRelicRuntime
         return true;
     }
 
+    /// <summary>
+    /// 选牌入口（CardSelectCmd.From*）专用：后台模式下瓦库的选牌一律跳过切前台——
+    /// 作用域内由栈顶选择器作答；作用域外由 Selector getter 兜底返回策略选择器作答
+    /// （酒狐初始遗物战斗开局二选一等，此时托管循环尚未启动、栈上没有选择器）。
+    /// </summary>
+    public static bool ShouldSuppressForegroundSwitchForCardSelect(Player? player)
+    {
+        if (player == null || !LocalSelfCoopContext.IsEnabled)
+        {
+            return false;
+        }
+
+        return LocalWakuuAutopilotConfig.BackgroundMode && IsVakuuFormMode(player);
+    }
+
     public static bool HasWakuuRelic(Player player)
     {
         return TryGetTakeoverRelic(player) != null;
@@ -183,7 +198,7 @@ internal static class LocalWakuuRelicRuntime
             $"瓦库选择器闸门已进入: player={player.NetId}, round={combatState.RoundNumber}, waitMs={gateWaitMs}, inFlight={inFlight}, selectorStackCount={gateEnterSnapshot.Count}, selectorStackTop={gateEnterSnapshot.TopType}");
         try
         {
-            using (CardSelectCmd.PushSelector(new VakuuCardSelector()))
+            using (CardSelectCmd.PushSelector(new LocalWakuuStrategySelector()))
             {
                 SelectorStackSnapshot pushSnapshot = SnapshotSelectorStack();
                 LocalMultiControlLogger.Info(
@@ -464,7 +479,8 @@ internal static class LocalWakuuRelicRuntime
         {
             foreach (object? selector in enumerable)
             {
-                if (selector is not VakuuCardSelector)
+                // 托管作用域可能压入游戏原生选择器或本 mod 的策略选择器，两者都视为瓦库选择器
+                if (selector is not VakuuCardSelector and not LocalWakuuStrategySelector)
                 {
                     allVakuuSelectors = false;
                     break;
