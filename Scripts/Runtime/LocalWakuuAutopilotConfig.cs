@@ -40,6 +40,16 @@ internal static class LocalWakuuAutopilotConfig
     /// <summary>涅奥（NEOW）开局奖励是否也自动选（默认关，已拍板 #3）。</summary>
     public static bool NeowAutoChoose { get; private set; }
 
+    /// <summary>
+    /// 事件自动选择的策略：first=第一个（最上）/ last=最后一个 / random=随机。
+    /// 很多事件一直选第一个会死，可切到 last 或 random 规避。
+    /// </summary>
+    public static string EventChoiceMode { get; private set; } = FirstChoiceMode;
+
+    public const string FirstChoiceMode = "first";
+    public const string LastChoiceMode = "last";
+    public const string RandomChoiceMode = "random";
+
     public static string ConfigFilePath =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -75,15 +85,7 @@ internal static class LocalWakuuAutopilotConfig
                         return false;
                 }
 
-                string? directory = Path.GetDirectoryName(ConfigFilePath);
-                if (!string.IsNullOrEmpty(directory))
-                {
-                    Directory.CreateDirectory(directory);
-                }
-
-                File.WriteAllText(
-                    ConfigFilePath,
-                    JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
+                WriteConfigData(data);
                 Apply(data, logChanges: true);
                 return true;
             }
@@ -93,6 +95,73 @@ internal static class LocalWakuuAutopilotConfig
                 return false;
             }
         }
+    }
+
+    /// <summary>
+    /// 设置界面专用：更新单个字符串型配置（当前仅 eventChoiceMode：first/last/random）。
+    /// 立即刷新内存生效值并写回 json；返回 false 表示 key 未知、值非法或写盘失败。
+    /// </summary>
+    public static bool TrySetAndSaveString(string key, string value)
+    {
+        lock (_ioLock)
+        {
+            try
+            {
+                if (key == nameof(ConfigData.eventChoiceMode))
+                {
+                    string? normalized = NormalizeChoiceMode(value);
+                    if (normalized == null)
+                    {
+                        LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：非法的事件选择策略 {value}");
+                        return false;
+                    }
+
+                    ConfigData data = ReadConfigDataOrThrow();
+                    data.eventChoiceMode = normalized;
+                    WriteConfigData(data);
+                    Apply(data, logChanges: true);
+                    return true;
+                }
+
+                LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：未知字符串配置项 {key}");
+                return false;
+            }
+            catch (Exception exception)
+            {
+                LocalMultiControlLogger.Warn($"瓦库托管配置写入异常（key={key}, value={value}）: {exception.Message}");
+                return false;
+            }
+        }
+    }
+
+    /// <summary>规范化事件选择策略取值；非法返回 null。</summary>
+    public static string? NormalizeChoiceMode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            FirstChoiceMode => FirstChoiceMode,
+            LastChoiceMode => LastChoiceMode,
+            RandomChoiceMode => RandomChoiceMode,
+            _ => null,
+        };
+    }
+
+    private static void WriteConfigData(ConfigData data)
+    {
+        string? directory = Path.GetDirectoryName(ConfigFilePath);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        File.WriteAllText(
+            ConfigFilePath,
+            JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
     }
 
     /// <summary>读取磁盘配置；文件缺失/损坏时返回默认值底稿（默认=原版低语耳环行为）。</summary>
@@ -160,7 +229,8 @@ internal static class LocalWakuuAutopilotConfig
                 $"瓦库托管生效配置: useVakuuForm={data.useVakuuForm}, playAllCards={data.playAllCards}, "
                 + $"backgroundMode={data.backgroundMode}, suppressVanillaEarring={data.suppressVanillaEarring}, "
                 + $"autoClaimCards={data.autoClaimCards}, autoClaimGoldRelics={data.autoClaimGoldRelics}, "
-                + $"autoChooseEvents={data.autoChooseEvents}, neowAutoChoose={data.neowAutoChoose}");
+                + $"autoChooseEvents={data.autoChooseEvents}, neowAutoChoose={data.neowAutoChoose}, "
+                + $"eventChoiceMode={data.eventChoiceMode}");
         }
 
         UseVakuuForm = data.useVakuuForm;
@@ -171,6 +241,7 @@ internal static class LocalWakuuAutopilotConfig
         AutoClaimGoldRelics = data.autoClaimGoldRelics;
         AutoChooseEvents = data.autoChooseEvents;
         NeowAutoChoose = data.neowAutoChoose;
+        EventChoiceMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;
     }
 
     private static void WriteDefault(string path)
@@ -209,5 +280,7 @@ internal static class LocalWakuuAutopilotConfig
         public bool autoChooseEvents { get; set; } = true;
 
         public bool neowAutoChoose { get; set; }
+
+        public string eventChoiceMode { get; set; } = FirstChoiceMode;
     }
 }

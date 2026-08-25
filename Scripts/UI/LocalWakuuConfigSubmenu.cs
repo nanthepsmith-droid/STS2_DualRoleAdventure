@@ -108,10 +108,11 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.AutoClaimCards,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("autoClaimCards", value));
         AddToggleRow(column,
-            "事件自动选最上",
-            "非共享事件自动选第一个可用选项；触发战斗/小游戏/危险选项即停住等真人。",
+            "事件自动选择",
+            "非共享事件按下方策略自动选择；触发战斗/小游戏/致死选项即停住等真人。",
             () => LocalWakuuAutopilotConfig.AutoChooseEvents,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("autoChooseEvents", value));
+        column.AddChild(CreateChoiceModeRow());
         AddToggleRow(column,
             "涅奥开局自动选",
             "允许自动选择涅奥（NEOW）开局奖励；默认关闭。",
@@ -121,6 +122,73 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         column.AddChild(CreateSpacer(6));
         column.AddChild(CreateDivider(new Color(0.35f, 0.35f, 0.35f, 0.7f)));
         column.AddChild(CreateLabel("点左下角返回按钮或再次打开本页可随时退出。", 18, new Color(0.6f, 0.6f, 0.6f)));
+    }
+
+    /// <summary>
+    /// 事件选项策略行：右侧按钮循环切换 第一个 → 最后一个 → 随机。
+    /// 很多事件一直选第一个会送命，玩家可按喜好切换（改动即时写回 json）。
+    /// </summary>
+    private Control CreateChoiceModeRow()
+    {
+        HBoxContainer row = new();
+        row.AddThemeConstantOverride("separation", 28);
+
+        VBoxContainer textColumn = new();
+        textColumn.CustomMinimumSize = new Vector2(880f, 0f);
+        textColumn.SizeFlagsHorizontal = (SizeFlags)3; // ExpandFill
+        textColumn.AddThemeConstantOverride("separation", 2);
+
+        Label titleLabel = CreateLabel("事件选项策略", 26, new Color(1f, 0.85f, 0.35f));
+        titleLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        textColumn.AddChild(titleLabel);
+
+        Label descLabel = CreateLabel(
+            "自动选择时挑哪个选项。很多事件一直选第一个会死，可切到最后一个或随机规避。",
+            19, new Color(0.8f, 0.78f, 0.72f));
+        descLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        descLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        textColumn.AddChild(descLabel);
+
+        row.AddChild(textColumn);
+
+        LocalSimpleTextButton modeButton = new()
+        {
+            ButtonText = GetChoiceModeDisplayText(LocalWakuuAutopilotConfig.EventChoiceMode),
+            FontSize = 24,
+            SizeFlagsVertical = (SizeFlags)4, // ShrinkCenter
+        };
+        modeButton.CustomMinimumSize = new Vector2(220f, 64f);
+        modeButton.Connect(NClickableControl.SignalName.Released, Callable.From<NClickableControl>(_ =>
+        {
+            string next = NextChoiceMode(modeButton.ButtonText);
+            if (LocalWakuuAutopilotConfig.TrySetAndSaveString("eventChoiceMode", next))
+            {
+                modeButton.ButtonText = GetChoiceModeDisplayText(LocalWakuuAutopilotConfig.EventChoiceMode);
+                LocalMultiControlLogger.Info($"事件选项策略已切换为 {next}");
+            }
+        }));
+        row.AddChild(modeButton);
+        return row;
+    }
+
+    private static string GetChoiceModeDisplayText(string mode)
+    {
+        return mode switch
+        {
+            LocalWakuuAutopilotConfig.LastChoiceMode => "最后一个",
+            LocalWakuuAutopilotConfig.RandomChoiceMode => "随机",
+            _ => "第一个",
+        };
+    }
+
+    private static string NextChoiceMode(string currentDisplayText)
+    {
+        return currentDisplayText switch
+        {
+            "第一个" => LocalWakuuAutopilotConfig.LastChoiceMode,
+            "最后一个" => LocalWakuuAutopilotConfig.RandomChoiceMode,
+            _ => LocalWakuuAutopilotConfig.FirstChoiceMode,
+        };
     }
 
     private void AddToggleRow(VBoxContainer column, string title, string description, Func<bool> getter, Action<bool> setter)
