@@ -13,6 +13,7 @@ using MegaCrit.Sts2.Core.Entities.RestSite;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
+using MegaCrit.Sts2.Core.Nodes.Rooms;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.TestSupport;
@@ -124,6 +125,17 @@ internal static class LocalWakuuRestAutoChoice
             waitedMs = 0;
             while (RunManager.Instance.IsInProgress
                    && RunManager.Instance.DebugOnlyGetState()?.CurrentRoom is not RestSiteRoom
+                   && waitedMs < OptionsReadyTimeoutMs)
+            {
+                await Task.Delay(150);
+                waitedMs += 150;
+            }
+
+            // 等待 UI 房间节点就绪：AfterPlayerOptionChosen 等"角色头顶选择气泡"
+            // 依赖的事件在 NRestSiteRoom._Ready 里才订阅，过早选择会选成功但不显示
+            waitedMs = 0;
+            while (RunManager.Instance.IsInProgress
+                   && (NRestSiteRoom.Instance == null || NRestSiteRoom.Instance.GetCharacterForPlayer(player) == null)
                    && waitedMs < OptionsReadyTimeoutMs)
             {
                 await Task.Delay(150);
