@@ -8,9 +8,11 @@ using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
-using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Characters;
 using MegaCrit.Sts2.Core.Models.Potions;
+using MegaCrit.Sts2.Core.Models.Powers;
+using MegaCrit.Sts2.Core.MonsterMoves.Intents;
 using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
@@ -18,79 +20,301 @@ using MegaCrit.Sts2.Core.Runs;
 namespace LocalMultiControl.Scripts.Runtime;
 
 /// <summary>
-/// 瓦库战斗中自动用药水（Phase 2.5 保守版，独立开关 autoUsePotions，默认关）。
-/// 规则（2026-08-25 拍板，同日追加混沌/污浊两条）：
-/// - 果汁 FruitJuice（+5 最大生命）：到手立刻喝（见 PotionProcuredAutoDrinkPatch）；战斗中若仍在手也随时补喝；
-/// - 治疗类（血液/再生）：自身血量 &lt;50% 时对自用；
-/// - 增益类（力量/敏捷/专注/能量/格挡等）：精英或 Boss 战第 1 回合对自用；
-/// - 攻击/减益类（火焰/毒素/虚弱/缠绕/毁灭等）：精英或 Boss 战第 1 回合对第一个敌人；
-/// - 卡牌授予类（攻击/技能/能力/无色药水，用户点名追加）：精英或 Boss 战第 1 回合使用，
-///   内部的 FromChooseACardScreen 选牌由托管选择器自动作答；
-/// - 混沌药水 EntropicBrew（使用后用随机药水填满空药水位）：仅当栏内只剩它且有空位时
-///   自动喝一瓶（用户 2026-08-25 拍板；无空位时喝=纯浪费）。注意区分：
-///   精炼混沌 DistilledChaos 是打抽牌堆顶 3 张，不在本规则内、保守不自动用；
-/// - 污浊药水 FoulPotion 绝不在战斗中使用（全场伤害含自己），只在商人处自动投掷
-///   （见 LocalWakuuMerchantFoulThrow）；
-/// - mod 药水（非游戏命名空间）：普通战斗随机回合消耗（效果未知，与其过期不如随机用掉）；
-/// - 其余原版药水保守跳过（宁可不用也不误用），后续按需扩充分类表。
+/// 瓦库战斗中自动用药水：数据驱动的规则表版（2026-08-26，按用户逐药拍板的
+/// 「原版药水一览表.md」实现；独立开关 autoUsePotions，默认关）。
 ///
-/// 战斗中获得的药水（炼药 Alchemize、混沌结算产物等）：出牌循环结束后会补做一次评估，
-/// 下一回合开始也会重新评估（每次调用都实时读药水栏），不会遗漏。
-///
-/// 实现要点：
-/// - 直接 await potion.OnUseWrapper(choiceContext, target)——与瓦库自动出牌同一条顺序链，
-///   不经 ActionQueueSynchronizer 入队，避免与出牌循环并发交错；
-/// - 药水内部若弹选牌，压入 LocalWakuuStrategySelector 自动作答（坑 4 守卫对瓦库归属放行）；
-/// - 目标解析后必须 IsValidTarget 校验；每瓶药独立 try/catch，失败不影响后续药水与出牌；
-/// - 无需回合级去重：OnUseWrapper 开头即从药水栏移除（RemoveBeforeUse），消费本身就是去重。
+/// 结构：
+/// - 每种原版药水一条 PotionRule（评估时机/战斗范围/附加条件/目标策略/定向选牌）；
+/// - 两个评估相位：StartOfTurn=回合开始出牌前、EndOfTurn=回合结束前（自动出牌结束后，
+///   此时能量/手牌状态即"回合结束前"语义）；无牌可出的回合同样会跑 EndOfTurn 相位；
+/// - 消费即去重（OnUseWrapper 开头移除药水），看门狗重复进入为无害空转；
+/// - 污浊药水绝不自动使用（全场伤害含自己），只在商人处自动投掷（LocalWakuuMerchantFoulThrow）；
+/// - 果汁另有"到手立刻喝"链路（PotionProcuredAutoDrinkPatch），战斗中由规则表随时补喝；
+/// - mod 药水（非游戏命名空间）：普通战斗随机回合消耗（预掷 1~3 回合）；
+/// - 未收录的原版药水保守跳过。
 /// </summary>
 internal static class LocalWakuuPotionAutoUse
 {
     /// <summary>mod 药水随机消耗的候选回合范围 [1, ModPotionRoundMax]。</summary>
     private const int ModPotionRoundMax = 3;
 
-    private enum WakuuPotionCategory
+    [Flags]
+    internal enum WakuuPotionPhase
     {
-        /// <summary>保守策略：不自动使用。</summary>
-        None,
+        StartOfTurn = 1,
+        EndOfTurn = 2,
+        Both = StartOfTurn | EndOfTurn,
+    }
 
-        /// <summary>+最大生命类：任何时机都喝。</summary>
-        ImmediateMaxHp,
+    private enum FightScope
+    {
+        AnyCombat,
+        HardFight,   // 精英或 Boss
+        BossFight,   // 仅 Boss
+    }
 
-        /// <summary>混沌药水 EntropicBrew：栏内只剩它且有空位时自动喝（用户 2026-08-25 追加并澄清）。</summary>
-        RandomFillerOnly,
+    private enum TargetKind
+    {
+        Default,          // AnyEnemy→第一个敌人；AllEnemies→null；其余→自己
+        HumanFirst,       // 优先给存活的真人队友，没有则自用
+        AllyCharacter,    // 自己就是该职业则自用，否则给该职业的存活队友，再没有则自用
+    }
 
-        /// <summary>治疗类：低血时对自用。</summary>
-        HealLowHp,
+    /// <summary>单次评估的上下文快照（手牌/牌堆/意图伤害/能量等一次算好供条件与选择器复用）。</summary>
+    private sealed class PotionRuleContext
+    {
+        public required Player Owner;
+        public required ICombatState CombatState;
+        public required IReadOnlyList<PotionModel> FullBar;
+        public required IReadOnlyList<CardModel> Hand;
+        public required IReadOnlyList<CardModel> DrawPile;
+        public required IReadOnlyList<CardModel> DiscardPile;
+        public required bool HardFight;
+        public required bool BossFight;
+        public required bool AnyEnemyIntendsAttack;
+        public required int TotalIncomingDamage;
 
-        /// <summary>增益类：精英/Boss 战首回合对自用。</summary>
-        BuffHardFight,
+        public int Round => CombatState.RoundNumber;
+        public decimal CurrentHp => Owner.Creature?.CurrentHp ?? 0m;
+        public decimal MaxHp => Owner.Creature?.MaxHp ?? 1m;
+        public decimal Block => Owner.Creature?.Block ?? 0m;
+        public int Energy => Owner.PlayerCombatState?.Energy ?? 0;
+        public bool LowHp => CurrentHp * 2m < MaxHp;
+        public bool LethalThreat => TotalIncomingDamage >= CurrentHp + Block && TotalIncomingDamage > 0;
+        public bool HasOpenSlots => Owner.HasOpenPotionSlots;
+    }
 
-        /// <summary>攻击/减益类：精英/Boss 战首回合对第一个敌人。</summary>
-        DamageDebuffHardFight,
-
-        /// <summary>卡牌授予类：精英/Boss 战首回合使用（选牌由选择器作答）。</summary>
-        CardGrantHardFight,
-
-        /// <summary>mod 药水：普通战斗随机回合消耗。</summary>
-        ModRandom,
+    private sealed class PotionRule
+    {
+        public required string Name;
+        public required Func<PotionModel, bool> Match;
+        public WakuuPotionPhase Phases = WakuuPotionPhase.Both;
+        public FightScope Scope = FightScope.AnyCombat;
+        public bool FirstRoundOnly;
+        public Func<PotionRuleContext, bool>? Condition;
+        public TargetKind Target = TargetKind.Default;
+        public Type? AllyCharacterClass;
+        public Func<PotionRuleContext, IReadOnlyList<CardModel>, int, int, List<CardModel>>? CardPicker;
+        public bool DiscardInsteadOfUse;
     }
 
     private static readonly Random _random = new();
     private static readonly object _randomLock = new();
 
-    /// <summary>
-    /// mod 药水的随机回合计划：药水实例 → (战斗状态引用, 预定回合)。
-    /// 按引用比较；换战斗后首次评估会重掷。容量有界（每局持有的 mod 药水数）。
-    /// </summary>
+    /// <summary>mod 药水的随机回合计划：药水实例 → (战斗状态引用, 预定回合)。</summary>
     private static readonly Dictionary<object, (object Combat, int Round)> _modPotionPlan = new();
 
+    // ------------------------------------------------------------------
+    // 规则表（2026-08-26 用户逐药拍板，见 pain\原版药水一览表.md）
+    // ------------------------------------------------------------------
+    private static readonly List<PotionRule> Rules = new()
+    {
+        // —— 特殊处理 ——
+        new() { Name = "废弃药水丢弃", Match = (p) => p is DeprecatedPotion, DiscardInsteadOfUse = true },
+        new() { Name = "果汁随时喝", Match = (p) => p is FruitJuice },
+
+        // —— 治疗类 ——
+        new() { Name = "血液药水低血自用", Match = (p) => p is BloodPotion, Condition = (c) => c.LowHp },
+        new() { Name = "再生药水低血自用", Match = (p) => p is RegenPotion, Condition = (c) => c.LowHp },
+        new()
+        {
+            Name = "龙涎香Boss残血", Match = (p) => p is Ambergris, Scope = FightScope.BossFight,
+            Phases = WakuuPotionPhase.EndOfTurn, Condition = (c) => c.LowHp,
+        },
+        new()
+        {
+            Name = "混沌药水填栏", Match = (p) => p is EntropicBrew,
+            Condition = (c) => c.HasOpenSlots && c.FullBar.All((x) => x is EntropicBrew),
+        },
+
+        // —— 精英/Boss 首回合增益（自用）——
+        new() { Name = "力量首回合", Match = (p) => p is StrengthPotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "敏捷首回合", Match = (p) => p is DexterityPotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "集中首回合", Match = (p) => p is FocusPotion, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.AllyCharacter, AllyCharacterClass = typeof(Defect) },
+        new() { Name = "异鱼之油首回合", Match = (p) => p is FyshOil, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "流动铜液首回合", Match = (p) => p is LiquidBronze, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "马萨雷斯赠礼首回合", Match = (p) => p is MazalethsGift, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "明耀酊剂首回合", Match = (p) => p is RadiantTincture, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "宇宙药剂首回合", Match = (p) => p is CosmicConcoction, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "精炼混沌首回合", Match = (p) => p is DistilledChaos, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "明晰提取物首回合", Match = (p) => p is Clarity, Scope = FightScope.HardFight, FirstRoundOnly = true },
+
+        // —— 精英/Boss 首回合攻击/减益（对敌）——
+        new() { Name = "火焰首回合对敌", Match = (p) => p is FirePotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "毒素首回合对敌", Match = (p) => p is PoisonPotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "灾厄首回合对敌", Match = (p) => p is PotionOfDoom, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "易伤首回合对敌", Match = (p) => p is VulnerablePotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "虚弱首回合对敌", Match = (p) => p is WeakPotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "消亡粉末首回合对敌", Match = (p) => p is PowderedDemise, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new()
+        {
+            Name = "爆炸安瓿多敌或首回合", Match = (p) => p is ExplosiveAmpoule, Scope = FightScope.HardFight,
+            FirstRoundOnly = true, Condition = (c) => EnemyCount(c) >= 3,
+        },
+
+        // —— 意图触发的攻击/减益 ——
+        new() { Name = "甲虫汁敌人攻击", Match = (p) => p is BeetleJuice, Scope = FightScope.HardFight, Condition = (c) => c.AnyEnemyIntendsAttack },
+        new() { Name = "镣铐敌人攻击", Match = (p) => p is ShacklingPotion, Scope = FightScope.HardFight, Condition = (c) => c.AnyEnemyIntendsAttack },
+        new()
+        {
+            Name = "铁心覆甲", Match = (p) => p is HeartOfIron, Scope = FightScope.HardFight,
+            Condition = (c) => c.AnyEnemyIntendsAttack || (c.Owner.Creature?.HasPower<PlatingPower>() ?? false),
+        },
+        new()
+        {
+            Name = "速度药水有技能牌", Match = (p) => p is SpeedPotion, Scope = FightScope.HardFight,
+            Condition = (c) => c.Hand.Any((card) => card.Type == CardType.Skill),
+        },
+
+        // —— 卡牌授予类（精英/Boss 首回合）——
+        new() { Name = "攻击药水首回合", Match = (p) => p is AttackPotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "技能药水首回合", Match = (p) => p is SkillPotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "能力药水首回合", Match = (p) => p is PowerPotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "无色药水首回合", Match = (p) => p is ColorlessPotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
+
+        // —— 给真人玩家优先 ——
+        new() { Name = "复制药水优先真人", Match = (p) => p is Duplicator, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.HumanFirst },
+        new() { Name = "超巨化优先真人", Match = (p) => p is GigantificationPotion, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.HumanFirst },
+
+        // —— 角色专属给队友 ——
+        new() { Name = "扩容给药水机器人", Match = (p) => p is PotionOfCapacity, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.AllyCharacter, AllyCharacterClass = typeof(Defect) },
+        new() { Name = "黑暗精华给故障机器人", Match = (p) => p is EssenceOfDarkness, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.AllyCharacter, AllyCharacterClass = typeof(Defect) },
+        new() { Name = "星星给储君", Match = (p) => p is StarPotion, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.AllyCharacter, AllyCharacterClass = typeof(Regent) },
+        new() { Name = "王之勇气给储君", Match = (p) => p is KingsCourage, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.AllyCharacter, AllyCharacterClass = typeof(Regent) },
+        new() { Name = "骨头酿给亡灵契约师", Match = (p) => p is BoneBrew, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.AllyCharacter, AllyCharacterClass = typeof(Necrobinder) },
+        new() { Name = "尸鬼瓮给亡灵契约师", Match = (p) => p is PotOfGhouls, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.AllyCharacter, AllyCharacterClass = typeof(Necrobinder) },
+        new() { Name = "士兵炖汤给铁甲战士", Match = (p) => p is SoldiersStew, Scope = FightScope.BossFight, Target = TargetKind.AllyCharacter, AllyCharacterClass = typeof(Ironclad) },
+        new() { Name = "药水石头首回合对敌", Match = (p) => p is PotionShapedRock, FirstRoundOnly = true },
+
+        // —— 手牌构成条件类 ——
+        new()
+        {
+            Name = "灰水消耗状态诅咒", Match = (p) => p is Ashwater, Scope = FightScope.HardFight,
+            Condition = (c) => c.Hand.Count((card) => card.Type is CardType.Status or CardType.Curse) >= 2,
+            CardPicker = (ctx, options, _, maxSelect) =>
+                options.Where((card) => card.Type is CardType.Status or CardType.Curse).Take(maxSelect).ToList(),
+        },
+        new()
+        {
+            Name = "赌徒特酿换掉坏牌", Match = (p) => p is GamblersBrew, Scope = FightScope.HardFight,
+            Condition = (c) => BadCardCount(c) >= 5,
+            CardPicker = (_, options, _, maxSelect) =>
+                options.Where(IsBadCard).Take(maxSelect).ToList(),
+        },
+        new()
+        {
+            Name = "瓶装潜能洗坏牌", Match = (p) => p is BottledPotential, Scope = FightScope.HardFight,
+            Condition = (c) => BadCardCount(c) >= 5,
+        },
+        new()
+        {
+            Name = "发光水Boss洗坏牌", Match = (p) => p is GlowwaterPotion, Scope = FightScope.BossFight,
+            FirstRoundOnly = true, Condition = (c) => BadCardCount(c) >= 5,
+        },
+        new()
+        {
+            Name = "熔炉祝福升级关键牌", Match = (p) => p is BlessingOfTheForge, Scope = FightScope.HardFight,
+            Condition = (c) => c.Hand.Count >= 5
+                && (c.Hand.Any((card) => card.Type == CardType.Power && card.IsUpgradable)
+                    || c.Hand.Any((card) => card.Rarity is CardRarity.Rare or CardRarity.Ancient)),
+        },
+        new()
+        {
+            Name = "狡诈药水低手牌", Match = (p) => p is CunningPotion, Scope = FightScope.HardFight,
+            Condition = (c) => c.Hand.Count <= 6,
+        },
+        new()
+        {
+            Name = "痊愈药水无牌可出", Match = (p) => p is CureAll, Scope = FightScope.HardFight,
+            Phases = WakuuPotionPhase.StartOfTurn,
+            Condition = (c) => !c.Hand.Any((card) => card.CanPlay()),
+        },
+        new()
+        {
+            Name = "癫狂之触免费高费牌", Match = (p) => p is TouchOfInsanity, Scope = FightScope.HardFight,
+            Condition = (c) => c.Hand.Any((card) => card.EnergyCost.GetAmountToSpend() >= 3),
+            CardPicker = (_, options, _, _) => options
+                .Where((card) => card.EnergyCost.GetAmountToSpend() >= 3)
+                .OrderByDescending((card) => card.EnergyCost.GetAmountToSpend())
+                .Take(1)
+                .ToList(),
+        },
+        new()
+        {
+            Name = "预知之滴取能力稀有牌", Match = (p) => p is DropletOfPrecognition, Scope = FightScope.HardFight,
+            Condition = (c) => c.DrawPile.Any((card) => card.Type == CardType.Power || card.Rarity == CardRarity.Rare),
+            CardPicker = (_, options, _, _) => options
+                .Where((card) => card.Type == CardType.Power || card.Rarity == CardRarity.Rare)
+                .OrderBy((card) => card.EnergyCost.GetAmountToSpend())
+                .Take(1)
+                .ToList(),
+        },
+        new()
+        {
+            Name = "液态记忆取弃牌能力牌", Match = (p) => p is LiquidMemories,
+            Condition = (c) => c.DiscardPile.Any((card) => card.Type == CardType.Power),
+            CardPicker = (_, options, _, _) => options.Where((card) => card.Type == CardType.Power).Take(1).ToList(),
+        },
+
+        // —— 回合结束前防御/资源类 ——
+        new()
+        {
+            Name = "格挡药水硬仗防御", Match = (p) => p is BlockPotion, Phases = WakuuPotionPhase.EndOfTurn,
+            Condition = (c) => c.TotalIncomingDamage >= c.Block + 10 || c.LethalThreat,
+        },
+        new()
+        {
+            Name = "固化药水格挡不足", Match = (p) => p is Fortifier, Phases = WakuuPotionPhase.EndOfTurn,
+            Condition = (c) => c.TotalIncomingDamage > 0 && c.Block * 3m < c.TotalIncomingDamage,
+        },
+        new()
+        {
+            Name = "罐装幽灵免伤", Match = (p) => p is GhostInAJar, Phases = WakuuPotionPhase.EndOfTurn,
+            Condition = (c) => c.TotalIncomingDamage >= c.Block + 30 || c.LethalThreat,
+        },
+        new()
+        {
+            Name = "幸运补剂缓冲", Match = (p) => p is LuckyTonic, Phases = WakuuPotionPhase.EndOfTurn,
+            Condition = (c) => c.TotalIncomingDamage >= c.Block + 30 || c.LethalThreat,
+        },
+        new()
+        {
+            Name = "瓶中船双回合格挡", Match = (p) => p is ShipInABottle, Scope = FightScope.HardFight,
+            Phases = WakuuPotionPhase.EndOfTurn,
+            Condition = (c) => c.TotalIncomingDamage >= c.Block + 15 || c.LethalThreat,
+        },
+        new()
+        {
+            Name = "能量药水救高费牌", Match = (p) => p is EnergyPotion, Scope = FightScope.HardFight,
+            Phases = WakuuPotionPhase.EndOfTurn,
+            Condition = (c) => c.Energy == 0 && c.Hand.Any(IsEnergyBlocked),
+        },
+        new()
+        {
+            Name = "迅捷药水剩能量抽牌", Match = (p) => p is SwiftPotion, Scope = FightScope.HardFight,
+            Phases = WakuuPotionPhase.EndOfTurn,
+            Condition = (c) => c.Energy > 0 && (c.Hand.Count == 0 || !c.Hand.Any((card) => card.CanPlay())),
+        },
+        new()
+        {
+            Name = "异蛇之油剩能量抽牌", Match = (p) => p is SneckoOil, Scope = FightScope.HardFight,
+            Phases = WakuuPotionPhase.EndOfTurn,
+            Condition = (c) => c.Energy > 0,
+        },
+        new()
+        {
+            Name = "稳定血清保留能力牌", Match = (p) => p is StableSerum, Scope = FightScope.HardFight,
+            Phases = WakuuPotionPhase.EndOfTurn,
+            Condition = (c) => c.Hand.Any((card) => card.Type == CardType.Power),
+        },
+    };
+
     /// <summary>
-    /// 战斗内入口：由 ExecuteBeforePlayPhaseStartAsync 在出牌循环前调用
-    /// （遗物钩子每回合触发一次 + 看门狗可能补触发，消费即去重，重复进入为无害空转）。
+    /// 战斗内入口。phase 由调用方指定：遗物钩子先跑 StartOfTurn，出牌循环结束后跑 EndOfTurn；
+    /// 无牌可出的回合也会跑 EndOfTurn（防御类药水的时机）。
     /// </summary>
     public static async Task UseEligiblePotionsInCombatAsync(
-        RelicModel relic, Player player, PlayerChoiceContext choiceContext, ICombatState combatState)
+        RelicModel relic, Player player, PlayerChoiceContext choiceContext, ICombatState combatState, WakuuPotionPhase phase)
     {
         if (!LocalWakuuAutopilotConfig.AutoUsePotions || !LocalWakuuRelicRuntime.IsVakuuFormMode(player))
         {
@@ -103,35 +327,63 @@ internal static class LocalWakuuPotionAutoUse
             return;
         }
 
-        bool hardFight = IsHardFight();
-        int round = combatState.RoundNumber;
         List<PotionModel> potions = player.Potions.ToList();
         if (potions.Count == 0)
         {
             return;
         }
 
-        // "只剩混沌药水（EntropicBrew）"判定：栏内所有药水都是它且有空位时自动喝一瓶——
-        // 它的效果是用随机药水填满空位，无空位时喝=纯浪费
-        bool onlyEntropyBrew = potions.All((p) => p is EntropicBrew);
-        bool hasOpenSlots = player.HasOpenPotionSlots;
-
+        PotionRuleContext ctx = BuildContext(player, combatState, potions);
         foreach (PotionModel potion in potions)
         {
             // 污浊药水绝不自动使用：战斗中使用会伤害全场（含自己与队友），只允许在商人处投掷
-            // （见 LocalWakuuMerchantFoulThrow）
             if (potion is FoulPotion)
             {
                 continue;
             }
 
-            WakuuPotionCategory category = Classify(potion);
-            if (!ShouldUseNow(potion, category, combatState, player, hardFight, round, onlyEntropyBrew, hasOpenSlots, out string reason))
+            PotionRule? rule = Rules.FirstOrDefault((r) => SafeMatch(r.Match, potion));
+            string reason;
+            if (rule != null)
             {
-                continue;
+                if (!rule.Phases.HasFlag(phase))
+                {
+                    continue;
+                }
+
+                if (!IsScopeAllowed(rule.Scope, ctx))
+                {
+                    continue;
+                }
+
+                if (rule.FirstRoundOnly && ctx.Round > 1)
+                {
+                    continue;
+                }
+
+                if (rule.Condition != null && !SafeCondition(rule.Condition, ctx))
+                {
+                    continue;
+                }
+
+                reason = rule.Name;
+            }
+            else if (IsModPotion(potion))
+            {
+                // mod 药水兜底规则：普通战斗随机回合消耗（效果未知，与其过期不如随机用掉）
+                if (!ShouldUseModPotion(potion, ctx))
+                {
+                    continue;
+                }
+
+                reason = $"mod药水预定回合{RollModPotionRound(potion, combatState)}";
+            }
+            else
+            {
+                continue; // 未收录原版药水保守跳过
             }
 
-            Creature? target = ResolveTarget(potion, combatState, player);
+            Creature? target = ResolveTarget(rule, potion, ctx);
             if (!potion.IsValidTarget(target))
             {
                 LocalMultiControlLogger.Warn(
@@ -142,11 +394,19 @@ internal static class LocalWakuuPotionAutoUse
             try
             {
                 LocalMultiControlLogger.Info(
-                    $"瓦库自动用药: player={player.NetId}, round={round}, potion={potion.Id.Entry}, "
-                    + $"category={category}, target={target?.LogName ?? "无"}, reason={reason}");
-                using (CardSelectCmd.PushSelector(new LocalWakuuStrategySelector()))
+                    $"瓦库自动用药: player={player.NetId}, round={ctx.Round}, phase={phase}, "
+                    + $"potion={potion.Id.Entry}, reason={reason}, target={target?.LogName ?? "无"}");
+
+                if (rule?.DiscardInsteadOfUse == true)
                 {
-                    await potion.OnUseWrapper(choiceContext, target);
+                    await PotionCmd.Discard(potion);
+                }
+                else
+                {
+                    using (PushSelectorFor(rule, ctx))
+                    {
+                        await potion.OnUseWrapper(choiceContext, target);
+                    }
                 }
             }
             catch (Exception exception)
@@ -158,114 +418,267 @@ internal static class LocalWakuuPotionAutoUse
         }
     }
 
-    /// <summary>当前是否精英/Boss 战。</summary>
+    // ------------------------------------------------------------------
+    // 上下文构建与判定辅助
+    // ------------------------------------------------------------------
+    private static PotionRuleContext BuildContext(Player player, ICombatState combatState, List<PotionModel> potions)
+    {
+        IReadOnlyList<CardModel> hand = PileType.Hand.GetPile(player).Cards;
+        IReadOnlyList<CardModel> draw = PileType.Draw.GetPile(player).Cards;
+        IReadOnlyList<CardModel> discard = PileType.Discard.GetPile(player).Cards;
+
+        bool anyAttack = false;
+        int totalIncoming = 0;
+        try
+        {
+            foreach (Creature? enemy in combatState.GetCreaturesOnSide(CombatSide.Enemy))
+            {
+                if (enemy == null || !enemy.IsAlive || !enemy.IsHittable)
+                {
+                    continue;
+                }
+
+                MonsterModel? monster = enemy.Monster;
+                if (monster == null || !monster.IntendsToAttack)
+                {
+                    continue;
+                }
+
+                anyAttack = true;
+                foreach (AbstractIntent intent in monster.NextMove.Intents)
+                {
+                    if (intent is AttackIntent attackIntent)
+                    {
+                        totalIncoming += attackIntent.GetTotalDamage(combatState.Allies, enemy);
+                    }
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            // 意图解析异常时保守视为"没有可估的伤害"，不阻塞用药流程
+            LocalMultiControlLogger.Warn($"估算敌人意图伤害失败: {exception.Message}");
+        }
+
+        return new PotionRuleContext
+        {
+            Owner = player,
+            CombatState = combatState,
+            FullBar = potions,
+            Hand = hand,
+            DrawPile = draw,
+            DiscardPile = discard,
+            HardFight = IsHardFight(),
+            BossFight = IsBossFight(),
+            AnyEnemyIntendsAttack = anyAttack,
+            TotalIncomingDamage = totalIncoming,
+        };
+    }
+
     private static bool IsHardFight()
+    {
+        RoomType roomType = GetRoomType();
+        return roomType is RoomType.Elite or RoomType.Boss;
+    }
+
+    private static bool IsBossFight()
+    {
+        return GetRoomType() == RoomType.Boss;
+    }
+
+    private static RoomType GetRoomType()
     {
         try
         {
-            RoomType roomType = RunManager.Instance.DebugOnlyGetState()?.CurrentRoom?.RoomType ?? RoomType.Unassigned;
-            return roomType == RoomType.Elite || roomType == RoomType.Boss;
+            return RunManager.Instance.DebugOnlyGetState()?.CurrentRoom?.RoomType ?? RoomType.Unassigned;
         }
         catch
         {
-            return false; // 房间不可判时按普通战斗处理（保守：少用攻击性资源）
+            return RoomType.Unassigned;
         }
     }
 
-    /// <summary>
-    /// 分类表：按 C# 类型匹配（编译期可查，游戏更新改名会在构建期暴露，优于字符串 id）。
-    /// 命中即返回对应类别；未列出的原版药水返回 None（不自动用）。
-    /// </summary>
-    private static WakuuPotionCategory Classify(PotionModel potion)
+    private static bool SafeMatch(Func<PotionModel, bool> match, PotionModel potion)
+    {
+        try
+        {
+            return match(potion);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool SafeCondition(Func<PotionRuleContext, bool> condition, PotionRuleContext ctx)
+    {
+        try
+        {
+            return condition(ctx);
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"瓦库用药条件判定异常（保守跳过）: {exception.Message}");
+            return false;
+        }
+    }
+
+    private static bool IsScopeAllowed(FightScope scope, PotionRuleContext ctx)
+    {
+        return scope switch
+        {
+            FightScope.HardFight => ctx.HardFight,
+            FightScope.BossFight => ctx.BossFight,
+            _ => true,
+        };
+    }
+
+    private static int EnemyCount(PotionRuleContext ctx)
+    {
+        try
+        {
+            return ctx.CombatState.HittableEnemies.Count();
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>打击/防御/状态/诅咒（灰水、赌徒、瓶装潜能、发光水的"坏牌"口径）。</summary>
+    private static bool IsBadCard(CardModel card)
+    {
+        return LocalWakuuRestAutoChoice.IsBasicStrikeOrDefend(card)
+            || card.Type is CardType.Status or CardType.Curse;
+    }
+
+    private static int BadCardCount(PotionRuleContext ctx)
+    {
+        return ctx.Hand.Count(IsBadCard);
+    }
+
+    /// <summary>能量不足导致打不出（排除能量充足也打不出的牌）。</summary>
+    private static bool IsEnergyBlocked(CardModel card)
+    {
+        try
+        {
+            return !card.CanPlay(out UnplayableReason reason, out _)
+                && reason.HasFlag(UnplayableReason.EnergyCostTooHigh);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsModPotion(PotionModel potion)
     {
         string? ns = potion.GetType().Namespace;
-        if (ns == null || !ns.StartsWith("MegaCrit.Sts2.Core.Models.Potions", StringComparison.Ordinal))
-        {
-            return WakuuPotionCategory.ModRandom;
-        }
-
-        if (potion is FruitJuice)
-        {
-            return WakuuPotionCategory.ImmediateMaxHp;
-        }
-
-        if (potion is EntropicBrew)
-        {
-            return WakuuPotionCategory.RandomFillerOnly;
-        }
-
-        if (potion is BloodPotion or RegenPotion)
-        {
-            return WakuuPotionCategory.HealLowHp;
-        }
-
-        if (potion is AttackPotion or SkillPotion or PowerPotion or ColorlessPotion)
-        {
-            return WakuuPotionCategory.CardGrantHardFight;
-        }
-
-        if (potion is FirePotion or PoisonPotion or VulnerablePotion or WeakPotion or ShacklingPotion
-            or PotionOfBinding or PotionOfDoom or PowderedDemise or BeetleJuice or ExplosiveAmpoule)
-        {
-            return WakuuPotionCategory.DamageDebuffHardFight;
-        }
-
-        if (potion is StrengthPotion or DexterityPotion or FocusPotion or EnergyPotion or SpeedPotion
-            or FlexPotion or GigantificationPotion or CunningPotion or SwiftPotion or BlockPotion
-            or PotionOfCapacity or BlessingOfTheForge or HeartOfIron or Fortifier or Clarity
-            or StableSerum or StarPotion)
-        {
-            return WakuuPotionCategory.BuffHardFight;
-        }
-
-        return WakuuPotionCategory.None;
+        return ns == null || !ns.StartsWith("MegaCrit.Sts2.Core.Models.Potions", StringComparison.Ordinal);
     }
 
-    private static bool ShouldUseNow(
-        PotionModel potion,
-        WakuuPotionCategory category,
-        ICombatState combatState,
-        Player player,
-        bool hardFight,
-        int round,
-        bool onlyEntropyBrew,
-        bool hasOpenSlots,
-        out string reason)
+    // ------------------------------------------------------------------
+    // 目标解析
+    // ------------------------------------------------------------------
+    private static Creature? ResolveTarget(PotionRule? rule, PotionModel potion, PotionRuleContext ctx)
     {
-        switch (category)
+        if (rule == null)
         {
-            case WakuuPotionCategory.ImmediateMaxHp:
-                reason = "果汁随时喝";
-                return true;
+            return ResolveDefaultTarget(potion, ctx);
+        }
 
-            case WakuuPotionCategory.RandomFillerOnly:
-                reason = onlyEntropyBrew
-                    ? (hasOpenSlots ? "栏内只剩混沌药水且有空位" : "栏内只剩混沌但无空位（喝了浪费）")
-                    : "栏内有其他药水";
-                return onlyEntropyBrew && hasOpenSlots;
+        switch (rule.Target)
+        {
+            case TargetKind.HumanFirst:
+                return ResolveHumanFirstTarget(ctx);
 
-            case WakuuPotionCategory.HealLowHp:
-                decimal maxHp = player.Creature?.MaxHp ?? 1m;
-                decimal currentHp = player.Creature?.CurrentHp ?? 0m;
-                bool lowHp = currentHp * 2m < maxHp;
-                reason = lowHp ? "血量<50%" : "血量健康";
-                return lowHp;
-
-            case WakuuPotionCategory.BuffHardFight:
-            case WakuuPotionCategory.DamageDebuffHardFight:
-            case WakuuPotionCategory.CardGrantHardFight:
-                reason = hardFight ? (round <= 1 ? "硬仗首回合" : "非首回合") : "非硬仗";
-                return hardFight && round <= 1;
-
-            case WakuuPotionCategory.ModRandom:
-                int plannedRound = RollModPotionRound(potion, combatState);
-                reason = $"mod药水预定回合{plannedRound}";
-                return !hardFight && round == plannedRound;
+            case TargetKind.AllyCharacter:
+                return ResolveAllyCharacterTarget(ctx, rule.AllyCharacterClass);
 
             default:
-                reason = "未分类保守跳过";
-                return false;
+                return ResolveDefaultTarget(potion, ctx);
         }
+    }
+
+    private static Creature? ResolveDefaultTarget(PotionModel potion, PotionRuleContext ctx)
+    {
+        if (potion.TargetType == TargetType.AnyEnemy)
+        {
+            return ctx.CombatState.HittableEnemies.FirstOrDefault();
+        }
+
+        if (potion.TargetType == TargetType.AllEnemies)
+        {
+            return null; // 全体 splash，无需目标
+        }
+
+        return ctx.Owner.Creature;
+    }
+
+    private static Creature? ResolveHumanFirstTarget(PotionRuleContext ctx)
+    {
+        Player? teammate = GetOtherPlayers(ctx.Owner).FirstOrDefault((p) => p.Creature is { IsDead: false });
+        return teammate?.Creature ?? ctx.Owner.Creature;
+    }
+
+    private static Creature? ResolveAllyCharacterTarget(PotionRuleContext ctx, Type? characterClass)
+    {
+        if (characterClass == null)
+        {
+            return ctx.Owner.Creature;
+        }
+
+        // 自己就是该职业 → 自用；否则找该职业存活队友；都没有 → 自用
+        if (!characterClass.IsInstanceOfType(ctx.Owner.Character))
+        {
+            Player? mate = GetOtherPlayers(ctx.Owner).FirstOrDefault((p) =>
+                characterClass.IsInstanceOfType(p.Character) && p.Creature is { IsDead: false });
+            if (mate != null)
+            {
+                return mate.Creature;
+            }
+        }
+
+        return ctx.Owner.Creature;
+    }
+
+    private static IEnumerable<Player> GetOtherPlayers(Player owner)
+    {
+        try
+        {
+            return RunManager.Instance.DebugOnlyGetState()?.Players
+                .Where((p) => p != null && p.NetId != owner.NetId) ?? Enumerable.Empty<Player>();
+        }
+        catch
+        {
+            return Enumerable.Empty<Player>();
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 选择器 / mod 药水兜底
+    // ------------------------------------------------------------------
+    private static IDisposable PushSelectorFor(PotionRule? rule, PotionRuleContext ctx)
+    {
+        if (rule?.CardPicker != null)
+        {
+            Func<PotionRuleContext, IReadOnlyList<CardModel>, int, int, List<CardModel>> picker = rule.CardPicker;
+            return CardSelectCmd.PushSelector(new LocalWakuuTargetedCardSelector(
+                (options, minSelect, maxSelect) => picker(ctx, options, minSelect, maxSelect)));
+        }
+
+        return CardSelectCmd.PushSelector(new LocalWakuuStrategySelector());
+    }
+
+    private static bool ShouldUseModPotion(PotionModel potion, PotionRuleContext ctx)
+    {
+        // 普通战斗随机回合消耗；硬仗不动 mod 药水（效果未知，别在关键战赌）
+        if (ctx.HardFight)
+        {
+            return false;
+        }
+
+        return ctx.Round == RollModPotionRound(potion, ctx.CombatState);
     }
 
     /// <summary>mod 药水的随机回合计划：同一战斗内稳定复用预掷结果，换战斗重掷。</summary>
@@ -303,24 +716,5 @@ internal static class LocalWakuuPotionAutoUse
         {
             _modPotionPlan.Remove(key);
         }
-    }
-
-    /// <summary>
-    /// 目标解析：AnyEnemy→第一个可打敌人；AllEnemies→null（全体 splash）；
-    /// 其余（AnyPlayer/Self 等）→自身。AnyAlly 类药水解析为自身后会被 IsValidTarget 拦下（保守不自选队友）。
-    /// </summary>
-    private static Creature? ResolveTarget(PotionModel potion, ICombatState combatState, Player owner)
-    {
-        if (potion.TargetType == TargetType.AnyEnemy)
-        {
-            return combatState.HittableEnemies.FirstOrDefault();
-        }
-
-        if (potion.TargetType == TargetType.AllEnemies)
-        {
-            return null;
-        }
-
-        return owner.Creature;
     }
 }

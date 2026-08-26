@@ -151,15 +151,24 @@ internal static class LocalWakuuRelicRuntime
         }
 
         // Phase 2.5：战斗内自动用药水（独立开关默认关；果汁另有"到手即喝"链路，见
-        // PotionProcuredAutoDrinkPatch）。放在出牌循环之前、无牌可出的早退之前——
+        // PotionProcuredAutoDrinkPatch）。回合开始相位放在出牌循环之前、无牌可出的早退之前——
         // 没牌可出的回合同样可能需要喝药。消费即去重，看门狗重复进入为无害空转。
         if (LocalWakuuAutopilotConfig.AutoUsePotions && IsVakuuFormMode(player))
         {
-            await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(relic, player, choiceContext, combatState);
+            await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(
+                relic, player, choiceContext, combatState, LocalWakuuPotionAutoUse.WakuuPotionPhase.StartOfTurn);
         }
+
         CardModel? firstPlayableCard = PileType.Hand.GetPile(relic.Owner).Cards.FirstOrDefault((candidate) => candidate.CanPlay());
         if (firstPlayableCard == null)
         {
+            // 没牌可出：回合结束判定也要做（格挡/免伤等防御类药水的时机）
+            if (LocalWakuuAutopilotConfig.AutoUsePotions && IsVakuuFormMode(player))
+            {
+                await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(
+                    relic, player, choiceContext, combatState, LocalWakuuPotionAutoUse.WakuuPotionPhase.EndOfTurn);
+            }
+
             return;
         }
 
@@ -262,11 +271,13 @@ internal static class LocalWakuuRelicRuntime
             }
         }
 
-        // 出牌结束后补一次药水评估：覆盖出牌过程中获得的药水
-        // （炼药 Alchemize 生成、混沌药水结算等），让它们当回合就有机会按规则使用。
+        // 出牌结束后跑药水的"回合结束前"相位：覆盖出牌过程中获得的药水（炼药 Alchemize、
+        // 混沌结算产物等）以及格挡/免伤/剩能量等以回合结束为时机的规则。
+        // 此时能量与手牌状态即"回合结束前"语义。
         if (LocalWakuuAutopilotConfig.AutoUsePotions && IsVakuuFormMode(player) && !CombatManager.Instance.IsOverOrEnding)
         {
-            await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(relic, player, choiceContext, combatState);
+            await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(
+                relic, player, choiceContext, combatState, LocalWakuuPotionAutoUse.WakuuPotionPhase.EndOfTurn);
         }
 
         if (cardsPlayed <= 0)
