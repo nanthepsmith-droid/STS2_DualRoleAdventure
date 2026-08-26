@@ -109,7 +109,7 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             value => LocalWakuuAutopilotConfig.TrySetAndSave("autoRestChoice", value));
         AddToggleRow(column,
             "战斗中自动用药水",
-            "默认关。血液/再生：血量<50%自用；果汁：到手立刻喝；混沌药水：栏内只剩它时自动喝；力量/敏捷/专注/能量等增益与火焰/毒素/虚弱等攻击类、以及攻击/技能/能力/无色药水：精英/Boss战首回合使用；mod 药水：普通战斗随机回合消耗；污浊药水绝不在战斗中使用，改为遇到商人时自动投掷换钱。",
+            "默认关。血液/再生：血量<50%自用；果汁：到手立刻喝；混沌药水（填满药水栏）：栏内只剩它且有空位时自动喝；力量/敏捷/专注/能量等增益与火焰/毒素/虚弱等攻击类、以及攻击/技能/能力/无色药水：精英/Boss战首回合使用；mod 药水：普通战斗随机回合消耗；污浊药水绝不在战斗中使用，改为遇到商人时自动投掷换钱。",
             () => LocalWakuuAutopilotConfig.AutoUsePotions,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("autoUsePotions", value));
         AddToggleRow(column,
