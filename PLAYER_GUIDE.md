@@ -2,6 +2,8 @@
 
 Control 2–12 characters by yourself in Slay the Spire 2's multiplayer mode, on one machine, with no network.
 
+> 中文版指南：[PLAYER_GUIDE.zh-CN.md](PLAYER_GUIDE.zh-CN.md)
+
 ## Install & enable
 
 1. Subscribe on the Steam Workshop (or place `DualRoleAdventure.dll` + `DualRoleAdventure.json` in `<game>\mods\DualRoleAdventure\`).
@@ -33,7 +35,8 @@ permanent earring, and Vakuu plays **in the background** — the game no longer 
 to them, and they play their entire hand every turn.
 
 Configure via `%APPDATA%\SlayTheSpire2\vakuu_autopilot.json`
-(reloaded at the start of each run):
+(reloaded at the start of each run), or in game via **Settings → General → 瓦库托管**
+(a native-looking submenu; changes apply immediately):
 
 | Key | Default | Effect |
 |---|---|---|
@@ -41,6 +44,22 @@ Configure via `%APPDATA%\SlayTheSpire2\vakuu_autopilot.json`
 | `playAllCards` | `true` | Play the whole hand (hard cap 60 cards as a safety fuse) |
 | `backgroundMode` | `true` | Never switch foreground to Vakuu; a safety net hands control back if a dialog stalls >12s (combat) / >8s (event) |
 | `suppressVanillaEarring` | `true` | Suppress the vanilla Whispering Earring auto-play hook for Form holders (+1 energy kept) |
+| `autoClaimCards` | `true` | Auto-claim Vakuu's post-combat card rewards (leftmost), gold and relics |
+| `autoClaimGoldRelics` | `true` | Auto-claim gold & relic rewards |
+| `autoClaimPotions` | `true` | Auto-claim potion rewards. If the belt is full: drink a Blood Potion first to free a slot; otherwise take the reward only if its rarity beats the lowest potion on the belt (discarding it) |
+| `autoChooseEvents` | `true` | Auto-pick options for non-shared events (first/last/random via `eventChoiceMode`). Lethal options are rejected; combat/minigame/unknown situations stop and wait for you |
+| `eventChoiceMode` | `first` | Event option strategy: `first` / `last` / `random` |
+| `cardPickMode` | `last` | In-combat effect card picks (synthesis, choose-N, …): `first` / `last` / `random`. Card rewards always claim leftmost |
+| `autoRestChoice` | `true` | Auto-pick rest sites: low HP → rest; relic options → random among non-rest; otherwise smith the last non-Strike/Defend upgradable card (all done → rest; not full HP and nothing to smith → heal ally); tents pick everything |
+| `neowAutoChoose` | `false` | Also auto-pick Neow bonuses |
+| `autoUsePotions` | `false` | Auto-use potions in combat by a per-potion rule table: heals at <50% HP, Fruit Juice on pickup, buffs/debuffs/card potions on round 1 of Elite/Boss fights, defensive potions before end turn when enemy intent damage is high, character-specific potions thrown to the matching teammate, Duplicator/Gigantification to the human player first, targeted picks for Ashwater/Gambler's Brew/etc., Foul Potion only thrown at merchants for gold, mod potions consumed at a random round in normal fights |
+
+### What Vakuu handles automatically (v1.37)
+
+With the switches above on, a backgrounded Vakuu also: claims their combat/event rewards,
+resolves non-shared events, picks rest-site options, uses potions per the rule table, and
+throws Foul Potions at merchants. Everything else (shops, shared events, crystal sphere)
+stays manual.
 
 ## During a run
 
