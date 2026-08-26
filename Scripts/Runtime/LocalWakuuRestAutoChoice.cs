@@ -13,6 +13,7 @@ using MegaCrit.Sts2.Core.Entities.RestSite;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
+using MegaCrit.Sts2.Core.Nodes.RestSite;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
@@ -169,6 +170,9 @@ internal static class LocalWakuuRestAutoChoice
                     return;
                 }
 
+                // 选择前：角色头顶先显示"正在考虑"气泡（与真人悬停时的表现一致）
+                ShowCharacterBubble(player, choice, selecting: true);
+
                 bool success;
                 try
                 {
@@ -207,6 +211,11 @@ internal static class LocalWakuuRestAutoChoice
                     brokenOptionIds.Add(choice.OptionId);
                     continue;
                 }
+
+                // 选择成功：显式驱动角色头顶确认图标。正常由 AfterPlayerOptionChosen
+                // 事件驱动，但多张升级等长流程下可能被时序吞掉，这里兜底重画一次
+                //（重复调用只是叠加一个同图标的确认节点，视觉上无差异）。
+                ShowCharacterBubble(player, choice, selecting: false);
 
                 await Task.Delay(400);
             }
@@ -296,6 +305,37 @@ internal static class LocalWakuuRestAutoChoice
     private static IReadOnlyList<RestSiteOption> GetOptions(ulong playerId)
     {
         return RunManager.Instance.RestSiteSynchronizer.GetOptionsForPlayer(playerId);
+    }
+
+    /// <summary>
+    /// 显式驱动瓦库角色头顶的选项气泡（selecting=true 为"考虑中"思考泡，false 为确认图标）。
+    /// 游戏本应由 AfterPlayerOptionChosen 等事件驱动，这里兜底保证多控下表现一致。
+    /// </summary>
+    private static void ShowCharacterBubble(Player player, RestSiteOption option, bool selecting)
+    {
+        try
+        {
+            NRestSiteCharacter? character = NRestSiteRoom.Instance?.GetCharacterForPlayer(player);
+            if (character == null)
+            {
+                return;
+            }
+
+            if (selecting)
+            {
+                character.SetSelectingRestSiteOption(option);
+            }
+            else
+            {
+                character.SetSelectingRestSiteOption(null);
+                character.ShowSelectedRestSiteOption(option);
+            }
+        }
+        catch (Exception exception)
+        {
+            // 纯表现层兜底，失败不影响选择本身
+            LocalMultiControlLogger.Warn($"驱动瓦库火堆气泡失败: option={option.OptionId}, error={exception.Message}");
+        }
     }
 
     /// <summary>
