@@ -31,8 +31,15 @@ internal static class LocalWakuuAutopilotConfig
     /// <summary>瓦库形态：战后卡牌奖励自动领最左（仅瓦库角色自己的奖励）。</summary>
     public static bool AutoClaimCards { get; private set; } = true;
 
-    /// <summary>瓦库形态：金币与遗物奖励自动领取（药水仍需手动）。</summary>
+    /// <summary>瓦库形态：金币与遗物奖励自动领取。</summary>
     public static bool AutoClaimGoldRelics { get; private set; } = true;
+
+    /// <summary>
+    /// 瓦库形态：药水奖励自动领取（2026-08-25 追加拍板）。
+    /// 有空位直接领；满栏时若栏内有鲜血药水先喝掉腾位；否则奖励稀有度高于栏内最低稀有度
+    /// 才丢弃栏内最低者领取，等价或更低则不领。
+    /// </summary>
+    public static bool AutoClaimPotions { get; private set; } = true;
 
     /// <summary>瓦库形态：非共享事件自动选最上（复杂/进战斗选项即停，交还真人）。</summary>
     public static bool AutoChooseEvents { get; private set; } = true;
@@ -95,6 +102,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(ConfigData.suppressVanillaEarring): data.suppressVanillaEarring = value; break;
                     case nameof(ConfigData.autoClaimCards): data.autoClaimCards = value; break;
                     case nameof(ConfigData.autoClaimGoldRelics): data.autoClaimGoldRelics = value; break;
+                    case nameof(ConfigData.autoClaimPotions): data.autoClaimPotions = value; break;
                     case nameof(ConfigData.autoChooseEvents): data.autoChooseEvents = value; break;
                     case nameof(ConfigData.autoRestChoice): data.autoRestChoice = value; break;
                     case nameof(ConfigData.autoUsePotions): data.autoUsePotions = value; break;
@@ -256,6 +264,7 @@ internal static class LocalWakuuAutopilotConfig
                 $"瓦库托管生效配置: useVakuuForm={data.useVakuuForm}, playAllCards={data.playAllCards}, "
                 + $"backgroundMode={data.backgroundMode}, suppressVanillaEarring={data.suppressVanillaEarring}, "
                 + $"autoClaimCards={data.autoClaimCards}, autoClaimGoldRelics={data.autoClaimGoldRelics}, "
+                + $"autoClaimPotions={data.autoClaimPotions}, "
                 + $"autoChooseEvents={data.autoChooseEvents}, autoRestChoice={data.autoRestChoice}, "
                 + $"autoUsePotions={data.autoUsePotions}, "
                 + $"neowAutoChoose={data.neowAutoChoose}, "
@@ -268,6 +277,7 @@ internal static class LocalWakuuAutopilotConfig
         SuppressVanillaEarring = data.suppressVanillaEarring;
         AutoClaimCards = data.autoClaimCards;
         AutoClaimGoldRelics = data.autoClaimGoldRelics;
+        AutoClaimPotions = data.autoClaimPotions;
         AutoChooseEvents = data.autoChooseEvents;
         AutoRestChoice = data.autoRestChoice;
         AutoUsePotions = data.autoUsePotions;
@@ -308,6 +318,9 @@ internal static class LocalWakuuAutopilotConfig
         public bool autoClaimCards { get; set; } = true;
 
         public bool autoClaimGoldRelics { get; set; } = true;
+
+        /// <summary>药水奖励自动领取（满栏按稀有度换药/先喝鲜血），默认开。</summary>
+        public bool autoClaimPotions { get; set; } = true;
 
         public bool autoChooseEvents { get; set; } = true;
 

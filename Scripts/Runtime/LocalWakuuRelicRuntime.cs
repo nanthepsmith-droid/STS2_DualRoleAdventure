@@ -157,7 +157,6 @@ internal static class LocalWakuuRelicRuntime
         {
             await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(relic, player, choiceContext, combatState);
         }
-
         CardModel? firstPlayableCard = PileType.Hand.GetPile(relic.Owner).Cards.FirstOrDefault((candidate) => candidate.CanPlay());
         if (firstPlayableCard == null)
         {
@@ -261,6 +260,13 @@ internal static class LocalWakuuRelicRuntime
                     $"瓦库选择器闸门已释放: player={player.NetId}, round={combatState.RoundNumber}, elapsedMs={elapsedMs}, inFlight={remainInFlight}, selectorStackCount={releaseSnapshot.Count}, selectorStackTop={releaseSnapshot.TopType}");
                 ProbeAndRecoverSelectorStack($"wakuu-selector-finally-{player.NetId}-{combatState.RoundNumber}", allowRecover: true);
             }
+        }
+
+        // 出牌结束后补一次药水评估：覆盖出牌过程中获得的药水
+        // （炼药 Alchemize 生成、混沌药水结算等），让它们当回合就有机会按规则使用。
+        if (LocalWakuuAutopilotConfig.AutoUsePotions && IsVakuuFormMode(player) && !CombatManager.Instance.IsOverOrEnding)
+        {
+            await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(relic, player, choiceContext, combatState);
         }
 
         if (cardsPlayed <= 0)

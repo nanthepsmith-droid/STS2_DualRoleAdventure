@@ -19,15 +19,21 @@ namespace LocalMultiControl.Scripts.Runtime;
 
 /// <summary>
 /// 瓦库战斗中自动用药水（Phase 2.5 保守版，独立开关 autoUsePotions，默认关）。
-/// 规则（2026-08-25 拍板）：
+/// 规则（2026-08-25 拍板，同日追加混沌/污浊两条）：
 /// - 果汁 FruitJuice（+5 最大生命）：到手立刻喝（见 PotionProcuredAutoDrinkPatch）；战斗中若仍在手也随时补喝；
 /// - 治疗类（血液/再生）：自身血量 &lt;50% 时对自用；
 /// - 增益类（力量/敏捷/专注/能量/格挡等）：精英或 Boss 战第 1 回合对自用；
 /// - 攻击/减益类（火焰/毒素/虚弱/缠绕/毁灭等）：精英或 Boss 战第 1 回合对第一个敌人；
 /// - 卡牌授予类（攻击/技能/能力/无色药水，用户点名追加）：精英或 Boss 战第 1 回合使用，
 ///   内部的 FromChooseACardScreen 选牌由托管选择器自动作答；
+/// - 混沌药水 DistilledChaos：仅当栏内只剩它时自动喝一瓶（打抽牌堆顶 3 张，纯价值不压栏）；
+/// - 污浊药水 FoulPotion 绝不在战斗中使用（全场伤害含自己），只在商人处自动投掷
+///   （见 LocalWakuuMerchantFoulThrow）；
 /// - mod 药水（非游戏命名空间）：普通战斗随机回合消耗（效果未知，与其过期不如随机用掉）；
 /// - 其余原版药水保守跳过（宁可不用也不误用），后续按需扩充分类表。
+///
+/// 战斗中获得的药水（炼药 Alchemize、混沌结算产物等）：出牌循环结束后会补做一次评估，
+/// 下一回合开始也会重新评估（每次调用都实时读药水栏），不会遗漏。
 ///
 /// 实现要点：
 /// - 直接 await potion.OnUseWrapper(choiceContext, target)——与瓦库自动出牌同一条顺序链，
@@ -48,6 +54,9 @@ internal static class LocalWakuuPotionAutoUse
 
         /// <summary>+最大生命类：任何时机都喝。</summary>
         ImmediateMaxHp,
+
+        /// <summary>混沌药水：仅当栏内只剩它时自动喝（用户 2026-08-25 追加）。</summary>
+        DistilledChaosOnly,
 
         /// <summary>治疗类：低血时对自用。</summary>
         HealLowHp,
@@ -100,10 +109,21 @@ internal static class LocalWakuuPotionAutoUse
             return;
         }
 
+        // "只剩混沌药水"判定：栏内所有药水都是 DistilledChaos 时自动喝一瓶
+        // （混沌=自动打抽牌堆顶 3 张，纯价值药水，压在栏里不如早用；用完生成的局面由后续回合规则接管）
+        bool onlyDistilledChaos = potions.All((p) => p is DistilledChaos);
+
         foreach (PotionModel potion in potions)
         {
+            // 污浊药水绝不自动使用：战斗中使用会伤害全场（含自己与队友），只允许在商人处投掷
+            // （见 LocalWakuuMerchantFoulThrow）
+            if (potion is FoulPotion)
+            {
+                continue;
+            }
+
             WakuuPotionCategory category = Classify(potion);
-            if (!ShouldUseNow(potion, category, combatState, player, hardFight, round, out string reason))
+            if (!ShouldUseNow(potion, category, combatState, player, hardFight, round, onlyDistilledChaos, out string reason))
             {
                 continue;
             }
@@ -166,6 +186,11 @@ internal static class LocalWakuuPotionAutoUse
             return WakuuPotionCategory.ImmediateMaxHp;
         }
 
+        if (potion is DistilledChaos)
+        {
+            return WakuuPotionCategory.DistilledChaosOnly;
+        }
+
         if (potion is BloodPotion or RegenPotion)
         {
             return WakuuPotionCategory.HealLowHp;
@@ -200,6 +225,7 @@ internal static class LocalWakuuPotionAutoUse
         Player player,
         bool hardFight,
         int round,
+        bool onlyDistilledChaos,
         out string reason)
     {
         switch (category)
@@ -207,6 +233,10 @@ internal static class LocalWakuuPotionAutoUse
             case WakuuPotionCategory.ImmediateMaxHp:
                 reason = "果汁随时喝";
                 return true;
+
+            case WakuuPotionCategory.DistilledChaosOnly:
+                reason = onlyDistilledChaos ? "栏内只剩混沌药水" : "栏内有其他药水";
+                return onlyDistilledChaos;
 
             case WakuuPotionCategory.HealLowHp:
                 decimal maxHp = player.Creature?.MaxHp ?? 1m;

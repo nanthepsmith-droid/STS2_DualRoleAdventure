@@ -109,7 +109,7 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             value => LocalWakuuAutopilotConfig.TrySetAndSave("autoRestChoice", value));
         AddToggleRow(column,
             "战斗中自动用药水",
-            "默认关。血液/再生：血量<50%自用；果汁：到手立刻喝；力量/敏捷/专注/能量等增益与火焰/毒素/虚弱等攻击类、以及攻击/技能/能力/无色药水：精英/Boss战首回合使用；mod 药水：普通战斗随机回合消耗。",
+            "默认关。血液/再生：血量<50%自用；果汁：到手立刻喝；混沌药水：栏内只剩它时自动喝；力量/敏捷/专注/能量等增益与火焰/毒素/虚弱等攻击类、以及攻击/技能/能力/无色药水：精英/Boss战首回合使用；mod 药水：普通战斗随机回合消耗；污浊药水绝不在战斗中使用，改为遇到商人时自动投掷换钱。",
             () => LocalWakuuAutopilotConfig.AutoUsePotions,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("autoUsePotions", value));
         AddToggleRow(column,
@@ -117,6 +117,16 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             "战后瓦库自己的卡牌奖励自动领最左边一张；金币与遗物同规则自动领取。",
             () => LocalWakuuAutopilotConfig.AutoClaimCards,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("autoClaimCards", value));
+        AddToggleRow(column,
+            "金币/遗物奖励自动领",
+            "战后瓦库的金币与遗物奖励自动领取。",
+            () => LocalWakuuAutopilotConfig.AutoClaimGoldRelics,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("autoClaimGoldRelics", value));
+        AddToggleRow(column,
+            "药水奖励自动领取",
+            "战后与事件中药水奖励自动领取。有空位直接领；满栏时先喝栏内鲜血药水腾位；否则奖励稀有度高于栏内最低才丢最低换领，等价或更低放弃。事件中的卡牌/金币/遗物奖励同上方开关。",
+            () => LocalWakuuAutopilotConfig.AutoClaimPotions,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("autoClaimPotions", value));
         AddToggleRow(column,
             "事件自动选择",
             "非共享事件按下方策略自动选择；触发战斗/小游戏/致死选项即停住等真人。",
