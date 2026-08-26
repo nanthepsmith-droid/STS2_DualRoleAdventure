@@ -96,6 +96,12 @@ internal static class LocalWakuuPotionAutoUse
         public Type? AllyCharacterClass;
         public Func<PotionRuleContext, IReadOnlyList<CardModel>, int, int, List<CardModel>>? CardPicker;
         public bool DiscardInsteadOfUse;
+
+        /// <summary>
+        /// 昏眩（RingingPower，每回合只能打 1 张牌）时不使用：抽牌类与获得能量类药水
+        /// 在昏眩下纯浪费（2026-08-26 用户追加规则）。
+        /// </summary>
+        public bool SkipWhenStunned;
     }
 
     private static readonly Random _random = new();
@@ -134,10 +140,10 @@ internal static class LocalWakuuPotionAutoUse
         new() { Name = "异鱼之油首回合", Match = (p) => p is FyshOil, Scope = FightScope.HardFight, FirstRoundOnly = true },
         new() { Name = "流动铜液首回合", Match = (p) => p is LiquidBronze, Scope = FightScope.HardFight, FirstRoundOnly = true },
         new() { Name = "马萨雷斯赠礼首回合", Match = (p) => p is MazalethsGift, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "明耀酊剂首回合", Match = (p) => p is RadiantTincture, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "明耀酊剂首回合", Match = (p) => p is RadiantTincture, Scope = FightScope.HardFight, FirstRoundOnly = true, SkipWhenStunned = true },
         new() { Name = "宇宙药剂首回合", Match = (p) => p is CosmicConcoction, Scope = FightScope.HardFight, FirstRoundOnly = true },
         new() { Name = "精炼混沌首回合", Match = (p) => p is DistilledChaos, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "明晰提取物首回合", Match = (p) => p is Clarity, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "明晰提取物首回合", Match = (p) => p is Clarity, Scope = FightScope.HardFight, FirstRoundOnly = true, SkipWhenStunned = true },
 
         // —— 精英/Boss 首回合攻击/减益（对敌）——
         new() { Name = "火焰首回合对敌", Match = (p) => p is FirePotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
@@ -226,7 +232,7 @@ internal static class LocalWakuuPotionAutoUse
         new()
         {
             Name = "痊愈药水无牌可出", Match = (p) => p is CureAll, Scope = FightScope.HardFight,
-            Phases = WakuuPotionPhase.StartOfTurn,
+            Phases = WakuuPotionPhase.StartOfTurn, SkipWhenStunned = true,
             Condition = (c) => !c.Hand.Any((card) => card.CanPlay()),
         },
         new()
@@ -286,19 +292,19 @@ internal static class LocalWakuuPotionAutoUse
         new()
         {
             Name = "能量药水救高费牌", Match = (p) => p is EnergyPotion, Scope = FightScope.HardFight,
-            Phases = WakuuPotionPhase.EndOfTurn,
+            Phases = WakuuPotionPhase.EndOfTurn, SkipWhenStunned = true,
             Condition = (c) => c.Energy == 0 && c.Hand.Any(IsEnergyBlocked),
         },
         new()
         {
             Name = "迅捷药水剩能量抽牌", Match = (p) => p is SwiftPotion, Scope = FightScope.HardFight,
-            Phases = WakuuPotionPhase.EndOfTurn,
+            Phases = WakuuPotionPhase.EndOfTurn, SkipWhenStunned = true,
             Condition = (c) => c.Energy > 0 && (c.Hand.Count == 0 || !c.Hand.Any((card) => card.CanPlay())),
         },
         new()
         {
             Name = "异蛇之油剩能量抽牌", Match = (p) => p is SneckoOil, Scope = FightScope.HardFight,
-            Phases = WakuuPotionPhase.EndOfTurn,
+            Phases = WakuuPotionPhase.EndOfTurn, SkipWhenStunned = true,
             Condition = (c) => c.Energy > 0,
         },
         new()
@@ -362,6 +368,13 @@ internal static class LocalWakuuPotionAutoUse
                 }
 
                 if (rule.Condition != null && !SafeCondition(rule.Condition, ctx))
+                {
+                    continue;
+                }
+
+                // 昏眩（每回合只能打 1 张牌）：抽牌/能量类药水纯浪费，跳过
+                if (rule.SkipWhenStunned
+                    && (ctx.Owner.Creature?.HasPower<RingingPower>() ?? false))
                 {
                     continue;
                 }
