@@ -108,6 +108,11 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.AutoRestChoice,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("autoRestChoice", value));
         AddToggleRow(column,
+            "战斗中自动用药水",
+            "默认关。血液/再生：血量<50%自用；果汁：到手立刻喝；力量/敏捷/专注/能量等增益与火焰/毒素/虚弱等攻击类、以及攻击/技能/能力/无色药水：精英/Boss战首回合使用；mod 药水：普通战斗随机回合消耗。",
+            () => LocalWakuuAutopilotConfig.AutoUsePotions,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("autoUsePotions", value));
+        AddToggleRow(column,
             "卡牌奖励自动领（最左）",
             "战后瓦库自己的卡牌奖励自动领最左边一张；金币与遗物同规则自动领取。",
             () => LocalWakuuAutopilotConfig.AutoClaimCards,

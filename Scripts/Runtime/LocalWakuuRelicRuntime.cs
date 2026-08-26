@@ -150,6 +150,14 @@ internal static class LocalWakuuRelicRuntime
             return;
         }
 
+        // Phase 2.5：战斗内自动用药水（独立开关默认关；果汁另有"到手即喝"链路，见
+        // PotionProcuredAutoDrinkPatch）。放在出牌循环之前、无牌可出的早退之前——
+        // 没牌可出的回合同样可能需要喝药。消费即去重，看门狗重复进入为无害空转。
+        if (LocalWakuuAutopilotConfig.AutoUsePotions && IsVakuuFormMode(player))
+        {
+            await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(relic, player, choiceContext, combatState);
+        }
+
         CardModel? firstPlayableCard = PileType.Hand.GetPile(relic.Owner).Cards.FirstOrDefault((candidate) => candidate.CanPlay());
         if (firstPlayableCard == null)
         {

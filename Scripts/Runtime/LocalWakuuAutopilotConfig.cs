@@ -40,6 +40,13 @@ internal static class LocalWakuuAutopilotConfig
     /// <summary>瓦库形态：火堆自动选择（低血睡觉；高血按策略升级牌或用遗物选项；帐篷多选全拿）。</summary>
     public static bool AutoRestChoice { get; private set; } = true;
 
+    /// <summary>
+    /// 瓦库形态：战斗中自动用药水（Phase 2.5 保守版，默认关，已拍板）。
+    /// 血液/再生低血自用；果汁到手立刻喝；增益/攻击/卡牌授予类精英 Boss 战首回合用；
+    /// mod 药水普通战斗随机回合消耗；未分类原版药水保守跳过。
+    /// </summary>
+    public static bool AutoUsePotions { get; private set; }
+
     /// <summary>涅奥（NEOW）开局奖励是否也自动选（默认关，已拍板 #3）。</summary>
     public static bool NeowAutoChoose { get; private set; }
 
@@ -90,6 +97,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(ConfigData.autoClaimGoldRelics): data.autoClaimGoldRelics = value; break;
                     case nameof(ConfigData.autoChooseEvents): data.autoChooseEvents = value; break;
                     case nameof(ConfigData.autoRestChoice): data.autoRestChoice = value; break;
+                    case nameof(ConfigData.autoUsePotions): data.autoUsePotions = value; break;
                     case nameof(ConfigData.neowAutoChoose): data.neowAutoChoose = value; break;
                     default:
                         LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：未知开关名 {key}");
@@ -249,6 +257,7 @@ internal static class LocalWakuuAutopilotConfig
                 + $"backgroundMode={data.backgroundMode}, suppressVanillaEarring={data.suppressVanillaEarring}, "
                 + $"autoClaimCards={data.autoClaimCards}, autoClaimGoldRelics={data.autoClaimGoldRelics}, "
                 + $"autoChooseEvents={data.autoChooseEvents}, autoRestChoice={data.autoRestChoice}, "
+                + $"autoUsePotions={data.autoUsePotions}, "
                 + $"neowAutoChoose={data.neowAutoChoose}, "
                 + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}");
         }
@@ -261,6 +270,7 @@ internal static class LocalWakuuAutopilotConfig
         AutoClaimGoldRelics = data.autoClaimGoldRelics;
         AutoChooseEvents = data.autoChooseEvents;
         AutoRestChoice = data.autoRestChoice;
+        AutoUsePotions = data.autoUsePotions;
         NeowAutoChoose = data.neowAutoChoose;
         EventChoiceMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;
         CardPickMode = NormalizeChoiceMode(data.cardPickMode) ?? LastChoiceMode;
@@ -302,6 +312,9 @@ internal static class LocalWakuuAutopilotConfig
         public bool autoChooseEvents { get; set; } = true;
 
         public bool autoRestChoice { get; set; } = true;
+
+        /// <summary>战斗中自动用药水：默认关（拍板：保守版写死规则，先观察）。</summary>
+        public bool autoUsePotions { get; set; }
 
         public bool neowAutoChoose { get; set; }
 
