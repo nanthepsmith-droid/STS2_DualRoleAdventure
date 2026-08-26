@@ -28,11 +28,189 @@ internal static class LocalWakuuAutopilotConfig
     /// <summary>瓦库形态：压制原版低语耳环的自动出牌钩子（保留其 +1 能量）。</summary>
     public static bool SuppressVanillaEarring { get; private set; } = true;
 
+    /// <summary>瓦库形态：战后卡牌奖励自动领最左（仅瓦库角色自己的奖励）。</summary>
+    public static bool AutoClaimCards { get; private set; } = true;
+
+    /// <summary>瓦库形态：金币与遗物奖励自动领取。</summary>
+    public static bool AutoClaimGoldRelics { get; private set; } = true;
+
+    /// <summary>
+    /// 瓦库形态：药水奖励自动领取（2026-08-25 追加拍板）。
+    /// 有空位直接领；满栏时若栏内有鲜血药水先喝掉腾位；否则奖励稀有度高于栏内最低稀有度
+    /// 才丢弃栏内最低者领取，等价或更低则不领。
+    /// </summary>
+    public static bool AutoClaimPotions { get; private set; } = true;
+
+    /// <summary>瓦库形态：非共享事件自动选最上（复杂/进战斗选项即停，交还真人）。</summary>
+    public static bool AutoChooseEvents { get; private set; } = true;
+
+    /// <summary>瓦库形态：火堆自动选择（低血睡觉；高血按策略升级牌或用遗物选项；帐篷多选全拿）。</summary>
+    public static bool AutoRestChoice { get; private set; } = true;
+
+    /// <summary>
+    /// 瓦库形态：战斗中自动用药水（Phase 2.5 保守版，默认关，已拍板）。
+    /// 血液/再生低血自用；果汁到手立刻喝；增益/攻击/卡牌授予类精英 Boss 战首回合用；
+    /// mod 药水普通战斗随机回合消耗；未分类原版药水保守跳过。
+    /// </summary>
+    public static bool AutoUsePotions { get; private set; }
+
+    /// <summary>涅奥（NEOW）开局奖励是否也自动选（默认关，已拍板 #3）。</summary>
+    public static bool NeowAutoChoose { get; private set; }
+
+    /// <summary>
+    /// 事件自动选择的策略：first=第一个（最上）/ last=最后一个 / random=随机。
+    /// 很多事件一直选第一个会死，可切到 last 或 random 规避。
+    /// </summary>
+    public static string EventChoiceMode { get; private set; } = FirstChoiceMode;
+
+    /// <summary>
+    /// 战斗内效果选牌策略（酒狐合成二选一、开局遗物二选一、"从手牌选 N 张"等）：
+    /// first=最前 / last=最后 / random=随机。默认 last，避免合成永远拿到排在最前的牌。
+    /// 卡牌奖励不受此影响（始终领最左）。
+    /// </summary>
+    public static string CardPickMode { get; private set; } = LastChoiceMode;
+
+    public const string FirstChoiceMode = "first";
+    public const string LastChoiceMode = "last";
+    public const string RandomChoiceMode = "random";
+
     public static string ConfigFilePath =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "SlayTheSpire2",
             ConfigFileName);
+
+    /// <summary>
+    /// 设置界面专用：更新单个开关，立即刷新内存生效值并把完整配置写回 json。
+    /// key 取值与 json 字段一致（useVakuuForm / playAllCards / backgroundMode / suppressVanillaEarring /
+    /// autoClaimCards / autoClaimGoldRelics / autoChooseEvents / neowAutoChoose）。
+    /// 返回 false 表示 key 未知或写盘失败（内存值也不会变）。
+    /// </summary>
+    public static bool TrySetAndSave(string key, bool value)
+    {
+        lock (_ioLock)
+        {
+            try
+            {
+                // 以磁盘上的现有内容为底稿改单键，避免覆盖玩家手改的其他字段。
+                ConfigData data = ReadConfigDataOrThrow();
+                switch (key)
+                {
+                    case nameof(ConfigData.useVakuuForm): data.useVakuuForm = value; break;
+                    case nameof(ConfigData.playAllCards): data.playAllCards = value; break;
+                    case nameof(ConfigData.backgroundMode): data.backgroundMode = value; break;
+                    case nameof(ConfigData.suppressVanillaEarring): data.suppressVanillaEarring = value; break;
+                    case nameof(ConfigData.autoClaimCards): data.autoClaimCards = value; break;
+                    case nameof(ConfigData.autoClaimGoldRelics): data.autoClaimGoldRelics = value; break;
+                    case nameof(ConfigData.autoClaimPotions): data.autoClaimPotions = value; break;
+                    case nameof(ConfigData.autoChooseEvents): data.autoChooseEvents = value; break;
+                    case nameof(ConfigData.autoRestChoice): data.autoRestChoice = value; break;
+                    case nameof(ConfigData.autoUsePotions): data.autoUsePotions = value; break;
+                    case nameof(ConfigData.neowAutoChoose): data.neowAutoChoose = value; break;
+                    default:
+                        LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：未知开关名 {key}");
+                        return false;
+                }
+
+                WriteConfigData(data);
+                Apply(data, logChanges: true);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                LocalMultiControlLogger.Warn($"瓦库托管配置写入异常（key={key}, value={value}）: {exception.Message}");
+                return false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 设置界面专用：更新单个字符串型配置（当前仅 eventChoiceMode：first/last/random）。
+    /// 立即刷新内存生效值并写回 json；返回 false 表示 key 未知、值非法或写盘失败。
+    /// </summary>
+    public static bool TrySetAndSaveString(string key, string value)
+    {
+        lock (_ioLock)
+        {
+            try
+            {
+                if (key is nameof(ConfigData.eventChoiceMode) or nameof(ConfigData.cardPickMode))
+                {
+                    string? normalized = NormalizeChoiceMode(value);
+                    if (normalized == null)
+                    {
+                        LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：非法的策略取值 {value}（key={key}）");
+                        return false;
+                    }
+
+                    ConfigData data = ReadConfigDataOrThrow();
+                    if (key == nameof(ConfigData.eventChoiceMode))
+                    {
+                        data.eventChoiceMode = normalized;
+                    }
+                    else
+                    {
+                        data.cardPickMode = normalized;
+                    }
+
+                    WriteConfigData(data);
+                    Apply(data, logChanges: true);
+                    return true;
+                }
+
+                LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：未知字符串配置项 {key}");
+                return false;
+            }
+            catch (Exception exception)
+            {
+                LocalMultiControlLogger.Warn($"瓦库托管配置写入异常（key={key}, value={value}）: {exception.Message}");
+                return false;
+            }
+        }
+    }
+
+    /// <summary>规范化事件选择策略取值；非法返回 null。</summary>
+    public static string? NormalizeChoiceMode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            FirstChoiceMode => FirstChoiceMode,
+            LastChoiceMode => LastChoiceMode,
+            RandomChoiceMode => RandomChoiceMode,
+            _ => null,
+        };
+    }
+
+    private static void WriteConfigData(ConfigData data)
+    {
+        string? directory = Path.GetDirectoryName(ConfigFilePath);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        File.WriteAllText(
+            ConfigFilePath,
+            JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    /// <summary>读取磁盘配置；文件缺失/损坏时返回默认值底稿（默认=原版低语耳环行为）。</summary>
+    private static ConfigData ReadConfigDataOrThrow()
+    {
+        string path = ConfigFilePath;
+        if (!File.Exists(path))
+        {
+            return new ConfigData();
+        }
+
+        ConfigData? data = JsonSerializer.Deserialize<ConfigData>(File.ReadAllText(path), JsonOptions);
+        return data ?? new ConfigData();
+    }
 
     public static void Reload(string source)
     {
@@ -84,13 +262,28 @@ internal static class LocalWakuuAutopilotConfig
         {
             LocalMultiControlLogger.Info(
                 $"瓦库托管生效配置: useVakuuForm={data.useVakuuForm}, playAllCards={data.playAllCards}, "
-                + $"backgroundMode={data.backgroundMode}, suppressVanillaEarring={data.suppressVanillaEarring}");
+                + $"backgroundMode={data.backgroundMode}, suppressVanillaEarring={data.suppressVanillaEarring}, "
+                + $"autoClaimCards={data.autoClaimCards}, autoClaimGoldRelics={data.autoClaimGoldRelics}, "
+                + $"autoClaimPotions={data.autoClaimPotions}, "
+                + $"autoChooseEvents={data.autoChooseEvents}, autoRestChoice={data.autoRestChoice}, "
+                + $"autoUsePotions={data.autoUsePotions}, "
+                + $"neowAutoChoose={data.neowAutoChoose}, "
+                + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}");
         }
 
         UseVakuuForm = data.useVakuuForm;
         PlayAllCards = data.playAllCards;
         BackgroundMode = data.backgroundMode;
         SuppressVanillaEarring = data.suppressVanillaEarring;
+        AutoClaimCards = data.autoClaimCards;
+        AutoClaimGoldRelics = data.autoClaimGoldRelics;
+        AutoClaimPotions = data.autoClaimPotions;
+        AutoChooseEvents = data.autoChooseEvents;
+        AutoRestChoice = data.autoRestChoice;
+        AutoUsePotions = data.autoUsePotions;
+        NeowAutoChoose = data.neowAutoChoose;
+        EventChoiceMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;
+        CardPickMode = NormalizeChoiceMode(data.cardPickMode) ?? LastChoiceMode;
     }
 
     private static void WriteDefault(string path)
@@ -121,5 +314,25 @@ internal static class LocalWakuuAutopilotConfig
         public bool backgroundMode { get; set; } = true;
 
         public bool suppressVanillaEarring { get; set; } = true;
+
+        public bool autoClaimCards { get; set; } = true;
+
+        public bool autoClaimGoldRelics { get; set; } = true;
+
+        /// <summary>药水奖励自动领取（满栏按稀有度换药/先喝鲜血），默认开。</summary>
+        public bool autoClaimPotions { get; set; } = true;
+
+        public bool autoChooseEvents { get; set; } = true;
+
+        public bool autoRestChoice { get; set; } = true;
+
+        /// <summary>战斗中自动用药水：默认关（拍板：保守版写死规则，先观察）。</summary>
+        public bool autoUsePotions { get; set; }
+
+        public bool neowAutoChoose { get; set; }
+
+        public string eventChoiceMode { get; set; } = FirstChoiceMode;
+
+        public string cardPickMode { get; set; } = LastChoiceMode;
     }
 }

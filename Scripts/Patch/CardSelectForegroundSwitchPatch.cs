@@ -37,7 +37,8 @@ internal static class CardSelectForegroundSwitchPatch
         CurrentChoicePlayerId.Value = player.NetId;
 
         // 瓦库形态后台托管：存在全局选择器时该次选择会被自动作答、不会弹 UI，免切换；
-        // 无选择器（作用域外的真实交互）则保留切换作为防软锁兜底。
+        // 无选择器（作用域外的真实交互，如酒狐初始遗物战斗开局二选一）则保留切换，
+        // 由真人手动处理——此行为经实机验证不可改为自动作答（会导致战斗开局流程异常）。
         if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: true))
         {
             LocalMultiControlLogger.Info(
@@ -114,9 +115,11 @@ internal static class CardSelectForegroundSwitchPatch
 /// <summary>
 /// 全局选择器抢答守卫：CardSelectCmd.Selector 返回栈顶选择器时，若当前异步链上的选牌
 /// 归属者不是瓦库形态角色（即真人正在选牌），则临时返回 null 让其走正常选牌 UI。
-/// 场景：瓦库自动出牌循环进行中（VakuuCardSelector 在栈上），真人同时打出需要选牌的卡
+/// 场景：瓦库自动出牌循环进行中（托管选择器在栈上），真人同时打出需要选牌的卡
 /// （如酒狐合成），若不做此守卫，真人的选牌会被选择器瞬间抢答为第一张。
 /// CurrentChoicePlayerId 由上方各 From* 前缀在方法体读取 Selector 之前写入，时序可靠。
+/// 注意：作用域外（栈上无选择器）的选择一律不在此兜底作答——酒狐初始遗物开局二选一
+/// 依赖"自动切前台由真人处理"的原有链路，实测改为即时作答会导致进战斗黑屏。
 /// </summary>
 [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.Selector), MethodType.Getter)]
 internal static class CardSelectCmdSelectorGuardPatch
@@ -124,7 +127,13 @@ internal static class CardSelectCmdSelectorGuardPatch
     [HarmonyPostfix]
     private static void Postfix(ref ICardSelector? __result)
     {
-        if (__result == null || __result is not VakuuCardSelector)
+        if (__result == null)
+        {
+            return;
+        }
+
+        // 只认托管选择器（游戏原生 VakuuCardSelector / 本 mod 策略选择器）；其余（如测试用）不动
+        if (__result is not VakuuCardSelector and not LocalWakuuStrategySelector)
         {
             return;
         }

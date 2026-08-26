@@ -150,9 +150,25 @@ internal static class LocalWakuuRelicRuntime
             return;
         }
 
+        // Phase 2.5：战斗内自动用药水（独立开关默认关；果汁另有"到手即喝"链路，见
+        // PotionProcuredAutoDrinkPatch）。回合开始相位放在出牌循环之前、无牌可出的早退之前——
+        // 没牌可出的回合同样可能需要喝药。消费即去重，看门狗重复进入为无害空转。
+        if (LocalWakuuAutopilotConfig.AutoUsePotions && IsVakuuFormMode(player))
+        {
+            await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(
+                relic, player, choiceContext, combatState, LocalWakuuPotionAutoUse.WakuuPotionPhase.StartOfTurn);
+        }
+
         CardModel? firstPlayableCard = PileType.Hand.GetPile(relic.Owner).Cards.FirstOrDefault((candidate) => candidate.CanPlay());
         if (firstPlayableCard == null)
         {
+            // 没牌可出：回合结束判定也要做（格挡/免伤等防御类药水的时机）
+            if (LocalWakuuAutopilotConfig.AutoUsePotions && IsVakuuFormMode(player))
+            {
+                await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(
+                    relic, player, choiceContext, combatState, LocalWakuuPotionAutoUse.WakuuPotionPhase.EndOfTurn);
+            }
+
             return;
         }
 
@@ -183,7 +199,7 @@ internal static class LocalWakuuRelicRuntime
             $"瓦库选择器闸门已进入: player={player.NetId}, round={combatState.RoundNumber}, waitMs={gateWaitMs}, inFlight={inFlight}, selectorStackCount={gateEnterSnapshot.Count}, selectorStackTop={gateEnterSnapshot.TopType}");
         try
         {
-            using (CardSelectCmd.PushSelector(new VakuuCardSelector()))
+            using (CardSelectCmd.PushSelector(new LocalWakuuStrategySelector()))
             {
                 SelectorStackSnapshot pushSnapshot = SnapshotSelectorStack();
                 LocalMultiControlLogger.Info(
@@ -253,6 +269,15 @@ internal static class LocalWakuuRelicRuntime
                     $"瓦库选择器闸门已释放: player={player.NetId}, round={combatState.RoundNumber}, elapsedMs={elapsedMs}, inFlight={remainInFlight}, selectorStackCount={releaseSnapshot.Count}, selectorStackTop={releaseSnapshot.TopType}");
                 ProbeAndRecoverSelectorStack($"wakuu-selector-finally-{player.NetId}-{combatState.RoundNumber}", allowRecover: true);
             }
+        }
+
+        // 出牌结束后跑药水的"回合结束前"相位：覆盖出牌过程中获得的药水（炼药 Alchemize、
+        // 混沌结算产物等）以及格挡/免伤/剩能量等以回合结束为时机的规则。
+        // 此时能量与手牌状态即"回合结束前"语义。
+        if (LocalWakuuAutopilotConfig.AutoUsePotions && IsVakuuFormMode(player) && !CombatManager.Instance.IsOverOrEnding)
+        {
+            await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(
+                relic, player, choiceContext, combatState, LocalWakuuPotionAutoUse.WakuuPotionPhase.EndOfTurn);
         }
 
         if (cardsPlayed <= 0)
@@ -464,7 +489,8 @@ internal static class LocalWakuuRelicRuntime
         {
             foreach (object? selector in enumerable)
             {
-                if (selector is not VakuuCardSelector)
+                // 托管作用域可能压入游戏原生选择器或本 mod 的策略选择器，两者都视为瓦库选择器
+                if (selector is not VakuuCardSelector and not LocalWakuuStrategySelector)
                 {
                     allVakuuSelectors = false;
                     break;
