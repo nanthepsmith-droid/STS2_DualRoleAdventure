@@ -212,11 +212,6 @@ internal static class LocalWakuuRestAutoChoice
                     continue;
                 }
 
-                // 选择成功：显式驱动角色头顶确认图标。正常由 AfterPlayerOptionChosen
-                // 事件驱动，但多张升级等长流程下可能被时序吞掉，这里兜底重画一次
-                //（重复调用只是叠加一个同图标的确认节点，视觉上无差异）。
-                ShowCharacterBubble(player, choice, selecting: false);
-
                 await Task.Delay(400);
             }
         }
@@ -266,23 +261,42 @@ internal static class LocalWakuuRestAutoChoice
         }
 
         RestSiteOption? smith = others.FirstOrDefault((o) => o.OptionId == SmithOptionId);
-        if (smith != null && HasPreferredUpgradeCandidate(player))
+
+        // 全员满血判定：满血时升级打击/防御也纳入锻造候选（反正没别的可做）；
+        // 同时愈合失去意义（队友满血）直接跳过
+        bool everyoneFull = IsEveryoneFull();
+
+        if (smith != null)
         {
-            return smith; // 高血且还有"非打击/防御"的可升级牌
+            if (everyoneFull)
+            {
+                // 满血：任何可升级牌（含打击/防御）都值得升；全升完则睡觉（拍板：即使满血）
+                if (player.Deck.Cards.Any((c) => c.IsUpgradable))
+                {
+                    return smith;
+                }
+            }
+            else if (HasPreferredUpgradeCandidate(player))
+            {
+                return smith; // 高血且还有"非打击/防御"的可升级牌
+            }
         }
 
-        // 愈合（原版多选项）：优先级低于自身休息——自己没得锻了才轮到它，
-        // 给存活队友回血比无意义的睡觉更有价值；没有可治疗对象时选项会返回
-        // false，由重试逻辑排除后落到下面的睡觉。
-        RestSiteOption? mend = others.FirstOrDefault((o) => o.OptionId == MendOptionId);
-        if (mend != null)
+        if (!everyoneFull)
         {
-            return mend;
+            // 愈合（原版多选项）：优先级低于自身休息——自己没得锻了才轮到它，
+            // 给存活队友回血比无意义的睡觉更有价值；没有可治疗对象时选项会返回
+            // false，由重试逻辑排除后落到下面的睡觉。
+            RestSiteOption? mend = others.FirstOrDefault((o) => o.OptionId == MendOptionId);
+            if (mend != null)
+            {
+                return mend;
+            }
         }
 
         if (heal != null)
         {
-            return heal; // 没得升了、也没法愈合队友 → 睡觉
+            return heal; // 没得升了、也没法愈合队友 → 睡觉（满血时也睡，按拍板）
         }
 
         return others.Count > 0 ? others[0] : null;
@@ -292,6 +306,33 @@ internal static class LocalWakuuRestAutoChoice
     private static bool HasPreferredUpgradeCandidate(Player player)
     {
         return player.Deck.Cards.Any((c) => c.IsUpgradable && !IsBasicStrikeOrDefend(c));
+    }
+
+    /// <summary>
+    /// 全员满血判定：所有存活玩家（含瓦库自己与队友）当前生命都等于上限。
+    /// </summary>
+    private static bool IsEveryoneFull()
+    {
+        RunState? runState = RunManager.Instance.DebugOnlyGetState();
+        if (runState?.Players == null)
+        {
+            return false;
+        }
+
+        foreach (Player p in runState.Players)
+        {
+            if (p == null || p.Creature == null || p.Creature.IsDead)
+            {
+                continue;
+            }
+
+            if (p.Creature.CurrentHp < p.Creature.MaxHp)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>基础打击/防御识别：卡 id 含 STRIKE/DEFEND（覆盖各角色变体与酒狐等 mod 命名）。</summary>
