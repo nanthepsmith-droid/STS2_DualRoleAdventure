@@ -104,7 +104,7 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
 
         AddToggleRow(column,
             "火堆自动选择",
-            "低血(<50%)优先睡觉；高血时无遗物选项则升级非打击/防御的最后一张牌（都升完就睡觉），有遗物选项（举重/挖掘等）则在睡觉以外随机；帐篷多选时全拿。",
+            "低血(<50%)优先睡觉；高血时无遗物选项则升级非打击/防御的最后一张牌（都升完则愈合队友，无法愈合再睡觉），有遗物选项（举重/挖掘等）则在睡觉以外随机；帐篷多选时全拿。",
             () => LocalWakuuAutopilotConfig.AutoRestChoice,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("autoRestChoice", value));
         AddToggleRow(column,

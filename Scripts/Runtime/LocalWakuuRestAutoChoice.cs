@@ -271,9 +271,18 @@ internal static class LocalWakuuRestAutoChoice
             return smith; // 高血且还有"非打击/防御"的可升级牌
         }
 
+        // 愈合（原版多选项）：优先级低于自身休息——自己没得锻了才轮到它，
+        // 给存活队友回血比无意义的睡觉更有价值；没有可治疗对象时选项会返回
+        // false，由重试逻辑排除后落到下面的睡觉。
+        RestSiteOption? mend = others.FirstOrDefault((o) => o.OptionId == MendOptionId);
+        if (mend != null)
+        {
+            return mend;
+        }
+
         if (heal != null)
         {
-            return heal; // 没得升了（或锻造不可用）→ 睡觉
+            return heal; // 没得升了、也没法愈合队友 → 睡觉
         }
 
         return others.Count > 0 ? others[0] : null;
