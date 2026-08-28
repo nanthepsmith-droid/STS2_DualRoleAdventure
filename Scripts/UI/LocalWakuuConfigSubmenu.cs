@@ -16,7 +16,18 @@ namespace LocalMultiControl.Scripts.UI;
 /// </summary>
 internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
 {
+    /// <summary>滚动条槽宽（沿用 BaseLib NNativeScrollableContainer 的 ScrollbarGutterWidth）。</summary>
+    private const float ScrollbarGutterWidth = 60f;
+
+    private const float ScrollbarInset = 64f;
+
     private LocalWakuuConfigTickbox? _firstToggle;
+
+    private Control? _clipper;
+
+    private VBoxContainer? _column;
+
+    private CenterContainer? _scrollContent;
 
     public LocalWakuuConfigSubmenu()
     {
@@ -39,6 +50,8 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         AddChild(CreateBackButton());
         ConnectSignals();
         BuildContent();
+        // 返回按钮移到子节点末尾（置顶），避免被全屏滚动容器遮挡而无法点击
+        MoveChild(GetNode("BackButton"), -1);
         LocalMultiControlLogger.Info("瓦库托管设置子菜单已构建");
     }
 
@@ -55,21 +68,59 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
 
     private void BuildContent()
     {
-        CenterContainer contentSlot = new()
+        // 滚动容器：沿用游戏原生 NScrollableContainer + ui/scrollbar 场景，
+        // 天然支持鼠标拖拽/滚轮、键盘上下、手柄与焦点跟随滚动（与古明地恋/BaseLib 同思路）。
+        NScrollableContainer scrollArea = new()
         {
-            Name = "Content",
-            // 穿透鼠标：不挡住左下角的原生返回按钮
+            Name = "ScrollArea",
+            // 裁剪子节点，配合 Mask 形成可视滚动区域
+            ClipChildren = ClipChildrenMode.AndDraw,
+        };
+        scrollArea.SetAnchorsPreset(LayoutPreset.FullRect);
+
+        // Mask/Clipper：裁剪可视区，右侧留出滚动条槽
+        TextureRect mask = new()
+        {
+            Name = "Mask",
+            ClipChildren = ClipChildrenMode.AndDraw,
             MouseFilter = MouseFilterEnum.Ignore,
         };
-        contentSlot.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(contentSlot);
+        mask.SetAnchorsPreset(LayoutPreset.FullRect);
 
+        Control clipper = new()
+        {
+            Name = "Clipper",
+            ClipContents = true,
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        clipper.SetAnchorsPreset(LayoutPreset.FullRect);
+        clipper.OffsetRight = -ScrollbarGutterWidth;
+        mask.AddChild(clipper);
+
+        // 滚动条（游戏原生场景，含 %Handle 唯一名）
+        PackedScene? scrollbarScene = ResourceLoader.Load<PackedScene>(
+            SceneHelper.GetScenePath("ui/scrollbar"), null, ResourceLoader.CacheMode.Reuse);
+        NScrollbar scrollbar = scrollbarScene != null
+            ? scrollbarScene.Instantiate<NScrollbar>()
+            : new NScrollbar();
+        scrollbar.Name = "Scrollbar";
+        scrollbar.SetAnchorsPreset(LayoutPreset.RightWide, false);
+        scrollbar.OffsetLeft = -48f;
+        scrollbar.OffsetRight = 0f;
+        scrollbar.OffsetTop = ScrollbarInset;
+        scrollbar.OffsetBottom = -ScrollbarInset;
+
+        scrollArea.AddChild(mask);
+        scrollArea.AddChild(scrollbar);
+        // Mask/Scrollbar 就绪后再入树，确保 NScrollableContainer._Ready 能取到 Scrollbar 子节点
+        AddChild(scrollArea);
+
+        // 内容列（所有开关/策略行）
         VBoxContainer column = new()
         {
             Name = "Column",
         };
         column.AddThemeConstantOverride("separation", 14);
-        contentSlot.AddChild(column);
 
         Label title = CreateLabel("瓦 库 托 管", 42, new Color(1f, 0.95f, 0.75f));
         column.AddChild(title);
@@ -151,6 +202,49 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         column.AddChild(CreateSpacer(6));
         column.AddChild(CreateDivider(new Color(0.35f, 0.35f, 0.35f, 0.7f)));
         column.AddChild(CreateLabel("点左下角返回按钮或再次打开本页可随时退出。", 18, new Color(0.6f, 0.6f, 0.6f)));
+        column.AddChild(CreateSpacer(ScrollbarInset));
+
+        // 滚动内容：CenterContainer 水平居中内容列；宽 = 裁剪区宽、高 = 内容高，供 NScrollableContainer 计算滚动范围
+        CenterContainer scrollContent = new()
+        {
+            Name = "ContentPanel",
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        scrollContent.SetAnchorsPreset(LayoutPreset.TopLeft, false);
+        scrollContent.AddChild(column);
+
+        // 关键顺序：先把内容加入 clipper（使其有 parent），再 SetContent。
+        // NScrollableContainer.SetContent → UpdatePadding → UpdateScrollLimitBottom → ScrollViewportSize
+        // 会访问 _content.GetParent<Control>()，parent 缺失会抛 NullReferenceException。
+        clipper.AddChild(scrollContent);
+        scrollArea.SetContent(scrollContent);
+        _clipper = clipper;
+        _column = column;
+        _scrollContent = scrollContent;
+
+        // 内容/裁剪区尺寸变化时同步滚动范围（列自动换行导致高度变化、窗口缩放导致宽度变化）
+        column.Resized += OnScrollContentResized;
+        clipper.Resized += OnScrollContentResized;
+        scrollContent.Resized += OnScrollContentResized;
+
+        // 首个布局帧后校准一次滚动内容尺寸（此时列宽已定，自动换行高度才准确）
+        OnScrollContentResized();
+    }
+
+    /// <summary>
+    /// 根据内容列的实际最小尺寸与裁剪区宽度，校准滚动内容（宽/高），从而让 NScrollableContainer
+    /// 的滚动范围与滚动条正确。列高超过裁剪区高时 NScrollableContainer 自动显示滚动条。
+    /// </summary>
+    private void OnScrollContentResized()
+    {
+        if (_scrollContent == null || _column == null || _clipper == null)
+        {
+            return;
+        }
+
+        float width = Mathf.Max(1f, _clipper.Size.X);
+        float height = Mathf.Max(1f, Mathf.Ceil(_column.GetMinimumSize().Y));
+        _scrollContent.Size = new Vector2(width, height);
     }
 
     /// <summary>

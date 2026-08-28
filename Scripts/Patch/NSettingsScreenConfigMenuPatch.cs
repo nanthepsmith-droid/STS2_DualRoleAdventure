@@ -57,10 +57,11 @@ public static class NSettingsScreenConfigMenuPatch
         }
 
         ColorRect? divider = rows.GetNodeOrNull<ColorRect>("SendFeedbackDivider");
+        MarginContainer? feedbackRow = rows.GetNodeOrNull<MarginContainer>("SendFeedback");
         MarginContainer? moddingRow = rows.GetNodeOrNull<MarginContainer>("Modding");
-        if (divider == null || moddingRow == null)
+        if (divider == null || feedbackRow == null || moddingRow == null)
         {
-            LocalMultiControlLogger.Warn($"未找到参照行（SendFeedbackDivider={divider}, Modding={moddingRow}），跳过瓦库托管按钮注入");
+            LocalMultiControlLogger.Warn($"未找到参照行（SendFeedbackDivider={divider}, SendFeedback={feedbackRow}, Modding={moddingRow}），跳过瓦库托管按钮注入");
             return;
         }
 
@@ -80,7 +81,9 @@ public static class NSettingsScreenConfigMenuPatch
 
         button.Name = ButtonName;
         button.UniqueNameInOwner = true;
-        divider.AddSibling(vakuuDivider);
+        // 插在 SendFeedback 行之后、Modding 行之前（与 BaseLib 一致），
+        // 避免"瓦库托管"紧贴游戏自带的"发送反馈"，防止误导成给本 mod 反馈。
+        feedbackRow.AddSibling(vakuuDivider);
         vakuuDivider.AddSibling(vakuuRow);
         button.Owner = settingsScreen; // 与 Koishi 做法一致，注册 %VakuuConfigButton 便于外部定位
 
@@ -99,7 +102,36 @@ public static class NSettingsScreenConfigMenuPatch
         }
 
         button.Connect(NClickableControl.SignalName.Released, Callable.From<NClickableControl>(_ => OpenConfigSubmenu(settingsScreen)));
+
+        // 参考 BaseLib 补齐焦点导航：SendFeedback → 瓦库按钮 → Modding → Credits，
+        // 保证手柄/键盘在设置页里逐项上下移动时不会被新插入的行打断。
+        SetupFocusNavigation(settingsScreen, rows, feedbackRow, moddingRow, button);
+
         LocalMultiControlLogger.Info("已在设置界面注入瓦库托管按钮");
+    }
+
+    private static void SetupFocusNavigation(
+        NSettingsScreen settingsScreen,
+        VBoxContainer rows,
+        MarginContainer feedbackRow,
+        MarginContainer moddingRow,
+        NButton vakuuButton)
+    {
+        Control? feedbackButton = feedbackRow.GetNodeOrNull<Control>("FeedbackButton");
+        Control? moddingButton = moddingRow.GetNodeOrNull<Control>("ModdingButton");
+        Control? creditsButton = rows.GetNodeOrNull<Control>("Credits/CreditsButton");
+        if (feedbackButton == null || moddingButton == null || creditsButton == null)
+        {
+            LocalMultiControlLogger.Warn($"设置焦点导航失败（FeedbackButton={feedbackButton}, ModdingButton={moddingButton}, CreditsButton={creditsButton}）");
+            return;
+        }
+
+        creditsButton.FocusNeighborTop = creditsButton.GetPathTo(moddingButton);
+        moddingButton.FocusNeighborBottom = moddingButton.GetPathTo(creditsButton);
+        vakuuButton.FocusNeighborTop = vakuuButton.GetPathTo(feedbackButton);
+        vakuuButton.FocusNeighborBottom = vakuuButton.GetPathTo(moddingButton);
+        feedbackButton.FocusNeighborBottom = feedbackButton.GetPathTo(vakuuButton);
+        moddingButton.FocusNeighborTop = moddingButton.GetPathTo(vakuuButton);
     }
 
     /// <summary>
