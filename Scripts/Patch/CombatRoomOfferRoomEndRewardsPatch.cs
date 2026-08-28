@@ -6,9 +6,11 @@ using Godot;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Rewards;
 using LocalMultiControl.Scripts.Runtime;
+using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Hooks;
+using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Nodes.Screens;
 using MegaCrit.Sts2.Core.Rewards;
 using MegaCrit.Sts2.Core.Rooms;
@@ -106,12 +108,28 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
                 : new RewardsSet(player).EmptyForRoom(combatRoom);
 
             // 诊断埋点（方案 C）：生成前打印卡池/解锁态摘要，用于证实或排除「空卡池 = 坑 7 提前终结
-            // 破坏 Character.CardPool/UnlockState」的假设（见《击杀后战斗不结束诊断与修复方案》§6）。
+            // 破坏 Character.CardPool/UnlockState」的假设，以及「双人 run 多人卡牌过滤清空观者池」的假设
+            // （见《击杀后战斗不结束诊断与修复方案》§6 与本次观者无奖励分析）。
             try
             {
+                List<CardModel> all = player.Character?.CardPool?.AllCards?.ToList() ?? new List<CardModel>();
+                int singleOnly = all.Count((CardModel c) => c.MultiplayerConstraint == CardMultiplayerConstraint.SingleplayerOnly);
+                int multiOnly = all.Count((CardModel c) => c.MultiplayerConstraint == CardMultiplayerConstraint.MultiplayerOnly);
+                int noConstraint = all.Count((CardModel c) => c.MultiplayerConstraint == CardMultiplayerConstraint.None);
+                int possibleCards = all.Count;
+                if (player.Character?.CardPool != null)
+                {
+                    possibleCards = new CardCreationOptions(new[] { player.Character.CardPool },
+                        CardCreationSource.Encounter, CardRarityOddsType.RegularEncounter).GetPossibleCards(player).Count();
+                }
+
                 LocalMultiControlLogger.Info(
                     $"战后奖励生成前诊断: player={player.NetId}, character={player.Character?.Id?.Entry}, "
-                    + $"cardPool={player.Character?.CardPool?.AllCards?.Count()}");
+                    + $"playersCount={player.RunState?.Players?.Count ?? 0}, "
+                    + $"multiConstraint={player.RunState?.CardMultiplayerConstraint}, "
+                    + $"cardPool={all.Count}, "
+                    + $"constraintDistro=(none:{noConstraint},singleOnly:{singleOnly},multiOnly:{multiOnly}), "
+                    + $"possibleCards={possibleCards}");
             }
             catch (Exception diagnosticException)
             {
@@ -123,17 +141,22 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
                 await perPlayerSet.GenerateWithoutOffering();
 
                 // 与原版保持一致：结算 BeforeCombatRewardOffered（持久奶糖计数等依赖它）
-                await Hook.BeforeCombatRewardOffered(perPlayerSet, player.RunState, combatRoom);
+                await Hook.BeforeCombatRewardOffered(perPlayerSet, player.RunState!, combatRoom);
             }
             catch (Exception rewardException)
             {
-                // 容错（方案 B）：单个玩家卡牌奖励生成失败（如空卡池）不整体中止流程。
-                // 跳过该玩家的卡牌/该奖励环节，其余玩家及该玩家的金币/遗物等仍正常展示，避免玩家卡在奖励界面。
+                // 容错（方案 B 修正版）：单个玩家卡牌奖励生成失败（如空卡池）不再整体中止流程，
+                // 也不丢弃该玩家所有奖励。GenerateWithoutOffering 按顺序 Populate 金币→药水→卡牌，
+                // 卡牌失败时金币/药水/遗物通常已就绪。这里只保留已成功就绪的奖励（IsPopulated），
+                // 丢弃失败/未就绪的（通常是空池的卡牌奖励），其余奖励照常展示，避免玩家卡在奖励界面
+                // 或丢失金币/遗物。
+                int beforeCount = perPlayerSet.Rewards.Count;
+                perPlayerSet.Rewards.RemoveAll((Reward r) => !r.IsPopulated);
                 LocalMultiControlLogger.Warn(
-                    $"角色奖励生成失败，跳过该玩家本次奖励继续流程: player={player.NetId}, "
+                    $"角色奖励生成失败，仅丢弃未就绪奖励并继续流程: player={player.NetId}, "
+                    + $"before={beforeCount}, kept={perPlayerSet.Rewards.Count}, "
                     + $"cardPool={player.Character?.CardPool?.AllCards?.Count()}, "
                     + $"err={rewardException.Message}");
-                continue;
             }
 
             foreach (Reward reward in perPlayerSet.Rewards)
