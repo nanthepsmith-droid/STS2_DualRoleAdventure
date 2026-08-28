@@ -64,7 +64,24 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+> 分支 `fix/kill-win-check-races-empty-reward-pool`（2026-08-28，marker r24→r25）。
+> 击杀后战斗不结束的完整修复（治本 + 容错 + 诊断）。
+
+### Fixed
+- **击杀后战斗不结束（治本，坑7竞态）**：`CreatureCmd.Kill` 后不再立即 `CheckWinCondition()`
+  翻转战斗（此时击杀牌 PlayCardAction 仍 Executing，提前翻 NotInCombat 会跳过执行中动作、
+  破坏战斗/玩家状态）。改为**有界延迟结算**——检测到敌全灭后轮询等待当前击杀动作链走完
+  （`ActionExecutor.CurrentlyRunningAction`）再兜底结算；每轮重核验"仍在战斗/敌全灭"，
+  敌人复活或战斗结束立即收工，超时交由游戏自身动作链/清道夫处理，绝不无限等待。
+- **奖励生成容错（方案B）**：单个玩家卡牌奖励生成失败（如空池）不再整体中止流程、
+  也不丢弃该玩家所有奖励。`GenerateWithoutOffering` 按 金币→药水→卡牌 顺序 Populate，
+  卡牌失败时金币/药水/遗物通常已就绪——现在只丢弃未就绪的（空池卡牌），其余照常展示，
+  避免观者等玩家丢失金币/遗物或卡在奖励界面。
+
 ### Changed
+- 奖励生成前增加诊断埋点：打印 playersCount / CardMultiplayerConstraint / 卡池
+  MultiplayerConstraint 分布 / GetPossibleCards 数量，用于核实空池来源
+  （多人卡牌过滤 vs 遗物额外无色卡 reward）。
 - Hardened `LocalLoopbackHostGameService.GetVersionInfoForPeer` to return the local version info
   instead of null (same as upstream's v1.32): the game's three lobby join handlers call
   `GetVersionInfoForPeer(senderId).Value.IsModded()` unguarded. These messages are unreachable in
