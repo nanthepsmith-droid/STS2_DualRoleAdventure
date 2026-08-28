@@ -105,10 +105,36 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
                 ? new RewardsSet(player).WithRewardsFromRoom(combatRoom)
                 : new RewardsSet(player).EmptyForRoom(combatRoom);
 
-            await perPlayerSet.GenerateWithoutOffering();
+            // 诊断埋点（方案 C）：生成前打印卡池/解锁态摘要，用于证实或排除「空卡池 = 坑 7 提前终结
+            // 破坏 Character.CardPool/UnlockState」的假设（见《击杀后战斗不结束诊断与修复方案》§6）。
+            try
+            {
+                LocalMultiControlLogger.Info(
+                    $"战后奖励生成前诊断: player={player.NetId}, character={player.Character?.Id?.Entry}, "
+                    + $"cardPool={player.Character?.CardPool?.AllCards?.Count()}");
+            }
+            catch (Exception diagnosticException)
+            {
+                LocalMultiControlLogger.Warn($"战后奖励生成前诊断打印异常: {diagnosticException.Message}");
+            }
 
-            // 与原版保持一致：结算 BeforeCombatRewardOffered（持久奶糖计数等依赖它）
-            await Hook.BeforeCombatRewardOffered(perPlayerSet, player.RunState, combatRoom);
+            try
+            {
+                await perPlayerSet.GenerateWithoutOffering();
+
+                // 与原版保持一致：结算 BeforeCombatRewardOffered（持久奶糖计数等依赖它）
+                await Hook.BeforeCombatRewardOffered(perPlayerSet, player.RunState, combatRoom);
+            }
+            catch (Exception rewardException)
+            {
+                // 容错（方案 B）：单个玩家卡牌奖励生成失败（如空卡池）不整体中止流程。
+                // 跳过该玩家的卡牌/该奖励环节，其余玩家及该玩家的金币/遗物等仍正常展示，避免玩家卡在奖励界面。
+                LocalMultiControlLogger.Warn(
+                    $"角色奖励生成失败，跳过该玩家本次奖励继续流程: player={player.NetId}, "
+                    + $"cardPool={player.Character?.CardPool?.AllCards?.Count()}, "
+                    + $"err={rewardException.Message}");
+                continue;
+            }
 
             foreach (Reward reward in perPlayerSet.Rewards)
             {
