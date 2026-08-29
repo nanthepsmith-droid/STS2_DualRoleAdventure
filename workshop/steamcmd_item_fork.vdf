@@ -26,6 +26,6 @@ https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure — report bugs via
 
 [h2]中文简介[/h2]
 单人操控 2–12 名角色的本地多控 Mod。进入方式：多人模式 → 创建 → 单人多角色；Tab 切换角色，F8 显示队友手牌。本条目为社区接续维护版本（原版条目见上方链接）；反馈请到 GitHub Issues。"
-	"changenote"		"v1.32: updated for game v0.111.0; combat card-selection serialization, backgrounded-character turn fixes, end-turn button fixes."
+	"changenote"		"v1.38: bugfix release — removed the delay before the post-combat reward screen, fixed the missing End Turn button after a character dies, fixed the event card-reward softlock when the reward owner differs from the controlled character, and fixed the Vakuu settings panel showing blank on first open."
 	"publishedfileid"		"3772900244"
 }
