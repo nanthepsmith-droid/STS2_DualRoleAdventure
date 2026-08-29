@@ -10,6 +10,10 @@ using MegaCrit.Sts2.Core.Runs;
 
 namespace LocalMultiControl.Scripts.Patch;
 
+// 多目标容器：类级裸 [HarmonyPatch] 让 PatchAll 处理本类，
+// 具体目标由各方法级 [HarmonyPatch(...)] 指定。
+// 此前缺失类级标记导致整个类被 PatchAll 静默跳过（本 mod 坑 1），补丁从未生效。
+[HarmonyPatch]
 internal static class CardSelectManualConfirmationPatch
 {
     private static void ForceManualIfNeeded(ref CardSelectorPrefs prefs, string source)
