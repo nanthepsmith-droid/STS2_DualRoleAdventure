@@ -35,9 +35,15 @@ namespace LocalMultiControl.Scripts.Patch;
 [HarmonyPatch(typeof(CreatureCmd), nameof(CreatureCmd.Kill), new[] { typeof(IReadOnlyCollection<Creature>), typeof(bool) })]
 internal static class CreatureCmdKillWinCheckPatch
 {
-    /// <summary>等待击杀动作链走完的轮数上限与间隔。动作链（含连锁/后续动作）通常几帧内完成。</summary>
-    private const int MaxWaitPasses = 60;
-    private const int WaitIntervalMs = 150;
+    /// <summary>
+    /// 等待击杀动作链走完的轮数上限与间隔。
+    /// 原值 150ms×60=9s，是「打赢后奖励面板延迟」的根源：即使在理想情况（击杀动作链几帧内收敛，
+    /// 或游戏自身 ExecuteActions 在每条动作后已调 CheckWinCondition 自动结算），本补丁仍要按
+    /// 固定 150ms 粒度轮询，观感上就是「打赢要等一会才出奖励」。改为 30ms×20=600ms 上界，
+    /// 最坏延迟降到亚秒级；轮询在检测到战斗已结算 / 敌人复活时仍会立即提前返回，不增额外等待。
+    /// </summary>
+    private const int MaxWaitPasses = 20;
+    private const int WaitIntervalMs = 30;
 
     [HarmonyPostfix]
     private static void Postfix(IReadOnlyCollection<Creature> creatures, ref Task __result)

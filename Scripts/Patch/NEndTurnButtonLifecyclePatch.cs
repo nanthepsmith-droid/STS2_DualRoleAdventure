@@ -67,6 +67,11 @@ internal static class NEndTurnButtonLifecyclePatch
 
         Player? me = LocalContext.GetMe(state);
         LocalMultiControlLogger.Info($"按钮 OnTurnStarted: side={state.CurrentSide}, isInProgress={CombatManager.Instance.IsInProgress}, me={me?.NetId.ToString() ?? "null"} ({LogButtonState(__instance)})");
+
+        // Bug 2 兜底：一玩家死亡后，另一存活玩家回合开始时按钮可能被误判为隐藏/禁用。
+        // 在游戏自身 OnTurnStarted 之后，按「当前控制角色是否存活且未 ready」强制重评一次，
+        // 确保存活玩家回合开始时必然能拿到 Enabled 按钮（死亡玩家不参与判定）。
+        LocalMultiControlRuntime.ReevaluateEndTurnButtonForControlledPlayer("on-turn-started");
     }
 
     [HarmonyPatch(typeof(NEndTurnButton), "OnAboutToSwitchToEnemyTurn")]

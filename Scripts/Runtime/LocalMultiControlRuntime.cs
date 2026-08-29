@@ -1999,6 +1999,53 @@ internal static class LocalMultiControlRuntime
         }
     }
 
+    /// <summary>
+    /// 对「当前控制角色」重新评估回合结束按钮状态（供回合开始等相位兜底调用）。
+    /// 修复：一玩家死亡后，另一存活玩家回合开始时按钮被误判为隐藏/禁用（死亡玩家干扰了
+    /// 原版 OnTurnStarted 的 GetMe 判定）。此处按「当前控制角色是否存活且未 ready」强制重评，
+    /// 存活玩家回合开始必然能拿到 Enabled 按钮；已结算/非玩家回合则跳过。
+    /// </summary>
+    public static void ReevaluateEndTurnButtonForControlledPlayer(string source)
+    {
+        if (!LocalSelfCoopContext.IsEnabled || !RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)
+        {
+            return;
+        }
+
+        NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+        if (combatUi == null)
+        {
+            return;
+        }
+
+        CombatState? combatState = TryGetCombatState(combatUi);
+        if (combatState == null || combatState.CurrentSide != CombatSide.Player)
+        {
+            return;
+        }
+
+        ulong? controlledId = Session.CurrentControlledPlayerId ?? LocalContext.NetId;
+        if (!controlledId.HasValue)
+        {
+            return;
+        }
+
+        Player? player = combatState.GetPlayer(controlledId.Value);
+        if (player == null)
+        {
+            return;
+        }
+
+        // 只对「存活且未 ready 可行动」的角色做兜底重评，避免覆盖正常 Ready 状态。
+        if (player.Creature == null || !player.Creature.IsAlive || CombatManager.Instance.IsPlayerReadyToEndTurn(player))
+        {
+            return;
+        }
+
+        ReevaluateEndTurnButtonState(combatUi, combatState, player);
+        LocalMultiControlLogger.Info($"回合开始兜底重评结束回合按钮: player={player.NetId}, source={source}");
+    }
+
     private static void TryRepairEndTurnButtonOffscreenPosition(NEndTurnButton button, bool forceAnimateIn)
     {
         try

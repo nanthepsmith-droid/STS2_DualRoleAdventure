@@ -2,6 +2,38 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
+## [v1.38] - 2026-08-29
+
+> 版本号 1.38.0（`mod_manifest.json` / `DualRoleAdventure.json` / `workshop/content/DualRoleAdventure.json` 三处已同步），
+> DLL marker `2026-08-28-r27`。本版为**纯 Bug 修复**：不新增功能、不改变任何既有行为默认值，
+> 仅收紧战斗/奖励生命周期的时序与角色绑定，并修掉瓦库设置页的首次显示问题。
+
+### Fixed
+- **打赢后到奖励面板跳出的莫名延迟**（由 v1.37「击杀后战斗不结束」的方案 A 延迟结算引入）：
+  `CreatureCmdKillWinCheckPatch` 的延迟结算轮询由 `150ms × 60` 轮（最坏 9 秒）收紧为 `30ms × 20` 轮
+  （最坏 600ms）。原值即便在理想情况（击杀动作链几帧内收敛，或游戏自身 `ActionExecutor.ExecuteActions`
+  在每条动作后已调 `CheckWinCondition` 自动结算）也要按固定 150ms 粒度白等，观感就是「打赢要等一会」。
+  轮询在检测到战斗已结算或敌人复活时仍会立即提前返回，不再增加额外等待。
+- **本地双人中一名玩家死亡后，另一名玩家的「结束回合」按钮消失**（经典问题，需切走再切回才恢复）：
+  - 根因核实（日志确认）：本地多控下 `NEndTurnButton.SetState` / `OnTurnStarted` 的 Harmony 探针
+    **在日志中从未触发**，原版 `TurnStarted` 事件路径在该场景下不可靠，死亡玩家干扰了存活玩家的按钮判定。
+  - 修复：改挂在**确认每次存活玩家回合开始都会触发**的 `CombatManager.SetupPlayerTurn` Prefix 上，
+    调用 `LocalMultiControlRuntime.ReevaluateEndTurnButtonForControlledPlayer`，按「当前控制角色是否存活
+    且未 ready」兜底重评按钮状态；存活玩家回合开始必然拿到 Enabled 按钮，死亡玩家不再参与判定。
+    该重评刻意放在瓦库前台抑制判断之前，确保真人角色不受瓦库托管开关影响。
+  - 注：r26 曾尝试挂 `NEndTurnButton.OnTurnStarted`，经日志验证无效，r27 按上述方案重写。
+- **事件中卡牌奖励归属角色与实际领取角色不一致导致软锁死**（经典问题）：新增
+  `RewardsSetSynchronizerSelectLocalRewardPatch`。领取时把 `RewardsSetSynchronizer._localPlayerId`、
+  `LocalContext.NetId` 与回环 sender 统一临时改绑到「奖励的归属角色」，领取完成后（含异常路径）恢复原值。
+  这样无论控制权当前在谁手上，真人点击领取都能命中归属角色的奖励栈与完成源，
+  事件里 `await RewardsCmd.OfferCustom` 不再被永久挂起。
+- **瓦库托管设置面板首次点进去内容不显示**（只有退出按钮和滚动条，退出重进一次才显示）：
+  根因是子菜单实例在栈下懒建并缓存，创建时 `Visible=false`，`_Ready()` / `BuildContent()` 阶段
+  clipper 尚未完成布局（FullRect 尺寸为 0），`OnScrollContentResized` 会把滚动内容宽度压成 1px，
+  内容列被裁剪到不可见；重进时缓存实例已带上一轮布局好的尺寸，故能正常显示。
+  修复：`LocalWakuuConfigSubmenu` 重写 `OnSubmenuShown()`，每次显示（含首次）用 `CallDeferred`
+  延迟一帧重算滚动内容尺寸，保证首次进入内容即可见。
+
 ## [v1.37] - 2026-08-26
 
 > 分支 `feat/vakuu-config-menu`（2026-08-25 → 08-26，marker r1–r22）。所有新功能集中在

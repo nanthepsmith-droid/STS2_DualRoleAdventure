@@ -55,6 +55,33 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         LocalMultiControlLogger.Info("瓦库托管设置子菜单已构建");
     }
 
+    /// <summary>
+    /// 修复「首次点进设置页内容不显示，只有退出按钮和滚动条，退出重进才显示」。
+    ///
+    /// 根因：本页实例在子菜单栈下是懒建并缓存的，创建时 Visible=false，
+    /// BuildContent/_Ready 阶段 clipper 尚未完成布局（FullRect 尺寸为 0），
+    /// OnScrollContentResized 会把 _scrollContent 宽压成 1px，内容列被裁剪到不可见。
+    /// 重进时缓存实例已带上一轮布局好的 clipper 尺寸，故能正常显示。
+    ///
+    /// 对策：每次显示（含首次）都延迟一帧重算滚动内容尺寸，等 clipper 拿到真实尺寸后再排版，
+    /// 保证首次进入内容即可见；同时保留 Resized 事件兜底覆盖后续窗口缩放。
+    /// </summary>
+    protected override void OnSubmenuShown()
+    {
+        base.OnSubmenuShown();
+        CallDeferred(nameof(RecomputeScrollContentDeferred));
+    }
+
+    private void RecomputeScrollContentDeferred()
+    {
+        if (!IsInsideTree() || !IsInstanceValid(this))
+        {
+            return;
+        }
+
+        OnScrollContentResized();
+    }
+
     private static NBackButton CreateBackButton()
     {
         PackedScene? scene = ResourceLoader.Load<PackedScene>(

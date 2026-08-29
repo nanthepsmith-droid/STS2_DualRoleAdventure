@@ -23,6 +23,14 @@ internal static class CombatManagerSetupPlayerTurnForegroundPatch
             return;
         }
 
+        // Bug 2 兜底：一玩家死亡后，另一存活玩家的回合开始阶段结束时按钮可能被误判为隐藏/禁用。
+        // 原版 NEndTurnButton.OnTurnStarted 依赖 TurnStarted 事件；在本地多控下该路径并不可靠
+        // （日志里 SetState/OnTurnStarted 探针均未触发）。此处挂在确认每次存活玩家回合开始都会
+        // 触发的 SetupPlayerTurn 上，按「当前控制角色是否存活且未 ready」强制重评结束回合按钮，
+        // 确保存活玩家回合开始后必然拿到 Enabled 按钮（死亡玩家不参与判定）。
+        // 注意：放在瓦库前台抑制判断之前，保证真人角色回合开始也必然重评，不受瓦库托管影响。
+        LocalMultiControlRuntime.ReevaluateEndTurnButtonForControlledPlayer("turn-start-setup");
+
         if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: false))
         {
             return;
