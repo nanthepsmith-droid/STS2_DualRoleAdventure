@@ -487,7 +487,8 @@ internal static class RestSiteUiRefreshUtil
 
         try
         {
-            AccessTools.Method(typeof(NRestSiteRoom), "UpdateNavigation")?.Invoke(room, null);
+            // v0.111.0 的 NRestSiteRoom 已无 UpdateNavigation（焦点邻居导航在 UpdateRestSiteOptions 内
+            // 创建按钮时一并完成）。此旧版本遗留调用自加入起就被 ?. 静默跳过，从未生效，直接删除。
             Control? focusTarget = FindFirstFocusableRestSiteButton(room) ?? FindFirstFocusableControl(room);
             if (focusTarget == null)
             {
