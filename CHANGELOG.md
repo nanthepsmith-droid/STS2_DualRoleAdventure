@@ -27,10 +27,19 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     首回合/条件/昏眩）、选牌策略 `WakuuStrategyPicking`（first/last/random/洗牌/火堆锻造）、
     配置 JSON 纯函数 `WakuuConfigJson`、卡牌 id 判定 `WakuuCardId`——全部从运行时调用点
     **原样搬移，行为零变化**；
-  - 新增 `tests/LocalMultiControl.Tests/`（nunit，net9.0）：132 个用例覆盖配置解析/规范化、
+  - 新增 `tests/LocalMultiControl.Tests/`（nunit，net9.0）：147 个用例覆盖配置解析/规范化、
     选择器策略、药水判定组合、60 条药水规则表完整性（元数据导出校验，含 Match 目标类型 IL 提取）；
   - `build_all_mods.ps1` 构建主 mod 后先跑 `dotnet test`，**0 失败才允许部署**；
   - 修复：主项目 csproj 未排除 `tests/**` 会把测试文件编进 mod 程序集的问题。
+- **瓦库大脑决策接口（维护性改进任务 2.2，分支 `feat/decision-interface`，marker r31）**：
+  - 新增 `Scripts/Runtime/WakuuBrain/`：`IWakuuCombatBrain`（快路径 `TryDecideNext` / 计划路径 /
+    派生选牌 / 生命周期钩子）+ `WakuuDecisionContext` + `WakuuPlannedAction` +
+    `HeuristicWakuuBrain`（现有「第一张可打牌 + ResolveTarget」逻辑原样搬移）+ `WakuuBrainFactory`；
+  - 出牌主循环改为向大脑要「下一步」，**默认 heuristic 行为与 v1.38 完全一致**；
+  - 新增 `wakuuBrain` 开关（heuristic/auto，默认 heuristic；auto 预留求解器探测，未命中回退启发式）。
+- **维护性改进文档移出主仓库**：`patch-coverage.md`/`string-targets.md`/`维护现状分析.md`/
+  `decision-records/`/`references/` 移到 `pain/maintenance-docs/`（无 git，不会进 github）；
+  主仓库 `docs/` 只保留原作者文档（`archive/`、`design/`、`architecture.md`、`console-commands.md`）。
 
 ### Fixed
 - **两个「方法级-only `[HarmonyPatch]`」补丁类被 `PatchAll` 静默跳过、从未生效**（本 mod 坑 1）：
