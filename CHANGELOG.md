@@ -4,8 +4,14 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
-> 修复分支 `fix/enable-method-level-patches`（2026-08-29，marker r28）。
-> 本次修复由补丁覆盖清单工具（`Scripts/Tools/patch_coverage.py`，维护性改进任务 1.1）实证发现。
+> 分支 `fix/enable-method-level-patches` + `chore/startup-selfcheck`（2026-08-29，marker r29）。
+> 本次改动由补丁覆盖清单工具（`Scripts/Tools/patch_coverage.py`，维护性改进任务 1.1）实证发现。
+
+### Added
+- **启动自检（维护性改进任务 1.2）**：`Entry.cs` 新增期望补丁清单（25 个关键目标），
+  初始化时与 `GetPatchedMethods()` 实际结果比对，缺失即 `Log.Error` 醒目报错——
+  终结「方法级-only 被 `PatchAll` 静默跳过」这类无声失败，游戏更新后启动日志即暴露断档。
+  清单与 `docs/patch-coverage.md` 保持一致（已静态验证全部 verified）。
 
 ### Fixed
 - **两个「方法级-only `[HarmonyPatch]`」补丁类被 `PatchAll` 静默跳过、从未生效**（本 mod 坑 1）：

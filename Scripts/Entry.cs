@@ -11,9 +11,45 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    private const string BuildMarker = "Revival v1.38 (game v0.111.0, marker=2026-08-29-r28)";
+    private const string BuildMarker = "Revival v1.38 (game v0.111.0, marker=2026-08-29-r29)";
 
     private static Harmony? _harmony;
+
+    /// <summary>
+    /// 启动自检期望清单：这些目标必须被 Harmony 打上，否则说明被 PatchAll 静默跳过
+    /// （本 mod 坑 1：类上缺类级 [HarmonyPatch] 时整个类被跳过且无任何报错）。
+    /// 用「简单类型名.方法名」匹配 GetPatchedMethods() 的 (DeclaringType.Name, Name)。
+    /// 维护口径：与 Scripts/Tools/patch_coverage.py 生成的 docs/patch-coverage.md 一致，
+    /// 覆盖最关键、最易被游戏更新波及的目标；缺失只报错、不阻止加载。
+    /// </summary>
+    private static readonly string[] ExpectedPatchTargets =
+    {
+        "NPlayerHand.SelectCards",                        // 战斗内手牌选牌串行化
+        "CardSelectCmd.FromHand",
+        "CardSelectCmd.FromHandForDiscard",
+        "CardSelectCmd.FromHandForUpgrade",
+        "CardSelectCmd.FromSimpleGrid",
+        "CardSelectCmd.FromChooseACardScreen",
+        "CardSelectCmd.FromCombatPile",
+        "CardSelectCmd.ShouldSelectLocalCard",
+        "CombatManager.SetupPlayerTurn",                  // 回合开始切前台 / 结束按钮重评
+        "CombatManager.DoTurnEnd",
+        "CombatManager.FlushPlayerHand",
+        "CombatManager.SetReadyToEndTurn",
+        "CombatManager.SetReadyToBeginEnemyTurn",
+        "CreatureCmd.Kill",                               // 击杀后战斗胜利结算
+        "EventSynchronizer.BeginEvent",
+        "EventSynchronizer.ChooseLocalOption",
+        "RewardsSet.Offer",
+        "RewardsCmd.OfferCustom",
+        "RewardsCmd.OfferForRoomEnd",
+        "CombatRoom.OfferRoomEndRewards",
+        "RewardsSetSynchronizer.SelectLocalReward",
+        "PotionCmd.TryToProcure",
+        "WhisperingEarring.AfterAutoPrePlayPhaseEnteredLate",
+        "ActionQueueSet.CombatEnded",                     // 战斗结束残留动作清理
+        "NEndTurnButton.CallReleaseLogic",
+    };
 
     public static void Init()
     {
@@ -38,6 +74,27 @@ public partial class Entry
                 {
                     LocalMultiControlLogger.Info($"  已打补丁: {method.DeclaringType?.FullName}.{method.Name}");
                 }
+            }
+
+            // 启动自检：期望补丁清单 vs 实际已打补丁，缺失即 ERROR（多为方法级-only 被静默跳过）。
+            var patchedKeys = patchedList
+                .Where(method => method.DeclaringType != null)
+                .Select(method => $"{method.DeclaringType!.Name}.{method.Name}")
+                .ToHashSet(StringComparer.Ordinal);
+            List<string> missingTargets = ExpectedPatchTargets.Where(target => !patchedKeys.Contains(target)).ToList();
+            if (missingTargets.Count > 0)
+            {
+                foreach (string target in missingTargets)
+                {
+                    LocalMultiControlLogger.Error($"启动自检: 期望补丁缺失(可能被 PatchAll 静默跳过): {target}");
+                }
+
+                LocalMultiControlLogger.Error(
+                    $"启动自检: {missingTargets.Count}/{ExpectedPatchTargets.Length} 个期望补丁缺失，请用 Scripts/Tools/patch_coverage.py 重新生成覆盖清单核对。");
+            }
+            else
+            {
+                LocalMultiControlLogger.Info($"启动自检: {ExpectedPatchTargets.Length} 个期望补丁全部生效。");
             }
         }
         catch (Exception exception)
