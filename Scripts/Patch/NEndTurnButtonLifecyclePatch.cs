@@ -16,6 +16,10 @@ namespace LocalMultiControl.Scripts.Patch;
 /// 敌方回合切换瞬间的按钮状态/位置，用于定位第一回合结束时按钮谜之失踪的确切时序。
 /// 仅在本 mod 启用时打印（无全局量的会话零开销）。
 /// </summary>
+// 多目标容器：类级裸 [HarmonyPatch] 让 PatchAll 处理本类，
+// 具体目标由各方法级 [HarmonyPatch(...)] 指定。
+// 此前缺失类级标记导致整个类被 PatchAll 静默跳过（本 mod 坑 1），探针从未触发。
+[HarmonyPatch]
 internal static class NEndTurnButtonLifecyclePatch
 {
     private static bool IsActive()

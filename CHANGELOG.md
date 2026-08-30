@@ -2,6 +2,21 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
+## [Unreleased]
+
+> 修复分支 `fix/enable-method-level-patches`（2026-08-29，marker r28）。
+> 本次修复由补丁覆盖清单工具（`Scripts/Tools/patch_coverage.py`，维护性改进任务 1.1）实证发现。
+
+### Fixed
+- **两个「方法级-only `[HarmonyPatch]`」补丁类被 `PatchAll` 静默跳过、从未生效**（本 mod 坑 1）：
+  - `CardSelectManualConfirmationPatch`：补类级裸 `[HarmonyPatch]`。此补丁自原作者加入起
+    就因缺类级标记从未被应用，本地多控下「删牌/升级/变化强制弹出背包手动确认」实际从未生效，
+    现正式启用（瓦库自动选牌走选择器分支，不受 `RequireManualConfirmation` 影响）。
+  - `NEndTurnButtonLifecyclePatch`：补类级裸 `[HarmonyPatch]`。诊断探针此前从未触发，
+    现可正常记录按钮生命周期日志（含 `CombatManager.AfterAllPlayersReadyToBeginEnemyTurn`、
+    `NCombatUi.Activate` 等挂点）；`NEndTurnButton.SetState/OnTurnStarted` 在本地多控下
+    是否触发仍需实机确认（此前 `local-multicontrol-pitfalls.md` 记录其不触发）。
+
 ## [v1.38] - 2026-08-29
 
 > 版本号 1.38.0（`mod_manifest.json` / `DualRoleAdventure.json` / `workshop/content/DualRoleAdventure.json` 三处已同步），
