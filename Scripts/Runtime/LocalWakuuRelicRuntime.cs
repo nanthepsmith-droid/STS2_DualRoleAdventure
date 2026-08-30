@@ -204,6 +204,9 @@ internal static class LocalWakuuRelicRuntime
                 SelectorStackSnapshot pushSnapshot = SnapshotSelectorStack();
                 LocalMultiControlLogger.Info(
                     $"瓦库选择器作用域进入: player={player.NetId}, round={combatState.RoundNumber}, selectorStackCount={pushSnapshot.Count}, selectorStackTop={pushSnapshot.TopType}");
+                // 任务 2.2：出牌循环改为向瓦库大脑要"下一步"（默认 HeuristicWakuuBrain =
+                // 原「第一张可打牌 + ResolveTarget」逻辑原样搬移，行为零变化）。
+                IWakuuCombatBrain brain = WakuuBrainFactory.Create();
                 for (cardsPlayed = 0; cardsPlayed < maxCardsThisTurn; cardsPlayed++)
                 {
                     if (TryGetAutoplayUnsafeReason(combatState, out string unsafeReason))
@@ -225,17 +228,25 @@ internal static class LocalWakuuRelicRuntime
                         break;
                     }
 
-                    CardModel? card = cardsPlayed == 0
-                        ? firstPlayableCard
-                        : PileType.Hand.GetPile(relic.Owner).Cards.FirstOrDefault((candidate) => candidate.CanPlay());
-                    if (card == null)
+                    var ctx = new WakuuDecisionContext(
+                        wakuu: relic.Owner,
+                        combat: combatState,
+                        hand: PileType.Hand.GetPile(relic.Owner).Cards,
+                        energy: relic.Owner.PlayerCombatState?.Energy ?? 0,
+                        turnNumber: combatState.RoundNumber,
+                        playedThisTurn: cardsPlayed,
+                        isBackground: ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: false));
+
+                    if (!brain.TryDecideNext(ctx, out WakuuPlannedAction next)
+                        || next.Kind != WakuuActionKind.PlayCard
+                        || next.Card == null)
                     {
+                        // 无牌可出（EndTurn）或大脑拒绝决策 → 结束出牌
                         break;
                     }
 
-                    Creature? target = ResolveTarget(card, combatState, relic.Owner);
-                    await card.SpendResources();
-                    await CardCmd.AutoPlay(choiceContext, card, target, AutoPlayType.Default, skipXCapture: true);
+                    await next.Card.SpendResources();
+                    await CardCmd.AutoPlay(choiceContext, next.Card, next.Target, AutoPlayType.Default, skipXCapture: true);
                 }
 
                 reachedPlayLimit = cardsPlayed >= maxCardsThisTurn;
@@ -524,18 +535,6 @@ internal static class LocalWakuuRelicRuntime
         stackType.GetMethod("Clear")?.Invoke(rawStack, null);
         clearedCount = count;
         return true;
-    }
-
-    private static Creature? ResolveTarget(CardModel card, ICombatState combatState, Player owner)
-    {
-        return card.TargetType switch
-        {
-            TargetType.AnyEnemy => combatState.HittableEnemies.FirstOrDefault(),
-            TargetType.AnyAlly => owner.RunState.Rng.CombatTargets.NextItem(
-                combatState.Allies.Where((creature) => creature != null && creature.IsAlive && creature.IsPlayer && creature != owner.Creature)),
-            TargetType.AnyPlayer => owner.Creature,
-            _ => null
-        };
     }
 
     private static void EnsureWakuuPerspective(Player player, string source)
