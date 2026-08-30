@@ -70,9 +70,17 @@ internal static class LocalWakuuAutopilotConfig
     /// </summary>
     public static string CardPickMode { get; private set; } = LastChoiceMode;
 
+    /// <summary>
+    /// 战斗决策大脑（任务 2.2，默认启发式）：heuristic=现有出牌逻辑原样（行为零变化）；
+    /// auto=自动探测可用求解器（当前未探测到一律回退启发式，行为与 heuristic 相同）。
+    /// </summary>
+    public static string BrainMode { get; private set; } = HeuristicBrainMode;
+
     public const string FirstChoiceMode = WakuuChoiceModes.First;
     public const string LastChoiceMode = WakuuChoiceModes.Last;
     public const string RandomChoiceMode = WakuuChoiceModes.Random;
+    public const string HeuristicBrainMode = WakuuBrainModes.Heuristic;
+    public const string AutoBrainMode = WakuuBrainModes.Auto;
 
     public static string ConfigFilePath =>
         Path.Combine(
@@ -134,9 +142,12 @@ internal static class LocalWakuuAutopilotConfig
         {
             try
             {
-                if (key is nameof(WakuuConfigData.eventChoiceMode) or nameof(WakuuConfigData.cardPickMode))
+                if (key is nameof(WakuuConfigData.eventChoiceMode) or nameof(WakuuConfigData.cardPickMode)
+                    or nameof(WakuuConfigData.wakuuBrain))
                 {
-                    string? normalized = NormalizeChoiceMode(value);
+                    string? normalized = key == nameof(WakuuConfigData.wakuuBrain)
+                        ? NormalizeBrainMode(value)
+                        : NormalizeChoiceMode(value);
                     if (normalized == null)
                     {
                         LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：非法的策略取值 {value}（key={key}）");
@@ -148,9 +159,13 @@ internal static class LocalWakuuAutopilotConfig
                     {
                         data.eventChoiceMode = normalized;
                     }
-                    else
+                    else if (key == nameof(WakuuConfigData.cardPickMode))
                     {
                         data.cardPickMode = normalized;
+                    }
+                    else
+                    {
+                        data.wakuuBrain = normalized;
                     }
 
                     WriteConfigData(data);
@@ -182,6 +197,22 @@ internal static class LocalWakuuAutopilotConfig
             FirstChoiceMode => FirstChoiceMode,
             LastChoiceMode => LastChoiceMode,
             RandomChoiceMode => RandomChoiceMode,
+            _ => null,
+        };
+    }
+
+    /// <summary>规范化战斗决策大脑取值（heuristic/auto）；非法返回 null。</summary>
+    public static string? NormalizeBrainMode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            HeuristicBrainMode => HeuristicBrainMode,
+            AutoBrainMode => AutoBrainMode,
             _ => null,
         };
     }
@@ -265,7 +296,8 @@ internal static class LocalWakuuAutopilotConfig
                 + $"autoChooseEvents={data.autoChooseEvents}, autoRestChoice={data.autoRestChoice}, "
                 + $"autoUsePotions={data.autoUsePotions}, "
                 + $"neowAutoChoose={data.neowAutoChoose}, "
-                + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}");
+                + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}, "
+                + $"wakuuBrain={data.wakuuBrain}");
         }
 
         UseVakuuForm = data.useVakuuForm;
@@ -281,6 +313,10 @@ internal static class LocalWakuuAutopilotConfig
         NeowAutoChoose = data.neowAutoChoose;
         EventChoiceMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;
         CardPickMode = NormalizeChoiceMode(data.cardPickMode) ?? LastChoiceMode;
+        BrainMode = NormalizeBrainMode(data.wakuuBrain) ?? HeuristicBrainMode;
+
+        // 配置变化 → 大脑缓存失效（下次主循环用新开关值重新创建）。
+        WakuuBrainFactory.Reset();
     }
 
     private static void WriteDefault(string path)

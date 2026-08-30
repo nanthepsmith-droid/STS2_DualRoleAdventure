@@ -64,6 +64,44 @@ public class ConfigNormalizationTests
             Assert.That(LocalWakuuAutopilotConfig.FirstChoiceMode, Is.EqualTo(WakuuChoiceModes.First));
             Assert.That(LocalWakuuAutopilotConfig.LastChoiceMode, Is.EqualTo(WakuuChoiceModes.Last));
             Assert.That(LocalWakuuAutopilotConfig.RandomChoiceMode, Is.EqualTo(WakuuChoiceModes.Random));
+            Assert.That(LocalWakuuAutopilotConfig.HeuristicBrainMode, Is.EqualTo(WakuuBrainModes.Heuristic));
+            Assert.That(LocalWakuuAutopilotConfig.AutoBrainMode, Is.EqualTo(WakuuBrainModes.Auto));
         });
+    }
+}
+
+/// <summary>瓦库大脑模式（wakuuBrain 开关）取值规范化测试。</summary>
+[TestFixture]
+public class BrainModeNormalizationTests
+{
+    [TestCase("heuristic", "heuristic")]
+    [TestCase("auto", "auto")]
+    [TestCase("HEURISTIC", "heuristic")]
+    [TestCase("Auto", "auto")]
+    [TestCase(" heuristic ", "heuristic")]
+    [TestCase("  auto  ", "auto")]
+    public void NormalizeBrainMode_合法取值_返回规范化值(string input, string expected)
+    {
+        Assert.That(LocalWakuuAutopilotConfig.NormalizeBrainMode(input), Is.EqualTo(expected));
+    }
+
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("   ")]
+    [TestCase("solver")]
+    [TestCase("random")]
+    [TestCase("first")]
+    [TestCase("heuristic2")]
+    public void NormalizeBrainMode_非法取值_返回null(string? input)
+    {
+        Assert.That(LocalWakuuAutopilotConfig.NormalizeBrainMode(input), Is.Null);
+    }
+
+    [Test]
+    public void NormalizeBrainMode_默认回退启发式()
+    {
+        // 与 Apply 的兜底一致：非法/缺失时落到 heuristic（行为零变化）
+        Assert.That(LocalWakuuAutopilotConfig.NormalizeBrainMode("solver") ?? LocalWakuuAutopilotConfig.HeuristicBrainMode,
+            Is.EqualTo("heuristic"));
     }
 }

@@ -35,6 +35,19 @@ public class WakuuConfigJsonTests
             // 策略默认值
             Assert.That(data.eventChoiceMode, Is.EqualTo("first"));
             Assert.That(data.cardPickMode, Is.EqualTo("last"));
+            // 大脑默认值
+            Assert.That(data.wakuuBrain, Is.EqualTo("heuristic"));
+        });
+    }
+
+    [Test]
+    public void 解析大脑开关_auto生效()
+    {
+        WakuuConfigData data = WakuuConfigJson.Parse("""{ "wakuuBrain": "auto" }""")!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(data.wakuuBrain, Is.EqualTo("auto"));
+            Assert.That(data.cardPickMode, Is.EqualTo("last")); // 未提供 → 默认
         });
     }
 
@@ -187,6 +200,7 @@ public class WakuuConfigJsonTests
             Assert.That(json, Does.Contain("\"autoClaimPotions\""));
             Assert.That(json, Does.Contain("\"eventChoiceMode\""));
             Assert.That(json, Does.Contain("\"cardPickMode\""));
+            Assert.That(json, Does.Contain("\"wakuuBrain\""));
         });
     }
 }

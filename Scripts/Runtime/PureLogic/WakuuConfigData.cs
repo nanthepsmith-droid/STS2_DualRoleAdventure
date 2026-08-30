@@ -35,6 +35,17 @@ internal sealed class WakuuConfigData
     public string eventChoiceMode { get; set; } = WakuuChoiceModes.First;
 
     public string cardPickMode { get; set; } = WakuuChoiceModes.Last;
+
+    /// <summary>战斗中决策大脑：heuristic=启发式（默认，即现有出牌逻辑）/ auto=自动探测可用求解器。</summary>
+    public string wakuuBrain { get; set; } = WakuuBrainModes.Heuristic;
+}
+
+/// <summary>瓦库大脑模式取值常量（单一来源）。</summary>
+internal static class WakuuBrainModes
+{
+    public const string Heuristic = "heuristic";
+
+    public const string Auto = "auto";
 }
 
 /// <summary>
