@@ -81,6 +81,6 @@ Please open a [GitHub issue](https://github.com/nanthepsmith-droid/STS2_DualRole
 
 ### AI-assisted development
 
-The v1.32+ maintenance is developed **with heavy AI assistance** (AI coding agents) under human direction: every change is reviewed, playtested and released by the human maintainer. The collaboration rules given to the agents live in [`AGENTS.md`](AGENTS.md); the v1.32 analysis that drove this release is documented in [`docs/维护现状分析.md`](docs/维护现状分析.md).
+The v1.32+ maintenance is developed **with heavy AI assistance** (AI coding agents) under human direction: every change is reviewed, playtested and released by the human maintainer. The collaboration rules given to the agents live in [`AGENTS.md`](AGENTS.md); the v1.32 analysis that drove this release is documented in [`../maintenance-docs/维护现状分析.md`](../maintenance-docs/维护现状分析.md) (maintenance docs live outside this repo).
 
 There is no formal open-source license yet. Until a LICENSE file lands, treat the source as *source-available for personal use* — ask before redistributing derivatives.

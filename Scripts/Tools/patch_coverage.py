@@ -14,13 +14,13 @@
 
 用法:
   python patch_coverage.py --repo <STS2仓库路径>
-                           [--out docs/patch-coverage.md]   # 默认只打印到 stdout
+                           [--out ../maintenance-docs/patch-coverage.md]  # 默认只打印到 stdout；维护文档目录在 pain/（无 git）
                            [--src <反编译源码目录>]          # 默认探测 repo/src 与 repo/../sts2src/src
                            [--no-src-check]                 # 跳过反编译交叉核对
                            [--json]                         # 输出结构化 JSON（供其它工具复用）
 
 示例:
-  python ..\\tools\\patch_coverage.py --repo . --out docs/patch-coverage.md
+  python ..\\tools\\patch_coverage.py --repo . --out ../maintenance-docs/patch-coverage.md
   python ..\\tools\\patch_coverage.py --repo . --json
 """
 

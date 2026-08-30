@@ -10,7 +10,7 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 ### Added
 - **补丁目标覆盖清单（维护性改进任务 1.1）**：`Scripts/Tools/patch_coverage.py` 扫描全部
   `Scripts/Patch/*.cs` 的 HarmonyPatch 目标并与反编译源码（sts2src）交叉核对，输出
-  `docs/patch-coverage.md`（148 补丁类 / 166 目标行）——「哪些补丁打在哪、是否已核实」从此可查询、可再生成。
+  `../maintenance-docs/patch-coverage.md`（148 补丁类 / 166 目标行）——「哪些补丁打在哪、是否已核实」从此可查询、可再生成。
 - **启动自检（维护性改进任务 1.2）**：`Entry.cs` 新增期望补丁清单（25 个关键目标），
   初始化时与 `GetPatchedMethods()` 实际结果比对，缺失即 `Log.Error` 醒目报错——
   终结「方法级-only 被 `PatchAll` 静默跳过」这类无声失败，游戏更新后启动日志即暴露断档。
@@ -18,10 +18,10 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   - `Scripts/Tools/regenerate_src.ps1`：一条命令重生成反编译参考源码 `sts2src/src`
     （读 `release_info.json` → ilspycmd 反编译 → 覆盖拷贝 `.cs` → 打印 diff 统计）；
   - `Scripts/Tools/check_string_targets.py`：核对全部**字符串式**目标（HarmonyPatch 字符串 /
-    `AccessTools.*` / 反射 `GetXxx("...")`），输出 `docs/string-targets.md`，失效即退出码 1（可进 CI）；
+    `AccessTools.*` / 反射 `GetXxx("...")`），输出 `../maintenance-docs/string-targets.md`，失效即退出码 1（可进 CI）；
     识别「新名优先 + 旧名回退」的 `LEGACY-FALLBACK` 不算失效。
-- **文档整理（维护性改进任务 1.4）**：根目录 8 份分析/方案文档归档 `docs/decision-records/`；
-  skill 的 7 份 references 副本入 `docs/references/`；`docs/维护现状分析.md` 刷新。
+- **文档整理（维护性改进任务 1.4）**：根目录 8 份分析/方案文档归档 `../maintenance-docs/decision-records/`；
+  skill 的 7 份 references 副本入 `../maintenance-docs/references/`；`../maintenance-docs/维护现状分析.md` 刷新。
 - **纯逻辑单元测试（维护性改进任务 2.1）**：
   - 新增纯逻辑层 `Scripts/Runtime/PureLogic/`：药水规则判定 `WakuuPotionDecision`（相位/范围/
     首回合/条件/昏眩）、选牌策略 `WakuuStrategyPicking`（first/last/random/洗牌/火堆锻造）、

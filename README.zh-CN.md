@@ -66,7 +66,7 @@ cp -r ~/sts2-src/MegaCrit/Sts2/. src/
 - [更新日志](CHANGELOG.md) — 版本历史
 - [TODO](TODO.md) — 已知问题与排查中事项
 - [docs/architecture.md](docs/architecture.md) — Mod 内部原理
-- [docs/维护现状分析.md](docs/维护现状分析.md) — v1.32 发布前的项目现状分析（含各阶段维护史）
+- [../maintenance-docs/维护现状分析.md](../maintenance-docs/维护现状分析.md) — v1.32 发布前的项目现状分析（含各阶段维护史；维护性改进产物文档在 `pain/maintenance-docs/`，不入本仓库）
 - [docs/design/](docs/design/) — 原设计文档（英译版）
 - [docs/archive/](docs/archive/) — 原中文文档原样保留
 
@@ -81,6 +81,6 @@ cp -r ~/sts2-src/MegaCrit/Sts2/. src/
 
 ### AI 辅助开发说明
 
-v1.32+ 的维护工作**大量使用了 AI 编程助手**完成：所有改动均在人类维护者的指导下产生，经人工审核与实机测试后才发布。给 AI 的协作规则见 [`AGENTS.md`](AGENTS.md)；驱动 v1.32 发布的项目分析见 [`docs/维护现状分析.md`](docs/维护现状分析.md)。
+v1.32+ 的维护工作**大量使用了 AI 编程助手**完成：所有改动均在人类维护者的指导下产生，经人工审核与实机测试后才发布。给 AI 的协作规则见 [`AGENTS.md`](AGENTS.md)；驱动 v1.32 发布的项目分析见 [`../maintenance-docs/维护现状分析.md`](../maintenance-docs/维护现状分析.md)。
 
 目前尚无正式开源许可证。在 LICENSE 文件落地之前，请将源码视为*仅供个人使用的源码可用（source-available）*状态——二次分发衍生品前请先询问。

@@ -26,7 +26,7 @@
 示例:
   python Scripts/Tools/check_string_targets.py --repo .
   python Scripts/Tools/check_string_targets.py --repo . --json
-  python Scripts/Tools/check_string_targets.py --repo . --out docs/string-targets.md
+  python Scripts/Tools/check_string_targets.py --repo . --out ../maintenance-docs/string-targets.md
 """
 
 from __future__ import annotations

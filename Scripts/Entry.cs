@@ -19,7 +19,7 @@ public partial class Entry
     /// 启动自检期望清单：这些目标必须被 Harmony 打上，否则说明被 PatchAll 静默跳过
     /// （本 mod 坑 1：类上缺类级 [HarmonyPatch] 时整个类被跳过且无任何报错）。
     /// 用「简单类型名.方法名」匹配 GetPatchedMethods() 的 (DeclaringType.Name, Name)。
-    /// 维护口径：与 Scripts/Tools/patch_coverage.py 生成的 docs/patch-coverage.md 一致，
+    /// 维护口径：与 Scripts/Tools/patch_coverage.py 生成的 patch-coverage.md（pain/maintenance-docs/，无 git）一致，
     /// 覆盖最关键、最易被游戏更新波及的目标；缺失只报错、不阻止加载。
     /// </summary>
     private static readonly string[] ExpectedPatchTargets =
