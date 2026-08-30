@@ -18,6 +18,10 @@ LocalMultiControl.pck
 *.suo
 *.tmp
 
+# Python tool caches
+__pycache__/
+*.pyc
+
 # Decompiled game source (read-only reference, never commit)
 src/
 

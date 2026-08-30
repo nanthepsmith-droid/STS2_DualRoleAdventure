@@ -42,17 +42,31 @@ dotnet format LocalMultiControl.csproj --verify-no-changes
 
 When the game updates and the mod breaks:
 
-1. Note the new version from `<game>\release_info.json`.
-2. Regenerate decompiled reference source:
+1. Regenerate the decompiled reference source in one command
+   (`Scripts/Tools/regenerate_src.ps1`: prints `<game>\release_info.json`, decompiles `sts2.dll`
+   with ilspycmd, overwrites `sts2src\src`, and prints a before/after diff):
+   ```
+   # PowerShell, from the repo root
+   .\Scripts\Tools\regenerate_src.ps1                # -CheckOnly to skip decompile; -InstallIlspy to auto-install
+   ```
+   Manual equivalent (only if ilspycmd must be run by hand):
    ```bash
    dotnet tool install -g ilspycmd --version 9.1.0.7988   # newer majors may fail to install
    ilspycmd -p --nested-directories -o ~/sts2-src "<game>/data_sts2_windows_x86_64/sts2.dll"
    cp -r ~/sts2-src/MegaCrit/Sts2/. src/
    ```
-3. Build; fix compile errors using the decompiled source as ground truth (compile errors = renamed/removed members).
-4. Validate every **string-based** Harmony/`AccessTools` target against the decompiled tree — these fail at runtime, not compile time.
-5. Fix pattern: call the **new** member name first, with a reflection fallback to the old name (see `InvokeBeginRunIfAllPlayersReady` in `Scripts/Patch/LoadRunLobbyPatch.cs`).
-6. Record every fixed breakage in `CHANGELOG.md`.
+2. Build; fix compile errors using the decompiled source as ground truth (compile errors = renamed/removed members).
+3. Validate every **string-based** target with `Scripts/Tools/check_string_targets.py` — Harmony
+   `[HarmonyPatch(typeof(X), "str")]`, `AccessTools.*`, and reflection `GetMethod("...")` all fail at
+   runtime, not compile time. The tool exits non-zero when a target went stale:
+   ```
+   python Scripts\Tools\check_string_targets.py --repo .   # --json for CI; exit 1 = stale
+   ```
+   Legacy fallbacks (new-name-first with old-name reflection fallback) are reported as
+   `LEGACY-FALLBACK` and do not fail the run — keep that pattern when fixing breakages (see
+   `InvokeBeginRunIfAllPlayersReady` in `Scripts/Patch/LoadRunLobbyPatch.cs`).
+4. Fix pattern: call the **new** member name first, with a reflection fallback to the old name.
+5. Record every fixed breakage in `CHANGELOG.md`.
 
 ## 6. Code style
 
