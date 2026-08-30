@@ -1,6 +1,6 @@
 # Patch Coverage — 补丁目标覆盖清单
 
-> 生成时间：2026-08-29 20:22
+> 生成时间：2026-08-30 13:22
 > 扫描目录：`Scripts/Patch/`（96 个文件，148 个补丁类）
 > 反编译参考：D:\Download\pain\sts2src\src（3539 个 .cs）
 > 用途：游戏更新适配与「静默跳过」排查的核对基线。由 `Scripts/Tools/patch_coverage.py` 生成，勿手改。
