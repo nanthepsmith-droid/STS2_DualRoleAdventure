@@ -156,7 +156,7 @@ internal static class LocalWakuuRelicRuntime
         if (LocalWakuuAutopilotConfig.AutoUsePotions && IsVakuuFormMode(player))
         {
             await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(
-                relic, player, choiceContext, combatState, LocalWakuuPotionAutoUse.WakuuPotionPhase.StartOfTurn);
+                relic, player, choiceContext, combatState, WakuuPotionPhase.StartOfTurn);
         }
 
         CardModel? firstPlayableCard = PileType.Hand.GetPile(relic.Owner).Cards.FirstOrDefault((candidate) => candidate.CanPlay());
@@ -166,7 +166,7 @@ internal static class LocalWakuuRelicRuntime
             if (LocalWakuuAutopilotConfig.AutoUsePotions && IsVakuuFormMode(player))
             {
                 await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(
-                    relic, player, choiceContext, combatState, LocalWakuuPotionAutoUse.WakuuPotionPhase.EndOfTurn);
+                    relic, player, choiceContext, combatState, WakuuPotionPhase.EndOfTurn);
             }
 
             return;
@@ -277,7 +277,7 @@ internal static class LocalWakuuRelicRuntime
         if (LocalWakuuAutopilotConfig.AutoUsePotions && IsVakuuFormMode(player) && !CombatManager.Instance.IsOverOrEnding)
         {
             await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(
-                relic, player, choiceContext, combatState, LocalWakuuPotionAutoUse.WakuuPotionPhase.EndOfTurn);
+                relic, player, choiceContext, combatState, WakuuPotionPhase.EndOfTurn);
         }
 
         if (cardsPlayed <= 0)

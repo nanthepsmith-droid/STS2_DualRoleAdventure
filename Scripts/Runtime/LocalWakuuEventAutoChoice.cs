@@ -151,7 +151,7 @@ internal static class LocalWakuuEventAutoChoice
         }
     }
 
-    /// <summary>按策略从候选里挑一个：first=第一个 / last=最后一个 / random=随机。</summary>
+    /// <summary>按策略从候选里挑一个：first=第一个 / last=最后一个 / random=随机（逻辑抽为纯函数）。</summary>
     private static EventOption? SelectByStrategy(IReadOnlyList<EventOption> candidates)
     {
         if (candidates.Count == 0)
@@ -159,18 +159,14 @@ internal static class LocalWakuuEventAutoChoice
             return null;
         }
 
-        switch (LocalWakuuAutopilotConfig.EventChoiceMode)
+        int index;
+        lock (_randomLock)
         {
-            case LocalWakuuAutopilotConfig.LastChoiceMode:
-                return candidates[candidates.Count - 1];
-            case LocalWakuuAutopilotConfig.RandomChoiceMode:
-                lock (_randomLock)
-                {
-                    return candidates[_random.Next(candidates.Count)];
-                }
-            default:
-                return candidates[0];
+            index = WakuuStrategyPicking.PickIndexByStrategy(
+                candidates.Count, LocalWakuuAutopilotConfig.EventChoiceMode, _random);
         }
+
+        return index >= 0 ? candidates[index] : null;
     }
 
     private static async Task RunAsync(EventModel eventModel, ulong ownerId)

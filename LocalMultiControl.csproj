@@ -17,6 +17,9 @@
     <!-- Decompiled game source lives in src/ as read-only reference; never compile it -->
     <Compile Remove="src/**" />
     <None Remove="src/**" />
+    <!-- Unit tests live in tests/; never compile them into the mod assembly -->
+    <Compile Remove="tests/**" />
+    <None Remove="tests/**" />
   </ItemGroup>
 
   <ItemGroup>

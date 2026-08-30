@@ -338,8 +338,7 @@ internal static class LocalWakuuRestAutoChoice
     /// <summary>基础打击/防御识别：卡 id 含 STRIKE/DEFEND（覆盖各角色变体与酒狐等 mod 命名）。</summary>
     internal static bool IsBasicStrikeOrDefend(CardModel card)
     {
-        string id = card.Id.Entry.ToUpperInvariant();
-        return id.Contains("STRIKE") || id.Contains("DEFEND");
+        return WakuuCardId.IsBasicStrikeOrDefendId(card.Id.Entry);
     }
 
     private static IDisposable PushSelectorFor(RestSiteOption option, Player player)
@@ -423,17 +422,8 @@ internal sealed class LocalWakuuSmithSelector : ICardSelector
 
     public Task<IEnumerable<CardModel>> GetSelectedCards(IEnumerable<CardModel> options, int minSelect, int maxSelect)
     {
-        List<CardModel> list = options.ToList();
-        List<CardModel> preferred = list.Where((c) => !LocalWakuuRestAutoChoice.IsBasicStrikeOrDefend(c)).ToList();
-        List<CardModel> fallback = list.Where(LocalWakuuRestAutoChoice.IsBasicStrikeOrDefend).ToList();
-
-        // 主选：非打击/防御的最后 N 张；不足的槽位用打击/防御的最后几张补齐
-        List<CardModel> selected = preferred.Skip(Math.Max(0, preferred.Count - _smithCount)).ToList();
-        int remaining = _smithCount - selected.Count;
-        if (remaining > 0)
-        {
-            selected.AddRange(fallback.Skip(Math.Max(0, fallback.Count - remaining)));
-        }
+        List<CardModel> selected = WakuuStrategyPicking.PickSmithCards(
+            options.ToList(), _smithCount, LocalWakuuRestAutoChoice.IsBasicStrikeOrDefend);
 
         return Task.FromResult((IEnumerable<CardModel>)selected);
     }

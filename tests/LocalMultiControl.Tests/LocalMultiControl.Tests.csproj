@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>LocalMultiControl.Tests</AssemblyName>
+    <RootNamespace>LocalMultiControl.Tests</RootNamespace>
+
+    <!-- 游戏数据目录（sts2.dll / GodotSharp.dll / 0Harmony.dll） -->
+    <Sts2DataDir>D:\SteamLibrary\steamapps\common\Slay the Spire 2\data_sts2_windows_x86_64</Sts2DataDir>
+    <!-- 主程序集构建产物（仓库根，先 dotnet build 主项目再跑测试） -->
+    <MainModDll>$(MSBuildProjectDirectory)\..\..\DualRoleAdventure.dll</MainModDll>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="NUnit" Version="4.2.2" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 主程序集（通过 InternalsVisibleTo 访问 internal 纯逻辑与规则元数据） -->
+    <Reference Include="DualRoleAdventure">
+      <HintPath>$(MainModDll)</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <!-- 游戏程序集：随测试复制到输出目录，供类型加载（不实际调用 Godot 运行时） -->
+    <Reference Include="sts2">
+      <HintPath>$(Sts2DataDir)\sts2.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="GodotSharp">
+      <HintPath>$(Sts2DataDir)\GodotSharp.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(Sts2DataDir)\0Harmony.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

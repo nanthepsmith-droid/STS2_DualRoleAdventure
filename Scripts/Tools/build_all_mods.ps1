@@ -65,8 +65,9 @@ function Get-Marker([string]$dllPath) {
 }
 
 # 单仓库构建：返回 dll 路径（构建产物在仓库根）或 $null
+# 可选传 $TestCsproj：构建成功后跑 dotnet test，0 失败才算构建通过（任务 2.1 单元测试门槛）
 function Invoke-BuildRepo {
-    param([string]$RepoDir, [string]$Csproj, [string]$OutDll)
+    param([string]$RepoDir, [string]$Csproj, [string]$OutDll, [string]$TestCsproj = "")
     Write-Step "构建 $RepoDir ..."
     Push-Location $RepoDir
     try {
@@ -74,6 +75,14 @@ function Invoke-BuildRepo {
         if ($LASTEXITCODE -ne 0) {
             Write-Host "[X] 构建失败: $RepoDir（exit=$LASTEXITCODE）" -ForegroundColor Red
             return $null
+        }
+        if ($TestCsproj) {
+            dotnet test $TestCsproj -c Release --nologo | Out-Host
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "[X] 单元测试未全绿，禁止部署: $RepoDir（exit=$LASTEXITCODE）" -ForegroundColor Red
+                return $null
+            }
+            Write-Ok "单元测试全绿: $TestCsproj"
         }
     } finally {
         Pop-Location
@@ -132,12 +141,13 @@ $fail = 0
 
 # 主 mod（DualRoleAdventure / LocalMultiControl）
 $mainCsproj = Join-Path $mainRepoDir "LocalMultiControl.csproj"
+$mainTestCsproj = Join-Path $mainRepoDir "tests\LocalMultiControl.Tests\LocalMultiControl.Tests.csproj"
 $mainOut = Join-Path $mainRepoDir "DualRoleAdventure.dll"
 $mainSlotDir = Join-Path $modsDir $MainSlot
 if (-not (Test-Path -LiteralPath $mainCsproj)) { Write-Err "主仓库 csproj 不存在: $mainCsproj" }
 
 if ($mode -eq "all" -or $mode -eq "build") {
-    if (-not (Invoke-BuildRepo $mainRepoDir $mainCsproj $mainOut)) { $fail++ }
+    if (-not (Invoke-BuildRepo $mainRepoDir $mainCsproj $mainOut $mainTestCsproj)) { $fail++ }
 }
 if ($mode -eq "all" -or $mode -eq "deploy") {
     if (-not (Test-Path -LiteralPath $mainOut)) { Write-Err "主 mod 构建产物缺失: $mainOut" }

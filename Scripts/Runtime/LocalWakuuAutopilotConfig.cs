@@ -70,9 +70,9 @@ internal static class LocalWakuuAutopilotConfig
     /// </summary>
     public static string CardPickMode { get; private set; } = LastChoiceMode;
 
-    public const string FirstChoiceMode = "first";
-    public const string LastChoiceMode = "last";
-    public const string RandomChoiceMode = "random";
+    public const string FirstChoiceMode = WakuuChoiceModes.First;
+    public const string LastChoiceMode = WakuuChoiceModes.Last;
+    public const string RandomChoiceMode = WakuuChoiceModes.Random;
 
     public static string ConfigFilePath =>
         Path.Combine(
@@ -93,20 +93,20 @@ internal static class LocalWakuuAutopilotConfig
             try
             {
                 // 以磁盘上的现有内容为底稿改单键，避免覆盖玩家手改的其他字段。
-                ConfigData data = ReadConfigDataOrThrow();
+                WakuuConfigData data = ReadConfigDataOrThrow();
                 switch (key)
                 {
-                    case nameof(ConfigData.useVakuuForm): data.useVakuuForm = value; break;
-                    case nameof(ConfigData.playAllCards): data.playAllCards = value; break;
-                    case nameof(ConfigData.backgroundMode): data.backgroundMode = value; break;
-                    case nameof(ConfigData.suppressVanillaEarring): data.suppressVanillaEarring = value; break;
-                    case nameof(ConfigData.autoClaimCards): data.autoClaimCards = value; break;
-                    case nameof(ConfigData.autoClaimGoldRelics): data.autoClaimGoldRelics = value; break;
-                    case nameof(ConfigData.autoClaimPotions): data.autoClaimPotions = value; break;
-                    case nameof(ConfigData.autoChooseEvents): data.autoChooseEvents = value; break;
-                    case nameof(ConfigData.autoRestChoice): data.autoRestChoice = value; break;
-                    case nameof(ConfigData.autoUsePotions): data.autoUsePotions = value; break;
-                    case nameof(ConfigData.neowAutoChoose): data.neowAutoChoose = value; break;
+                    case nameof(WakuuConfigData.useVakuuForm): data.useVakuuForm = value; break;
+                    case nameof(WakuuConfigData.playAllCards): data.playAllCards = value; break;
+                    case nameof(WakuuConfigData.backgroundMode): data.backgroundMode = value; break;
+                    case nameof(WakuuConfigData.suppressVanillaEarring): data.suppressVanillaEarring = value; break;
+                    case nameof(WakuuConfigData.autoClaimCards): data.autoClaimCards = value; break;
+                    case nameof(WakuuConfigData.autoClaimGoldRelics): data.autoClaimGoldRelics = value; break;
+                    case nameof(WakuuConfigData.autoClaimPotions): data.autoClaimPotions = value; break;
+                    case nameof(WakuuConfigData.autoChooseEvents): data.autoChooseEvents = value; break;
+                    case nameof(WakuuConfigData.autoRestChoice): data.autoRestChoice = value; break;
+                    case nameof(WakuuConfigData.autoUsePotions): data.autoUsePotions = value; break;
+                    case nameof(WakuuConfigData.neowAutoChoose): data.neowAutoChoose = value; break;
                     default:
                         LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：未知开关名 {key}");
                         return false;
@@ -134,7 +134,7 @@ internal static class LocalWakuuAutopilotConfig
         {
             try
             {
-                if (key is nameof(ConfigData.eventChoiceMode) or nameof(ConfigData.cardPickMode))
+                if (key is nameof(WakuuConfigData.eventChoiceMode) or nameof(WakuuConfigData.cardPickMode))
                 {
                     string? normalized = NormalizeChoiceMode(value);
                     if (normalized == null)
@@ -143,8 +143,8 @@ internal static class LocalWakuuAutopilotConfig
                         return false;
                     }
 
-                    ConfigData data = ReadConfigDataOrThrow();
-                    if (key == nameof(ConfigData.eventChoiceMode))
+                    WakuuConfigData data = ReadConfigDataOrThrow();
+                    if (key == nameof(WakuuConfigData.eventChoiceMode))
                     {
                         data.eventChoiceMode = normalized;
                     }
@@ -186,7 +186,7 @@ internal static class LocalWakuuAutopilotConfig
         };
     }
 
-    private static void WriteConfigData(ConfigData data)
+    private static void WriteConfigData(WakuuConfigData data)
     {
         string? directory = Path.GetDirectoryName(ConfigFilePath);
         if (!string.IsNullOrEmpty(directory))
@@ -194,22 +194,19 @@ internal static class LocalWakuuAutopilotConfig
             Directory.CreateDirectory(directory);
         }
 
-        File.WriteAllText(
-            ConfigFilePath,
-            JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(ConfigFilePath, WakuuConfigJson.Serialize(data));
     }
 
     /// <summary>读取磁盘配置；文件缺失/损坏时返回默认值底稿（默认=原版低语耳环行为）。</summary>
-    private static ConfigData ReadConfigDataOrThrow()
+    private static WakuuConfigData ReadConfigDataOrThrow()
     {
         string path = ConfigFilePath;
         if (!File.Exists(path))
         {
-            return new ConfigData();
+            return new WakuuConfigData();
         }
 
-        ConfigData? data = JsonSerializer.Deserialize<ConfigData>(File.ReadAllText(path), JsonOptions);
-        return data ?? new ConfigData();
+        return WakuuConfigJson.Parse(File.ReadAllText(path)) ?? new WakuuConfigData();
     }
 
     public static void Reload(string source)
@@ -224,15 +221,15 @@ internal static class LocalWakuuAutopilotConfig
                     // 首次运行写一份带注释说明的默认配置（JSON 本身不支持注释，注释写在日志里）。
                     WriteDefault(path);
                     LocalMultiControlLogger.Info($"瓦库托管配置不存在，已写入默认配置（默认=原版低语耳环行为）: {path}, source={source}");
-                    Apply(new ConfigData(), logChanges: true);
+                    Apply(new WakuuConfigData(), logChanges: true);
                     return;
                 }
 
                 string json = File.ReadAllText(path);
-                ConfigData? data;
+                WakuuConfigData? data;
                 try
                 {
-                    data = JsonSerializer.Deserialize<ConfigData>(json, JsonOptions);
+                    data = WakuuConfigJson.Parse(json);
                 }
                 catch (JsonException exception)
                 {
@@ -256,7 +253,7 @@ internal static class LocalWakuuAutopilotConfig
         }
     }
 
-    private static void Apply(ConfigData data, bool logChanges)
+    private static void Apply(WakuuConfigData data, bool logChanges)
     {
         if (logChanges)
         {
@@ -294,45 +291,6 @@ internal static class LocalWakuuAutopilotConfig
             Directory.CreateDirectory(directory);
         }
 
-        string json = JsonSerializer.Serialize(new ConfigData(), new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(path, json);
-    }
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true,
-    };
-
-    private sealed class ConfigData
-    {
-        public bool useVakuuForm { get; set; }
-
-        public bool playAllCards { get; set; } = true;
-
-        public bool backgroundMode { get; set; } = true;
-
-        public bool suppressVanillaEarring { get; set; } = true;
-
-        public bool autoClaimCards { get; set; } = true;
-
-        public bool autoClaimGoldRelics { get; set; } = true;
-
-        /// <summary>药水奖励自动领取（满栏按稀有度换药/先喝鲜血），默认开。</summary>
-        public bool autoClaimPotions { get; set; } = true;
-
-        public bool autoChooseEvents { get; set; } = true;
-
-        public bool autoRestChoice { get; set; } = true;
-
-        /// <summary>战斗中自动用药水：默认关（拍板：保守版写死规则，先观察）。</summary>
-        public bool autoUsePotions { get; set; }
-
-        public bool neowAutoChoose { get; set; }
-
-        public string eventChoiceMode { get; set; } = FirstChoiceMode;
-
-        public string cardPickMode { get; set; } = LastChoiceMode;
+        File.WriteAllText(path, WakuuConfigJson.Serialize(new WakuuConfigData()));
     }
 }

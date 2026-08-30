@@ -22,6 +22,15 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     识别「新名优先 + 旧名回退」的 `LEGACY-FALLBACK` 不算失效。
 - **文档整理（维护性改进任务 1.4）**：根目录 8 份分析/方案文档归档 `docs/decision-records/`；
   skill 的 7 份 references 副本入 `docs/references/`；`docs/维护现状分析.md` 刷新。
+- **纯逻辑单元测试（维护性改进任务 2.1）**：
+  - 新增纯逻辑层 `Scripts/Runtime/PureLogic/`：药水规则判定 `WakuuPotionDecision`（相位/范围/
+    首回合/条件/昏眩）、选牌策略 `WakuuStrategyPicking`（first/last/random/洗牌/火堆锻造）、
+    配置 JSON 纯函数 `WakuuConfigJson`、卡牌 id 判定 `WakuuCardId`——全部从运行时调用点
+    **原样搬移，行为零变化**；
+  - 新增 `tests/LocalMultiControl.Tests/`（nunit，net9.0）：132 个用例覆盖配置解析/规范化、
+    选择器策略、药水判定组合、60 条药水规则表完整性（元数据导出校验，含 Match 目标类型 IL 提取）；
+  - `build_all_mods.ps1` 构建主 mod 后先跑 `dotnet test`，**0 失败才允许部署**；
+  - 修复：主项目 csproj 未排除 `tests/**` 会把测试文件编进 mod 程序集的问题。
 
 ### Fixed
 - **两个「方法级-only `[HarmonyPatch]`」补丁类被 `PatchAll` 静默跳过、从未生效**（本 mod 坑 1）：

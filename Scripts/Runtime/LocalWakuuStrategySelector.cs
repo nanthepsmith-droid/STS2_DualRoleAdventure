@@ -25,14 +25,14 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
         List<CardModel> list = options.ToList();
         string mode = LocalWakuuAutopilotConfig.CardPickMode;
 
-        IEnumerable<CardModel> ordered = mode switch
+        // 排序/取牌逻辑已抽为泛型纯函数（WakuuStrategyPicking），此处只负责随机源同步
+        List<CardModel> picked;
+        lock (_randomLock)
         {
-            LocalWakuuAutopilotConfig.FirstChoiceMode => list,
-            LocalWakuuAutopilotConfig.RandomChoiceMode => Shuffle(list),
-            _ => list.AsEnumerable().Reverse(), // last（默认）：倒序后取前 N = 原序列最后 N 张
-        };
+            picked = WakuuStrategyPicking.PickByStrategy(list, mode, maxSelect, _random);
+        }
 
-        return Task.FromResult(ordered.Take(maxSelect));
+        return Task.FromResult((IEnumerable<CardModel>)picked);
     }
 
     /// <summary>卡牌奖励保持"最左"（拍板 #5：与瓦库行为一致，不受选牌策略影响）。</summary>
@@ -42,21 +42,6 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
         {
             card = options.FirstOrDefault()?.Card,
         };
-    }
-
-    private static List<CardModel> Shuffle(List<CardModel> source)
-    {
-        List<CardModel> copy = new(source);
-        lock (_randomLock)
-        {
-            for (int i = copy.Count - 1; i > 0; i--)
-            {
-                int j = _random.Next(i + 1);
-                (copy[i], copy[j]) = (copy[j], copy[i]);
-            }
-        }
-
-        return copy;
     }
 
     /// <summary>random 策略用的独立随机源：不动游戏 RunState RNG，避免污染局内随机序列。</summary>

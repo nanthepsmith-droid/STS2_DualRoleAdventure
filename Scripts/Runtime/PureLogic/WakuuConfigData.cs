@@ -1,0 +1,63 @@
+using System.Text.Json;
+
+namespace LocalMultiControl.Scripts.Runtime;
+
+/// <summary>
+/// 瓦库托管配置的磁盘数据模型（纯数据，无 IO 无游戏依赖）。
+/// 字段名即 json 字段名（camelCase），默认值 = 原版低语耳环行为。
+/// </summary>
+internal sealed class WakuuConfigData
+{
+    public bool useVakuuForm { get; set; }
+
+    public bool playAllCards { get; set; } = true;
+
+    public bool backgroundMode { get; set; } = true;
+
+    public bool suppressVanillaEarring { get; set; } = true;
+
+    public bool autoClaimCards { get; set; } = true;
+
+    public bool autoClaimGoldRelics { get; set; } = true;
+
+    /// <summary>药水奖励自动领取（满栏按稀有度换药/先喝鲜血），默认开。</summary>
+    public bool autoClaimPotions { get; set; } = true;
+
+    public bool autoChooseEvents { get; set; } = true;
+
+    public bool autoRestChoice { get; set; } = true;
+
+    /// <summary>战斗中自动用药水：默认关（拍板：保守版写死规则，先观察）。</summary>
+    public bool autoUsePotions { get; set; }
+
+    public bool neowAutoChoose { get; set; }
+
+    public string eventChoiceMode { get; set; } = WakuuChoiceModes.First;
+
+    public string cardPickMode { get; set; } = WakuuChoiceModes.Last;
+}
+
+/// <summary>
+/// 配置的 JSON 解析/序列化纯函数（无 IO）。解析失败抛 JsonException，由调用方决定兜底策略。
+/// </summary>
+internal static class WakuuConfigJson
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
+    /// <summary>解析配置 json；输入 null 返回 null（沿用当前生效值的语义由调用方处理）。</summary>
+    public static WakuuConfigData? Parse(string json)
+    {
+        return JsonSerializer.Deserialize<WakuuConfigData>(json, JsonOptions);
+    }
+
+    /// <summary>序列化为缩进 json 文本。</summary>
+    public static string Serialize(WakuuConfigData data)
+    {
+        return JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
+    }
+}

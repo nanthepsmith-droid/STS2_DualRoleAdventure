@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Commands;
@@ -38,28 +39,6 @@ internal static class LocalWakuuPotionAutoUse
     /// <summary>mod 药水随机消耗的候选回合范围 [1, ModPotionRoundMax]。</summary>
     private const int ModPotionRoundMax = 3;
 
-    [Flags]
-    internal enum WakuuPotionPhase
-    {
-        StartOfTurn = 1,
-        EndOfTurn = 2,
-        Both = StartOfTurn | EndOfTurn,
-    }
-
-    private enum FightScope
-    {
-        AnyCombat,
-        HardFight,   // 精英或 Boss
-        BossFight,   // 仅 Boss
-    }
-
-    private enum TargetKind
-    {
-        Default,          // AnyEnemy→第一个敌人；AllEnemies→null；其余→自己
-        HumanFirst,       // 优先给存活的真人队友，没有则自用
-        AllyCharacter,    // 自己就是该职业则自用，否则给该职业的存活队友，再没有则自用
-    }
-
     /// <summary>单次评估的上下文快照（手牌/牌堆/意图伤害/能量等一次算好供条件与选择器复用）。</summary>
     private sealed class PotionRuleContext
     {
@@ -89,10 +68,10 @@ internal static class LocalWakuuPotionAutoUse
         public required string Name;
         public required Func<PotionModel, bool> Match;
         public WakuuPotionPhase Phases = WakuuPotionPhase.Both;
-        public FightScope Scope = FightScope.AnyCombat;
+        public WakuuPotionFightScope Scope = WakuuPotionFightScope.AnyCombat;
         public bool FirstRoundOnly;
         public Func<PotionRuleContext, bool>? Condition;
-        public TargetKind Target = TargetKind.Default;
+        public WakuuPotionTargetKind Target = WakuuPotionTargetKind.Default;
         public Type? AllyCharacterClass;
         public Func<PotionRuleContext, IReadOnlyList<CardModel>, int, int, List<CardModel>>? CardPicker;
         public bool DiscardInsteadOfUse;
@@ -124,7 +103,7 @@ internal static class LocalWakuuPotionAutoUse
         new() { Name = "再生药水低血自用", Match = (p) => p is RegenPotion, Condition = (c) => c.LowHp },
         new()
         {
-            Name = "龙涎香Boss残血", Match = (p) => p is Ambergris, Scope = FightScope.BossFight,
+            Name = "龙涎香Boss残血", Match = (p) => p is Ambergris, Scope = WakuuPotionFightScope.BossFight,
             Phases = WakuuPotionPhase.EndOfTurn, Condition = (c) => c.LowHp,
         },
         new()
@@ -134,110 +113,110 @@ internal static class LocalWakuuPotionAutoUse
         },
 
         // —— 精英/Boss 首回合增益（自用）——
-        new() { Name = "力量首回合", Match = (p) => p is StrengthPotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "敏捷首回合", Match = (p) => p is DexterityPotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "集中首回合", Match = (p) => p is FocusPotion, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.AllyCharacter, AllyCharacterClass = typeof(Defect) },
-        new() { Name = "异鱼之油首回合", Match = (p) => p is FyshOil, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "流动铜液首回合", Match = (p) => p is LiquidBronze, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "马萨雷斯赠礼首回合", Match = (p) => p is MazalethsGift, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "明耀酊剂首回合", Match = (p) => p is RadiantTincture, Scope = FightScope.HardFight, FirstRoundOnly = true, SkipWhenStunned = true },
-        new() { Name = "宇宙药剂首回合", Match = (p) => p is CosmicConcoction, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "精炼混沌首回合", Match = (p) => p is DistilledChaos, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "明晰提取物首回合", Match = (p) => p is Clarity, Scope = FightScope.HardFight, FirstRoundOnly = true, SkipWhenStunned = true },
+        new() { Name = "力量首回合", Match = (p) => p is StrengthPotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "敏捷首回合", Match = (p) => p is DexterityPotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "集中首回合", Match = (p) => p is FocusPotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true, Target = WakuuPotionTargetKind.AllyCharacter, AllyCharacterClass = typeof(Defect) },
+        new() { Name = "异鱼之油首回合", Match = (p) => p is FyshOil, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "流动铜液首回合", Match = (p) => p is LiquidBronze, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "马萨雷斯赠礼首回合", Match = (p) => p is MazalethsGift, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "明耀酊剂首回合", Match = (p) => p is RadiantTincture, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true, SkipWhenStunned = true },
+        new() { Name = "宇宙药剂首回合", Match = (p) => p is CosmicConcoction, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "精炼混沌首回合", Match = (p) => p is DistilledChaos, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "明晰提取物首回合", Match = (p) => p is Clarity, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true, SkipWhenStunned = true },
 
         // —— 精英/Boss 首回合攻击/减益（对敌）——
-        new() { Name = "火焰首回合对敌", Match = (p) => p is FirePotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "毒素首回合对敌", Match = (p) => p is PoisonPotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "灾厄首回合对敌", Match = (p) => p is PotionOfDoom, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "易伤首回合对敌", Match = (p) => p is VulnerablePotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "虚弱首回合对敌", Match = (p) => p is WeakPotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "消亡粉末首回合对敌", Match = (p) => p is PowderedDemise, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "火焰首回合对敌", Match = (p) => p is FirePotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "毒素首回合对敌", Match = (p) => p is PoisonPotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "灾厄首回合对敌", Match = (p) => p is PotionOfDoom, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "易伤首回合对敌", Match = (p) => p is VulnerablePotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "虚弱首回合对敌", Match = (p) => p is WeakPotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "消亡粉末首回合对敌", Match = (p) => p is PowderedDemise, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
         new()
         {
-            Name = "爆炸安瓿多敌或首回合", Match = (p) => p is ExplosiveAmpoule, Scope = FightScope.HardFight,
+            Name = "爆炸安瓿多敌或首回合", Match = (p) => p is ExplosiveAmpoule, Scope = WakuuPotionFightScope.HardFight,
             FirstRoundOnly = true, Condition = (c) => EnemyCount(c) >= 3,
         },
 
         // —— 意图触发的攻击/减益 ——
-        new() { Name = "甲虫汁敌人攻击", Match = (p) => p is BeetleJuice, Scope = FightScope.HardFight, Condition = (c) => c.AnyEnemyIntendsAttack },
-        new() { Name = "镣铐敌人攻击", Match = (p) => p is ShacklingPotion, Scope = FightScope.HardFight, Condition = (c) => c.AnyEnemyIntendsAttack },
+        new() { Name = "甲虫汁敌人攻击", Match = (p) => p is BeetleJuice, Scope = WakuuPotionFightScope.HardFight, Condition = (c) => c.AnyEnemyIntendsAttack },
+        new() { Name = "镣铐敌人攻击", Match = (p) => p is ShacklingPotion, Scope = WakuuPotionFightScope.HardFight, Condition = (c) => c.AnyEnemyIntendsAttack },
         new()
         {
-            Name = "铁心覆甲", Match = (p) => p is HeartOfIron, Scope = FightScope.HardFight,
+            Name = "铁心覆甲", Match = (p) => p is HeartOfIron, Scope = WakuuPotionFightScope.HardFight,
             Condition = (c) => c.AnyEnemyIntendsAttack || (c.Owner.Creature?.HasPower<PlatingPower>() ?? false),
         },
         new()
         {
-            Name = "速度药水有技能牌", Match = (p) => p is SpeedPotion, Scope = FightScope.HardFight,
+            Name = "速度药水有技能牌", Match = (p) => p is SpeedPotion, Scope = WakuuPotionFightScope.HardFight,
             Condition = (c) => c.Hand.Any((card) => card.Type == CardType.Skill),
         },
 
         // —— 卡牌授予类（精英/Boss 首回合）——
-        new() { Name = "攻击药水首回合", Match = (p) => p is AttackPotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "技能药水首回合", Match = (p) => p is SkillPotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "能力药水首回合", Match = (p) => p is PowerPotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
-        new() { Name = "无色药水首回合", Match = (p) => p is ColorlessPotion, Scope = FightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "攻击药水首回合", Match = (p) => p is AttackPotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "技能药水首回合", Match = (p) => p is SkillPotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "能力药水首回合", Match = (p) => p is PowerPotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        new() { Name = "无色药水首回合", Match = (p) => p is ColorlessPotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
 
         // —— 给真人玩家优先 ——
-        new() { Name = "复制药水优先真人", Match = (p) => p is Duplicator, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.HumanFirst },
-        new() { Name = "超巨化优先真人", Match = (p) => p is GigantificationPotion, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.HumanFirst },
+        new() { Name = "复制药水优先真人", Match = (p) => p is Duplicator, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true, Target = WakuuPotionTargetKind.HumanFirst },
+        new() { Name = "超巨化优先真人", Match = (p) => p is GigantificationPotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true, Target = WakuuPotionTargetKind.HumanFirst },
 
         // —— 角色专属给队友 ——
-        new() { Name = "扩容给药水机器人", Match = (p) => p is PotionOfCapacity, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.AllyCharacter, AllyCharacterClass = typeof(Defect) },
-        new() { Name = "黑暗精华给故障机器人", Match = (p) => p is EssenceOfDarkness, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.AllyCharacter, AllyCharacterClass = typeof(Defect) },
-        new() { Name = "星星给储君", Match = (p) => p is StarPotion, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.AllyCharacter, AllyCharacterClass = typeof(Regent) },
-        new() { Name = "王之勇气给储君", Match = (p) => p is KingsCourage, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.AllyCharacter, AllyCharacterClass = typeof(Regent) },
-        new() { Name = "骨头酿给亡灵契约师", Match = (p) => p is BoneBrew, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.AllyCharacter, AllyCharacterClass = typeof(Necrobinder) },
-        new() { Name = "尸鬼瓮给亡灵契约师", Match = (p) => p is PotOfGhouls, Scope = FightScope.HardFight, FirstRoundOnly = true, Target = TargetKind.AllyCharacter, AllyCharacterClass = typeof(Necrobinder) },
-        new() { Name = "士兵炖汤给铁甲战士", Match = (p) => p is SoldiersStew, Scope = FightScope.BossFight, Target = TargetKind.AllyCharacter, AllyCharacterClass = typeof(Ironclad) },
+        new() { Name = "扩容给药水机器人", Match = (p) => p is PotionOfCapacity, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true, Target = WakuuPotionTargetKind.AllyCharacter, AllyCharacterClass = typeof(Defect) },
+        new() { Name = "黑暗精华给故障机器人", Match = (p) => p is EssenceOfDarkness, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true, Target = WakuuPotionTargetKind.AllyCharacter, AllyCharacterClass = typeof(Defect) },
+        new() { Name = "星星给储君", Match = (p) => p is StarPotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true, Target = WakuuPotionTargetKind.AllyCharacter, AllyCharacterClass = typeof(Regent) },
+        new() { Name = "王之勇气给储君", Match = (p) => p is KingsCourage, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true, Target = WakuuPotionTargetKind.AllyCharacter, AllyCharacterClass = typeof(Regent) },
+        new() { Name = "骨头酿给亡灵契约师", Match = (p) => p is BoneBrew, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true, Target = WakuuPotionTargetKind.AllyCharacter, AllyCharacterClass = typeof(Necrobinder) },
+        new() { Name = "尸鬼瓮给亡灵契约师", Match = (p) => p is PotOfGhouls, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true, Target = WakuuPotionTargetKind.AllyCharacter, AllyCharacterClass = typeof(Necrobinder) },
+        new() { Name = "士兵炖汤给铁甲战士", Match = (p) => p is SoldiersStew, Scope = WakuuPotionFightScope.BossFight, Target = WakuuPotionTargetKind.AllyCharacter, AllyCharacterClass = typeof(Ironclad) },
         new() { Name = "药水石头首回合对敌", Match = (p) => p is PotionShapedRock, FirstRoundOnly = true },
 
         // —— 手牌构成条件类 ——
         new()
         {
-            Name = "灰水消耗状态诅咒", Match = (p) => p is Ashwater, Scope = FightScope.HardFight,
+            Name = "灰水消耗状态诅咒", Match = (p) => p is Ashwater, Scope = WakuuPotionFightScope.HardFight,
             Condition = (c) => c.Hand.Count((card) => card.Type is CardType.Status or CardType.Curse) >= 2,
             CardPicker = (ctx, options, _, maxSelect) =>
                 options.Where((card) => card.Type is CardType.Status or CardType.Curse).Take(maxSelect).ToList(),
         },
         new()
         {
-            Name = "赌徒特酿换掉坏牌", Match = (p) => p is GamblersBrew, Scope = FightScope.HardFight,
+            Name = "赌徒特酿换掉坏牌", Match = (p) => p is GamblersBrew, Scope = WakuuPotionFightScope.HardFight,
             Condition = (c) => BadCardCount(c) >= 5,
             CardPicker = (_, options, _, maxSelect) =>
                 options.Where(IsBadCard).Take(maxSelect).ToList(),
         },
         new()
         {
-            Name = "瓶装潜能洗坏牌", Match = (p) => p is BottledPotential, Scope = FightScope.HardFight,
+            Name = "瓶装潜能洗坏牌", Match = (p) => p is BottledPotential, Scope = WakuuPotionFightScope.HardFight,
             Condition = (c) => BadCardCount(c) >= 5,
         },
         new()
         {
-            Name = "发光水Boss洗坏牌", Match = (p) => p is GlowwaterPotion, Scope = FightScope.BossFight,
+            Name = "发光水Boss洗坏牌", Match = (p) => p is GlowwaterPotion, Scope = WakuuPotionFightScope.BossFight,
             FirstRoundOnly = true, Condition = (c) => BadCardCount(c) >= 5,
         },
         new()
         {
-            Name = "熔炉祝福升级关键牌", Match = (p) => p is BlessingOfTheForge, Scope = FightScope.HardFight,
+            Name = "熔炉祝福升级关键牌", Match = (p) => p is BlessingOfTheForge, Scope = WakuuPotionFightScope.HardFight,
             Condition = (c) => c.Hand.Count >= 5
                 && (c.Hand.Any((card) => card.Type == CardType.Power && card.IsUpgradable)
                     || c.Hand.Any((card) => card.Rarity is CardRarity.Rare or CardRarity.Ancient)),
         },
         new()
         {
-            Name = "狡诈药水低手牌", Match = (p) => p is CunningPotion, Scope = FightScope.HardFight,
+            Name = "狡诈药水低手牌", Match = (p) => p is CunningPotion, Scope = WakuuPotionFightScope.HardFight,
             Condition = (c) => c.Hand.Count <= 6,
         },
         new()
         {
-            Name = "痊愈药水无牌可出", Match = (p) => p is CureAll, Scope = FightScope.HardFight,
+            Name = "痊愈药水无牌可出", Match = (p) => p is CureAll, Scope = WakuuPotionFightScope.HardFight,
             Phases = WakuuPotionPhase.StartOfTurn, SkipWhenStunned = true,
             Condition = (c) => !c.Hand.Any((card) => card.CanPlay()),
         },
         new()
         {
-            Name = "癫狂之触免费高费牌", Match = (p) => p is TouchOfInsanity, Scope = FightScope.HardFight,
+            Name = "癫狂之触免费高费牌", Match = (p) => p is TouchOfInsanity, Scope = WakuuPotionFightScope.HardFight,
             Condition = (c) => c.Hand.Any((card) => card.EnergyCost.GetAmountToSpend() >= 3),
             CardPicker = (_, options, _, _) => options
                 .Where((card) => card.EnergyCost.GetAmountToSpend() >= 3)
@@ -247,7 +226,7 @@ internal static class LocalWakuuPotionAutoUse
         },
         new()
         {
-            Name = "预知之滴取能力稀有牌", Match = (p) => p is DropletOfPrecognition, Scope = FightScope.HardFight,
+            Name = "预知之滴取能力稀有牌", Match = (p) => p is DropletOfPrecognition, Scope = WakuuPotionFightScope.HardFight,
             Condition = (c) => c.DrawPile.Any((card) => card.Type == CardType.Power || card.Rarity == CardRarity.Rare),
             CardPicker = (_, options, _, _) => options
                 .Where((card) => card.Type == CardType.Power || card.Rarity == CardRarity.Rare)
@@ -285,35 +264,94 @@ internal static class LocalWakuuPotionAutoUse
         },
         new()
         {
-            Name = "瓶中船双回合格挡", Match = (p) => p is ShipInABottle, Scope = FightScope.HardFight,
+            Name = "瓶中船双回合格挡", Match = (p) => p is ShipInABottle, Scope = WakuuPotionFightScope.HardFight,
             Phases = WakuuPotionPhase.EndOfTurn,
             Condition = (c) => c.TotalIncomingDamage >= c.Block + 15 || c.LethalThreat,
         },
         new()
         {
-            Name = "能量药水救高费牌", Match = (p) => p is EnergyPotion, Scope = FightScope.HardFight,
+            Name = "能量药水救高费牌", Match = (p) => p is EnergyPotion, Scope = WakuuPotionFightScope.HardFight,
             Phases = WakuuPotionPhase.EndOfTurn, SkipWhenStunned = true,
             Condition = (c) => c.Energy == 0 && c.Hand.Any(IsEnergyBlocked),
         },
         new()
         {
-            Name = "迅捷药水剩能量抽牌", Match = (p) => p is SwiftPotion, Scope = FightScope.HardFight,
+            Name = "迅捷药水剩能量抽牌", Match = (p) => p is SwiftPotion, Scope = WakuuPotionFightScope.HardFight,
             Phases = WakuuPotionPhase.EndOfTurn, SkipWhenStunned = true,
             Condition = (c) => c.Energy > 0 && (c.Hand.Count == 0 || !c.Hand.Any((card) => card.CanPlay())),
         },
         new()
         {
-            Name = "异蛇之油剩能量抽牌", Match = (p) => p is SneckoOil, Scope = FightScope.HardFight,
+            Name = "异蛇之油剩能量抽牌", Match = (p) => p is SneckoOil, Scope = WakuuPotionFightScope.HardFight,
             Phases = WakuuPotionPhase.EndOfTurn, SkipWhenStunned = true,
             Condition = (c) => c.Energy > 0,
         },
         new()
         {
-            Name = "稳定血清保留能力牌", Match = (p) => p is StableSerum, Scope = FightScope.HardFight,
+            Name = "稳定血清保留能力牌", Match = (p) => p is StableSerum, Scope = WakuuPotionFightScope.HardFight,
             Phases = WakuuPotionPhase.EndOfTurn,
             Condition = (c) => c.Hand.Any((card) => card.Type == CardType.Power),
         },
     };
+
+    /// <summary>
+    /// 规则表元数据导出（供单元测试校验规则内容，不依赖游戏运行时实例）。
+    /// MatchedPotionTypeName 从 Match 谓词的 "p is X" 表达式提取；无法提取时为 null。
+    /// </summary>
+    internal static IReadOnlyList<WakuuPotionRuleMeta> GetRuleMetas()
+    {
+        return Rules
+            .Select((r) => new WakuuPotionRuleMeta(
+                Name: r.Name,
+                Phases: r.Phases,
+                Scope: r.Scope,
+                FirstRoundOnly: r.FirstRoundOnly,
+                SkipWhenStunned: r.SkipWhenStunned,
+                DiscardInsteadOfUse: r.DiscardInsteadOfUse,
+                Target: r.Target,
+                AllyCharacterTypeName: r.AllyCharacterClass?.FullName,
+                MatchedPotionTypeName: ExtractMatchedPotionTypeName(r.Match),
+                HasCondition: r.Condition != null,
+                HasCardPicker: r.CardPicker != null))
+            .ToArray();
+    }
+
+    /// <summary>
+    /// 从 "p is SomePotion" 形式的 Match 谓词中提取目标药水类型全名。
+    /// 规则表 Match 均为编译成委托的 lambda，此处解析其 IL 中的 isinst 指令来还原目标类型。
+    /// </summary>
+    private static string? ExtractMatchedPotionTypeName(Func<PotionModel, bool> match)
+    {
+        try
+        {
+            MethodInfo method = match.Method;
+            byte[]? il = method.GetMethodBody()?.GetILAsByteArray();
+            if (il == null)
+            {
+                return null;
+            }
+
+            // 遍历 IL 找 isinst（0x75），其后 4 字节为 metadata token，ResolveType 还原类型
+            for (int i = 0; i + 4 < il.Length; i++)
+            {
+                if (il[i] == 0x75)
+                {
+                    int token = BitConverter.ToInt32(il, i + 1);
+                    Type? type = method.Module.ResolveType(token);
+                    if (type != null)
+                    {
+                        return type.FullName;
+                    }
+                }
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     /// <summary>
     /// 战斗内入口。phase 由调用方指定：遗物钩子先跑 StartOfTurn，出牌循环结束后跑 EndOfTurn；
@@ -352,29 +390,14 @@ internal static class LocalWakuuPotionAutoUse
             string reason;
             if (rule != null)
             {
-                if (!rule.Phases.HasFlag(phase))
-                {
-                    continue;
-                }
-
-                if (!IsScopeAllowed(rule.Scope, ctx))
-                {
-                    continue;
-                }
-
-                if (rule.FirstRoundOnly && ctx.Round > 1)
-                {
-                    continue;
-                }
-
-                if (rule.Condition != null && !SafeCondition(rule.Condition, ctx))
-                {
-                    continue;
-                }
-
-                // 昏眩（每回合只能打 1 张牌）：抽牌/能量类药水纯浪费，跳过
-                if (rule.SkipWhenStunned
-                    && (ctx.Owner.Creature?.HasPower<RingingPower>() ?? false))
+                // 判定序列（相位/范围/首回合/条件/昏眩）抽为纯函数，便于单元测试覆盖
+                bool conditionMet = rule.Condition == null || SafeCondition(rule.Condition, ctx);
+                bool stunned = ctx.Owner.Creature?.HasPower<RingingPower>() ?? false;
+                if (!WakuuPotionDecision.ShouldUseRule(
+                        rule.Phases, rule.Scope, rule.FirstRoundOnly,
+                        rule.Condition != null, conditionMet,
+                        rule.SkipWhenStunned, stunned,
+                        phase, ctx.Round, ctx.HardFight, ctx.BossFight))
                 {
                     continue;
                 }
@@ -536,16 +559,6 @@ internal static class LocalWakuuPotionAutoUse
         }
     }
 
-    private static bool IsScopeAllowed(FightScope scope, PotionRuleContext ctx)
-    {
-        return scope switch
-        {
-            FightScope.HardFight => ctx.HardFight,
-            FightScope.BossFight => ctx.BossFight,
-            _ => true,
-        };
-    }
-
     private static int EnemyCount(PotionRuleContext ctx)
     {
         try
@@ -602,10 +615,10 @@ internal static class LocalWakuuPotionAutoUse
 
         switch (rule.Target)
         {
-            case TargetKind.HumanFirst:
+            case WakuuPotionTargetKind.HumanFirst:
                 return ResolveHumanFirstTarget(ctx);
 
-            case TargetKind.AllyCharacter:
+            case WakuuPotionTargetKind.AllyCharacter:
                 return ResolveAllyCharacterTarget(ctx, rule.AllyCharacterClass);
 
             default:
