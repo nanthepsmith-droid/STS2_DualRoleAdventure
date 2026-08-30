@@ -4,14 +4,24 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
-> 分支 `fix/enable-method-level-patches` + `chore/startup-selfcheck`（2026-08-29，marker r29）。
-> 本次改动由补丁覆盖清单工具（`Scripts/Tools/patch_coverage.py`，维护性改进任务 1.1）实证发现。
+> 维护性改进 Phase 1（任务 1.1~1.4）已全部合并到 `master`（2026-08-30，marker r30）。
+> 本系列改动不改变任何既有运行时行为默认值，均为**工具化 / 自检 / 文档**，外加两个实证发现的存量修复。
 
 ### Added
+- **补丁目标覆盖清单（维护性改进任务 1.1）**：`Scripts/Tools/patch_coverage.py` 扫描全部
+  `Scripts/Patch/*.cs` 的 HarmonyPatch 目标并与反编译源码（sts2src）交叉核对，输出
+  `docs/patch-coverage.md`（148 补丁类 / 166 目标行）——「哪些补丁打在哪、是否已核实」从此可查询、可再生成。
 - **启动自检（维护性改进任务 1.2）**：`Entry.cs` 新增期望补丁清单（25 个关键目标），
   初始化时与 `GetPatchedMethods()` 实际结果比对，缺失即 `Log.Error` 醒目报错——
   终结「方法级-only 被 `PatchAll` 静默跳过」这类无声失败，游戏更新后启动日志即暴露断档。
-  清单与 `docs/patch-coverage.md` 保持一致（已静态验证全部 verified）。
+- **游戏更新适配脚本化（维护性改进任务 1.3）**：
+  - `Scripts/Tools/regenerate_src.ps1`：一条命令重生成反编译参考源码 `sts2src/src`
+    （读 `release_info.json` → ilspycmd 反编译 → 覆盖拷贝 `.cs` → 打印 diff 统计）；
+  - `Scripts/Tools/check_string_targets.py`：核对全部**字符串式**目标（HarmonyPatch 字符串 /
+    `AccessTools.*` / 反射 `GetXxx("...")`），输出 `docs/string-targets.md`，失效即退出码 1（可进 CI）；
+    识别「新名优先 + 旧名回退」的 `LEGACY-FALLBACK` 不算失效。
+- **文档整理（维护性改进任务 1.4）**：根目录 8 份分析/方案文档归档 `docs/decision-records/`；
+  skill 的 7 份 references 副本入 `docs/references/`；`docs/维护现状分析.md` 刷新。
 
 ### Fixed
 - **两个「方法级-only `[HarmonyPatch]`」补丁类被 `PatchAll` 静默跳过、从未生效**（本 mod 坑 1）：
@@ -20,8 +30,10 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     现正式启用（瓦库自动选牌走选择器分支，不受 `RequireManualConfirmation` 影响）。
   - `NEndTurnButtonLifecyclePatch`：补类级裸 `[HarmonyPatch]`。诊断探针此前从未触发，
     现可正常记录按钮生命周期日志（含 `CombatManager.AfterAllPlayersReadyToBeginEnemyTurn`、
-    `NCombatUi.Activate` 等挂点）；`NEndTurnButton.SetState/OnTurnStarted` 在本地多控下
-    是否触发仍需实机确认（此前 `local-multicontrol-pitfalls.md` 记录其不触发）。
+    `NCombatUi.Activate` 等挂点）。
+- **`RestSitePatch.cs` 失效的 `NRestSiteRoom.UpdateNavigation` 反射调用**（任务 1.3 核对实证）：
+  v0.111.0 的 `NRestSiteRoom` 已无此方法（焦点邻居导航在 `UpdateRestSiteOptions` 创建按钮时完成），
+  该调用自加入起就被 `?.` 容错静默跳过、从未生效，现已删除。
 
 ## [v1.38] - 2026-08-29
 
