@@ -56,6 +56,20 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     本地双角色下 NetId 瞬时非牌主人时手牌节点不替换、数据层已更新。
 
 ### Fixed
+- **原始力量打完后卡在屏幕中间不进弃牌堆（marker r43）**：
+  - 根因：r42 的 `CardTransformNetIdPinPatch` 用 `return false` 跳过 `CardCmd.Transform` 原方法，
+    导致第三方框架 RitsuLib 挂在该方法上的 `CardCmdTransformPatch` **前缀未执行、`__state` 保持 null**，
+    其后缀访问 `__state.Snapshots` 抛 NRE → `PlayCardAction` 失败 → 牌留在 Play 位（实测日志
+    `PRIMAL_FORCE` NRE + 本 mod `prevNetId=527`、`owner=526`）。
+  - 修复：改为 **void 前缀只钉 NetId + postfix 包装任务恢复**（不再跳过原方法），
+    RitsuLib 前缀照常执行、`__state` 有效，钉 NetId 的视觉修复保留。
+- **瓦库事件升级/变化/删除/通用选牌自动作答（marker r43）**：
+  - `WakuuEventEnchantAutoAnswerPatch` 从仅附魔扩展到 `FromDeckForUpgrade` /
+    `FromDeckForTransformation` / `FromDeckGeneric`（删除与 WoodCarvings 等通用选牌兜底），
+    与附魔共用 `cardPickMode` 策略（最前/最后/随机/稀有度最高）；`FromDeckForRemoval` 内部走
+    `FromDeckGeneric` 已覆盖。
+
+### Fixed
 - **古明地恋本我牌串台到队友（marker r41）**：`IdLiberationBeforeHandDrawFixPatch` 拦截
   「本我解放力量」对非力量主人的抽牌钩子生成（根因：`Hook.BeforeHandDraw` 把当前抽牌玩家传入
   所有力量，Koishi 不检查 owner）；选牌期间钉 `LocalContext.NetId` 到选牌 owner +
