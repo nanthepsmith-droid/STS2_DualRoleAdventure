@@ -67,6 +67,14 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     （已在日志中打出命中率供核对），miss 时无害降级；其数据包为 v0.107 口径且只含原版内容，
     mod 卡牌/事件查不到即回退。
   - 测试：新增 `SignalPickingTests` 26 例（合计 201 例全绿）。
+- **卡牌统计加因果增益门槛（Phase 3.1 实测修复，marker r48）**：
+  - 实机日志复现：`DEADLY_POISON, pickRate=0.127, gain=-0.115, offerCount=45834` 作为三张候选里
+    唯一有数据的卡被选中（还跳过了最左选第 3 张）——但 `gain=-0.115` 表示"拿了它的局胜率反而
+    低 11.5%"，是明确负面信号。根因：此前只校验样本量（`OfferCount`）门槛，未校验信号方向；
+  - 修：`WakuuSignalPicking.PickBestCardIndex` 新增 `minGain` 门槛（默认 0），作用于**加权后**的
+    因果增益，增益为负的候选直接出局、不参与竞选；全部出局则返回 -1 回退默认策略。
+    作用在加权增益上，故 `gainWeight=0` 时决策退化为纯 `PickRate` 排序，参数语义自洽；
+  - 配套：回退日志区分"无数据"与"信号为负"；单测 205 例全绿（新增 4 例，含实机复现用例）。
 - **维护性改进文档移出主仓库**：`patch-coverage.md`/`string-targets.md`/`维护现状分析.md`/
   `decision-records/`/`references/` 移到 `pain/maintenance-docs/`（无 git，不会进 github）；
   主仓库 `docs/` 只保留原作者文档（`archive/`、`design/`、`architecture.md`、`console-commands.md`）。
