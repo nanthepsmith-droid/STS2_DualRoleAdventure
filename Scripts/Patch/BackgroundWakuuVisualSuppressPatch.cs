@@ -1,9 +1,9 @@
 using System.Collections.Generic;
-using System.Linq;
 using HarmonyLib;
 using Godot;
 using LocalMultiControl.Scripts.Runtime;
 using MegaCrit.Sts2.Core.Commands;
+using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
@@ -12,17 +12,18 @@ using MegaCrit.Sts2.Core.Runs;
 namespace LocalMultiControl.Scripts.Patch;
 
 /// <summary>
-/// 修复「瓦库后台托管时，其出牌/弃牌动画出现在人类玩家手牌区上方，看起来像丢了我的手牌」。
+/// 后台托管瓦库的牌堆变化视觉对齐（r45）：
+/// - 保留瓦库出牌动画（牌从瓦库身侧正常飞入出牌区，观感同多人主机看其他玩家）；
+/// - 不保留瓦库弃牌动画（进弃牌堆的牌只淡出释放，不往弃牌堆飞，避免在真人手牌区上方造成
+///   「我的牌被丢进弃牌堆」的错觉）。
 ///
-/// 根因：后台托管模式下 EnsureWakuuPerspective 会「跳过自动切换视角」（日志：瓦库形态后台模式，
-/// 跳过自动切换视角），手牌 UI 保持显示真人（Session.CurrentControlledPlayerId）的手牌；
-/// 但瓦库自动出牌期间 LocalContext.NetId 已临时指向瓦库（临时 owner 上下文），
-/// 于是 CardPileCmd.GetTweenForCardsChangingPiles 的视觉门 LocalContext.IsMe(瓦库的牌) = true，
-/// 会在手牌区位置新建瓦库的卡牌节点并播放飞到弃牌堆/出牌区的动画 → 真人看到「自己手牌区有牌飞走」。
+/// 原理：CardPileCmd.GetTweenForCardsChangingPiles 对「非本人（LocalContext.IsMe=false）」的牌
+/// 有现成处理——出牌(→Play)正常补间，进弃牌堆(→Discard)走「淡出+释放」不飞行。
+/// 瓦库自动出牌期间 LocalContext.NetId 被临时指向瓦库（IsMe=true），弃牌会真飞。
+/// 本补丁在该方法执行期间把 NetId 钉回「视角玩家（SessionState.CurrentControlledPlayerId）」，
+/// 让瓦库的牌按「非本人」路径处理，自然得到上述效果；视角玩家自己的牌不受影响（IsMe=true 路径不变）。
 ///
-/// 修复：当某批牌堆变化全部属于「后台托管 + 瓦库形态 + 当前视角不是该瓦库」时，直接跳过
-/// GetTweenForCardsChangingPiles 的动画（返回 null,false，数据层不受影响）——后台瓦库的牌
-/// 本就不显示在真人视角里，动画纯属误导。
+/// ⚠ 不能 return false 跳过原方法：跳过会导致瓦库的牌节点不创建/不释放，卡在场上。
 /// </summary>
 [HarmonyPatch(typeof(CardPileCmd), nameof(CardPileCmd.GetTweenForCardsChangingPiles), new[]
 {
@@ -31,9 +32,12 @@ namespace LocalMultiControl.Scripts.Patch;
 })]
 internal static class BackgroundWakuuVisualSuppressPatch
 {
+    /// <summary>重入标记：包装内重入原始实现时为 true，避免无限递归。</summary>
+    private static readonly System.Threading.AsyncLocal<bool> _inPinned = new System.Threading.AsyncLocal<bool>();
+
     [HarmonyPriority(Priority.First)]
     [HarmonyPrefix]
-    private static bool Prefix(IEnumerable<CardPileAddResult> results, ref (Tween?, bool) __result)
+    private static bool Prefix(IEnumerable<CardPileAddResult> results, bool fromSilentAdd, ref (Tween?, bool) __result)
     {
         if (!LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.UseSingleAdventureMode)
         {
@@ -45,39 +49,56 @@ internal static class BackgroundWakuuVisualSuppressPatch
             return true;
         }
 
-        if (results == null)
+        if (results == null || _inPinned.Value)
         {
             return true;
         }
 
-        bool anySuppressible = false;
+        ulong? viewPlayerId = LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId;
+        if (!viewPlayerId.HasValue)
+        {
+            return true;
+        }
+
+        bool hasWakuuCard = false;
         foreach (CardPileAddResult result in results)
         {
-            if (ShouldSuppress(result))
+            if (IsBackgroundWakuuNotInView(result, viewPlayerId.Value))
             {
-                anySuppressible = true;
-            }
-            else
-            {
-                return true; // 混入需要显示（真人在看）的牌 → 交回原逻辑
+                hasWakuuCard = true;
+                break;
             }
         }
 
-        if (anySuppressible)
+        if (!hasWakuuCard)
         {
-            LocalMultiControlLogger.Info("[后台瓦库] 跳过牌堆变化动画（后台托管且当前视角非该瓦库）");
-            __result = (null, false);
-            return false;
+            return true;
         }
 
-        return true;
+        // 把 NetId 钉到视角玩家再跑原逻辑：瓦库的牌按「非本人」处理（出牌正常、弃牌淡出）。
+        // 同步方法、无 await，重入经 _inPinned 保护。
+        ulong? previousNetId = LocalContext.NetId;
+        LocalContext.NetId = viewPlayerId.Value;
+        _inPinned.Value = true;
+        try
+        {
+            // 重入原实现（_inPinned 保护，不会再次进入本前缀）
+            __result = CardPileCmd.GetTweenForCardsChangingPiles(results, fromSilentAdd);
+        }
+        finally
+        {
+            _inPinned.Value = false;
+            LocalContext.NetId = previousNetId;
+        }
+
+        return false;
     }
 
     /// <summary>
-    /// 是否应压制：牌属于「后台托管 + 瓦库形态」且「当前视角玩家不是该牌主人」。
+    /// 是否是「后台托管 + 瓦库形态」且「当前视角玩家不是该牌主人」的牌。
     /// 视角玩家用 SessionState.CurrentControlledPlayerId（后台模式下瓦库回合不切视角，仍停在真人）。
     /// </summary>
-    private static bool ShouldSuppress(CardPileAddResult result)
+    private static bool IsBackgroundWakuuNotInView(CardPileAddResult result, ulong viewPlayerId)
     {
         if (!result.success || result.cardAdded == null)
         {
@@ -100,7 +121,6 @@ internal static class BackgroundWakuuVisualSuppressPatch
             return false;
         }
 
-        ulong? viewPlayerId = LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId;
-        return viewPlayerId.HasValue && viewPlayerId.Value != owner.NetId;
+        return viewPlayerId != owner.NetId;
     }
 }

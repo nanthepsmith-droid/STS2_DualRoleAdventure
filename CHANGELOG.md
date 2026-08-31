@@ -68,12 +68,14 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     `FromDeckForTransformation` / `FromDeckGeneric`（删除与 WoodCarvings 等通用选牌兜底），
     与附魔共用 `cardPickMode` 策略（最前/最后/随机/稀有度最高）；`FromDeckForRemoval` 内部走
     `FromDeckGeneric` 已覆盖。
-- **瓦库后台托管时出牌/弃牌动画误显示在真人手牌区（marker r44）**：
+- **瓦库后台托管时出牌/弃牌动画误显示在真人手牌区（marker r45）**：
   - 根因：后台模式 `EnsureWakuuPerspective` 跳过切换视角，手牌 UI 停在真人；
     但瓦库自动出牌期间 NetId 临时指向瓦库，`CardPileCmd.GetTweenForCardsChangingPiles` 的
-    `LocalContext.IsMe` 为 true，在手牌区新建瓦库牌节点播放飞行动画 → 看起来像丢了真人的手牌。
-  - 修复：`BackgroundWakuuVisualSuppressPatch` —— 一批牌堆变化全部属于「后台托管 + 瓦库形态 +
-    当前视角非该瓦库」时跳过动画（数据层不受影响），瓦库出牌真正静默后台化。
+    `LocalContext.IsMe` 为 true，瓦库弃牌会从手牌区位置真飞进弃牌堆 → 看起来像丢了真人的手牌。
+  - 修复（r45 按用户拍板）：`BackgroundWakuuVisualSuppressPatch` 改为在执行牌堆变化动画期间把
+    NetId 钉回「视角玩家」，让瓦库的牌走游戏既有的「非本人」路径——**保留瓦库出牌动画**
+    （牌从瓦库身侧正常飞入出牌区，观感同多人主机看其他玩家）、**不保留瓦库弃牌动画**
+    （进弃牌堆的牌只淡出释放、不飞行）。真人自己的牌动画不受影响。
 
 ### Fixed
 - **古明地恋本我牌串台到队友（marker r41）**：`IdLiberationBeforeHandDrawFixPatch` 拦截
