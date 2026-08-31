@@ -29,8 +29,13 @@ internal static class WakuuSkadaAdapter
     private const string GetCardMethodName = "GetCard";
     private const string GetEventsMethodName = "GetEvents";
 
-    /// <summary>类型探测失败后的重试间隔（SkadaHelper 可能晚于本 mod 完成加载）。</summary>
-    private const long ProbeRetryIntervalMs = 30_000;
+    /// <summary>
+    /// 类型探测失败后的重试间隔。
+    /// 实测（godot.log）本 mod 的初始化**早于** SkadaHelper 的程序集加载，启动探测必然失败，
+    /// 因此必须允许后续重探。查表调用频率极低（一局仅卡牌奖励 + 事件选择，几十次量级），
+    /// 间隔取小值即可：SkadaHelper 一加载完，最多延迟这么久就能用上。
+    /// </summary>
+    private const long ProbeRetryIntervalMs = 2_000;
 
     private static readonly object Sync = new();
 
@@ -53,19 +58,22 @@ internal static class WakuuSkadaAdapter
             if (!EnsureType(force: true))
             {
                 LocalMultiControlLogger.Info(
-                    "SkadaHelper 未安装或内部结构不可识别，社区统计辅助不可用（瓦库回退纯策略选择）。");
+                    "SkadaHelper 当前不可用：未安装，或其程序集晚于本 mod 加载（已验证属常见情况，"
+                    + "将在首次查询时自动重新探测，无需重启；瓦库先按纯策略选择执行）。");
                 return;
             }
 
-            if (TryGetData() == null)
+            object? data = TryGetData();
+            if (data == null)
             {
                 LocalMultiControlLogger.Info(
-                    "SkadaHelper 已加载但统计数据包尚未就绪，将在首次查询时重新探测。");
+                    "SkadaHelper 已加载但统计数据包尚未就绪（首次联网拉取或缓存加载中），将在首次查询时自动重试。");
                 return;
             }
 
             LocalMultiControlLogger.Info(
-                "SkadaHelper 适配器就绪，社区统计辅助可用（由 skadaAssist 开关控制是否启用）。");
+                $"SkadaHelper 适配器就绪，社区统计辅助可用: {DescribeData(data)}；"
+                + "是否启用由 skadaAssist 开关控制，未装/无数据时自动回退既有策略。");
         }
         catch (Exception exception)
         {
@@ -152,10 +160,66 @@ internal static class WakuuSkadaAdapter
         }
     }
 
-    /// <summary>取当前生效的数据包实例；未就绪返回 null（下次查询会重新探测）。</summary>
+    /// <summary>
+    /// 适配器当前是否可用（类型已识别且数据包已就绪）。
+    /// **仅用于日志诊断**——业务判定一律以查表返回值为准，不存在"半可用"状态。
+    /// </summary>
+    public static bool IsReady()
+    {
+        try
+        {
+            return EnsureType(force: false) && TryGetData() != null;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>取当前生效的数据包实例；未就绪返回 null（下次查询会重新读取）。</summary>
     private static object? TryGetData()
     {
         return Invoke(_dataGetter, instance: null);
+    }
+
+    /// <summary>
+    /// 读取数据包的诊断信息（生成时间 / 总局数 / 角色数），仅用于启动日志与排障；
+    /// 任一项读不到就跳过，第三方结构变化不影响功能。
+    /// </summary>
+    private static string DescribeData(object data)
+    {
+        List<string> parts = new();
+
+        string generatedAt = ReadString(data, "GeneratedAt");
+        if (!string.IsNullOrEmpty(generatedAt))
+        {
+            parts.Add($"generatedAt={generatedAt}");
+        }
+
+        long totalRuns = ReadInt64(data, "TotalRuns");
+        if (totalRuns > 0)
+        {
+            parts.Add($"totalRuns={totalRuns}");
+        }
+
+        long characterCount = TryCountCharacters(data);
+        if (characterCount >= 0)
+        {
+            parts.Add($"characters={characterCount}");
+        }
+
+        return parts.Count > 0 ? string.Join(", ", parts) : "（未能读取诊断信息）";
+    }
+
+    /// <summary>读 Characters 字典的元素个数；不可读返回 -1。</summary>
+    private static long TryCountCharacters(object data)
+    {
+        if (!TryReadValue(data, "Characters", out object? raw) || raw is not IDictionary dictionary)
+        {
+            return -1;
+        }
+
+        return dictionary.Count;
     }
 
     private static object? TryGetCharacterBundle(string characterId)
@@ -164,8 +228,10 @@ internal static class WakuuSkadaAdapter
     }
 
     /// <summary>
-    /// 探测并缓存第三方类型的反射成员。force=true 立即探测（启动探测）；
-    /// force=false 时若上一轮探测失败且未过冷却则直接返回 false，避免高频反射开销。
+    /// 探测并缓存第三方类型的反射成员。
+    /// force=true 立即探测（仅启动探测使用）；force=false 为查表路径，受冷却间隔约束
+    /// （TypeByName 需遍历全部已加载程序集）。
+    /// 类型一旦识别成功即短路，后续查表不再走 TypeByName。
     /// </summary>
     private static bool EnsureType(bool force)
     {
@@ -202,6 +268,13 @@ internal static class WakuuSkadaAdapter
                 _getEvents = characterBundleType == null ? null : AccessTools.Method(characterBundleType, GetEventsMethodName);
 
                 _typeReady = _dataGetter != null && _getCharacter != null && _getCard != null && _getEvents != null;
+                if (_typeReady)
+                {
+                    // 启动探测失败后由查表路径重新探到的情况：补一条日志说明是"迟到"而非"未安装"
+                    LocalMultiControlLogger.Info(
+                        "SkadaHelper 已在运行中完成探测（其程序集晚于本 mod 加载），社区统计辅助可用。");
+                }
+
                 return _typeReady;
             }
             catch (Exception exception)

@@ -197,6 +197,13 @@ internal static class LocalWakuuEventAutoChoice
             List<WakuuEventSignal>? stats = WakuuSkadaAdapter.TryGetEventSignals(characterId, eventId);
             if (stats == null || stats.Count == 0)
             {
+                if (WakuuSkadaAdapter.IsReady())
+                {
+                    LocalMultiControlLogger.Info(
+                        $"瓦库事件社区统计无数据（该事件未收录，多为 mod 事件），回退原策略: "
+                        + $"event={eventId}, char={characterId}");
+                }
+
                 return null;
             }
 
