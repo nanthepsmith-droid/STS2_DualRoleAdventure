@@ -122,13 +122,16 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
             int bestIndex = WakuuSignalPicking.PickBestCardIndex(signals);
             if (bestIndex < 0 || options[bestIndex].Card == null)
             {
-                // 区分两种无数据：适配器不可用（启动探测已打日志，此处不重复刷屏）与
-                // 适配器可用但查表 miss（mod 卡 / 该角色无数据），后者值得记录以便核对命中率。
+                // 区分两种不适用：适配器不可用（启动探测已打日志，此处不重复刷屏）与
+                // 适配器可用但统计未采用（无数据 or 信号为负），后者值得记录以便核对命中率与决策质量。
                 if (WakuuSkadaAdapter.IsReady())
                 {
+                    int withData = signals.Count((s) => s != null);
                     LocalMultiControlLogger.Info(
-                        $"瓦库卡牌奖励社区统计查无有效数据（mod 卡或样本量不足），回退最左: "
-                        + $"char={characterId}, 候选={count}");
+                        $"瓦库卡牌奖励社区统计未采用，回退最左: char={characterId}, 候选={count}, 查到数据={withData}"
+                        + (withData > 0
+                            ? $"（样本量门槛 {WakuuSignalPicking.DefaultMinOfferCount}，或最佳候选因果增益为负）"
+                            : "（mod 卡或样本量不足）"));
                 }
 
                 return leftmost;

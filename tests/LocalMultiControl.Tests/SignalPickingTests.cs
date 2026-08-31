@@ -109,6 +109,58 @@ public class SignalPickingTests
     }
 
     [Test]
+    public void PickBestCardIndex_唯一有数据的候选信号为负时不采用()
+    {
+        // 实机案例：DEADLY_POISON pickRate=0.127 / gain=-0.115，是唯一有数据的候选，
+        // 但"拿了反而更容易输"，应回退最左而不是选它。
+        List<WakuuCardSignal?> signals = new()
+        {
+            null,
+            null,
+            Card(pickRate: 0.127, held: 0.385, skipped: 0.500, offerCount: 45834),
+        };
+
+        Assert.That(WakuuSignalPicking.PickBestCardIndex(signals), Is.EqualTo(-1));
+    }
+
+    [Test]
+    public void PickBestCardIndex_信号为正才采用()
+    {
+        List<WakuuCardSignal?> signals = new()
+        {
+            null,
+            Card(pickRate: 0.308, held: 0.573, skipped: 0.500, offerCount: 16296), // gain=+0.073
+        };
+
+        Assert.That(WakuuSignalPicking.PickBestCardIndex(signals), Is.EqualTo(1));
+    }
+
+    [Test]
+    public void PickBestCardIndex_有数据但为负时会让位给信号为正的候选()
+    {
+        List<WakuuCardSignal?> signals = new()
+        {
+            Card(pickRate: 0.40, held: 0.30, skipped: 0.50, offerCount: 9000), // gain=-0.20 → 剔除
+            Card(pickRate: 0.10, held: 0.55, skipped: 0.50, offerCount: 9000), // gain=+0.05 → 胜出
+        };
+
+        Assert.That(WakuuSignalPicking.PickBestCardIndex(signals), Is.EqualTo(1));
+    }
+
+    [Test]
+    public void PickBestCardIndex_降低增益门槛可放行负面信号()
+    {
+        List<WakuuCardSignal?> signals = new()
+        {
+            null,
+            Card(pickRate: 0.127, held: 0.385, skipped: 0.500, offerCount: 45834),
+        };
+
+        Assert.That(WakuuSignalPicking.PickBestCardIndex(signals), Is.EqualTo(-1));
+        Assert.That(WakuuSignalPicking.PickBestCardIndex(signals, minGain: -1.0), Is.EqualTo(1));
+    }
+
+    [Test]
     public void PickBestCardIndex_空集合与空引用返回负一()
     {
         Assert.That(WakuuSignalPicking.PickBestCardIndex(new List<WakuuCardSignal?>()), Is.EqualTo(-1));

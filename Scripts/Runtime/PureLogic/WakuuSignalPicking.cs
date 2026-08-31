@@ -78,6 +78,20 @@ internal static class WakuuSignalPicking
     /// <summary>因果增益（WinRateHeld − WinRateSkipped）在卡牌评分里的默认权重。</summary>
     public const double DefaultGainWeight = 1.0;
 
+    /// <summary>
+    /// 参与竞选所需的最低**加权**因果增益（默认 0）。
+    ///
+    /// 实机发现的问题：候选里常常只有部分卡"有数据"（其余为 mod 卡或样本量不足），
+    /// 此时唯一有数据的那张会自动胜出——哪怕它的信号是负的（拿了之后胜率反而下降）。
+    /// 那等于用一个**确切的坏信号**去覆盖"领最左"这类中性默认，比不查表更糟。
+    /// 因此加权因果增益低于本门槛的候选直接出局、不参与竞选；
+    /// 若全部出局则返回 -1（回退默认策略）。定位是"不犯低级错误"而非求最优（§9）。
+    ///
+    /// 作用在**加权后**的增益上，因此 gainWeight=0 时增益恒为 0、门槛不再剔除任何候选，
+    /// 决策退化为纯 PickRate 排序，与该参数的语义自洽。
+    /// </summary>
+    public const double DefaultMinGain = 0.0;
+
     /// <summary>模糊匹配的最小可比长度：短于此的文本不参与包含匹配，避免短串误命中。</summary>
     private const int MinFuzzyMatchLength = 6;
 
@@ -99,12 +113,15 @@ internal static class WakuuSignalPicking
     /// 卡牌候选按社区信号选最优：主信号 PickRate（别人多选什么），
     /// 叠加因果增益 WinRateHeld − WinRateSkipped（选了之后赢没赢）作加权。
     /// 同分保留最左（与"无数据时取最左"的既有方向一致）。
-    /// 返回选中下标；全部无数据（null 或样本量不足）返回 -1。
+    ///
+    /// 返回选中下标；以下情况返回 -1（调用方回退默认策略）：
+    /// 全部候选都无数据（null 或样本量不足），或全部有数据的候选都是负面信号（加权增益低于 minGain）。
     /// </summary>
     public static int PickBestCardIndex(
         IReadOnlyList<WakuuCardSignal?> signals,
         long minOfferCount = DefaultMinOfferCount,
-        double gainWeight = DefaultGainWeight)
+        double gainWeight = DefaultGainWeight,
+        double minGain = DefaultMinGain)
     {
         if (signals == null || signals.Count == 0)
         {
@@ -122,7 +139,13 @@ internal static class WakuuSignalPicking
             }
 
             WakuuCardSignal signal = candidate.Value;
-            double score = signal.PickRate + (gainWeight * signal.WinRateGain);
+            double weightedGain = gainWeight * signal.WinRateGain;
+            if (weightedGain < minGain)
+            {
+                continue; // 负面信号：拿了反而更容易输，直接出局，不参与竞选
+            }
+
+            double score = signal.PickRate + weightedGain;
             // 严格大于 → 同分时保留最左
             if (bestIndex < 0 || score > bestScore)
             {
