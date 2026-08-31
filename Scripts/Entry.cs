@@ -11,7 +11,7 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    private const string BuildMarker = "Revival v1.38 (game v0.111.0, marker=2026-08-30-r31)";
+    private const string BuildMarker = "Revival v1.38 (game v0.111.0, marker=2026-08-31-r41)";
 
     private static Harmony? _harmony;
 
@@ -59,7 +59,16 @@ public partial class Entry
         RegisterWakuuRelicsToPool();
         LocalWakuuRelicLocalization.Initialize();
         _harmony = new Harmony("sts2.dualroleadventure");
-        _harmony.PatchAll();
+        try
+        {
+            _harmony.PatchAll();
+        }
+        catch (Exception patchException)
+        {
+            // r38 防御：单补丁异常（如反射定位外部 mod 方法失败）不应中断整个 mod 初始化。
+            // PatchAll 已应用的补丁保留；缺失会在下方启动自检中报出。
+            LocalMultiControlLogger.Error($"Harmony PatchAll 中断（请结合启动自检缺失清单定位具体补丁）: {patchException}");
+        }
 
         try
         {

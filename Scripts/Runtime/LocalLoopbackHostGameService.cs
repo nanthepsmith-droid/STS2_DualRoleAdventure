@@ -32,6 +32,8 @@ internal sealed class LocalLoopbackHostGameService : INetHostGameService
         _currentSenderId = hostPlayerId;
         IsConnected = true;
         LocalMultiControlLogger.Info($"创建本地回环网络服务，初始 sender={_currentSenderId}");
+        Patch.IdAfterCardDrawnOwnerGuardPatch.TryApplyLate();
+        Patch.IdLiberationBeforeHandDrawFixPatch.TryApplyLate();
     }
 
     public ulong NetId => _currentSenderId;

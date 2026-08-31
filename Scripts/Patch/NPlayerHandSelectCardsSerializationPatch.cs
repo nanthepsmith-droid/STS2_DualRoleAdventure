@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
 using MegaCrit.Sts2.Core.CardSelection;
+using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
@@ -38,6 +41,13 @@ internal static class NPlayerHandSelectCardsSerializationPatch
     /// 避免无限递归；兄弟调用链（ActionExecutor 发起的下一次选牌）看不到该值，会走串行化等待。
     /// </summary>
     private static readonly System.Threading.AsyncLocal<bool> _inSerialized = new System.Threading.AsyncLocal<bool>();
+
+    /// <summary>
+    /// 当前进行中的选牌所属角色（选牌开始设置、选牌结束清除）。
+    /// 供 NPlayerHandAddOwnerGuardPatch 判断「选牌期间加入手牌 UI 的卡牌是否属于本次选牌玩家」，
+    /// 防止对家后台操作（Exhaust/枯木树枝生成牌）把非选牌玩家的牌节点加进当前选牌界面。
+    /// </summary>
+    internal static ulong? CurrentSelectionOwnerId { get; private set; }
 
     [HarmonyPriority(Priority.High)]
     [HarmonyPrefix]
@@ -77,6 +87,8 @@ internal static class NPlayerHandSelectCardsSerializationPatch
         NPlayerHand.Mode mode)
     {
         bool gateAcquired = false;
+        ulong? previousNetId = null;
+        bool netIdPinned = false;
         try
         {
             await _selectionGate.WaitAsync();
@@ -90,10 +102,38 @@ internal static class NPlayerHandSelectCardsSerializationPatch
                 {
                     LocalMultiControlLogger.Info($"选牌展示前已切换前台到所属角色: player={ownerId.Value}");
                 }
+
+                // 修复：选牌期间把 LocalContext.NetId 钉到本次选牌所属角色，并保持到选牌结束。
+                // 根因：本场 527 的 MiniHakkero 选牌期间，526 的 MiniHakkero Exhaust 触发枯木树枝
+                // （CardPileCmd.AddGeneratedCardsToCombat 进 526 手牌），而 CardPileCmd.GetTweenForCardsChangingPiles
+                // 的视觉门用 LocalContext.IsMe(card.Owner) 判断是否创建卡牌节点；若 NetId 此刻不是选牌 owner，
+                // 526 的牌会被误判为"本人"创建节点并加进当前（527 的）选牌 UI，导致 527 能选到 526 手牌里的牌。
+                previousNetId = LocalContext.NetId;
+                LocalContext.NetId = ownerId.Value;
+                netIdPinned = true;
+
+                CurrentSelectionOwnerId = ownerId.Value;
             }
 
             LocalMultiControlLogger.Info(
                 $"战斗内手牌选牌串行化: 已进入选牌, mode={mode}, owner={ownerId}, source={source?.GetType().Name}");
+
+            // 临时诊断（r32）：记录当前手牌 UI 实际显示的卡牌实例，定位「选牌界面出现其他玩家手牌」的串台是数据层还是 UI 层。
+            try
+            {
+                string uiCards = string.Join(",",
+                    hand.CardHolderContainer.GetChildren()
+                        .OfType<MegaCrit.Sts2.Core.Nodes.Cards.Holders.NCardHolder>()
+                        .Select(h => h.CardNode?.Model)
+                        .Where(c => c != null)
+                        .Select(c => $"{c!.Id.Entry}#{RuntimeHelpers.GetHashCode(c)}"));
+                LocalMultiControlLogger.Info(
+                    $"[选牌诊断] NPlayerHand UI holder: owner={ownerId}, LocalContext.NetId={LocalContext.NetId}, uiCards=[{uiCards}]");
+            }
+            catch (Exception uiEx)
+            {
+                LocalMultiControlLogger.Warn($"[选牌诊断] 记录 UI holder 失败: {uiEx.Message}");
+            }
 
             _inSerialized.Value = true;
             try
@@ -107,6 +147,13 @@ internal static class NPlayerHandSelectCardsSerializationPatch
         }
         finally
         {
+            CurrentSelectionOwnerId = null;
+
+            if (netIdPinned)
+            {
+                LocalContext.NetId = previousNetId;
+            }
+
             if (gateAcquired)
             {
                 _selectionGate.Release();
