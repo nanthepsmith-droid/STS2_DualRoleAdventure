@@ -103,6 +103,18 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     `scenarioOverride`，按 source/prefs 判定而非固定 Unknown）；
   - 测试：`PriorityPickingTests` 新增 `ClassifyHandScenario` 13 例（合计 241 例全绿）；
     主项目 Release 0 警告 0 错误。
+- **优先丢弃奇巧牌（弃牌场景智能选牌，marker r51）**：
+  - 奇巧机制确认：`CardKeyword.Sly`（中文"奇巧"），`CardModel.IsSlyThisTurn` 的牌在
+    `CardCmd.DiscardAndDraw` 中会被收集并以 `AutoPlayType.SlyDiscard` 自动打出——弃掉奇巧牌
+    = 白嫖一次出牌 + 腾手牌；
+  - 新增 `Discard` 弃牌场景优先级表：Sly(奇巧) > 诅咒 > 状态 > 任务 > 打击 > 基础防御 > 其余；
+    `WakuuCardKind` 新增 `Sly` 类别（`ClassifyCard` 增加 `isSly` 参数，取 `IsSlyThisTurn`）；
+  - 跨场景默认语义：Remove 视同 Other（不优先消耗正面牌）、Copy 视同 Other（可优先复制）、
+    Transform 硬排除（变掉会失去奇巧白嫖机制）；
+  - 场景识别：`ClassifyHandScenario` 增加 prefs 预设 `TO_DISCARD` → Discard（杂技/预谋/
+    赌徒芯片/行商之手等全部走 `FromHandForDiscard` 内部即 FromHand）；战斗内补丁与事件内
+    补丁自动生效，无需新拦截点；
+  - 测试：`PriorityPickingTests` 新增 10 例（合计 251 例全绿）；主项目 Release 0 警告 0 错误。
 - **维护性改进文档移出主仓库**：`patch-coverage.md`/`string-targets.md`/`维护现状分析.md`/
   `decision-records/`/`references/` 移到 `pain/maintenance-docs/`（无 git，不会进 github）；
   主仓库 `docs/` 只保留原作者文档（`archive/`、`design/`、`architecture.md`、`console-commands.md`）。

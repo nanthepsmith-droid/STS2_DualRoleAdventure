@@ -17,8 +17,9 @@ namespace LocalMultiControl.Scripts.Runtime;
 ///   解决"合成永远拿到排在最前的空手打击"这类问题；
 /// - 卡牌奖励（GetSelectedCardReward）默认维持已拍板的"领最左"策略；
 ///   开启 skadaAssist 且查到有效社区统计时改用统计信号取牌，无数据一律回退最左（可行性分析 §8.2）；
-/// - 智能选牌优先级（可行性分析 §9.1/9.2）：带场景的实例（删除/变化）在 smartPick 开启时
-///   按数据驱动优先级表选牌，否则维持既有 cardPickMode 策略。
+/// - 智能选牌优先级（可行性分析 §9.1/9.2）：带场景的实例（删除/变化/手牌消耗/复制/弃牌）在
+///   smartPick 开启时按数据驱动优先级表选牌，否则维持既有 cardPickMode 策略。
+///   弃牌场景（Discard）奇巧牌（IsSlyThisTurn，丢弃后自动打出）优先级最高。
 /// </summary>
 internal sealed class LocalWakuuStrategySelector : ICardSelector
 {
@@ -83,7 +84,7 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
         try
         {
             List<WakuuCardKind> kinds = options
-                .Select((c) => WakuuPriorityPicking.ClassifyCard(c.Id.Entry, (int)c.Type))
+                .Select((c) => WakuuPriorityPicking.ClassifyCard(c.Id.Entry, (int)c.Type, c.IsSlyThisTurn))
                 .ToList();
             List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(_scenario, kinds);
             List<CardModel> picked = ranked

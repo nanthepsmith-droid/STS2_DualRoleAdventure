@@ -227,12 +227,12 @@ public class PriorityPickingTests
     [TestCase("card_selection/TO_REMOVE", "SomeRemoval", (int)WakuuPickScenario.Remove)]
     [TestCase("card_selection/TO_TRANSFORM", "EntropyPower", (int)WakuuPickScenario.Transform)]
     [TestCase(null, "DualWield", (int)WakuuPickScenario.Copy)]      // 自定义标题：靠 source 类型名识别
-    [TestCase("card_selection/TO_DISCARD", "DualWield", (int)WakuuPickScenario.Copy)] // 非消耗/变换标题下靠类型名
+    [TestCase("custom/COPY_ONE", "DualWield", (int)WakuuPickScenario.Copy)] // 非预设标题下靠类型名
     [TestCase("custom/COPY_ONE", "GreedyCopy", (int)WakuuPickScenario.Copy)]
     [TestCase(null, "SonicEcho", (int)WakuuPickScenario.Copy)]
     [TestCase(null, "MirrorImage", (int)WakuuPickScenario.Copy)]
     [TestCase(null, "ExhaustRitual", (int)WakuuPickScenario.Remove)] // 类型名含 Exhaust
-    [TestCase("card_selection/TO_DISCARD", "Acrobatics", (int)WakuuPickScenario.Unknown)]
+    [TestCase("custom/OTHER_PROMPT", "Acrobatics", (int)WakuuPickScenario.Unknown)]
     [TestCase(null, null, (int)WakuuPickScenario.Unknown)]
     [TestCase(null, "Purity", (int)WakuuPickScenario.Unknown)]
     public void ClassifyHandScenario_按prefs标题与source类型名判定场景(string? prefsLocKey, string? sourceTypeName, int expectedScenario)
@@ -250,5 +250,96 @@ public class PriorityPickingTests
             Is.EqualTo(WakuuPickScenario.Remove));
         Assert.That(WakuuPriorityPicking.ClassifyHandScenario("Brand", "card_selection/TO_TRANSFORM"),
             Is.EqualTo(WakuuPickScenario.Transform));
+    }
+
+    [TestCase("card_selection/TO_DISCARD", "Acrobatics", (int)WakuuPickScenario.Discard)]
+    [TestCase("card_selection/TO_DISCARD", "GamblingChip", (int)WakuuPickScenario.Discard)]
+    [TestCase("card_selection/TO_DISCARD", null, (int)WakuuPickScenario.Discard)]
+    public void ClassifyHandScenario_TO_DISCARD归入弃牌场景(string prefsLocKey, string? sourceTypeName, int expectedScenario)
+    {
+        Assert.That(WakuuPriorityPicking.ClassifyHandScenario(sourceTypeName, prefsLocKey),
+            Is.EqualTo((WakuuPickScenario)expectedScenario));
+    }
+
+    // ---------------------------------------------------------------
+    // Sly（奇巧）：类别归类 + Discard 场景优先级
+    // ---------------------------------------------------------------
+
+    [TestCase("FLAME_BARRIER", SKL, true, 6)]  // WakuuCardKind.Sly
+    [TestCase("CURSE_OF_THE_BELL", CUR, true, 6)] // 奇巧优先于类型
+    [TestCase("FLAME_BARRIER", SKL, false, 0)] // 非奇巧维持原归类
+    public void ClassifyCard_奇巧牌归入Sly类别(string? id, int cardType, bool isSly, int expectedKind)
+    {
+        Assert.That(WakuuPriorityPicking.ClassifyCard(id, cardType, isSly),
+            Is.EqualTo((WakuuCardKind)expectedKind));
+    }
+
+    [Test]
+    public void Discard_奇巧牌优先于一切()
+    {
+        List<WakuuCardKind> kinds = new()
+        {
+            K("STRIKE_IRONCLAD", ATK),
+            K("FLAME_BARRIER", SKL),
+            K("CURSE_OF_THE_BELL", CUR),
+            WakuuPriorityPicking.ClassifyCard("SLY_KNIFE", ATK, isSly: true), // 奇巧
+        };
+
+        List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Discard, kinds);
+        Assert.That(ranked[0], Is.EqualTo(3)); // 奇巧最优先
+    }
+
+    [Test]
+    public void Discard_全类型按规则表排序()
+    {
+        List<WakuuCardKind> kinds = new()
+        {
+            K("FLAME_BARRIER", SKL),             // Other → 最低
+            K("CURSE_OF_THE_BELL", CUR),         // Curse
+            K("BURN", STA),                      // Status
+            K("DEFEND_SILENT", SKL),             // BasicDefend
+            K("STRIKE_IRONCLAD", ATK),           // BasicStrike
+            K("NEOW_QUEST", QST),                // Quest
+            WakuuPriorityPicking.ClassifyCard("SLY_KNIFE", ATK, isSly: true), // Sly → 最高
+        };
+
+        List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Discard, kinds);
+        // Sly(6) > Curse(1) > Status(2) > Quest(5) > Strike(4) > Defend(3) > Other(0)
+        Assert.That(ranked, Is.EqualTo(new[] { 6, 1, 2, 5, 4, 3, 0 }));
+    }
+
+    [Test]
+    public void Discard_无奇巧时坏牌优先()
+    {
+        List<WakuuCardKind> kinds = new()
+        {
+            K("FLAME_BARRIER", SKL),
+            K("CURSE_OF_THE_BELL", CUR),
+            K("STRIKE_IRONCLAD", ATK),
+        };
+
+        List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Discard, kinds);
+        Assert.That(ranked, Is.EqualTo(new[] { 1, 2, 0 }));
+    }
+
+    [Test]
+    public void Sly_在其他场景的默认语义()
+    {
+        WakuuCardKind sly = WakuuPriorityPicking.ClassifyCard("SLY_KNIFE", ATK, isSly: true);
+
+        // Remove：奇巧是正面牌，不优先消耗（权重同 Other，排在坏牌之后）
+        List<int> remove = WakuuPriorityPicking.RankIndicesByScenario(
+            WakuuPickScenario.Remove, new List<WakuuCardKind> { K("CURSE_OF_THE_BELL", CUR), sly });
+        Assert.That(remove[0], Is.EqualTo(0), "Remove 场景诅咒应优先于奇巧");
+
+        // Copy：奇巧算好牌，可优先复制
+        List<int> copy = WakuuPriorityPicking.RankIndicesByScenario(
+            WakuuPickScenario.Copy, new List<WakuuCardKind> { K("STRIKE_IRONCLAD", ATK), sly });
+        Assert.That(copy[0], Is.EqualTo(1), "Copy 场景奇巧应优先于打击");
+
+        // Transform：奇巧硬排除（变掉会失去白嫖机制）
+        List<int> transform = WakuuPriorityPicking.RankIndicesByScenario(
+            WakuuPickScenario.Transform, new List<WakuuCardKind> { K("STRIKE_IRONCLAD", ATK), sly });
+        Assert.That(transform[0], Is.EqualTo(0), "Transform 场景打击应优先于奇巧");
     }
 }

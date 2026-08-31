@@ -21,6 +21,12 @@ internal enum WakuuPickScenario
 
     /// <summary>变化类（变掉平庸牌、保留特殊牌）：优先 打击→防御→其余，硬排除诅咒/状态/任务。</summary>
     Transform,
+
+    /// <summary>
+    /// 弃牌类（滤牌/腾手牌，如杂技/预谋/赌徒芯片/行商之手）：优先丢奇巧牌
+    /// （Sly，丢弃后自动打出=白嫖一次出牌），其次按坏牌优先的消耗类顺序。
+    /// </summary>
+    Discard,
 }
 
 /// <summary>卡牌按优先级表分类的类别（纯数据，不依赖游戏类型）。</summary>
@@ -32,6 +38,9 @@ internal enum WakuuCardKind
     Quest,
     Status,
     Curse,
+
+    /// <summary>奇巧（Sly）牌：带奇巧标签或被效果临时赋予奇巧，丢弃后本回合自动打出。</summary>
+    Sly,
 }
 
 /// <summary>
@@ -41,7 +50,11 @@ internal enum WakuuCardKind
 ///   Remove（消耗/删除）：Curse &gt; Status &gt; Quest &gt; Strike &gt; 基础防御 &gt; 其余从左到右
 ///   Copy（复制）：首选非 {Curse/Status/Quest/Strike/基础防御} 的牌；候选全为坏牌时
 ///        倒序 防御 &gt; 打击 &gt; 任务 &gt; 状态 &gt; 诅咒
-///   Transform（变化）：Strike &gt; Defend &gt; 其余从左到右；硬排除 Curse/Status/Quest
+///   Transform（变化）：Strike &gt; Defend &gt; 其余从左到右；硬排除 Curse/Status/Quest/Sly
+///   Discard（弃牌，用户追加）：Sly(奇巧) &gt; Curse &gt; Status &gt; Quest &gt; Strike &gt; 基础防御 &gt; 其余
+///        —— 奇巧牌丢弃后本回合自动打出，优先丢它是白嫖一次出牌。
+/// 跨场景对 Sly 的默认语义：Remove 视同 Other（不优先消耗正面牌）；Copy 视同 Other（可优先复制）；
+/// Transform 硬排除（变掉会失去奇巧白嫖机制）。
 ///
 /// 实现要点：按类别给权重做稳定降序排列（同权重保持原序 = "从左到右"）。
 /// </summary>
@@ -77,7 +90,8 @@ internal static class WakuuPriorityPicking
     /// <summary>
     /// 手牌选牌场景判定（可行性分析 §9.1 ★★）：FromHand 的 source 类型名 + prefs 标题 loc key → 场景。
     /// 两条线索独立兜底，任一命中即返回：
-    /// - prefs loc key：TO_EXHAUST / TO_REMOVE → Remove；TO_TRANSFORM → Transform。
+    /// - prefs loc key：TO_EXHAUST / TO_REMOVE → Remove；TO_TRANSFORM → Transform；
+    ///   TO_DISCARD → Discard（杂技/预谋/赌徒芯片/行商之手等弃牌入口）。
     ///   （原版 Brand / 保暖手套 / 暴政之力 消耗用 ExhaustSelectionPrompt；熵 / 离去 用 TransformSelectionPrompt）
     /// - source 类型名：含复制语义关键词 → Copy（原版 DualWield 复制攻击/能力牌，标题是自定义的）；
     ///   含 Exhaust → Remove。
@@ -98,6 +112,11 @@ internal static class WakuuPriorityPicking
                 || prefsLocKey.Contains("TO_REMOVE", StringComparison.Ordinal))
             {
                 return WakuuPickScenario.Remove;
+            }
+
+            if (prefsLocKey.Contains("TO_DISCARD", StringComparison.Ordinal))
+            {
+                return WakuuPickScenario.Discard;
             }
         }
 
@@ -123,10 +142,16 @@ internal static class WakuuPriorityPicking
 
     /// <summary>
     /// 按卡 id 与 CardType 枚举值把卡归入优先级类别。
-    /// cardType 传 (int)CardModel.Type；id 传 CardModel.Id.Entry（裸 id，含 STRIKE/DEFEND 等命名）。
+    /// cardType 传 (int)CardModel.Type；id 传 CardModel.Id.Entry（裸 id，含 STRIKE/DEFEND 等命名）；
+    /// isSly 传 CardModel.IsSlyThisTurn（带奇巧标签或被效果临时赋予奇巧，优先级最高优先被弃）。
     /// </summary>
-    public static WakuuCardKind ClassifyCard(string? id, int cardType)
+    public static WakuuCardKind ClassifyCard(string? id, int cardType, bool isSly = false)
     {
+        if (isSly)
+        {
+            return WakuuCardKind.Sly;
+        }
+
         if (cardType == CardTypeCurse)
         {
             return WakuuCardKind.Curse;
@@ -185,7 +210,7 @@ internal static class WakuuPriorityPicking
     {
         return scenario switch
         {
-            // 消耗/删除：坏牌优先被删
+            // 消耗/删除：坏牌优先被删（奇巧是正面牌，不优先消耗）
             WakuuPickScenario.Remove => kind switch
             {
                 WakuuCardKind.Curse => 6,
@@ -196,10 +221,11 @@ internal static class WakuuPriorityPicking
                 _ => 1,
             },
 
-            // 复制：首选非坏牌；全坏时按"防御→打击→任务→状态→诅咒"倒序（Defend 权重最高）
+            // 复制：首选非坏牌（奇巧算好牌）；全坏时按"防御→打击→任务→状态→诅咒"倒序（Defend 权重最高）
             WakuuPickScenario.Copy => kind switch
             {
                 WakuuCardKind.Other => 10,
+                WakuuCardKind.Sly => 10,
                 WakuuCardKind.BasicDefend => 5,
                 WakuuCardKind.BasicStrike => 4,
                 WakuuCardKind.Quest => 3,
@@ -208,13 +234,25 @@ internal static class WakuuPriorityPicking
                 _ => 0,
             },
 
-            // 变化：优先变掉平庸的打击/防御；诅咒/状态/任务硬排除
+            // 变化：优先变掉平庸的打击/防御；诅咒/状态/任务/奇巧硬排除（变掉奇巧会失去白嫖机制）
             WakuuPickScenario.Transform => kind switch
             {
                 WakuuCardKind.BasicStrike => 3,
                 WakuuCardKind.BasicDefend => 2,
                 WakuuCardKind.Other => 1,
                 _ => ExcludedPriority,
+            },
+
+            // 弃牌：奇巧牌丢弃后本回合自动打出（白嫖），优先丢；其次坏牌优先
+            WakuuPickScenario.Discard => kind switch
+            {
+                WakuuCardKind.Sly => 7,
+                WakuuCardKind.Curse => 6,
+                WakuuCardKind.Status => 5,
+                WakuuCardKind.Quest => 4,
+                WakuuCardKind.BasicStrike => 3,
+                WakuuCardKind.BasicDefend => 2,
+                _ => 1,
             },
 
             _ => 0,
