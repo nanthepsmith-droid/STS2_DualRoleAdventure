@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Models.RelicPools;
 using LocalMultiControl.Scripts.Models.Relics;
+using LocalMultiControl.Scripts.Patch;
 using LocalMultiControl.Scripts.Runtime;
 
 namespace LocalMultiControl.Scripts.Scripts;
@@ -11,7 +14,7 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    private const string BuildMarker = "Revival v1.38 (game v0.111.0, marker=2026-08-31-r43)";
+    private const string BuildMarker = "Revival v1.38 (game v0.111.0, marker=2026-08-31-r46)";
 
     private static Harmony? _harmony;
 
@@ -63,13 +66,21 @@ public partial class Entry
         _harmony = new Harmony("sts2.dualroleadventure");
         try
         {
-            _harmony.PatchAll();
+            if (PatchDomainMap.UseGroupedPatchAll)
+            {
+                ApplyAllPatchGroups();
+            }
+            else
+            {
+                // 回滚预案（实施方案 2.3）：整体关闭分组容错，回到旧 PatchAll 直跑。
+                _harmony.PatchAll();
+            }
         }
         catch (Exception patchException)
         {
-            // r38 防御：单补丁异常（如反射定位外部 mod 方法失败）不应中断整个 mod 初始化。
-            // PatchAll 已应用的补丁保留；缺失会在下方启动自检中报出。
-            LocalMultiControlLogger.Error($"Harmony PatchAll 中断（请结合启动自检缺失清单定位具体补丁）: {patchException}");
+            // r38 防御 + 2.3 分组：Core 组失败即停时会走到这里（后续补丁组未应用）。
+            // 已应用的补丁保留；缺失会在下方启动自检中报出。
+            LocalMultiControlLogger.Error($"Harmony 补丁初始化中断（请结合启动自检缺失清单定位具体补丁）: {patchException}");
         }
 
         try
@@ -114,6 +125,97 @@ public partial class Entry
         }
 
         LocalMultiControlLogger.Info("Mod 初始化完成。");
+    }
+
+    /// <summary>
+    /// 分组应用全部 Harmony 补丁（维护性改进 2.3：PatchAll 分组隔离）。
+    ///
+    /// 按 <see cref="PatchDomainMap"/> 将补丁类归入 7 个域并逐组 try-catch：
+    ///   - Core（本地多控运行基座）失败即停：异常上抛由 Init 兜底记录，不再应用后续补丁组；
+    ///   - 其余组失败打 Error 并跳过，继续下一组；
+    ///   - 未登记分组的补丁类打 Warn 并按「隔离组」兜底应用（应补登记到 PatchDomainMap）。
+    /// </summary>
+    private static void ApplyAllPatchGroups()
+    {
+        Assembly assembly = typeof(Entry).Assembly;
+        // 与 Harmony PatchAll 的收集口径一致：不排除 abstract（静态补丁类编译为 abstract+sealed）。
+        List<Type> allPatchTypes = assembly.GetTypes()
+            .Where(type => type.IsClass && type.GetCustomAttribute<HarmonyPatch>() != null)
+            .ToList();
+
+        var grouped = new Dictionary<PatchDomain, List<Type>>();
+        var unregistered = new List<Type>();
+        foreach (Type patchType in allPatchTypes)
+        {
+            PatchDomain? domain = PatchDomainMap.ResolveFor(patchType);
+            if (domain == null)
+            {
+                unregistered.Add(patchType);
+                continue;
+            }
+
+            if (!grouped.TryGetValue(domain.Value, out List<Type>? domainTypes))
+            {
+                domainTypes = new List<Type>();
+                grouped[domain.Value] = domainTypes;
+            }
+
+            domainTypes.Add(patchType);
+        }
+
+        foreach (PatchDomain domain in PatchDomainMap.ApplyOrder)
+        {
+            if (grouped.TryGetValue(domain, out List<Type>? domainTypes))
+            {
+                ApplyPatchGroup(domain, domainTypes, failFast: domain == PatchDomain.Core);
+            }
+        }
+
+        if (unregistered.Count > 0)
+        {
+            foreach (Type unregisteredType in unregistered)
+            {
+                LocalMultiControlLogger.Warn(
+                    $"补丁类未登记分组（已按隔离组兜底应用，请登记到 PatchDomainMap）: {unregisteredType.FullName}");
+            }
+
+            ApplyPatchGroup(domain: null, unregistered, failFast: false);
+        }
+    }
+
+    /// <summary>
+    /// 应用单个补丁组。组内任一补丁失败时：
+    ///   failFast=true（Core）→ 打 Error 并上抛，后续补丁组不再应用（错误基线上继续更危险）；
+    ///   failFast=false → 打 Error 并跳过本组，继续其余组。
+    /// </summary>
+    private static void ApplyPatchGroup(PatchDomain? domain, IReadOnlyList<Type> patchTypes, bool failFast)
+    {
+        if (patchTypes.Count == 0)
+        {
+            return;
+        }
+
+        string groupName = domain?.ToString() ?? "Unregistered";
+        try
+        {
+            foreach (Type patchType in patchTypes)
+            {
+                _harmony!.CreateClassProcessor(patchType).Patch();
+            }
+
+            LocalMultiControlLogger.Info($"补丁组[{groupName}] 应用完成：{patchTypes.Count} 类");
+        }
+        catch (Exception exception) when (failFast)
+        {
+            LocalMultiControlLogger.Error(
+                $"补丁组[{groupName}] 应用失败（本组失败即停，后续补丁组不再应用）: {exception}");
+            throw;
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Error(
+                $"补丁组[{groupName}] 应用失败，已跳过该组（其余组继续）: {exception}");
+        }
     }
 
     /// <summary>
