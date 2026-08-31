@@ -50,6 +50,23 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   semver 校验 → 三处版本同步（根 / `workshop\content` 的 json + `mod_manifest.json`，UTF-8 带 BOM
   字节保真正则替换）→ marker 建议串 → `dotnet build -warnaserror` 门禁 → 拷贝 `workshop\content` →
   打 zip 到 `release\` → SHA256（源 dll / zip / zip 内 dll 核对一致）。
+- **SkadaHelper 社区统计反射适配器（瓦库托管优化 Phase 3.1，marker r47，分支 `feat/skada-assist`）**：
+  - 新增 `Scripts/Runtime/WakuuSkadaAdapter.cs`：以**可选依赖**方式接入创意工坊 mod
+    「皮皮军师: SkadaHelper」的 40 万局社区统计（不做编译期引用，运行时反射探测
+    `SkadaHelper.Scripts.Lite.DataProvider.Data`），反射全部集中在单一文件；
+    未安装 / 内部结构改名 / 数据包未就绪一律**静默失效**并回退既有策略，启动时打探测日志。
+    查表用**瓦库玩家自己的角色 id**，不走其 `CurrentCharacterId`（跟随前台，多控下语义漂移）。
+  - 新增纯逻辑 `Scripts/Runtime/PureLogic/WakuuSignalPicking.cs`：卡牌主信号 `PickRate`
+    叠加因果增益（`WinRateHeld − WinRateSkipped`），样本量 `OfferCount` 不足视为无数据；
+    事件选项按 `WinRate` 选优 + `Count` 阈值；同分保留最左/最上；含量纲归一（0~1 与 0~100 混用）
+    与文本模糊匹配归一化。
+  - 新增 `skadaAssist` 开关（`vakuu_autopilot.json`，**默认关**）：开启后卡牌奖励与事件选项
+    优先参考社区统计；关闭或任何一环无数据时，行为与本次改动前**完全一致**（卡牌奖励仍领最左，
+    事件选项仍按 `eventChoiceMode`）。设置页新增对应勾选行。
+  - 已知限制：`SkadaHelper` 自身按**文本**关联事件选项，中文界面下大概率整体 miss
+    （已在日志中打出命中率供核对），miss 时无害降级；其数据包为 v0.107 口径且只含原版内容，
+    mod 卡牌/事件查不到即回退。
+  - 测试：新增 `SignalPickingTests` 26 例（合计 201 例全绿）。
 - **维护性改进文档移出主仓库**：`patch-coverage.md`/`string-targets.md`/`维护现状分析.md`/
   `decision-records/`/`references/` 移到 `pain/maintenance-docs/`（无 git，不会进 github）；
   主仓库 `docs/` 只保留原作者文档（`archive/`、`design/`、`architecture.md`、`console-commands.md`）。
