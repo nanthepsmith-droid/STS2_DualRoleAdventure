@@ -75,6 +75,20 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     因果增益，增益为负的候选直接出局、不参与竞选；全部出局则返回 -1 回退默认策略。
     作用在加权增益上，故 `gainWeight=0` 时决策退化为纯 `PickRate` 排序，参数语义自洽；
   - 配套：回退日志区分"无数据"与"信号为负"；单测 205 例全绿（新增 4 例，含实机复现用例）。
+- **智能选牌优先级（瓦库托管优化 Phase 3，marker r49）**：
+  - 新增纯逻辑 `Scripts/Runtime/PureLogic/WakuuPriorityPicking.cs`：场景枚举（Remove/Copy/Transform/
+    Unknown）、卡牌类别（Curse/Status/Quest/BasicStrike/BasicDefend/Other）与稳定降序排序函数，
+    实现 §9.2 规则表：删除优先 诅咒→状态→任务→打击→防御→其余；复制首选非坏牌、候选全坏时
+    倒序 防御→打击→任务→状态→诅咒（已实现、待手牌场景识别后接入）；变化优先 打击→防御→其余，
+    硬排除诅咒/状态/任务；
+  - 场景识别（§9.1）：`WakuuEventEnchantAutoAnswerPatch` 新增 `FromDeckForRemoval` 专用入口拦截
+    （FieldOfManSizedHoles / DoorsOfLightAndDark / LuminousChoir / 商店删牌 / 删牌遗物等全部走此入口）
+    → Remove 场景；`FromDeckForTransformation` → Transform 场景；`FromDeckGeneric` 被木雕等
+    "变化选保留牌"共用，明确不归入删除、维持既有策略；
+  - `LocalWakuuStrategySelector` 升级为带场景上下文的优先级选择器：`smartPick` 开启且场景明确时
+    套优先级表，否则走既有 `cardPickMode`；任一步异常回退既有策略，不因智能选牌失败卡住瓦库；
+  - 新增 `smartPick` 开关（`vakuu_autopilot.json`，**默认关**，关=行为与改动前完全一致）+ 设置页勾选行；
+  - 测试：新增 `PriorityPickingTests` 23 例（合计 228 例全绿）；主项目 Release 0 警告 0 错误。
 - **维护性改进文档移出主仓库**：`patch-coverage.md`/`string-targets.md`/`维护现状分析.md`/
   `decision-records/`/`references/` 移到 `pain/maintenance-docs/`（无 git，不会进 github）；
   主仓库 `docs/` 只保留原作者文档（`archive/`、`design/`、`architecture.md`、`console-commands.md`）。
