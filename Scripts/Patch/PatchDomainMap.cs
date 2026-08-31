@@ -165,6 +165,7 @@ internal static class PatchDomainMap
             ["RewardsSetPatch"] = PatchDomain.Rewards,
 
             // ============ Wakuu：瓦库托管 ============
+            ["CardSelectHandScenarioPatch"] = PatchDomain.Wakuu,
             ["CardSelectWakuuTurnStartAutoAnswerPatch"] = PatchDomain.Wakuu,
             ["MerchantRoomEnterFoulThrowPatch"] = PatchDomain.Wakuu,
             ["PotionProcuredAutoDrinkPatch"] = PatchDomain.Wakuu,

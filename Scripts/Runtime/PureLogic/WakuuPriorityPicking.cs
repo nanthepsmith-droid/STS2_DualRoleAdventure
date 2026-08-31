@@ -60,6 +60,68 @@ internal static class WakuuPriorityPicking
     private const int ExcludedPriority = -100;
 
     /// <summary>
+    /// 复制类来源的类型名关键词（§9.1 ★★）：原版 DualWield 用自定义 SelectionScreenPrompt，
+    /// prefs loc key 识别不到复制语义，只能靠 source 类型名。mod 复制卡按含复制/镜像语义的关键词推断。
+    /// </summary>
+    private static readonly string[] CopySourceTypeNameKeywords =
+    {
+        "DualWield",
+        "Copy",
+        "Duplicate",
+        "Echo",
+        "Clone",
+        "Double",
+        "Mirror",
+    };
+
+    /// <summary>
+    /// 手牌选牌场景判定（可行性分析 §9.1 ★★）：FromHand 的 source 类型名 + prefs 标题 loc key → 场景。
+    /// 两条线索独立兜底，任一命中即返回：
+    /// - prefs loc key：TO_EXHAUST / TO_REMOVE → Remove；TO_TRANSFORM → Transform。
+    ///   （原版 Brand / 保暖手套 / 暴政之力 消耗用 ExhaustSelectionPrompt；熵 / 离去 用 TransformSelectionPrompt）
+    /// - source 类型名：含复制语义关键词 → Copy（原版 DualWield 复制攻击/能力牌，标题是自定义的）；
+    ///   含 Exhaust → Remove。
+    /// 未知 → Unknown（维持既有 cardPickMode 策略，不越权）。
+    /// prefsLocKey 建议传 "LocTable/LocEntryKey"（如 card_selection/TO_EXHAUST），纯 key 亦可。
+    /// </summary>
+    public static WakuuPickScenario ClassifyHandScenario(string? sourceTypeName, string? prefsLocKey)
+    {
+        // 线索 1：prefs 标题 loc key（游戏 CardSelectorPrefs 预设，确定性最高）
+        if (!string.IsNullOrEmpty(prefsLocKey))
+        {
+            if (prefsLocKey.Contains("TO_TRANSFORM", StringComparison.Ordinal))
+            {
+                return WakuuPickScenario.Transform;
+            }
+
+            if (prefsLocKey.Contains("TO_EXHAUST", StringComparison.Ordinal)
+                || prefsLocKey.Contains("TO_REMOVE", StringComparison.Ordinal))
+            {
+                return WakuuPickScenario.Remove;
+            }
+        }
+
+        // 线索 2：source 类型名（Copy 无专用 loc key，靠来源模型识别；mod 卡按语义关键词推断）
+        if (!string.IsNullOrEmpty(sourceTypeName))
+        {
+            foreach (string keyword in CopySourceTypeNameKeywords)
+            {
+                if (sourceTypeName.Contains(keyword, StringComparison.Ordinal))
+                {
+                    return WakuuPickScenario.Copy;
+                }
+            }
+
+            if (sourceTypeName.Contains("Exhaust", StringComparison.Ordinal))
+            {
+                return WakuuPickScenario.Remove;
+            }
+        }
+
+        return WakuuPickScenario.Unknown;
+    }
+
+    /// <summary>
     /// 按卡 id 与 CardType 枚举值把卡归入优先级类别。
     /// cardType 传 (int)CardModel.Type；id 传 CardModel.Id.Entry（裸 id，含 STRIKE/DEFEND 等命名）。
     /// </summary>

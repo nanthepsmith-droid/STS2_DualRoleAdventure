@@ -218,4 +218,37 @@ public class PriorityPickingTests
             Assert.That(ranked.Order(), Is.EqualTo(Enumerable.Range(0, kinds.Count)), $"scenario={scenario}");
         }
     }
+
+    // ---------------------------------------------------------------
+    // ClassifyHandScenario（§9.1 ★★）：FromHand 的 source 类型名 + prefs 标题 loc key → 场景
+    // ---------------------------------------------------------------
+
+    [TestCase("card_selection/TO_EXHAUST", "Brand", (int)WakuuPickScenario.Remove)]
+    [TestCase("card_selection/TO_REMOVE", "SomeRemoval", (int)WakuuPickScenario.Remove)]
+    [TestCase("card_selection/TO_TRANSFORM", "EntropyPower", (int)WakuuPickScenario.Transform)]
+    [TestCase(null, "DualWield", (int)WakuuPickScenario.Copy)]      // 自定义标题：靠 source 类型名识别
+    [TestCase("card_selection/TO_DISCARD", "DualWield", (int)WakuuPickScenario.Copy)] // 非消耗/变换标题下靠类型名
+    [TestCase("custom/COPY_ONE", "GreedyCopy", (int)WakuuPickScenario.Copy)]
+    [TestCase(null, "SonicEcho", (int)WakuuPickScenario.Copy)]
+    [TestCase(null, "MirrorImage", (int)WakuuPickScenario.Copy)]
+    [TestCase(null, "ExhaustRitual", (int)WakuuPickScenario.Remove)] // 类型名含 Exhaust
+    [TestCase("card_selection/TO_DISCARD", "Acrobatics", (int)WakuuPickScenario.Unknown)]
+    [TestCase(null, null, (int)WakuuPickScenario.Unknown)]
+    [TestCase(null, "Purity", (int)WakuuPickScenario.Unknown)]
+    public void ClassifyHandScenario_按prefs标题与source类型名判定场景(string? prefsLocKey, string? sourceTypeName, int expectedScenario)
+    {
+        Assert.That(
+            WakuuPriorityPicking.ClassifyHandScenario(sourceTypeName, prefsLocKey),
+            Is.EqualTo((WakuuPickScenario)expectedScenario));
+    }
+
+    [Test]
+    public void ClassifyHandScenario_prefs标题优先于source类型名()
+    {
+        // 预设标题（TO_EXHAUST/TO_TRANSFORM）确定性最高，优先于 source 类型名推断。
+        Assert.That(WakuuPriorityPicking.ClassifyHandScenario("DualWield", "card_selection/TO_EXHAUST"),
+            Is.EqualTo(WakuuPickScenario.Remove));
+        Assert.That(WakuuPriorityPicking.ClassifyHandScenario("Brand", "card_selection/TO_TRANSFORM"),
+            Is.EqualTo(WakuuPickScenario.Transform));
+    }
 }

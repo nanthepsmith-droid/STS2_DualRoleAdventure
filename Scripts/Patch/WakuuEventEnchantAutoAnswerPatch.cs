@@ -23,8 +23,9 @@ namespace LocalMultiControl.Scripts.Patch;
 /// NDeckTransformSelectScreen / NDeckCardSelectScreen 等选牌界面，自动选择随即因"出现弹层"而停住等真人。
 ///
 /// 修复：事件选项执行期间 LocalWakuuEventAutoChoice 会把 InEventAutoChoiceScope 置为 true，
-/// 本补丁在该作用域内拦截 CardSelectCmd 的选牌入口，用 LocalWakuuStrategySelector 按
-/// cardPickMode 配置（最前/最后/随机/稀有度最高）直接作答，返回结果、不弹界面。
+/// 本补丁在该作用域内拦截 CardSelectCmd 的选牌入口，用 LocalWakuuStrategySelector 直接作答：
+/// smartPick 开启且场景明确（删除/变化/手牌消耗/复制，§9.1/9.2）套优先级表，否则按
+/// cardPickMode 配置（最前/最后/随机/稀有度最高），返回结果、不弹界面。
 /// 真人玩家自己的事件选牌不在作用域内，不受影响（无全局选择器栈，天然隔离）。
 ///
 /// ⚠ 注意：各 From* 前缀必须用「bool 返回 + ref __result」的跳过式拦截（这里不需要其它补丁的
@@ -83,6 +84,7 @@ internal static class WakuuEventEnchantAutoAnswerPatch
         Player player,
         CardSelectorPrefs prefs,
         Func<CardModel, bool>? filter,
+        AbstractModel source,
         ref Task<IEnumerable<CardModel>> __result)
     {
         if (!LocalWakuuEventAutoChoice.InEventAutoChoiceScope.Value || player == null)
@@ -109,7 +111,12 @@ internal static class WakuuEventEnchantAutoAnswerPatch
             return true;
         }
 
-        return TryAutoAnswer(player, candidates, prefs, "FromHand", ref __result);
+        // 事件内手牌选牌：按 source 类型名 / prefs 标题 loc key 判定场景（§9.1 ★★），
+        // 命中 Copy/Remove/Transform 时套优先级表，否则维持既有策略。
+        return TryAutoAnswer(player, candidates, prefs, "FromHand", ref __result,
+            WakuuPriorityPicking.ClassifyHandScenario(
+                source?.GetType().Name,
+                CardSelectHandScenarioPatch.BuildPrefsLocKey(prefs.Prompt)));
     }
 
     /// <summary>牌库升级选牌（火堆 smith 同入口，事件里 SapphireSeed/AromaOfChaos 等触发）。</summary>
@@ -258,7 +265,8 @@ internal static class WakuuEventEnchantAutoAnswerPatch
         IReadOnlyList<CardModel> candidates,
         CardSelectorPrefs prefs,
         string source,
-        ref Task<IEnumerable<CardModel>> __result)
+        ref Task<IEnumerable<CardModel>> __result,
+        WakuuPickScenario? scenarioOverride = null)
     {
         if (candidates == null || candidates.Count == 0)
         {
@@ -274,14 +282,15 @@ internal static class WakuuEventEnchantAutoAnswerPatch
             $"瓦库事件选牌自动作答: player={player.NetId}, eventScope=true, options={candidates.Count}, "
             + $"mode={LocalWakuuAutopilotConfig.CardPickMode}, source={source}");
 
-        __result = ComputeAnswerAsync(candidates, prefs, ScenarioForSource(source));
+        __result = ComputeAnswerAsync(candidates, prefs, scenarioOverride ?? ScenarioForSource(source));
         return false;
     }
 
     /// <summary>
     /// 由 CardSelectCmd 入口方法名判定选牌场景（可行性分析 §9.1）：
-    /// 专用方法（删除/变化）直接区分；未知场景（附魔/升级/手牌/通用）维持既有策略。
+    /// 专用方法（删除/变化）直接区分；未知场景（附魔/升级/通用）维持既有策略。
     /// 注意 FromDeckGeneric 被 WoodCarvings（变化选保留牌）等共用，不归入 Remove。
+    /// 手牌选牌（FromHand）的场景由调用方按 source 类型名 / prefs 标题判定后通过 scenarioOverride 传入。
     /// </summary>
     private static WakuuPickScenario ScenarioForSource(string source)
     {

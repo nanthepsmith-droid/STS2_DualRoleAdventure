@@ -89,6 +89,20 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     套优先级表，否则走既有 `cardPickMode`；任一步异常回退既有策略，不因智能选牌失败卡住瓦库；
   - 新增 `smartPick` 开关（`vakuu_autopilot.json`，**默认关**，关=行为与改动前完全一致）+ 设置页勾选行；
   - 测试：新增 `PriorityPickingTests` 23 例（合计 228 例全绿）；主项目 Release 0 警告 0 错误。
+- **手牌选牌场景识别接入 Copy/Remove/Transform（Phase 3 智能选牌补全，marker r50）**：
+  - 纯逻辑 `WakuuPriorityPicking.ClassifyHandScenario(source 类型名, prefs 标题 loc key)`：
+    prefs 预设（`TO_EXHAUST`/`TO_REMOVE` → Remove、`TO_TRANSFORM` → Transform）确定性最高优先，
+    source 类型名兜底（原版 `DualWield` 复制用自定义标题，按类型名识别为 Copy；mod 复制/镜像类
+    按 Copy/Duplicate/Echo/Clone/Double/Mirror 关键词推断；类型名含 Exhaust → Remove）；
+    未知（弃牌/附魔/升级等）→ Unknown，维持既有 `cardPickMode` 策略、不越权；
+  - 新增 `Scripts/Patch/CardSelectHandScenarioPatch.cs`：战斗内瓦库出牌作用域（栈上全局选择器为
+    本 mod 策略选择器）拦截 `CardSelectCmd.FromHand`，场景明确时用带场景的 `LocalWakuuStrategySelector`
+    作答——复制类卡（双重挥砍）选非坏牌、消耗类卡（印记/保暖手套/暴政之力）优先消耗坏牌、
+    变化类卡（熵/离去）优先变打击/防御；**硬约束沿用 r6 教训：作用域外选牌一律不代答**；
+  - 事件作用域内 FromHand 同步接入场景判定（`WakuuEventEnchantAutoAnswerPatch` 增加
+    `scenarioOverride`，按 source/prefs 判定而非固定 Unknown）；
+  - 测试：`PriorityPickingTests` 新增 `ClassifyHandScenario` 13 例（合计 241 例全绿）；
+    主项目 Release 0 警告 0 错误。
 - **维护性改进文档移出主仓库**：`patch-coverage.md`/`string-targets.md`/`维护现状分析.md`/
   `decision-records/`/`references/` 移到 `pain/maintenance-docs/`（无 git，不会进 github）；
   主仓库 `docs/` 只保留原作者文档（`archive/`、`design/`、`architecture.md`、`console-commands.md`）。
