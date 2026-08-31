@@ -176,6 +176,88 @@ internal static class LocalWakuuEventAutoChoice
         return index >= 0 ? candidates[index] : null;
     }
 
+    /// <summary>
+    /// 社区统计辅助（可行性分析 §8.2，开关 skadaAssist）：查 SkadaHelper 的事件选项统计，
+    /// 按胜率取最优选项；未安装 / 文本未命中 / 样本量不足一律返回 null → 回退既有策略。
+    ///
+    /// 已知限制（§8.4 风险 2）：第三方按**文本模糊匹配**关联选项，语言敏感——
+    /// 中文界面下大概率整体 miss，此处会打出命中率日志供实机核对，miss 时无害降级。
+    /// </summary>
+    private static EventOption? SelectByCommunityStats(EventModel eventModel, IReadOnlyList<EventOption> candidates)
+    {
+        if (!LocalWakuuAutopilotConfig.SkadaAssist || eventModel.Owner == null || candidates.Count < 2)
+        {
+            return null;
+        }
+
+        try
+        {
+            string characterId = eventModel.Owner.Character.Id.Entry.ToUpperInvariant();
+            string eventId = eventModel.Id.Entry.ToUpperInvariant();
+            List<WakuuEventSignal>? stats = WakuuSkadaAdapter.TryGetEventSignals(characterId, eventId);
+            if (stats == null || stats.Count == 0)
+            {
+                return null;
+            }
+
+            int[] matched = new int[candidates.Count];
+            int hitCount = 0;
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                matched[i] = WakuuSignalPicking.MatchEventOptionIndex(GetOptionDisplayText(candidates[i]), stats);
+                if (matched[i] >= 0)
+                {
+                    hitCount++;
+                }
+            }
+
+            LocalMultiControlLogger.Info(
+                $"瓦库事件社区统计匹配: event={eventId}, char={characterId}, 选项={candidates.Count}, 命中={hitCount}");
+            if (hitCount == 0)
+            {
+                return null;
+            }
+
+            int bestStatIndex = WakuuSignalPicking.PickBestEventIndex(matched, stats);
+            if (bestStatIndex < 0)
+            {
+                return null; // 命中的条目样本量都不足 → 回退
+            }
+
+            int optionIndex = Array.IndexOf(matched, bestStatIndex);
+            if (optionIndex < 0)
+            {
+                return null;
+            }
+
+            LocalMultiControlLogger.Info(
+                $"瓦库事件按社区统计选取: event={eventId}, index={optionIndex}/{candidates.Count}, "
+                + $"winRate={stats[bestStatIndex].WinRate:F3}, count={stats[bestStatIndex].Count}");
+            return candidates[optionIndex];
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"瓦库事件社区统计选取失败，回退原策略: {exception.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 选项的本地化显示文本，用于与数据集文本做模糊匹配；取不到返回 null（按未命中处理）。
+    /// 与游戏内 NEventOptionButton._Ready 的取文本方式一致。
+    /// </summary>
+    private static string? GetOptionDisplayText(EventOption option)
+    {
+        try
+        {
+            return option.Title?.GetFormattedText();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static async Task RunAsync(EventModel eventModel, ulong ownerId)
     {
         try
@@ -220,7 +302,9 @@ internal static class LocalWakuuEventAutoChoice
                     return;
                 }
 
-                EventOption? option = SelectByStrategy(safeCandidates);
+                // 三级决策链的第②③级：社区统计（SkadaHelper）优先，无数据回退既有策略（first/last/random）。
+                EventOption? option = SelectByCommunityStats(eventModel, safeCandidates)
+                                      ?? SelectByStrategy(safeCandidates);
                 if (option == null)
                 {
                     return;

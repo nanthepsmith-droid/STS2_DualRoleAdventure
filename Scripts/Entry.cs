@@ -14,7 +14,7 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    private const string BuildMarker = "Revival v1.38 (game v0.111.0, marker=2026-08-31-r46)";
+    private const string BuildMarker = "Revival v1.38 (game v0.111.0, marker=2026-08-31-r47)";
 
     private static Harmony? _harmony;
 
@@ -63,6 +63,8 @@ public partial class Entry
         LocalWakuuAutopilotConfig.Reload("entry-init");
         RegisterWakuuRelicsToPool();
         LocalWakuuRelicLocalization.Initialize();
+        // 社区统计（SkadaHelper）为可选第三方依赖：探测失败只打日志，不阻断加载
+        WakuuSkadaAdapter.Probe();
         _harmony = new Harmony("sts2.dualroleadventure");
         try
         {

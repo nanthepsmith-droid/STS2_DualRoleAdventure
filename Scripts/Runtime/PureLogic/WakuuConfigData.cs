@@ -32,6 +32,13 @@ internal sealed class WakuuConfigData
 
     public bool neowAutoChoose { get; set; }
 
+    /// <summary>
+    /// 社区统计辅助：读 SkadaHelper（皮皮军师）的社区大数据为卡牌奖励与事件选项加权（可行性分析 §8.2）。
+    /// 默认关（关 = 纯最左 / 事件沿用 eventChoiceMode）；开启后若未安装 SkadaHelper 或查表无数据，
+    /// 一律静默回退到与关闭时完全一致的行为。
+    /// </summary>
+    public bool skadaAssist { get; set; }
+
     public string eventChoiceMode { get; set; } = WakuuChoiceModes.First;
 
     public string cardPickMode { get; set; } = WakuuChoiceModes.Last;

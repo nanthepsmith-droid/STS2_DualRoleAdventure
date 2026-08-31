@@ -210,6 +210,11 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             "非共享事件按下方策略自动选择；触发战斗/小游戏/致死选项即停住等真人。",
             () => LocalWakuuAutopilotConfig.AutoChooseEvents,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("autoChooseEvents", value));
+        AddToggleRow(column,
+            "社区统计辅助（需装 SkadaHelper）",
+            "默认关。开启后瓦库的卡牌奖励与事件选项优先参考「皮皮军师: SkadaHelper」的社区大数据（卡牌：选取率 + 拿了之后的胜率增益；事件选项：胜率最高）。未装该 mod、查无数据或样本量不足时，静默回退到原来的最左 / 事件选项策略，行为与关闭时完全一致。",
+            () => LocalWakuuAutopilotConfig.SkadaAssist,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("skadaAssist", value));
         column.AddChild(CreateStrategyRow(
             "事件选项策略",
             "事件自动选择时挑哪个选项。很多事件一直选第一个会死，可切到最后一个或随机规避。",

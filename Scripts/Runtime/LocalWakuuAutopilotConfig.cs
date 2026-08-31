@@ -58,6 +58,13 @@ internal static class LocalWakuuAutopilotConfig
     public static bool NeowAutoChoose { get; private set; }
 
     /// <summary>
+    /// 社区统计辅助（可行性分析 §8.2，默认关）：开启后卡牌奖励与事件选项优先参考
+    /// SkadaHelper 的社区统计（卡牌 PickRate + 因果增益、事件选项胜率）；
+    /// 未安装、查表 miss、样本量不足一律静默回退到与关闭时完全一致的行为。
+    /// </summary>
+    public static bool SkadaAssist { get; private set; }
+
+    /// <summary>
     /// 事件自动选择的策略：first=第一个（最上）/ last=最后一个 / random=随机。
     /// 很多事件一直选第一个会死，可切到 last 或 random 规避。
     /// </summary>
@@ -116,6 +123,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.autoRestChoice): data.autoRestChoice = value; break;
                     case nameof(WakuuConfigData.autoUsePotions): data.autoUsePotions = value; break;
                     case nameof(WakuuConfigData.neowAutoChoose): data.neowAutoChoose = value; break;
+                    case nameof(WakuuConfigData.skadaAssist): data.skadaAssist = value; break;
                     default:
                         LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：未知开关名 {key}");
                         return false;
@@ -318,7 +326,7 @@ internal static class LocalWakuuAutopilotConfig
                 + $"autoClaimPotions={data.autoClaimPotions}, "
                 + $"autoChooseEvents={data.autoChooseEvents}, autoRestChoice={data.autoRestChoice}, "
                 + $"autoUsePotions={data.autoUsePotions}, "
-                + $"neowAutoChoose={data.neowAutoChoose}, "
+                + $"neowAutoChoose={data.neowAutoChoose}, skadaAssist={data.skadaAssist}, "
                 + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}, "
                 + $"wakuuBrain={data.wakuuBrain}");
         }
@@ -334,6 +342,7 @@ internal static class LocalWakuuAutopilotConfig
         AutoRestChoice = data.autoRestChoice;
         AutoUsePotions = data.autoUsePotions;
         NeowAutoChoose = data.neowAutoChoose;
+        SkadaAssist = data.skadaAssist;
         EventChoiceMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;
         CardPickMode = NormalizeCardPickMode(data.cardPickMode) ?? LastChoiceMode;
         BrainMode = NormalizeBrainMode(data.wakuuBrain) ?? HeuristicBrainMode;
