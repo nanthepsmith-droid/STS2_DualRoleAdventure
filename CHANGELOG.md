@@ -4,8 +4,9 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
-> 维护性改进 Phase 1（任务 1.1~1.4）已全部合并到 `master`（2026-08-30，marker r30）。
-> 本系列改动不改变任何既有运行时行为默认值，均为**工具化 / 自检 / 文档**，外加两个实证发现的存量修复。
+> 维护性改进 **Phase 1（1.1~1.5）+ Phase 2（2.1~2.4）已全部合并到 `master`**（2026-08-31，部署位 marker r46）。
+> 本系列改动不改变任何既有运行时行为默认值，均为**工具化 / 自检 / 文档 / 结构性改进**，
+> 外加实证发现的存量修复与瓦库自动化功能（r28 / r41~r43）。
 
 ### Added
 - **补丁目标覆盖清单（维护性改进任务 1.1）**：`Scripts/Tools/patch_coverage.py` 扫描全部
@@ -37,6 +38,18 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     `HeuristicWakuuBrain`（现有「第一张可打牌 + ResolveTarget」逻辑原样搬移）+ `WakuuBrainFactory`；
   - 出牌主循环改为向大脑要「下一步」，**默认 heuristic 行为与 v1.38 完全一致**；
   - 新增 `wakuuBrain` 开关（heuristic/auto，默认 heuristic；auto 预留求解器探测，未命中回退启发式）。
+- **修复仓库统一（维护性改进任务 1.5）**：新增 `Scripts/Tools/build_all_mods.ps1` 一键构建+部署+校验
+  全部 7 个 mod（主 + 6 fix，`-BuildOnly`/`-DeployOnly`/`-CheckOnly` 三模式）；修复
+  `Act4FinalAscentFixes.csproj` 指向已删除目录的构建问题；6 个 fix 仓库补 README。
+- **补丁隔离（维护性改进任务 2.3，marker r46）**：`PatchAll` 改为按域分组 try-catch——
+  新增 `Scripts/Patch/PatchDomainMap.cs` 将 **144 个顶层补丁类归入 7 域**（Core 37 / Lobby 28 /
+  Combat 30 / Rewards 8 / Wakuu 5 / Ui 34 / ThirdParty 2，嵌套类继承容器域）；`Entry.cs` 分组应用：
+  **Core（回环/同步器/选牌串行化）失败即停**，其余组失败打 Error 跳过继续，未登记类 Warn + 隔离组兜底；
+  回滚开关 `UseGroupedPatchAll`；新增分组完整性单测 6 例（175 用例全绿）。
+- **发布自动化（维护性改进任务 2.4）**：新增 `Scripts/Tools/release_build.ps1` 一条命令产出发布包——
+  semver 校验 → 三处版本同步（根 / `workshop\content` 的 json + `mod_manifest.json`，UTF-8 带 BOM
+  字节保真正则替换）→ marker 建议串 → `dotnet build -warnaserror` 门禁 → 拷贝 `workshop\content` →
+  打 zip 到 `release\` → SHA256（源 dll / zip / zip 内 dll 核对一致）。
 - **维护性改进文档移出主仓库**：`patch-coverage.md`/`string-targets.md`/`维护现状分析.md`/
   `decision-records/`/`references/` 移到 `pain/maintenance-docs/`（无 git，不会进 github）；
   主仓库 `docs/` 只保留原作者文档（`archive/`、`design/`、`architecture.md`、`console-commands.md`）。
@@ -117,6 +130,16 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   内容列被裁剪到不可见；重进时缓存实例已带上一轮布局好的尺寸，故能正常显示。
   修复：`LocalWakuuConfigSubmenu` 重写 `OnSubmenuShown()`，每次显示（含首次）用 `CallDeferred`
   延迟一帧重算滚动内容尺寸，保证首次进入内容即可见。
+- **击杀后战斗不结束（治本，2026-08-28 r24→r25 初版，随 v1.38 发布）**：`CreatureCmd.Kill` 后
+  不再立即 `CheckWinCondition()` 翻转战斗（击杀牌 PlayCardAction 仍 Executing 时提前翻转会跳过
+  执行中动作、破坏战斗/玩家状态），改为**有界延迟结算**——敌全灭后轮询等待击杀动作链走完
+  再兜底结算，敌人复活或战斗结束立即收工；后续又将轮询粒度收紧（见本版首条 Fixed）。
+- **奖励生成容错**：单个玩家卡牌奖励生成失败（如空池）不再整体中止流程、也不丢弃该玩家所有
+  奖励；只丢弃未就绪的空池卡牌，金币/药水/遗物照常展示；奖励生成前增加诊断埋点。
+- **`LocalLoopbackHostGameService.GetVersionInfoForPeer` 硬化**：返回本地版本信息而非 null
+  （上游 v1.32 同款），防止未来游戏更新把三条大厅加入路径路由进本地合作。
+- README：GuyGinat 的社区 Workshop 条目（[3772900244](https://steamcommunity.com/sharedfiles/filedetails/?id=3772900244)）
+  恢复更新，现与原条目（3747538947）并列推荐。
 
 ## [v1.37] - 2026-08-26
 
@@ -177,33 +200,6 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 - 托管效果选牌改用自建策略选择器（`cardPickMode`: first/last/random，默认 last，
   解决酒狐合成永远拿到排最前的牌）；作用域外选牌一律不代答（回滚验证：代答会导致开局黑屏）。
 - 【瓦库形态】旧"永久低语耳环"路径完整保留，`useVakuuForm=false` 时行为与 v1.35 一致。
-
-## [Unreleased]
-
-> 分支 `fix/kill-win-check-races-empty-reward-pool`（2026-08-28，marker r24→r25）。
-> 击杀后战斗不结束的完整修复（治本 + 容错 + 诊断）。
-
-### Fixed
-- **击杀后战斗不结束（治本，坑7竞态）**：`CreatureCmd.Kill` 后不再立即 `CheckWinCondition()`
-  翻转战斗（此时击杀牌 PlayCardAction 仍 Executing，提前翻 NotInCombat 会跳过执行中动作、
-  破坏战斗/玩家状态）。改为**有界延迟结算**——检测到敌全灭后轮询等待当前击杀动作链走完
-  （`ActionExecutor.CurrentlyRunningAction`）再兜底结算；每轮重核验"仍在战斗/敌全灭"，
-  敌人复活或战斗结束立即收工，超时交由游戏自身动作链/清道夫处理，绝不无限等待。
-- **奖励生成容错（方案B）**：单个玩家卡牌奖励生成失败（如空池）不再整体中止流程、
-  也不丢弃该玩家所有奖励。`GenerateWithoutOffering` 按 金币→药水→卡牌 顺序 Populate，
-  卡牌失败时金币/药水/遗物通常已就绪——现在只丢弃未就绪的（空池卡牌），其余照常展示，
-  避免观者等玩家丢失金币/遗物或卡在奖励界面。
-
-### Changed
-- 奖励生成前增加诊断埋点：打印 playersCount / CardMultiplayerConstraint / 卡池
-  MultiplayerConstraint 分布 / GetPossibleCards 数量，用于核实空池来源
-  （多人卡牌过滤 vs 遗物额外无色卡 reward）。
-- Hardened `LocalLoopbackHostGameService.GetVersionInfoForPeer` to return the local version info
-  instead of null (same as upstream's v1.32): the game's three lobby join handlers call
-  `GetVersionInfoForPeer(senderId).Value.IsModded()` unguarded. These messages are unreachable in
-  local self-coop today, but future game changes could start routing through them.
-- READMEs: GuyGinat's community Workshop item ([3772900244](https://steamcommunity.com/sharedfiles/filedetails/?id=3772900244))
-  has resumed updating, so it is now recommended alongside the original item (3747538947).
 
 ## [v1.36] - 2026-08-24
 
