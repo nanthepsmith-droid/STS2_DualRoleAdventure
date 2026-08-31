@@ -217,9 +217,10 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.EventChoiceMode));
         column.AddChild(CreateStrategyRow(
             "战斗内选牌策略",
-            "效果类选牌（酒狐合成、开局遗物二选一、从手牌选 N 张等）取哪张。默认最后，卡牌奖励始终领最左。",
+            "效果类选牌（酒狐合成、开局遗物二选一、从手牌选 N 张、事件附魔/升级/变化选牌等）取哪张。默认最后；稀有度最高优先选 Ancient/Rare。卡牌奖励始终领最左。",
             "cardPickMode",
-            () => LocalWakuuAutopilotConfig.CardPickMode));
+            () => LocalWakuuAutopilotConfig.CardPickMode,
+            allowRare: true));
         AddToggleRow(column,
             "涅奥开局自动选",
             "允许自动选择涅奥（NEOW）开局奖励；默认关闭。",
@@ -275,10 +276,11 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
     }
 
     /// <summary>
-    /// 策略切换行（通用）：右侧按钮在 第一个 → 最后一个 → 随机 间循环，
+    /// 策略切换行（通用）：右侧按钮在 第一个 → 最后一个 → 随机 [→ 稀有度最高] 间循环
+    /// （allowRare=false 时为三档，用于事件选项策略），
     /// 按钮文本显示当前值，点击经 TrySetAndSaveString 即时写回 json。
     /// </summary>
-    private Control CreateStrategyRow(string title, string description, string configKey, Func<string> currentModeGetter)
+    private Control CreateStrategyRow(string title, string description, string configKey, Func<string> currentModeGetter, bool allowRare = false)
     {
         HBoxContainer row = new();
         row.AddThemeConstantOverride("separation", 28);
@@ -308,7 +310,7 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         modeButton.CustomMinimumSize = new Vector2(220f, 64f);
         modeButton.Connect(NClickableControl.SignalName.Released, Callable.From<NClickableControl>(_ =>
         {
-            string next = NextChoiceMode(modeButton.ButtonText);
+            string next = NextChoiceMode(modeButton.ButtonText, allowRare);
             if (LocalWakuuAutopilotConfig.TrySetAndSaveString(configKey, next))
             {
                 modeButton.ButtonText = GetChoiceModeDisplayText(currentModeGetter());
@@ -325,12 +327,24 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         {
             LocalWakuuAutopilotConfig.LastChoiceMode => "最后一个",
             LocalWakuuAutopilotConfig.RandomChoiceMode => "随机",
+            LocalWakuuAutopilotConfig.RareChoiceMode => "稀有度最高",
             _ => "第一个",
         };
     }
 
-    private static string NextChoiceMode(string currentDisplayText)
+    private static string NextChoiceMode(string currentDisplayText, bool allowRare)
     {
+        if (allowRare)
+        {
+            return currentDisplayText switch
+            {
+                "第一个" => LocalWakuuAutopilotConfig.LastChoiceMode,
+                "最后一个" => LocalWakuuAutopilotConfig.RandomChoiceMode,
+                "随机" => LocalWakuuAutopilotConfig.RareChoiceMode,
+                _ => LocalWakuuAutopilotConfig.FirstChoiceMode,
+            };
+        }
+
         return currentDisplayText switch
         {
             "第一个" => LocalWakuuAutopilotConfig.LastChoiceMode,

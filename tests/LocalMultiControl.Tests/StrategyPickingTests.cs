@@ -75,6 +75,69 @@ public class StrategyPickingTests
         Assert.That(picked, Is.EqualTo(new[] { 50, 40 })); // 与 last 一致（倒序取前 N）
     }
 
+    [Test]
+    public void PickByStrategy_rare_按rank降序取前N()
+    {
+        // rank 语义：数值越大越优先（如稀有度 Ancient=5 > Rare=4）
+        (string Name, int Rank)[] cards =
+        {
+            ("COMMON", 2),
+            ("RARE", 4),
+            ("COMMON_2", 2),
+            ("ANCIENT", 5),
+            ("UNCOMMON", 3),
+        };
+
+        List<string> picked = WakuuStrategyPicking.PickByStrategy(
+            cards, WakuuChoiceModes.Rare, 2, new Random(1), c => c.Rank)
+            .Select(c => c.Name)
+            .ToList();
+
+        Assert.That(picked, Is.EqualTo(new[] { "ANCIENT", "RARE" }));
+    }
+
+    [Test]
+    public void PickByStrategy_rare_同rank保持原序()
+    {
+        (string Name, int Rank)[] cards =
+        {
+            ("A", 3),
+            ("B", 3),
+            ("C", 3),
+        };
+
+        List<string> picked = WakuuStrategyPicking.PickByStrategy(
+            cards, WakuuChoiceModes.Rare, 1, new Random(1), c => c.Rank)
+            .Select(c => c.Name)
+            .ToList();
+
+        Assert.That(picked, Is.EqualTo(new[] { "A" })); // 稳定排序：同稀有度取最前
+    }
+
+    [Test]
+    public void PickByStrategy_rare_无rankSelector_按last兜底()
+    {
+        List<int> picked = WakuuStrategyPicking.PickByStrategy(Source, WakuuChoiceModes.Rare, 2, new Random(1));
+        Assert.That(picked, Is.EqualTo(new[] { 50, 40 })); // 与 last 一致
+    }
+
+    [Test]
+    public void PickByStrategy_rare_count超出_返回全部()
+    {
+        (string Name, int Rank)[] cards =
+        {
+            ("A", 1),
+            ("B", 5),
+        };
+
+        List<string> picked = WakuuStrategyPicking.PickByStrategy(
+            cards, WakuuChoiceModes.Rare, 9, new Random(1), c => c.Rank)
+            .Select(c => c.Name)
+            .ToList();
+
+        Assert.That(picked, Is.EquivalentTo(new[] { "B", "A" }));
+    }
+
     // ---------------------------------------------------------------
     // PickIndexByStrategy：事件选项选择（first/last/random）
     // ---------------------------------------------------------------

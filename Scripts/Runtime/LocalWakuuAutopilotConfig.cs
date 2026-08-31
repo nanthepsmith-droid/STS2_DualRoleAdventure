@@ -64,9 +64,9 @@ internal static class LocalWakuuAutopilotConfig
     public static string EventChoiceMode { get; private set; } = FirstChoiceMode;
 
     /// <summary>
-    /// 战斗内效果选牌策略（酒狐合成二选一、开局遗物二选一、"从手牌选 N 张"等）：
-    /// first=最前 / last=最后 / random=随机。默认 last，避免合成永远拿到排在最前的牌。
-    /// 卡牌奖励不受此影响（始终领最左）。
+    /// 战斗内效果选牌策略（酒狐合成二选一、开局遗物二选一、"从手牌选 N 张"、
+    /// 事件中的附魔/升级/变化选牌等）：first=最前 / last=最后 / random=随机 / rare=稀有度最高。
+    /// 默认 last，避免合成永远拿到排在最前的牌。卡牌奖励不受此影响（始终领最左）。
     /// </summary>
     public static string CardPickMode { get; private set; } = LastChoiceMode;
 
@@ -79,6 +79,7 @@ internal static class LocalWakuuAutopilotConfig
     public const string FirstChoiceMode = WakuuChoiceModes.First;
     public const string LastChoiceMode = WakuuChoiceModes.Last;
     public const string RandomChoiceMode = WakuuChoiceModes.Random;
+    public const string RareChoiceMode = WakuuChoiceModes.Rare;
     public const string HeuristicBrainMode = WakuuBrainModes.Heuristic;
     public const string AutoBrainMode = WakuuBrainModes.Auto;
 
@@ -145,9 +146,13 @@ internal static class LocalWakuuAutopilotConfig
                 if (key is nameof(WakuuConfigData.eventChoiceMode) or nameof(WakuuConfigData.cardPickMode)
                     or nameof(WakuuConfigData.wakuuBrain))
                 {
-                    string? normalized = key == nameof(WakuuConfigData.wakuuBrain)
-                        ? NormalizeBrainMode(value)
-                        : NormalizeChoiceMode(value);
+                    // 事件选项策略不开放 rare（事件选项无稀有度概念）；卡牌选牌策略开放 rare
+                    string? normalized = key switch
+                    {
+                        nameof(WakuuConfigData.wakuuBrain) => NormalizeBrainMode(value),
+                        nameof(WakuuConfigData.cardPickMode) => NormalizeCardPickMode(value),
+                        _ => NormalizeChoiceMode(value),
+                    };
                     if (normalized == null)
                     {
                         LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：非法的策略取值 {value}（key={key}）");
@@ -184,7 +189,7 @@ internal static class LocalWakuuAutopilotConfig
         }
     }
 
-    /// <summary>规范化事件选择策略取值；非法返回 null。</summary>
+    /// <summary>规范化事件选择策略取值（first/last/random）；非法返回 null。</summary>
     public static string? NormalizeChoiceMode(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -197,6 +202,24 @@ internal static class LocalWakuuAutopilotConfig
             FirstChoiceMode => FirstChoiceMode,
             LastChoiceMode => LastChoiceMode,
             RandomChoiceMode => RandomChoiceMode,
+            _ => null,
+        };
+    }
+
+    /// <summary>规范化卡牌选牌策略取值（first/last/random/rare）；非法返回 null。</summary>
+    public static string? NormalizeCardPickMode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            FirstChoiceMode => FirstChoiceMode,
+            LastChoiceMode => LastChoiceMode,
+            RandomChoiceMode => RandomChoiceMode,
+            RareChoiceMode => RareChoiceMode,
             _ => null,
         };
     }
@@ -312,7 +335,7 @@ internal static class LocalWakuuAutopilotConfig
         AutoUsePotions = data.autoUsePotions;
         NeowAutoChoose = data.neowAutoChoose;
         EventChoiceMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;
-        CardPickMode = NormalizeChoiceMode(data.cardPickMode) ?? LastChoiceMode;
+        CardPickMode = NormalizeCardPickMode(data.cardPickMode) ?? LastChoiceMode;
         BrainMode = NormalizeBrainMode(data.wakuuBrain) ?? HeuristicBrainMode;
 
         // 配置变化 → 大脑缓存失效（下次主循环用新开关值重新创建）。

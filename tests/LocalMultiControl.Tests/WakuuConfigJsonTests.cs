@@ -52,6 +52,17 @@ public class WakuuConfigJsonTests
     }
 
     [Test]
+    public void 解析cardPickMode_rare生效()
+    {
+        WakuuConfigData data = WakuuConfigJson.Parse("""{ "cardPickMode": "rare" }""")!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(data.cardPickMode, Is.EqualTo("rare"));
+            Assert.That(data.eventChoiceMode, Is.EqualTo("first")); // 未提供 → 默认
+        });
+    }
+
+    [Test]
     public void 解析部分字段_未提供的字段保持默认值()
     {
         WakuuConfigData data = WakuuConfigJson.Parse("""{ "useVakuuForm": true, "autoUsePotions": true }""")!;
