@@ -215,6 +215,11 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             "默认关。开启后瓦库的卡牌奖励与事件选项优先参考「皮皮军师: SkadaHelper」的社区大数据（卡牌：选取率 + 拿了之后的胜率增益；事件选项：胜率最高）。未装该 mod、查无数据或样本量不足时，静默回退到原来的最左 / 事件选项策略，行为与关闭时完全一致。",
             () => LocalWakuuAutopilotConfig.SkadaAssist,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("skadaAssist", value));
+        AddToggleRow(column,
+            "智能选牌优先级",
+            "默认关。开启后事件里的牌库删除 / 变化选牌按优先级表自动选取：删除优先 诅咒→状态→任务→打击→基础防御；变化优先变掉打击/防御并避开诅咒/状态/任务。关闭或场景未知时维持原选牌策略，行为与关闭时完全一致。",
+            () => LocalWakuuAutopilotConfig.SmartPick,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("smartPick", value));
         column.AddChild(CreateStrategyRow(
             "事件选项策略",
             "事件自动选择时挑哪个选项。很多事件一直选第一个会死，可切到最后一个或随机规避。",

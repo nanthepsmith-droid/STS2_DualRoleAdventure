@@ -17,8 +17,18 @@ internal static class WakuuCardId
             throw new ArgumentNullException(nameof(id));
         }
 
-        string upper = id.ToUpperInvariant();
-        return upper.Contains("STRIKE", StringComparison.Ordinal)
-            || upper.Contains("DEFEND", StringComparison.Ordinal);
+        return IsStrikeId(id) || IsDefendId(id);
+    }
+
+    /// <summary>打击类基础卡识别：id 含 STRIKE（各角色变体、多级打击）。null 返回 false。</summary>
+    public static bool IsStrikeId(string? id)
+    {
+        return id != null && id.ToUpperInvariant().Contains("STRIKE", StringComparison.Ordinal);
+    }
+
+    /// <summary>防御类基础卡识别：id 含 DEFEND（各角色变体、多级防御）。null 返回 false。</summary>
+    public static bool IsDefendId(string? id)
+    {
+        return id != null && id.ToUpperInvariant().Contains("DEFEND", StringComparison.Ordinal);
     }
 }

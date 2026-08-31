@@ -210,7 +210,45 @@ internal static class WakuuEventEnchantAutoAnswerPatch
     }
 
     /// <summary>
-    /// 统一作答入口：候选非空且「需要真实选择」时按 cardPickMode 策略作答。
+    /// 牌库删除选牌（FromDeckForRemoval 专用入口，FieldOfManSizedHoles / DoorsOfLightAndDark /
+    /// LuminousChoir / Wellspring / 商店删牌 / 各删牌遗物等全部走这里）。
+    /// 拦截后按 smartPick 的"删除优先级表"作答（优先删 诅咒→状态→任务→打击→防御）。
+    /// </summary>
+    [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromDeckForRemoval), new[]
+    {
+        typeof(Player),
+        typeof(CardSelectorPrefs),
+        typeof(Func<CardModel, bool>),
+    })]
+    [HarmonyPriority(Priority.High)]
+    [HarmonyPrefix]
+    private static bool FromDeckForRemovalPrefix(
+        Player player,
+        CardSelectorPrefs prefs,
+        Func<CardModel, bool>? filter,
+        ref Task<IEnumerable<CardModel>> __result)
+    {
+        if (!LocalWakuuEventAutoChoice.InEventAutoChoiceScope.Value || player == null)
+        {
+            return true;
+        }
+
+        if (!LocalWakuuRelicRuntime.IsVakuuFormMode(player))
+        {
+            return true;
+        }
+
+        // 与原方法同一过滤：只选可移除牌 + 调用方过滤（如 Amalgamator 的 Strike/Defend 限定）
+        List<CardModel> candidates = PileType.Deck.GetPile(player).Cards
+            .Where((CardModel c) => c.IsRemovable && (filter == null || filter(c)))
+            .ToList();
+
+        return TryAutoAnswer(player, candidates, prefs, "FromDeckForRemoval", ref __result);
+    }
+
+    /// <summary>
+    /// 统一作答入口：候选非空且「需要真实选择」时按策略作答
+    /// （smartPick 开启且场景明确时套优先级表，否则 cardPickMode）。
     /// 需要真实选择 = 候选数 &gt; MinSelect，或 RequireManualConfirmation（本地双控下升级/变化/通用被
     /// CardSelectManualConfirmationPatch 强制置 true）。
     /// 返回 false = 已拦截作答；返回 true = 交回原流程。
@@ -236,13 +274,29 @@ internal static class WakuuEventEnchantAutoAnswerPatch
             $"瓦库事件选牌自动作答: player={player.NetId}, eventScope=true, options={candidates.Count}, "
             + $"mode={LocalWakuuAutopilotConfig.CardPickMode}, source={source}");
 
-        __result = ComputeAnswerAsync(candidates, prefs);
+        __result = ComputeAnswerAsync(candidates, prefs, ScenarioForSource(source));
         return false;
     }
 
-    private static async Task<IEnumerable<CardModel>> ComputeAnswerAsync(IReadOnlyList<CardModel> candidates, CardSelectorPrefs prefs)
+    /// <summary>
+    /// 由 CardSelectCmd 入口方法名判定选牌场景（可行性分析 §9.1）：
+    /// 专用方法（删除/变化）直接区分；未知场景（附魔/升级/手牌/通用）维持既有策略。
+    /// 注意 FromDeckGeneric 被 WoodCarvings（变化选保留牌）等共用，不归入 Remove。
+    /// </summary>
+    private static WakuuPickScenario ScenarioForSource(string source)
     {
-        LocalWakuuStrategySelector selector = new();
+        return source switch
+        {
+            "FromDeckForRemoval" => WakuuPickScenario.Remove,
+            "FromDeckForTransformation" => WakuuPickScenario.Transform,
+            _ => WakuuPickScenario.Unknown,
+        };
+    }
+
+    private static async Task<IEnumerable<CardModel>> ComputeAnswerAsync(
+        IReadOnlyList<CardModel> candidates, CardSelectorPrefs prefs, WakuuPickScenario scenario)
+    {
+        LocalWakuuStrategySelector selector = new(scenario);
         return await selector.GetSelectedCards(candidates, prefs.MinSelect, prefs.MaxSelect);
     }
 }

@@ -39,6 +39,13 @@ internal sealed class WakuuConfigData
     /// </summary>
     public bool skadaAssist { get; set; }
 
+    /// <summary>
+    /// 智能选牌优先级（可行性分析 §9.1/9.2）：开启后事件里的牌库删除/变化选牌按优先级表选取
+    /// （删除优先 诅咒→状态→任务→打击→防御；变化优先变掉打击/防御并硬排除坏牌）。
+    /// 默认关（关 = 纯 cardPickMode 策略，与既有行为一致）。
+    /// </summary>
+    public bool smartPick { get; set; }
+
     public string eventChoiceMode { get; set; } = WakuuChoiceModes.First;
 
     public string cardPickMode { get; set; } = WakuuChoiceModes.Last;

@@ -16,7 +16,9 @@ namespace LocalMultiControl.Scripts.Runtime;
 ///   first=最前 / last=最后（默认）/ random=随机 / rare=稀有度最高，
 ///   解决"合成永远拿到排在最前的空手打击"这类问题；
 /// - 卡牌奖励（GetSelectedCardReward）默认维持已拍板的"领最左"策略；
-///   开启 skadaAssist 且查到有效社区统计时改用统计信号取牌，无数据一律回退最左（可行性分析 §8.2）。
+///   开启 skadaAssist 且查到有效社区统计时改用统计信号取牌，无数据一律回退最左（可行性分析 §8.2）；
+/// - 智能选牌优先级（可行性分析 §9.1/9.2）：带场景的实例（删除/变化）在 smartPick 开启时
+///   按数据驱动优先级表选牌，否则维持既有 cardPickMode 策略。
 /// </summary>
 internal sealed class LocalWakuuStrategySelector : ICardSelector
 {
@@ -29,6 +31,9 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
     /// </summary>
     private readonly Player? _rewardOwner;
 
+    /// <summary>选牌场景（智能选牌优先级）：Unknown = 维持既有策略。</summary>
+    private readonly WakuuPickScenario _scenario;
+
     public LocalWakuuStrategySelector()
     {
     }
@@ -39,9 +44,22 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
         _rewardOwner = rewardOwner;
     }
 
+    /// <summary>带选牌场景的实例：供事件自动作答入口（删除/变化等）使用。</summary>
+    public LocalWakuuStrategySelector(WakuuPickScenario scenario)
+    {
+        _scenario = scenario;
+    }
+
     public Task<IEnumerable<CardModel>> GetSelectedCards(IEnumerable<CardModel> options, int minSelect, int maxSelect)
     {
         List<CardModel> list = options.ToList();
+
+        // 智能选牌优先级（§9.1/9.2）：开关开启且场景明确时套优先级表，否则维持既有策略
+        if (LocalWakuuAutopilotConfig.SmartPick && _scenario != WakuuPickScenario.Unknown)
+        {
+            return Task.FromResult((IEnumerable<CardModel>)PickByScenario(list, maxSelect));
+        }
+
         string mode = LocalWakuuAutopilotConfig.CardPickMode;
 
         // 排序/取牌逻辑已抽为泛型纯函数（WakuuStrategyPicking），此处只负责随机源同步与稀有度权重
@@ -54,6 +72,41 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
         }
 
         return Task.FromResult((IEnumerable<CardModel>)picked);
+    }
+
+    /// <summary>
+    /// 按场景优先级表选牌（§9.2）：候选归类 → 规则表排序 → 取前 maxSelect 张。
+    /// 任一步异常回退既有策略——智能选牌不能因为自身失败而卡住瓦库。
+    /// </summary>
+    private List<CardModel> PickByScenario(List<CardModel> options, int maxSelect)
+    {
+        try
+        {
+            List<WakuuCardKind> kinds = options
+                .Select((c) => WakuuPriorityPicking.ClassifyCard(c.Id.Entry, (int)c.Type))
+                .ToList();
+            List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(_scenario, kinds);
+            List<CardModel> picked = ranked
+                .Take(maxSelect)
+                .Select((i) => options[i])
+                .ToList();
+
+            LocalMultiControlLogger.Info(
+                $"瓦库智能选牌: scenario={_scenario}, options={options.Count}, select={maxSelect}, "
+                + $"picked={string.Join(",", picked.Select((c) => c.Id.Entry))}");
+            return picked;
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"瓦库智能选牌异常，回退既有策略: {exception.Message}");
+            string mode = LocalWakuuAutopilotConfig.CardPickMode;
+            lock (_randomLock)
+            {
+                return WakuuStrategyPicking.PickByStrategy(
+                    options, mode, maxSelect, _random,
+                    mode == WakuuChoiceModes.Rare ? (Func<CardModel, int>)RarityRank : null);
+            }
+        }
     }
 
     /// <summary>
