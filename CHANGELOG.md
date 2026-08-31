@@ -40,8 +40,27 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 - **维护性改进文档移出主仓库**：`patch-coverage.md`/`string-targets.md`/`维护现状分析.md`/
   `decision-records/`/`references/` 移到 `pain/maintenance-docs/`（无 git，不会进 github）；
   主仓库 `docs/` 只保留原作者文档（`archive/`、`design/`、`architecture.md`、`console-commands.md`）。
+- **瓦库事件中「选择卡牌附魔」自动按策略作答（marker r42，分支 `feat/wakuu-event-enchant-autopick`）**：
+  - 新增 `rare`（稀有度最高）选牌策略：Ancient > Rare > Uncommon > Common > Basic，
+    同稀有度保持原序（`WakuuStrategyPicking` 支持 rankSelector 稳定降序）；
+  - 事件自动选择执行选项期间（`LocalWakuuEventAutoChoice` 作用域标记），选项触发的卡牌选牌
+    （附魔/手牌选牌）由新增 `WakuuEventEnchantAutoAnswerPatch` 自动按 `cardPickMode` 策略作答，
+    不再弹出选牌界面停住等真人；
+  - 设置面板「战斗内选牌策略」新增第 4 档「稀有度最高」（`cardPickMode` 开放 rare；
+    事件选项策略 `eventChoiceMode` 仍为 3 档，事件选项无稀有度概念）；
+  - 配置：`NormalizeCardPickMode` 开放 rare；`WakuuConfigJson`/纯逻辑单测同步扩充（169 用例全绿）。
+- **手牌变换后 UI 与实际不同步的修复（marker r42）**：
+  - `CardTransformNetIdPinPatch`：执行 `CardCmd.Transform` 期间把 `LocalContext.NetId` 钉到变换牌主人，
+    修复「铁甲战士用效果变化所有手牌时偶发看起来没生效，切角色再切回才生效」——
+    根因是 `CardCmd.Transform` 的视觉门 `LocalContext.IsMine` 用全局 NetId 判断归属，
+    本地双角色下 NetId 瞬时非牌主人时手牌节点不替换、数据层已更新。
 
 ### Fixed
+- **古明地恋本我牌串台到队友（marker r41）**：`IdLiberationBeforeHandDrawFixPatch` 拦截
+  「本我解放力量」对非力量主人的抽牌钩子生成（根因：`Hook.BeforeHandDraw` 把当前抽牌玩家传入
+  所有力量，Koishi 不检查 owner）；选牌期间钉 `LocalContext.NetId` 到选牌 owner +
+  `NPlayerHandAddOwnerGuardPatch` 拦截非选牌 owner 的牌节点进手牌 UI；`Entry.PatchAll` 加
+  try-catch（单补丁异常不中断初始化）；Koishi 补丁用 `Prepare`/`TryApplyLate` 延迟挂载。
 - **两个「方法级-only `[HarmonyPatch]`」补丁类被 `PatchAll` 静默跳过、从未生效**（本 mod 坑 1）：
   - `CardSelectManualConfirmationPatch`：补类级裸 `[HarmonyPatch]`。此补丁自原作者加入起
     就因缺类级标记从未被应用，本地多控下「删牌/升级/变化强制弹出背包手动确认」实际从未生效，

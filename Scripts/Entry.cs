@@ -11,7 +11,7 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    private const string BuildMarker = "Revival v1.38 (game v0.111.0, marker=2026-08-31-r41)";
+    private const string BuildMarker = "Revival v1.38 (game v0.111.0, marker=2026-08-31-r42)";
 
     private static Harmony? _harmony;
 
@@ -49,6 +49,8 @@ public partial class Entry
         "WhisperingEarring.AfterAutoPrePlayPhaseEnteredLate",
         "ActionQueueSet.CombatEnded",                     // 战斗结束残留动作清理
         "NEndTurnButton.CallReleaseLogic",
+        "CardSelectCmd.FromDeckForEnchantment",           // 瓦库事件附魔选牌自动作答
+        "CardCmd.Transform",                              // 手牌变换期间 NetId 钉住（UI 同步）
     };
 
     public static void Init()

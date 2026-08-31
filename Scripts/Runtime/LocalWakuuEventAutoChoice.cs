@@ -47,6 +47,13 @@ internal static class LocalWakuuEventAutoChoice
     private static readonly Random _random = new();
     private static readonly object _randomLock = new();
 
+    /// <summary>
+    /// 标记当前是否正在「瓦库事件自动选择」执行事件选项期间（沿异步链流动）。
+    /// WakuuEventEnchantAutoAnswerPatch 据此判断：事件选项触发的卡牌选牌（附魔等）
+    /// 应自动按策略作答，而不是弹出选牌界面停住等真人。
+    /// </summary>
+    internal static readonly System.Threading.AsyncLocal<bool> InEventAutoChoiceScope = new System.Threading.AsyncLocal<bool>();
+
     /// <summary>NEventRoom.RefreshEventState postfix 调用；条件不满足时静默返回。</summary>
     public static void TryBegin(EventModel eventModel)
     {
@@ -224,7 +231,18 @@ internal static class LocalWakuuEventAutoChoice
                 eventModel.EnteringEventCombat += combatHandler;
                 try
                 {
-                    await option.Chosen();
+                    // 事件选项执行期间标记自动选择作用域：选项触发的卡牌选牌（附魔/升级/变化等）
+                    // 由 WakuuEventEnchantAutoAnswerPatch 自动按 cardPickMode 策略作答，不弹界面。
+                    InEventAutoChoiceScope.Value = true;
+                    try
+                    {
+                        await option.Chosen();
+                    }
+                    finally
+                    {
+                        InEventAutoChoiceScope.Value = false;
+                    }
+
                     page++;
                     LocalMultiControlLogger.Info(
                         $"瓦库事件已自动选择: event={eventModel.Id.Entry}, page={page}, "

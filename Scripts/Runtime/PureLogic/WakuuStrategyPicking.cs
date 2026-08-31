@@ -11,10 +11,11 @@ namespace LocalMultiControl.Scripts.Runtime;
 internal static class WakuuStrategyPicking
 {
     /// <summary>
-    /// 按策略从候选中取前 count 个：first=原序 / last=倒序后取前 count（默认） / random=洗牌后取前 count。
-    /// 与运行时一致：未知模式按 last 兜底。
+    /// 按策略从候选中取前 count 个：first=原序 / last=倒序后取前 count（默认） / random=洗牌后取前 count /
+    /// rare=按 rankSelector 降序（稀有度最高优先；同稀有度保持原序，OrderBy 为稳定排序）。
+    /// 与运行时一致：未知模式按 last 兜底；rare 未提供 rankSelector 时同样按 last 兜底。
     /// </summary>
-    public static List<T> PickByStrategy<T>(IReadOnlyList<T> source, string mode, int count, Random rng)
+    public static List<T> PickByStrategy<T>(IReadOnlyList<T> source, string mode, int count, Random rng, Func<T, int>? rankSelector = null)
     {
         if (count <= 0 || source.Count == 0)
         {
@@ -25,6 +26,7 @@ internal static class WakuuStrategyPicking
         {
             WakuuChoiceModes.First => source,
             WakuuChoiceModes.Random => Shuffle(source, rng),
+            WakuuChoiceModes.Rare when rankSelector != null => source.OrderByDescending(rankSelector),
             _ => source.Reverse(), // last（默认）：倒序后取前 N = 原序列最后 N 张
         };
 

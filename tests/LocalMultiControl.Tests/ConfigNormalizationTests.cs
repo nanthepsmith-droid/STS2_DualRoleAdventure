@@ -57,6 +57,39 @@ public class ConfigNormalizationTests
     }
 
     [Test]
+    public void NormalizeChoiceMode_rare_非法返回null()
+    {
+        // rare 只对卡牌选牌开放（事件选项无稀有度概念）
+        Assert.That(LocalWakuuAutopilotConfig.NormalizeChoiceMode("rare"), Is.Null);
+    }
+
+    [TestCase("first", "first")]
+    [TestCase("last", "last")]
+    [TestCase("random", "random")]
+    [TestCase("rare", "rare")]
+    [TestCase("FIRST", "first")]
+    [TestCase("Last", "last")]
+    [TestCase("RANDOM", "random")]
+    [TestCase("RARE", "rare")]
+    [TestCase(" rare ", "rare")]
+    public void NormalizeCardPickMode_合法取值_返回规范化值(string input, string expected)
+    {
+        Assert.That(LocalWakuuAutopilotConfig.NormalizeCardPickMode(input), Is.EqualTo(expected));
+    }
+
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("   ")]
+    [TestCase("middle")]
+    [TestCase("random2")]
+    [TestCase("l")]
+    [TestCase("RARE!")]
+    public void NormalizeCardPickMode_非法取值_返回null(string? input)
+    {
+        Assert.That(LocalWakuuAutopilotConfig.NormalizeCardPickMode(input), Is.Null);
+    }
+
+    [Test]
     public void 模式常量_与纯函数来源一致()
     {
         Assert.Multiple(() =>
@@ -64,6 +97,7 @@ public class ConfigNormalizationTests
             Assert.That(LocalWakuuAutopilotConfig.FirstChoiceMode, Is.EqualTo(WakuuChoiceModes.First));
             Assert.That(LocalWakuuAutopilotConfig.LastChoiceMode, Is.EqualTo(WakuuChoiceModes.Last));
             Assert.That(LocalWakuuAutopilotConfig.RandomChoiceMode, Is.EqualTo(WakuuChoiceModes.Random));
+            Assert.That(LocalWakuuAutopilotConfig.RareChoiceMode, Is.EqualTo(WakuuChoiceModes.Rare));
             Assert.That(LocalWakuuAutopilotConfig.HeuristicBrainMode, Is.EqualTo(WakuuBrainModes.Heuristic));
             Assert.That(LocalWakuuAutopilotConfig.AutoBrainMode, Is.EqualTo(WakuuBrainModes.Auto));
         });
