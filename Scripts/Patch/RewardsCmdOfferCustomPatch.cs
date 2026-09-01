@@ -48,7 +48,48 @@ internal static class RewardsCmdOfferCustomPatch
             return true;
         }
 
-        if (!LocalWakuuRelicRuntime.IsVakuuFormMode(player) || LocalContext.IsMe(player))
+        if (!LocalWakuuRelicRuntime.IsVakuuFormMode(player))
+        {
+            return true;
+        }
+
+        // 原逻辑：前台正是瓦库（IsMe=true）时不干预，保留原生弹屏由真人手动点。
+        // 但「瓦库事件自动选择」推进事件时，控制权恰好常被切到瓦库身上
+        // （日志实证：控制上下文已更新 ... -> 瓦库, source=player-state-button 之后进入事件自动选择），
+        // 此时无人会去点奖励界面，而事件选项的 `await RewardsCmd.OfferCustom(...)` 会永久挂起、
+        // SetEventFinished 排在其后 → 事件完不成、Proceed 被拦截（r54）。
+        // 因此：事件自动选择作用域内（且归属者就是本次的瓦库玩家）一律接管自动结算；
+        // 真人自己玩的事件不在该作用域内，行为完全不变。
+        bool eventAutoScope = LocalWakuuEventAutoChoice.IsAutoChoosingFor(player);
+
+        // 开关门禁（r54）：整批里只要有一项不满足自动领取条件（对应开关关闭 / 未知奖励类型），
+        // 能交真人的就交真人——正常弹奖励界面由真人点，**绝不静默跳过**。
+        // 静默跳过会让"开关关了"和"瓦库漏领/结算失败"在体感上完全一样，事后排查分不清是配置还是 bug。
+        // 交真人只在原版真会弹屏时才成立：前台正是瓦库（IsMe=true）→ 弹屏给真人点；
+        // 后台瓦库（IsMe=false）原版本就不弹屏，交回去只会永久挂起，只能跳过（保留原行为，打 WARN）。
+        Reward? notClaimable = rewards.FirstOrDefault((r) => !LocalWakuuRewardAutoClaim.IsAutoClaimable(r, player));
+        if (notClaimable != null)
+        {
+            if (LocalContext.IsMe(player))
+            {
+                LocalMultiControlLogger.Info(
+                    $"瓦库自定义奖励不满足自动领取条件，弹屏交真人处理: player={player.NetId}, "
+                    + $"reward={notClaimable.GetType().Name}, rewards={rewards.Count}");
+                return true;
+            }
+
+            LocalMultiControlLogger.Warn(
+                $"瓦库自定义奖励不满足自动领取条件，但后台瓦库原版不弹屏（交回会挂起），只能跳过: "
+                + $"player={player.NetId}, reward={notClaimable.GetType().Name}");
+        }
+
+        if (eventAutoScope)
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库事件奖励改由自动结算（事件自动选择作用域内，控制权在瓦库身上）: "
+                + $"player={player.NetId}, rewards={rewards.Count}");
+        }
+        else if (LocalContext.IsMe(player))
         {
             return true;
         }
@@ -79,7 +120,10 @@ internal static class RewardsCmdOfferCustomPatch
                     }
                 }
 
-                // 不可自动领取（未开对应开关/药水稀有度不够/未知类型）：记录跳过，避免挂起
+                // 走到这里只有两种可能，都不是"开关关了"（那已在 Prefix 门禁里交真人了）：
+                // ①药水换栏规则判定不值得领（设计如此，INFO 已记）；
+                // ②结算真的失败了（异常路径）。两者都只能跳过以免事件挂起，
+                //   但统一打 WARN——静默跳过后瓦库啥也没拿到，必须有痕迹可查。
                 try
                 {
                     reward.OnSkipped();
@@ -91,8 +135,9 @@ internal static class RewardsCmdOfferCustomPatch
                 }
 
                 skippedCount++;
-                LocalMultiControlLogger.Info(
-                    $"瓦库自定义奖励已跳过（不满足自动领取条件）: player={player.NetId}, reward={reward.GetType().Name}");
+                LocalMultiControlLogger.Warn(
+                    $"瓦库自定义奖励已跳过（结算未成功，非开关关闭）: player={player.NetId}, "
+                    + $"reward={reward.GetType().Name}");
             }
 
             LocalMultiControlLogger.Info(

@@ -35,6 +35,12 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
     /// <summary>选牌场景（智能选牌优先级）：Unknown = 维持既有策略。</summary>
     private readonly WakuuPickScenario _scenario;
 
+    /// <summary>
+    /// 选牌日志标记（可选）：非空时每次作答都打一条日志，便于实机核对"瓦库到底选了什么"。
+    /// 默认不打——战斗自动出牌的选牌很频繁，不能刷屏。
+    /// </summary>
+    internal string? LogLabel { get; set; }
+
     public LocalWakuuStrategySelector()
     {
     }
@@ -56,20 +62,30 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
         List<CardModel> list = options.ToList();
 
         // 智能选牌优先级（§9.1/9.2）：开关开启且场景明确时套优先级表，否则维持既有策略
+        List<CardModel> picked;
         if (LocalWakuuAutopilotConfig.SmartPick && _scenario != WakuuPickScenario.Unknown)
         {
-            return Task.FromResult((IEnumerable<CardModel>)PickByScenario(list, maxSelect));
+            picked = PickByScenario(list, maxSelect);
+        }
+        else
+        {
+            string mode = LocalWakuuAutopilotConfig.CardPickMode;
+
+            // 排序/取牌逻辑已抽为泛型纯函数（WakuuStrategyPicking），此处只负责随机源同步与稀有度权重
+            lock (_randomLock)
+            {
+                picked = WakuuStrategyPicking.PickByStrategy(
+                    list, mode, maxSelect, _random,
+                    mode == WakuuChoiceModes.Rare ? (Func<CardModel, int>)RarityRank : null);
+            }
         }
 
-        string mode = LocalWakuuAutopilotConfig.CardPickMode;
-
-        // 排序/取牌逻辑已抽为泛型纯函数（WakuuStrategyPicking），此处只负责随机源同步与稀有度权重
-        List<CardModel> picked;
-        lock (_randomLock)
+        if (LogLabel != null)
         {
-            picked = WakuuStrategyPicking.PickByStrategy(
-                list, mode, maxSelect, _random,
-                mode == WakuuChoiceModes.Rare ? (Func<CardModel, int>)RarityRank : null);
+            LocalMultiControlLogger.Info(
+                $"瓦库自动选牌作答: source={LogLabel}, scenario={_scenario}, options={list.Count}, "
+                + $"select={maxSelect}, mode={LocalWakuuAutopilotConfig.CardPickMode}, "
+                + $"picked={string.Join(",", picked.Select((c) => c?.Id?.Entry ?? "?"))}");
         }
 
         return Task.FromResult((IEnumerable<CardModel>)picked);

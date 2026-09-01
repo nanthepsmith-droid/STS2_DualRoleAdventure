@@ -138,6 +138,29 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   - **华彩 Glam 优先级加 X 费**：能力牌 &gt; X 费牌（新增 `RequireCostsX` 谓词）&gt;
     费用最高（≥2）&gt; 愤怒 &gt; 不死 &gt; 适应打击 &gt; 其它；
   - 测试：Clone 分支语义用例更新 + Glam X 费 4 例（合计 289 例全绿）；Release 0 警告 0 错误。
+- **事件内「选牌 + 领奖励」两处卡死修复（marker r54）**：
+  - **事件内选牌卡死**：脑蛭「分享知识」走 `CardSelectCmd.FromSimpleGridForRewards`（从 5 张网格挑 1 张
+    加入牌组），不在 `WakuuEventEnchantAutoAnswerPatch` 逐个拦截的 From* 清单里 → 弹 `NSimpleCardSelectScreen`
+    → 自动选择判定"出现弹层"停住等真人。改为：事件选项执行期间 `CardSelectCmd.PushSelector`（与火堆
+    `LocalWakuuRestAutoChoice` 同一套已验证做法）压入策略选择器，兜住**所有**未逐个拦截的选牌入口；
+    逐入口的拦截保留，智能选牌照旧生效。同时把选牌归属者写入
+    `CardSelectForegroundSwitchPatch.CurrentChoicePlayerId`，让 `CardSelectCmdSelectorGuardPatch` 认出
+    "是瓦库在选"（真人自己的选牌仍走正常 UI，不被抢答）；
+  - **事件奖励卡死（比停住更糟，是挂起）**：`RewardsCmdOfferCustomPatch` 原在 `LocalContext.IsMe(player)`
+    时放手（假设真人会点），但「瓦库事件自动选择」推进事件时控制权常被切到瓦库身上（日志实证
+    `控制上下文已更新: ... -> 瓦库, source=player-state-button`），于是原版弹奖励屏、无人点，
+    `await RewardsCmd.OfferCustom(...)` 永久挂起、`SetEventFinished` 排在其后 → 事件完不成、Proceed 被拦截。
+    新增 `LocalWakuuEventAutoChoice.AutoChoiceOwnerId`（AsyncLocal）+ `IsAutoChoosingFor(player)`，
+    仅在该作用域内接管自动结算；真人自己玩的事件行为完全不变。
+    已核对原版 13/13 个给奖励的事件全部走 `RewardsCmd.OfferCustom`，覆盖完整；
+  - **开关门禁（不静默跳过）**：整批奖励里只要有一项不满足自动领取条件（开关关闭/未知类型），
+    能交真人的就交真人（`IsMe=true` 时 `return true` 走原版弹屏由真人点）。静默跳过会让"开关关了"
+    和"瓦库漏领/结算失败"在体感上一样，事后分不清是配置还是 bug。
+    后台瓦库（原版本就不弹屏，交回会挂起）仍跳过，但升级为 WARN；结算期失败（非开关关闭）统一打 WARN 留痕；
+  - `LocalWakuuStrategySelector` 新增可选 `LogLabel`，作答时打 `瓦库自动选牌作答` 日志（默认不打，
+    避免战斗出牌刷屏）；"出现弹层"分支补 `screenCount`/`top` 屏幕类型诊断；事件已 `IsFinished` 时
+    不再误报"出现弹层停住等真人"，走正常收尾；
+  - 测试：289 例全绿（本次为接线改动，无新增纯逻辑用例）；Release 0 警告 0 错误。
 - **维护性改进文档移出主仓库**：`patch-coverage.md`/`string-targets.md`/`维护现状分析.md`/
   `decision-records/`/`references/` 移到 `pain/maintenance-docs/`（无 git，不会进 github）；
   主仓库 `docs/` 只保留原作者文档（`archive/`、`design/`、`architecture.md`、`console-commands.md`）。

@@ -4,6 +4,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Godot;
+using LocalMultiControl.Scripts.Patch;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Events;
 using MegaCrit.Sts2.Core.Helpers;
@@ -53,6 +55,22 @@ internal static class LocalWakuuEventAutoChoice
     /// 应自动按策略作答，而不是弹出选牌界面停住等真人。
     /// </summary>
     internal static readonly System.Threading.AsyncLocal<bool> InEventAutoChoiceScope = new System.Threading.AsyncLocal<bool>();
+
+    /// <summary>
+    /// 当前「瓦库事件自动选择」正在推进的归属者（沿异步链流动，与 InEventAutoChoiceScope 同步置位）。
+    /// RewardsCmdOfferCustomPatch 据此判定：本次奖励是瓦库自动推进事件时触发的，
+    /// 即使控制权恰好停在瓦库身上（LocalContext.IsMe=true）也应自动结算——
+    /// 否则原版会弹出奖励界面而无人点击，事件选项 await 永久挂起。
+    /// </summary>
+    internal static readonly System.Threading.AsyncLocal<ulong?> AutoChoiceOwnerId = new System.Threading.AsyncLocal<ulong?>();
+
+    /// <summary>是否正在为该玩家自动推进事件（供事件奖励自动领取判定）。</summary>
+    internal static bool IsAutoChoosingFor(Player? player)
+    {
+        return player != null
+               && InEventAutoChoiceScope.Value
+               && AutoChoiceOwnerId.Value == player.NetId;
+    }
 
     /// <summary>NEventRoom.RefreshEventState postfix 调用；条件不满足时静默返回。</summary>
     public static void TryBegin(EventModel eventModel)
@@ -322,16 +340,42 @@ internal static class LocalWakuuEventAutoChoice
                 eventModel.EnteringEventCombat += combatHandler;
                 try
                 {
-                    // 事件选项执行期间标记自动选择作用域：选项触发的卡牌选牌（附魔/升级/变化等）
-                    // 由 WakuuEventEnchantAutoAnswerPatch 自动按 cardPickMode 策略作答，不弹界面。
-                    InEventAutoChoiceScope.Value = true;
-                    try
+                    // 事件选项执行期间同时做两件事，缺一不可：
+                    // 1) 标记自动选择作用域（InEventAutoChoiceScope）：WakuuEventEnchantAutoAnswerPatch
+                    //    据此对已覆盖的 From* 入口（附魔/升级/变化/删除/手牌）按带场景的优先级表作答；
+                    // 2) 压入全局策略选择器（与火堆 LocalWakuuRestAutoChoice 同一套已验证做法）：
+                    //    兜住所有未逐个拦截的选牌入口——脑蛭「分享知识」走的是
+                    //    CardSelectCmd.FromSimpleGridForRewards（从网格里挑一张加入牌组），
+                    //    此前不在拦截清单里，会弹出选牌界面把瓦库卡住（r54）。
+                    //    压栈期间 CardSelectCmd 任何入口都会先问选择器，不再弹 UI。
+                    LocalWakuuStrategySelector selector = new() { LogLabel = "event-option" };
+
+                    // 记录本次选牌归属者（AsyncLocal，仅沿本异步链流动）：
+                    // CardSelectCmdSelectorGuardPatch 据此确认"是瓦库在选"从而保留选择器；
+                    // 人类选牌（另一条异步链）时该守卫会把选择器临时摘掉，照常弹 UI 给真人。
+                    ulong? savedChoicePlayerId = CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value;
+                    ulong? savedAutoChoiceOwnerId = AutoChoiceOwnerId.Value;
+                    using (CardSelectCmd.PushSelector(selector))
                     {
-                        await option.Chosen();
-                    }
-                    finally
-                    {
-                        InEventAutoChoiceScope.Value = false;
+                        CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value = ownerId;
+                        AutoChoiceOwnerId.Value = ownerId;
+                        try
+                        {
+                            InEventAutoChoiceScope.Value = true;
+                            try
+                            {
+                                await option.Chosen();
+                            }
+                            finally
+                            {
+                                InEventAutoChoiceScope.Value = false;
+                            }
+                        }
+                        finally
+                        {
+                            AutoChoiceOwnerId.Value = savedAutoChoiceOwnerId;
+                            CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value = savedChoicePlayerId;
+                        }
                     }
 
                     page++;
@@ -351,11 +395,20 @@ internal static class LocalWakuuEventAutoChoice
                     return;
                 }
 
-                // 小游戏/奖励弹层出现即停（水晶球类自定义事件的兜底）
+                if (eventModel.IsFinished)
+                {
+                    break; // 事件已结束：残留的奖励界面由既有"事件流程已完成"链路收尾，无需在此停住
+                }
+
+                // 小游戏/其它自定义弹层出现即停（水晶球类事件的兜底）。
+                // 注：事件卡牌奖励已由 RewardsCmdOfferCustomPatch 在事件自动选择作用域内自动结算，
+                // 走不到这里；这里再留下弹层类型日志，便于遇到新的自定义弹层时快速定位。
                 if (NOverlayStack.Instance?.ScreenCount > 0)
                 {
                     LocalMultiControlLogger.Info(
-                        $"瓦库事件选择后出现弹层，停住等真人处理: event={eventModel.Id.Entry}");
+                        $"瓦库事件选择后出现弹层，停住等真人处理: event={eventModel.Id.Entry}, "
+                        + $"screenCount={NOverlayStack.Instance.ScreenCount}, "
+                        + $"top={NOverlayStack.Instance.Peek()?.GetType().Name ?? "none"}");
                     return;
                 }
 
