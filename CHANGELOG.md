@@ -2,11 +2,11 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
-## [Unreleased]
+## [v1.39] - 2026-09-01
 
-> 维护性改进 **Phase 1（1.1~1.5）+ Phase 2（2.1~2.4）已全部合并到 `master`**（2026-08-31，部署位 marker r46）。
-> 本系列改动不改变任何既有运行时行为默认值，均为**工具化 / 自检 / 文档 / 结构性改进**，
-> 外加实证发现的存量修复与瓦库自动化功能（r28 / r41~r43）。
+> 维护性改进 **Phase 1（1.1~1.5）+ Phase 2（2.1~2.4）+ Phase 3（r47~r54，瓦库智能选择）已全部合并到 `master`**
+> （2026-09-01，部署位 marker r55）。v1.39 是攒批后的首个发版：Phase 1/2 为**工具化 / 自检 / 文档 / 结构性改进**
+> （不改变既有运行时行为默认值），外加实证发现的存量修复与瓦库自动化功能（r28 / r41~r54）。
 
 ### Added
 - **补丁目标覆盖清单（维护性改进任务 1.1）**：`Scripts/Tools/patch_coverage.py` 扫描全部
