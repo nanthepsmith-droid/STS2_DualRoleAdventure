@@ -474,8 +474,13 @@ take over maintenance and distribution; they will cross-link this version from t
 original Workshop item and video.
 
 > Note (2026-08-21): the paragraph above is preserved from the v1.31 release notes written by
-> the previous maintainer (GuyGinat). The current maintainer has not verified that
-> authorization and makes no such claim.
+> the previous maintainer (GuyGinat). The authorization it describes was indeed granted to
+> GuyGinat: the original author (liwenhao0427) has confirmed that the project welcomes any
+> developer to continue maintaining and improving the source, and that community developer
+> GuyGinat has officially taken over maintenance and released subsequent versions. The
+> current maintainer of this repository is NOT that officially authorized maintainer — this
+> fork is an independent personal continuation and makes no claim of official authorization
+> from the original author.
 
 ### Added
 - Optional "ghost hands" combat overlay: shows every backgrounded character's current hand as rows of non-interactive cards behind and above the active character's hand. Toggle with `F8`; move the display at runtime with `Ctrl+Arrows` (`Ctrl+Shift+Arrows` for fine 4px steps). State, position and scale persist to `user://dual_role_adventure_settings.json` (edit `ghostHandsScale` there to resize; default 0.5). Card nodes are borrowed from and returned to the game's own `NodePool`.
