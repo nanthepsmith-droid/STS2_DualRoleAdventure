@@ -372,27 +372,30 @@ public class WakuuEnchantPickingTests
     }
 
     [Test]
-    public void Clone_有陀螺分支首项为欺凌()
+    public void Clone_有陀螺参数仍走无陀螺分支()
     {
+        // 沙漏 BOSS 隐患：不休陀螺分支已停用，有陀螺参数也返回无陀螺分支
         IReadOnlyList<WakuuEnchantRuleEntry> rule = WakuuEnchantRules.ForClone(hasUnceasingTop: true);
         Assert.That(rule, Is.Not.Null);
-        Assert.That(rule![0].CardId, Is.EqualTo("BULLY"));
+        Assert.That(rule![0].CardId, Is.EqualTo("MIND_BLAST"));
     }
 
     [Test]
-    public void Clone_有陀螺分支末尾接无陀螺分支()
+    public void Clone_有无陀螺分支内容一致()
     {
         IReadOnlyList<WakuuEnchantRuleEntry> withTop = WakuuEnchantRules.ForClone(hasUnceasingTop: true);
         IReadOnlyList<WakuuEnchantRuleEntry> withoutTop = WakuuEnchantRules.ForClone(hasUnceasingTop: false);
-        // 有陀螺分支包含无陀螺分支的全部条目（"无不休陀螺考虑的牌"）
-        Assert.That(withTop.Count, Is.GreaterThan(withoutTop.Count));
-        Assert.That(withTop[withTop.Count - withoutTop.Count].CardId, Is.EqualTo(withoutTop[0].CardId));
+        Assert.That(withTop.Count, Is.EqualTo(withoutTop.Count));
+        for (int i = 0; i < withoutTop.Count; i++)
+        {
+            Assert.That(withTop[i].CardId, Is.EqualTo(withoutTop[i].CardId));
+        }
     }
 
     [Test]
-    public void Resolve_Clone按持有陀螺选分支()
+    public void Resolve_Clone恒走无陀螺分支()
     {
-        Assert.That(WakuuEnchantRules.Resolve("Clone", new List<string> { "UNCEASING_TOP" })![0].CardId, Is.EqualTo("BULLY"));
+        Assert.That(WakuuEnchantRules.Resolve("Clone", new List<string> { "UNCEASING_TOP" })![0].CardId, Is.EqualTo("MIND_BLAST"));
         Assert.That(WakuuEnchantRules.Resolve("Clone", new List<string> { "LANTERN" })![0].CardId, Is.EqualTo("MIND_BLAST"));
         Assert.That(WakuuEnchantRules.Resolve("Clone", null)![0].CardId, Is.EqualTo("MIND_BLAST"));
     }
@@ -450,5 +453,55 @@ public class WakuuEnchantPickingTests
         };
         List<int> ranked = Rank(cards, WakuuEnchantRules.ForEnchantment("SoulsPower"));
         Assert.That(ranked[0], Is.EqualTo(1)); // 吹哨精确命中，即便稀有度低
+    }
+
+    // ---------------------------------------------------------------
+    // 华彩 X 费（r52 追加：能力牌 > X 费 > 费用最高(≥2) > 愤怒 > 不死 > 适应打击 > 其它）
+    // ---------------------------------------------------------------
+
+    [Test]
+    public void Glam_能力牌最优先于X费()
+    {
+        List<WakuuEnchantCardInfo> cards = new()
+        {
+            C("XP", WakuuEnchantPicking.CardTypeSkill, costsX: true),
+            C("PWR", WakuuEnchantPicking.CardTypePower, cost: 1),
+        };
+        Assert.That(Rank(cards, WakuuEnchantRules.ForEnchantment("Glam")), Is.EqualTo(new[] { 1 }));
+    }
+
+    [Test]
+    public void Glam_X费优先于费用最高()
+    {
+        List<WakuuEnchantCardInfo> cards = new()
+        {
+            C("C3", WakuuEnchantPicking.CardTypeSkill, cost: 3),
+            C("XP", WakuuEnchantPicking.CardTypeSkill, costsX: true),
+        };
+        // 阶段 1（能力牌）为空 → 阶段 2（X 费）命中 XP，先于阶段 3 的费用最高
+        Assert.That(Rank(cards, WakuuEnchantRules.ForEnchantment("Glam")), Is.EqualTo(new[] { 1 }));
+    }
+
+    [Test]
+    public void Glam_无能力无X费时走费用最高()
+    {
+        List<WakuuEnchantCardInfo> cards = new()
+        {
+            C("C2", cost: 2),
+            C("C3", cost: 3),
+        };
+        // 阶段 3（费用最高且 >=2）：C3 在前；1 费牌不满足 MinCost=2 会被过滤
+        Assert.That(Rank(cards, WakuuEnchantRules.ForEnchantment("Glam")), Is.EqualTo(new[] { 1, 0 }));
+    }
+
+    [Test]
+    public void 谓词_RequireCostsX筛选X费牌()
+    {
+        List<WakuuEnchantCardInfo> cards = new() { C("X1", costsX: true), C("N1", cost: 1) };
+        List<WakuuEnchantRuleEntry> rule = new()
+        {
+            new WakuuEnchantRuleEntry { Predicate = new WakuuEnchantPredicate { RequireCostsX = true } },
+        };
+        Assert.That(Rank(cards, rule), Is.EqualTo(new[] { 0 }));
     }
 }

@@ -130,6 +130,9 @@ internal readonly struct WakuuEnchantPredicate
     /// <summary>费用精确匹配（null=不限；0=必须 0 费）。</summary>
     public int? ExactCost { get; init; }
 
+    /// <summary>必须为 X 费牌（用户填表：华彩等优先 X 费）。</summary>
+    public bool RequireCostsX { get; init; }
+
     /// <summary>必须已升级。</summary>
     public bool RequireUpgraded { get; init; }
 
@@ -176,6 +179,11 @@ internal readonly struct WakuuEnchantPredicate
         }
 
         if (ExactCost.HasValue && card.Cost != ExactCost.Value)
+        {
+            return false;
+        }
+
+        if (RequireCostsX && !card.CostsX)
         {
             return false;
         }

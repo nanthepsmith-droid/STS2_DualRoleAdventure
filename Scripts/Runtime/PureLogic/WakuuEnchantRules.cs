@@ -37,14 +37,17 @@ internal static class WakuuEnchantRules
     /// <summary>棋子。</summary>
     private static readonly string[] GamePiece = { "GAME_PIECE" };
 
-    /// <summary>卡戎之灰。</summary>
-    private static readonly string[] CharonsAshes = { "CHARONS_ASHES" };
-
-    /// <summary>抱抱先生（挣扎先生）/ 水银沙漏。</summary>
-    private static readonly string[] StrugglesOrHourglass = { "MR_STRUGGLES", "MERCURY_HOURGLASS" };
-
-    /// <summary>不休陀螺（Clone 分支判定）。</summary>
+    /// <summary>
+    /// 不休陀螺（Clone 分支判定）。
+    /// ⚠ 2026-09-01 用户要求停用不休陀螺分支（沙漏 BOSS 下是死路），此常量不再用于分支判定，
+    /// 保留仅作文档记录。
+    /// </summary>
     internal const string UnceasingTop = "UNCEASING_TOP";
+
+    // 以下条件组仅被「不休陀螺」分支使用（卡戎之灰 / 抱抱先生 / 水银沙漏），分支已注释停用，
+    // 定义一并移除以免未使用字段告警；日后恢复分支时需重新补回：
+    //   CharonsAshes        = { "CHARONS_ASHES" }
+    //   StrugglesOrHourglass = { "MR_STRUGGLES", "MERCURY_HOURGLASS" }
 
     // ============ 便捷构造 ============
 
@@ -108,10 +111,11 @@ internal static class WakuuEnchantRules
         Any(WakuuEnchantSort.DamageDesc),
     };
 
-    /// <summary>华彩 Glam：能力牌 &gt; 费用最高（≥2）的牌 &gt; 愤怒 &gt; 不死 &gt; 适应打击 &gt; 其它牌。</summary>
+    /// <summary>华彩 Glam：能力牌 &gt; X 费牌（用户追加）&gt; 费用最高（≥2）的牌 &gt; 愤怒 &gt; 不死 &gt; 适应打击 &gt; 其它牌。</summary>
     private static readonly List<WakuuEnchantRuleEntry> Glam = new()
     {
         Any(WakuuEnchantSort.Index, new WakuuEnchantPredicate { CardTypeMask = WakuuEnchantPicking.MaskPower }),
+        Any(WakuuEnchantSort.Index, new WakuuEnchantPredicate { RequireCostsX = true }),
         Any(WakuuEnchantSort.CostDesc, new WakuuEnchantPredicate { MinCost = 2 }),
         Card("ANGER"),
         Card("UNDEATH"),
@@ -358,9 +362,10 @@ internal static class WakuuEnchantRules
         Any(),
     };
 
+    /*
     /// <summary>
-    /// 克隆 Clone —— 有「不休陀螺」时的优先级；末尾回退到无陀螺分支（用户填表口径：
-    /// 「&gt; 0 费的牌 &gt; 无不休陀螺考虑的牌」）。
+    /// 克隆 Clone —— 有「不休陀螺」时的优先级（2026-09-01 用户要求停用：沙漏 BOSS 下不休陀螺
+    /// 相关牌是死路，克隆恒走无陀螺分支）。数据保留，日后如需恢复可解开本注释块。
     /// </summary>
     private static readonly List<WakuuEnchantRuleEntry> CloneWithTop = new List<WakuuEnchantRuleEntry>
     {
@@ -423,11 +428,11 @@ internal static class WakuuEnchantRules
         Card("BOOT_SEQUENCE", relics: StrugglesOrHourglass),         // 启动流程（抱抱先生/水银沙漏）
         Any(WakuuEnchantSort.Index, new WakuuEnchantPredicate { ExactCost = 0 }), // 0 费的牌
     };
+    */
 
     static WakuuEnchantRules()
     {
-        // 有陀螺分支末尾接上无陀螺分支（"无不休陀螺考虑的牌"）
-        CloneWithTop.AddRange(CloneWithoutTop);
+        // 沙漏 BOSS 隐患：不休陀螺分支已注释停用，克隆恒走无陀螺分支（CloneWithoutTop）。
     }
 
     /// <summary>
@@ -463,10 +468,13 @@ internal static class WakuuEnchantRules
         };
     }
 
-    /// <summary>Clone 按是否持有「不休陀螺」取对应分支。</summary>
+    /// <summary>
+    /// Clone 规则：恒走无陀螺分支（用户 2026-09-01 要求——沙漏 BOSS 下不休陀螺分支是死路）。
+    /// hasUnceasingTop 参数保留仅兼容旧调用/测试；不休陀螺分支数据已注释停用。
+    /// </summary>
     public static IReadOnlyList<WakuuEnchantRuleEntry> ForClone(bool hasUnceasingTop)
     {
-        return hasUnceasingTop ? CloneWithTop : CloneWithoutTop;
+        return CloneWithoutTop;
     }
 
     /// <summary>
@@ -478,9 +486,8 @@ internal static class WakuuEnchantRules
     {
         if (typeName == "Clone")
         {
-            bool hasTop = ownedRelics != null
-                && ownedRelics.Any((r) => string.Equals(r, UnceasingTop, System.StringComparison.OrdinalIgnoreCase));
-            return ForClone(hasTop);
+            // 沙漏 BOSS 隐患：恒走无陀螺分支（不休陀螺分支已注释停用）
+            return ForClone(hasUnceasingTop: false);
         }
 
         return ForEnchantment(typeName);

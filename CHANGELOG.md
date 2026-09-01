@@ -131,6 +131,13 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   - `WakuuEventEnchantAutoAnswerPatch.FromDeckForEnchantment` 接入 smartEnchant 路径；
     新增 `smartEnchant` 开关（**默认开**，设置页新增勾选行）；
   - 测试：新增 `WakuuEnchantPickingTests` 33 例（合计 284 例全绿）；Release 0 警告 0 错误。
+- **附魔选牌修正（marker r53）**：
+  - **Clone 不休陀螺分支停用**（用户要求）：沙漏 BOSS 下不休陀螺相关牌是死路，克隆恒走
+    无陀螺分支；不休陀螺分支数据注释保留（含其专用条件组 卡戎之灰/抱抱先生/水银沙漏 移除定义，
+    恢复时按注释补回）；
+  - **华彩 Glam 优先级加 X 费**：能力牌 &gt; X 费牌（新增 `RequireCostsX` 谓词）&gt;
+    费用最高（≥2）&gt; 愤怒 &gt; 不死 &gt; 适应打击 &gt; 其它；
+  - 测试：Clone 分支语义用例更新 + Glam X 费 4 例（合计 289 例全绿）；Release 0 警告 0 错误。
 - **维护性改进文档移出主仓库**：`patch-coverage.md`/`string-targets.md`/`维护现状分析.md`/
   `decision-records/`/`references/` 移到 `pain/maintenance-docs/`（无 git，不会进 github）；
   主仓库 `docs/` 只保留原作者文档（`archive/`、`design/`、`architecture.md`、`console-commands.md`）。
