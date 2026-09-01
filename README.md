@@ -16,7 +16,7 @@ A **Slay the Spire 2** mod that turns the official online multiplayer into a *lo
 - Optional **ghost hands** overlay (`F8`): see your other characters' hands behind your own, position adjustable at runtime (`Ctrl+Arrows`)
 - Pure code mod: `has_dll=true`, `has_pck=false` — no asset pack required
 
-See the **[Player Guide](PLAYER_GUIDE.md)** for installation, controls, and gameplay details.
+See the **[Player Guide](PLAYER_GUIDE.md)** ([简体中文](PLAYER_GUIDE.zh-CN.md)) for installation, controls, and gameplay details.
 
 ## Compatibility
 
@@ -62,7 +62,7 @@ Please open a [GitHub issue](https://github.com/nanthepsmith-droid/STS2_DualRole
 
 ## Documentation
 
-- [Player Guide](PLAYER_GUIDE.md) — install, controls, gameplay
+- [Player Guide](PLAYER_GUIDE.md) ([简体中文](PLAYER_GUIDE.zh-CN.md)) — install, controls, gameplay
 - [CHANGELOG](CHANGELOG.md) — release history
 - [TODO](TODO.md) — known issues under investigation
 - [docs/architecture.md](docs/architecture.md) — how the mod works internally

@@ -16,7 +16,7 @@
 - 可选**幽灵手牌**叠层（`F8`）：在自己手牌后方查看其他角色的手牌，位置可实时调整（`Ctrl+方向键`）
 - 纯代码 Mod：`has_dll=true, has_pck=false`，无需素材包
 
-安装、操作与玩法细节见**[玩家指南](PLAYER_GUIDE.md)**（英文）。
+安装、操作与玩法细节见**[玩家指南（简体中文）](PLAYER_GUIDE.zh-CN.md)**（另有[英文版](PLAYER_GUIDE.md)）。
 
 ## 兼容性
 
@@ -62,7 +62,8 @@ cp -r ~/sts2-src/MegaCrit/Sts2/. src/
 
 ## 文档
 
-- [玩家指南（英文）](PLAYER_GUIDE.md) — 安装、操作、玩法
+- [玩家指南（简体中文）](PLAYER_GUIDE.zh-CN.md) — 安装、操作、玩法
+- [玩家指南（英文）](PLAYER_GUIDE.md)
 - [更新日志](CHANGELOG.md) — 版本历史
 - [TODO](TODO.md) — 已知问题与排查中事项
 - [docs/architecture.md](docs/architecture.md) — Mod 内部原理
