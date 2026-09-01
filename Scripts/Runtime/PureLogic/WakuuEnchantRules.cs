@@ -52,8 +52,7 @@ internal static class WakuuEnchantRules
         string id,
         bool upgraded = false,
         string[]? relics = null,
-        string[]? deck = null,
-        string[]? noRelics = null)
+        string[]? deck = null)
     {
         return new WakuuEnchantRuleEntry
         {
@@ -61,7 +60,6 @@ internal static class WakuuEnchantRules
             Predicate = new WakuuEnchantPredicate { RequireUpgraded = upgraded },
             RequiredRelicAny = relics,
             RequiredDeckCardAny = deck,
-            ForbiddenRelicAll = noRelics,
         };
     }
 
@@ -353,8 +351,10 @@ internal static class WakuuEnchantRules
         Card("SECRET_TECHNIQUE", relics: LetterOpener),              // 秘密技法（开信刀）
         Card("IMPATIENCE", relics: LetterOpener),
         Card("REBOOT"),
-        Card("HANG", noRelics: EnergyRelics),                        // 吊杀（无能量遗物）
-        Card("WHITE_NOISE", upgraded: true, noRelics: GamePiece),    // 白噪声+（无棋子）
+        // 「没有 XX」不是禁止持有，而是与「有 XX」相比优先级降低：无条件降级位置，
+        // 有能量遗物时上面的 HANG(有) 先命中；没有时走到这里照样能选到吊杀。
+        Card("HANG"),                                               // 吊杀（没有热可可/灯笼/古茶具套装的降级位置）
+        Card("WHITE_NOISE", upgraded: true),                        // 白噪声+（没有棋子的降级位置）
         Any(),
     };
 

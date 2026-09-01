@@ -120,7 +120,8 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   - 新增纯逻辑 `Scripts/Runtime/PureLogic/WakuuEnchantPicking.cs`：附魔选牌规则引擎——
     阶段式（按顺序取第一个能筛出候选的条目）、`WakuuEnchantCardInfo` 卡牌特征快照、
     `WakuuEnchantPredicate` 谓词（类型位掩码/消耗/多段次数/抽牌数/格挡/费用/已升级）、
-    `WakuuEnchantRuleEntry`（精确牌名 + 遗物持有/牌组持有/禁止遗物条件）、
+    `WakuuEnchantRuleEntry`（精确牌名 + 遗物持有/牌组持有条件；"没有 XX"按用户口径实现为
+    无条件**降级位置**而非禁止持有——靠"第一个非空条目即返回"自然形成"有 XX 在前、没有时在后"）、
     排序键（费用/伤害/格挡/稀有度，X 费按费用=3 折算）；
   - 新增 `Scripts/Runtime/PureLogic/WakuuEnchantRules.cs`：规则数据表——每附魔一条有序规则，
     Clone 按是否持有不休陀螺分两套（有陀螺分支末尾回退无陀螺分支）；

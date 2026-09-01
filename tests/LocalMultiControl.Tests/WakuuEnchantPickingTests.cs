@@ -242,16 +242,37 @@ public class WakuuEnchantPickingTests
     }
 
     [Test]
-    public void 禁止遗物_持有时不命中()
+    public void 没有XX是降级位置而非禁止持有()
     {
-        List<WakuuEnchantCardInfo> cards = new() { C("HANG"), C("FALLBACK") };
+        // 用户口径：「没有 XX」= 与「有 XX」相比优先级降低（无条件降级位置），不是禁止持有。
+        // 有能量遗物时上面的「吊杀(有)」先命中；没有时走到降级位置照样能选到吊杀。
+        List<WakuuEnchantCardInfo> cards = new() { C("HANG") };
         List<WakuuEnchantRuleEntry> rule = new()
         {
-            new WakuuEnchantRuleEntry { CardId = "HANG", ForbiddenRelicAll = new[] { "LANTERN" } },
-            new WakuuEnchantRuleEntry { CardId = "FALLBACK" },
+            new WakuuEnchantRuleEntry { CardId = "HANG", RequiredRelicAny = new[] { "LANTERN" } }, // 吊杀（有热可可/灯笼/古茶具套装）
+            new WakuuEnchantRuleEntry { CardId = "REBOOT" },
+            new WakuuEnchantRuleEntry { CardId = "HANG" }, // 吊杀（没有……的降级位置，无条件）
+            new WakuuEnchantRuleEntry { CardId = "OTHER" },
         };
-        Assert.That(Rank(cards, rule, relics: new List<string> { "LANTERN" })[0], Is.EqualTo(1)); // 持有灯笼 → 走回退
-        Assert.That(Rank(cards, rule, relics: new List<string> { "ANCHOR" })[0], Is.EqualTo(0)); // 无灯笼 → HANG 命中
+        // 持有能量遗物：第一个条目命中 HANG
+        Assert.That(Rank(cards, rule, relics: new List<string> { "LANTERN" })[0], Is.EqualTo(0));
+        // 无能量遗物：第一个 HANG 不命中、REBOOT 不在候选 → 降级位置仍能选到 HANG（而非彻底跳过）
+        Assert.That(Rank(cards, rule, relics: new List<string> { "ANCHOR" })[0], Is.EqualTo(0));
+    }
+
+    [Test]
+    public void 降级位置低于前置的其它精确牌()
+    {
+        // 真实表里「吊杀(没有)」排在 重启 之后：牌组同时有重启和吊杀且无能量遗物时选重启。
+        List<WakuuEnchantCardInfo> cards = new() { C("REBOOT"), C("HANG") };
+        List<WakuuEnchantRuleEntry> rule = new()
+        {
+            new WakuuEnchantRuleEntry { CardId = "HANG", RequiredRelicAny = new[] { "LANTERN" } },
+            new WakuuEnchantRuleEntry { CardId = "REBOOT" },
+            new WakuuEnchantRuleEntry { CardId = "HANG" }, // 无条件降级位置
+            new WakuuEnchantRuleEntry { CardId = "OTHER" },
+        };
+        Assert.That(Rank(cards, rule, relics: new List<string> { "ANCHOR" })[0], Is.EqualTo(0)); // REBOOT 优先
     }
 
     // ---------------------------------------------------------------

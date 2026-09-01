@@ -208,9 +208,6 @@ internal sealed class WakuuEnchantRuleEntry
     /// <summary>玩家牌组需要含其中任一张牌（卡 id）。</summary>
     public string[]? RequiredDeckCardAny { get; init; }
 
-    /// <summary>玩家必须不持有这些遗物中的全部（"没有 XX"分支）。</summary>
-    public string[]? ForbiddenRelicAll { get; init; }
-
     /// <summary>命中该条目后的排序方式，默认保持原序。</summary>
     public WakuuEnchantSort Sort { get; init; } = WakuuEnchantSort.Index;
 }
@@ -304,12 +301,6 @@ internal static class WakuuEnchantPicking
 
         if (entry.RequiredDeckCardAny != null && entry.RequiredDeckCardAny.Length > 0
             && !ContainsAny(deckCardIds, entry.RequiredDeckCardAny))
-        {
-            return false;
-        }
-
-        if (entry.ForbiddenRelicAll != null && entry.ForbiddenRelicAll.Length > 0
-            && ContainsAny(ownedRelics, entry.ForbiddenRelicAll))
         {
             return false;
         }
