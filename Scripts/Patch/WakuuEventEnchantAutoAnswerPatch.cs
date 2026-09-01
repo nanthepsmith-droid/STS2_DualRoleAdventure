@@ -37,6 +37,8 @@ internal static class WakuuEventEnchantAutoAnswerPatch
     /// <summary>
     /// 附魔选牌兜底入口（FromDeckForEnchantment 各 Player 重载最终都走这里）：
     /// 拦截后按策略作答，跳过 NDeckEnchantSelectScreen。
+    /// smartEnchant 开启时优先按该附魔的规则表挑牌（WakuuEnchantRules，用户填表），
+    /// 无规则或异常再回退 cardPickMode。
     /// </summary>
     [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromDeckForEnchantment), new[]
     {
@@ -49,6 +51,7 @@ internal static class WakuuEventEnchantAutoAnswerPatch
     [HarmonyPrefix]
     private static bool FromDeckForEnchantmentPrefix(
         IReadOnlyList<CardModel> cards,
+        EnchantmentModel enchantment,
         CardSelectorPrefs prefs,
         ref Task<IEnumerable<CardModel>> __result)
     {
@@ -61,6 +64,18 @@ internal static class WakuuEventEnchantAutoAnswerPatch
         if (owner == null || !LocalWakuuRelicRuntime.IsVakuuFormMode(owner))
         {
             return true;
+        }
+
+        // 附魔智能选牌：按该附魔的规则表挑牌；无规则（用户填"维持现状"）或异常 → 回退既有策略
+        if (LocalWakuuAutopilotConfig.SmartEnchant)
+        {
+            List<CardModel>? picked = LocalWakuuEnchantPicker.TryPick(
+                owner, cards, enchantment, prefs.MinSelect, prefs.MaxSelect);
+            if (picked != null)
+            {
+                __result = Task.FromResult<IEnumerable<CardModel>>(picked);
+                return false;
+            }
         }
 
         return TryAutoAnswer(owner, cards, prefs, "FromDeckForEnchantment", ref __result);

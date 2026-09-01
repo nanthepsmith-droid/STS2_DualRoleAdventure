@@ -1,0 +1,112 @@
+﻿生成启动时间为 2026/9/1 12:04:56。
+     1>项目“D:\Download\pain\STS2_DualRoleAdventure-itriedtofix\tests\LocalMultiControl.Tests\LocalMultiControl.Tests.csproj”在节点 1 上(Restore 个目标)。
+     1>_GetAllRestoreProjectPathItems:
+         正在确定要还原的项目…
+       Restore:
+         X.509 证书链验证将使用 .NET 选择的默认信任存储进行代码签名。
+         X.509 证书链验证将使用 .NET 选择的默认信任存储进行时间戳。
+         资产文件未改变。跳过资产文件写入。路径: D:\Download\pain\STS2_DualRoleAdventure-itriedtofix\tests\LocalMultiControl.Tests\obj\project.assets.json
+         已还原 D:\Download\pain\STS2_DualRoleAdventure-itriedtofix\tests\LocalMultiControl.Tests\LocalMultiControl.Tests.csproj (用时 42 毫秒)。
+         
+         使用的 NuGet 配置文件:
+             C:\Users\lenovo\AppData\Roaming\NuGet\NuGet.Config
+         
+         使用的源:
+             https://api.nuget.org/v3/index.json
+         所有项目均是最新的，无法还原。
+     1>已完成生成项目“D:\Download\pain\STS2_DualRoleAdventure-itriedtofix\tests\LocalMultiControl.Tests\LocalMultiControl.Tests.csproj”(Restore 个目标)的操作。
+   1:7>项目“D:\Download\pain\STS2_DualRoleAdventure-itriedtofix\tests\LocalMultiControl.Tests\LocalMultiControl.Tests.csproj”在节点 1 上(VSTest 个目标)。
+     1>BuildProject:
+         已开始生成，请等待...
+   1:7>项目“D:\Download\pain\STS2_DualRoleAdventure-itriedtofix\tests\LocalMultiControl.Tests\LocalMultiControl.Tests.csproj”(1:7)正在节点 1 上生成“D:\Download\pain\STS2_DualRoleAdventure-itriedtofix\tests\LocalMultiControl.Tests\LocalMultiControl.Tests.csproj”(1:8) (默认目标)。
+     1>GenerateTargetFrameworkMonikerAttribute:
+       正在跳过目标“GenerateTargetFrameworkMonikerAttribute”，因为所有输出文件相对于输入文件而言都是最新的。
+       CoreGenerateAssemblyInfo:
+       正在跳过目标“CoreGenerateAssemblyInfo”，因为所有输出文件相对于输入文件而言都是最新的。
+       _GenerateSourceLinkFile:
+         Source Link 文件 "obj\Release\net9.0\LocalMultiControl.Tests.sourcelink.json" 是最新的。
+       CoreCompile:
+       正在跳过目标“CoreCompile”，因为所有输出文件相对于输入文件而言都是最新的。
+       _CopyOutOfDateSourceItemsToOutputDirectory:
+       正在跳过目标“_CopyOutOfDateSourceItemsToOutputDirectory”，因为所有输出文件相对于输入文件而言都是最新的。
+       GenerateBuildDependencyFile:
+       正在跳过目标“GenerateBuildDependencyFile”，因为所有输出文件相对于输入文件而言都是最新的。
+       GenerateBuildRuntimeConfigurationFiles:
+       正在跳过目标“GenerateBuildRuntimeConfigurationFiles”，因为所有输出文件相对于输入文件而言都是最新的。
+       CopyFilesToOutputDirectory:
+         LocalMultiControl.Tests -> D:\Download\pain\STS2_DualRoleAdventure-itriedtofix\tests\LocalMultiControl.Tests\bin\Release\net9.0\LocalMultiControl.Tests.dll
+     1>已完成生成项目“D:\Download\pain\STS2_DualRoleAdventure-itriedtofix\tests\LocalMultiControl.Tests\LocalMultiControl.Tests.csproj”(默认目标)的操作。
+     1>BuildProject:
+         完成的生成。
+         
+D:\Download\pain\STS2_DualRoleAdventure-itriedtofix\tests\LocalMultiControl.Tests\bin\Release\net9.0\LocalMultiControl.Tests.dll (.NETCoreApp,Version=v9.0)的测试运行
+总共 1 个测试文件与指定模式相匹配。
+NUnit Adapter 4.6.0.0: Test execution started
+Running selected tests in D:\Download\pain\STS2_DualRoleAdventure-itriedtofix\tests\LocalMultiControl.Tests\bin\Release\net9.0\LocalMultiControl.Tests.dll
+   NUnit3TestExecutor discovered 33 of 33 NUnit test cases using Current Discovery mode, Non-Explicit run
+  已通过 抽牌筛选_3张以上 [7 ms]
+  已通过 第一阶段为空则进入第二阶段 [4 ms]
+  已通过 第一阶段优先_能力牌优先于费用最低 [< 1 ms]
+  已通过 多段攻击筛选_3段为空时回退2段 [< 1 ms]
+  已通过 多段攻击筛选_3段以上优先 [< 1 ms]
+  已通过 费用排序_X费按3参与比较 [< 1 ms]
+  已通过 费用筛选_精确3费能力牌 [< 1 ms]
+  已通过 费用最低排序 [< 1 ms]
+  已通过 费用最高排序 [< 1 ms]
+  已通过 格挡大于20筛选 [< 1 ms]
+  已通过 规则全不命中返回原序 [< 1 ms]
+  已通过 禁止遗物_持有时不命中 [< 1 ms]
+  已通过 精确牌名大小写不敏感 [< 1 ms]
+  已通过 空候选返回空 [< 1 ms]
+  已通过 牌名要求已升级 [< 1 ms]
+  已通过 牌组条件_含任一牌才命中 [< 1 ms]
+  已通过 伤害排序_X费按段数3折算 [< 1 ms]
+  已通过 伤害最高排序_按伤害乘段数 [< 1 ms]
+  已通过 维持现状的附魔返回null [2 ms]
+  已通过 无规则返回原序 [< 1 ms]
+  已通过 稀有度最高排序 [< 1 ms]
+  已通过 消耗筛选 [< 1 ms]
+  已通过 遗物条件_持有任一才命中 [< 1 ms]
+  已通过 有规则的附魔均返回非空 [< 1 ms]
+  已通过 Adroit_选费用最低 [< 1 ms]
+  已通过 Clone_无陀螺分支首项为心灵震慑 [< 1 ms]
+  已通过 Clone_有陀螺分支末尾接无陀螺分支 [< 1 ms]
+NUnit Adapter 4.6.0.0: Test execution complete
+  已通过 Clone_有陀螺分支首项为欺凌 [< 1 ms]
+  已通过 Imbued_抽3张优先于费用最高 [< 1 ms]
+  失败 Imbued_无抽3张时回退费用最高 [14 ms]
+  错误消息:
+     Assert.That(Rank(cards, WakuuEnchantRules.ForEnchantment("Imbued")), Is.EqualTo(new[] { 1 }))
+  Expected is <System.Int32[1]>, actual is <System.Collections.Generic.List`1[System.Int32]> with 2 elements
+  Values differ at index [1]
+  Extra:    < 0 >
+  堆栈跟踪:
+     at LocalMultiControl.Tests.WakuuEnchantPickingTests.Imbued_无抽3张时回退费用最高() in D:\Download\pain\STS2_DualRoleAdventure-itriedtofix\tests\LocalMultiControl.Tests\WakuuEnchantPickingTests.cs:line 419
+
+1)    at LocalMultiControl.Tests.WakuuEnchantPickingTests.Imbued_无抽3张时回退费用最高() in D:\Download\pain\STS2_DualRoleAdventure-itriedtofix\tests\LocalMultiControl.Tests\WakuuEnchantPickingTests.cs:line 419
+
+
+  已通过 Resolve_非Clone按类型名查 [< 1 ms]
+  已通过 Resolve_Clone按持有陀螺选分支 [< 1 ms]
+  已通过 SoulsPower_精确牌名链优先于稀有度兜底 [< 1 ms]
+
+dotnet : 测试运行失败。
+所在位置 C:\Users\lenovo\AppData\Local\Temp\genie-ps-1788235495328-jh6wtj.ps1:558 字符: 57
++ ... triedtofix; dotnet test tests\LocalMultiControl.Tests\LocalMultiContr ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (测试运行失败。:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+测试总数: 33
+     通过数: 32
+     失败数: 1
+总时间: 0.6635 秒
+       _VSTestConsole:
+         MSB4181: “VSTestTask”任务返回了 false，但未记录错误。
+     1>已完成生成项目“D:\Download\pain\STS2_DualRoleAdventure-itriedtofix\tests\LocalMultiControl.Tests\LocalMultiControl.Tests.csproj”(VSTest 个目标)的操作 - 失败。
+
+生成失败。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:02.03

@@ -46,6 +46,14 @@ internal sealed class WakuuConfigData
     /// </summary>
     public bool smartPick { get; set; }
 
+    /// <summary>
+    /// 附魔智能选牌：开启后附魔选牌按「原版附魔一览表」用户填写的规则表挑牌
+    /// （每种附魔各有优先级，如腐化挑伤害最高的攻击牌、注能挑能抽 3 张以上的技能牌）。
+    /// 默认开（用户已按表填写，关 = 回到纯 cardPickMode 策略）。
+    /// 关闭或该附魔填了"维持现状"时行为与既有完全一致。
+    /// </summary>
+    public bool smartEnchant { get; set; } = true;
+
     public string eventChoiceMode { get; set; } = WakuuChoiceModes.First;
 
     public string cardPickMode { get; set; } = WakuuChoiceModes.Last;

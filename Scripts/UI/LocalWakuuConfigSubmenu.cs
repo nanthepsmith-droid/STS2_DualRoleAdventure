@@ -220,6 +220,11 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             "默认关。开启后事件里的牌库删除 / 变化选牌按优先级表自动选取：删除优先 诅咒→状态→任务→打击→基础防御；变化优先变掉打击/防御并避开诅咒/状态/任务。关闭或场景未知时维持原选牌策略，行为与关闭时完全一致。",
             () => LocalWakuuAutopilotConfig.SmartPick,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("smartPick", value));
+        AddToggleRow(column,
+            "附魔智能选牌",
+            "默认开。开启后瓦库附魔选牌按「原版附魔一览表」里填写的规则挑牌（例如：伶俐/墨影/灵巧选费用最低的牌，腐化/本能选伤害最高的攻击牌，注能选能抽 3 张以上的技能牌，克隆按是否持有不休陀螺走两套优先级）。关闭后回到原来的选牌策略。",
+            () => LocalWakuuAutopilotConfig.SmartEnchant,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("smartEnchant", value));
         column.AddChild(CreateStrategyRow(
             "事件选项策略",
             "事件自动选择时挑哪个选项。很多事件一直选第一个会死，可切到最后一个或随机规避。",

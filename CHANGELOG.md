@@ -115,6 +115,21 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     赌徒芯片/行商之手等全部走 `FromHandForDiscard` 内部即 FromHand）；战斗内补丁与事件内
     补丁自动生效，无需新拦截点；
   - 测试：`PriorityPickingTests` 新增 10 例（合计 251 例全绿）；主项目 Release 0 警告 0 错误。
+- **附魔智能选牌（原版附魔一览表规则表，marker r52）**：
+  - 用户按「原版附魔一览表.md」逐附魔填写了选牌规则（20 种附魔 + 克隆两套分支），本版本按表实现；
+  - 新增纯逻辑 `Scripts/Runtime/PureLogic/WakuuEnchantPicking.cs`：附魔选牌规则引擎——
+    阶段式（按顺序取第一个能筛出候选的条目）、`WakuuEnchantCardInfo` 卡牌特征快照、
+    `WakuuEnchantPredicate` 谓词（类型位掩码/消耗/多段次数/抽牌数/格挡/费用/已升级）、
+    `WakuuEnchantRuleEntry`（精确牌名 + 遗物持有/牌组持有/禁止遗物条件）、
+    排序键（费用/伤害/格挡/稀有度，X 费按费用=3 折算）；
+  - 新增 `Scripts/Runtime/PureLogic/WakuuEnchantRules.cs`：规则数据表——每附魔一条有序规则，
+    Clone 按是否持有不休陀螺分两套（有陀螺分支末尾回退无陀螺分支）；
+    牌名/遗物名由中文本地化（zhs）反查得到游戏内部 id（如 吹哨→WHISTLE、烫嘴可可→VERY_HOT_COCOA）；
+  - 新增 `Scripts/Runtime/LocalWakuuEnchantPicker.cs`：运行时把 CardModel 抽成纯数据 + 查规则 +
+    取前 N 张；任一步异常/该附魔填"维持现状"（Goopy/Spiral/TezcatarasEmber）回退既有策略；
+  - `WakuuEventEnchantAutoAnswerPatch.FromDeckForEnchantment` 接入 smartEnchant 路径；
+    新增 `smartEnchant` 开关（**默认开**，设置页新增勾选行）；
+  - 测试：新增 `WakuuEnchantPickingTests` 33 例（合计 284 例全绿）；Release 0 警告 0 错误。
 - **维护性改进文档移出主仓库**：`patch-coverage.md`/`string-targets.md`/`维护现状分析.md`/
   `decision-records/`/`references/` 移到 `pain/maintenance-docs/`（无 git，不会进 github）；
   主仓库 `docs/` 只保留原作者文档（`archive/`、`design/`、`architecture.md`、`console-commands.md`）。

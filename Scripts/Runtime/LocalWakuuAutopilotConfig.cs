@@ -71,6 +71,12 @@ internal static class LocalWakuuAutopilotConfig
     public static bool SmartPick { get; private set; }
 
     /// <summary>
+    /// 附魔智能选牌（默认开）：开启后附魔选牌按 WakuuEnchantRules 规则表挑牌
+    /// （来源：原版附魔一览表.md 用户填写）；关闭或该附魔填"维持现状"时维持既有 cardPickMode。
+    /// </summary>
+    public static bool SmartEnchant { get; private set; } = true;
+
+    /// <summary>
     /// 事件自动选择的策略：first=第一个（最上）/ last=最后一个 / random=随机。
     /// 很多事件一直选第一个会死，可切到 last 或 random 规避。
     /// </summary>
@@ -131,6 +137,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.neowAutoChoose): data.neowAutoChoose = value; break;
                     case nameof(WakuuConfigData.skadaAssist): data.skadaAssist = value; break;
                     case nameof(WakuuConfigData.smartPick): data.smartPick = value; break;
+                    case nameof(WakuuConfigData.smartEnchant): data.smartEnchant = value; break;
                     default:
                         LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：未知开关名 {key}");
                         return false;
@@ -334,7 +341,7 @@ internal static class LocalWakuuAutopilotConfig
                 + $"autoChooseEvents={data.autoChooseEvents}, autoRestChoice={data.autoRestChoice}, "
                 + $"autoUsePotions={data.autoUsePotions}, "
                 + $"neowAutoChoose={data.neowAutoChoose}, skadaAssist={data.skadaAssist}, "
-                + $"smartPick={data.smartPick}, "
+                + $"smartPick={data.smartPick}, smartEnchant={data.smartEnchant}, "
                 + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}, "
                 + $"wakuuBrain={data.wakuuBrain}");
         }
@@ -352,6 +359,7 @@ internal static class LocalWakuuAutopilotConfig
         NeowAutoChoose = data.neowAutoChoose;
         SkadaAssist = data.skadaAssist;
         SmartPick = data.smartPick;
+        SmartEnchant = data.smartEnchant;
         EventChoiceMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;
         CardPickMode = NormalizeCardPickMode(data.cardPickMode) ?? LastChoiceMode;
         BrainMode = NormalizeBrainMode(data.wakuuBrain) ?? HeuristicBrainMode;
