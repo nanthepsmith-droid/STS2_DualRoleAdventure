@@ -171,6 +171,15 @@ internal static class PatchDomainMap
             ["PotionProcuredAutoDrinkPatch"] = PatchDomain.Wakuu,
             ["WakuuEventEnchantAutoAnswerPatch"] = PatchDomain.Wakuu,
             ["WhisperingEarringPatch"] = PatchDomain.Wakuu,
+            // 托管遗物守卫（r83）：第三方"吞噬/移除遗物"效果不得移除【瓦库形态】
+            ["PlayerRemoveRelicInternalGuardPatch"] = PatchDomain.Wakuu,
+            // 个人偏好记录器（三级决策链第①级数据源）：整局归因 / 真人卡牌领奖 / 真人事件点选
+            ["PersonalRunEndPatch"] = PatchDomain.Wakuu,
+            ["PersonalCardRewardPickPatch"] = PatchDomain.Wakuu,
+            ["PersonalGridCardPickPatch"] = PatchDomain.Wakuu,
+            ["PersonalShopPurchasePatch"] = PatchDomain.Wakuu,
+            ["PersonalDeckRemovalPatch"] = PatchDomain.Wakuu,
+            ["PersonalEventClickPatch"] = PatchDomain.Wakuu,
 
             // ============ Ui：纯 UI 表现层 ============
             ["CardPileHandVisualOwnerGuardPatch"] = PatchDomain.Ui,
@@ -207,6 +216,11 @@ internal static class PatchDomainMap
             ["NRestSiteRoomReadyGuardPatch"] = PatchDomain.Ui,
             ["NTreasureRoomRelicCollectionFocusGuardPatch"] = PatchDomain.Ui,
             ["NTreasureRoomRelicHolderFocusGuardPatch"] = PatchDomain.Ui,
+            // 自有统计角标/悬停弹窗（r69+）：奖励选牌 / 商店 / 事件
+            ["StatBadgeRewardRowPatch"] = PatchDomain.Ui,
+            ["StatBadgeMerchantPatch"] = PatchDomain.Ui,
+            ["StatBadgeMerchantFillSlotPatch"] = PatchDomain.Ui,
+            ["StatBadgeEventPatch"] = PatchDomain.Ui,
 
             // ============ ThirdParty：第三方 mod 适配（反射字符串目标） ============
             ["IdAfterCardDrawnOwnerGuardPatch"] = PatchDomain.ThirdParty,

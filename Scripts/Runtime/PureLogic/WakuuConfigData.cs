@@ -16,6 +16,15 @@ internal sealed class WakuuConfigData
 
     public bool suppressVanillaEarring { get; set; } = true;
 
+    /// <summary>
+    /// 防止【瓦库形态】/【永久低语耳环】被第三方效果移除（r83，默认开）。
+    /// 实证：TouhouAncients【无底之胃】"吞噬初始遗物与先古遗物以外的全部遗物"会把【瓦库形态】
+    /// 一并吃掉，而托管判据只看"是否持有遗物"→ 瓦库彻底停摆。
+    /// 开启时：拦截 Player.RemoveRelicInternal 保住托管遗物，且判据在遗物缺失时按瓦库名单兜底并补发。
+    /// 关闭时：回到 r82 及以前的行为（遗物可被正常移除，移除后瓦库停止自动操作）。
+    /// </summary>
+    public bool keepWakuuFormRelic { get; set; } = true;
+
     public bool autoClaimCards { get; set; } = true;
 
     public bool autoClaimGoldRelics { get; set; } = true;
@@ -53,6 +62,74 @@ internal sealed class WakuuConfigData
     /// 关闭或该附魔填了"维持现状"时行为与既有完全一致。
     /// </summary>
     public bool smartEnchant { get; set; } = true;
+
+    /// <summary>
+    /// 跨角色卡组：每个角色战后奖励追加一组从「其他角色」卡池抽取的 3 选 1 卡牌奖励
+    /// （原作者未完成的 v1.30 设计，上游 GuyGinat 69c7d99 实现，奖励直接以接收者身份生成）。
+    /// 默认关。
+    /// </summary>
+    public bool extraCrossCharacterCardReward { get; set; }
+
+    /// <summary>
+    /// 个人偏好记录器（默认开）：记录真人点选的卡牌奖励批次与事件选项（只记真人决策，
+    /// 瓦库自动领/自动选不记），供三级决策链第①级使用。写 %APPDATA%\SlayTheSpire2\personal_stats.json。
+    /// </summary>
+    public bool personalRecorder { get; set; } = true;
+
+    /// <summary>
+    /// 个人统计决策辅助（默认关）：开启后瓦库选牌/选事件优先参考本机个人统计
+    /// （多人局优先多人切片），个人样本不足或无倾向时回退社区统计（skadaAssist）→ 最左/最上。
+    /// </summary>
+    public bool personalAssist { get; set; }
+
+    /// <summary>
+    /// 个人统计偏好档位（Phase 1.5，默认 characterFirst，= v1 现状行为零变化）：
+    /// characterFirst = 角色优先（①模式+角色→②模式→③角色→④全量，先保角色再放宽）；
+    /// volumeFirst = 总量优先（跳过跨模式单角色档，样本集中在模式内与全量）；
+    /// characterOnly = 只看角色（绝不用别的角色的数据兜底，适合角色专属牌）。
+    /// 取值见 WakuuPersonalQuery.PersonalTier*（纯逻辑单一来源）。
+    /// </summary>
+    public string personalTier { get; set; } = WakuuPersonalQuery.PersonalTierCharacterFirst;
+
+    /// <summary>
+    /// 商店自动化（Phase 4，默认关）：瓦库角色商店界面打开时自动买卡——
+    /// 卡牌按社区统计胜率 ≥ WakuuMerchantPicking.DefaultMinBuyWinRate（默认 0.2）
+    /// 且支付后仍保留 ≥ DefaultGoldFloor（默认 50）金币才买。
+    /// 遗物/药水与删牌服务的自动化后续增量（§9.3）。
+    /// </summary>
+    public bool shopAssist { get; set; }
+
+    /// <summary>
+    /// 商店自动买卡的补充项（默认关，2026-09-06 用户拍板）：开启后商店里
+    /// 「查不到社区统计胜率」的卡（多为 mod 卡，SkadaHelper 未收录）也按
+    /// 金币保底买入；关闭时无数据卡静默跳过（保持 r64 语义）。
+    /// 仅 shopAssist 开启时生效。
+    /// </summary>
+    public bool shopAssistBuyNoData { get; set; }
+
+    /// <summary>
+    /// 自有统计角标（默认关，2026-09-07 用户拍板 Phase 4 增量）：开启后在
+    /// 「奖励选牌卡 / 商店卡 / 事件选项按钮」右下角显示个人记录器算出的总抓取率/总选择率（XX%），
+    /// 鼠标悬停时在 hover tip 下方追加一块自绘弹窗（分幕首抓/重复抓取率或分幕选择率 + 整体胜率）。
+    /// 只显示本地个人统计，与皮皮军师/SkadaHelper 社区统计 UI 完全分开；无社区数据参与。
+    /// </summary>
+    public bool statBadge { get; set; }
+
+    /// <summary>
+    /// 自有统计角标在目标（卡/事件选项）内的位置：bottomRight / bottomLeft / topRight / topLeft。
+    /// 默认 **bottomLeft**——皮皮军师（SkadaHelper）自己会把社区统计标签画在卡的右侧，
+    /// 放右下会与它重叠并被我们的顶层 overlay 盖住。
+    /// </summary>
+    public string statBadgeCorner { get; set; } = WakuuStatBadgeCorner.BottomLeft;
+
+    /// <summary>
+    /// 统计角标的数据来源档位（默认 `personalOnly` 仅个人）：
+    /// - `personalOnly`：只用自己打出来的个人统计；
+    /// - `personalThenCommunity`：个人优先，该卡**没有个人记录**时才用社区抓取率补足；
+    /// - `blended`：个人与社区按伪计数加权**融合成一个**抓取率（个人样本越多越主导）。
+    /// 始终只显示一个百分比；社区数据来自皮皮军师（SkadaHelper）数据接口。
+    /// </summary>
+    public string statBadgeSource { get; set; } = WakuuStatBadgeSource.PersonalOnly;
 
     public string eventChoiceMode { get; set; } = WakuuChoiceModes.First;
 

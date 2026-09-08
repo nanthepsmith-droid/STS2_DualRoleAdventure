@@ -110,7 +110,9 @@ internal static class RewardsCmdPatch
         }
 
         bool isTerminal = true; // CombatRoom 的奖励界面始终是 terminal
+        CombatRewardMergeContext.BeginDisplaySet(displaySet);
         NRewardsScreen rewardScreen = NRewardsScreen.ShowScreen(displaySet, isTerminal, displayPlayer.RunState);
         await rewardScreen.ToSignal(rewardScreen, NRewardsScreen.SignalName.Completed);
+        CombatRewardMergeContext.CompleteDisplaySet(displaySet, "merged-rewards-offer");
     }
 }

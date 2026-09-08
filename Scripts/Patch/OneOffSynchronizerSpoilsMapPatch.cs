@@ -47,9 +47,25 @@ internal static class OneOffSynchronizerSpoilsMapPatch
             }
 
             MapPoint? currentPoint = runState.Map.GetPoint(runState.CurrentMapCoord.Value);
-            if (currentPoint == null || !currentPoint.Quests.Any((quest) => quest is SpoilsMap))
+            bool currentHasSpoilsQuest = currentPoint?.Quests.Any((quest) => quest is SpoilsMap) ?? false;
+            if (!currentHasSpoilsQuest)
             {
-                return totalGold;
+                // r82 兜底：读档/跨会话继续后，宝箱点上的 SpoilsMap quest 偶发丢失（地图 UI 的 X 标记
+                // 仍保留、但 MapPoint.Quests 未恢复，原版与旧补丁都会因此静默不触发藏宝图结算）。
+                // 藏宝图生效的幕使用 SpoilsActMap：全幕只有一个宝箱点。因此只要全图已无任何 spoils
+                // quest、却仍有人持有本幕 SpoilsMap 卡，就判定为 quest 丢失修复场景，在所在宝箱房结算；
+                // 若 quest 还在其它宝箱点上（说明玩家进错了宝箱）则维持不结算，避免误发。
+                bool anySpoilsQuestElsewhere = runState.Map.GetAllMapPoints()
+                    .Any((point) => point != currentPoint && point.Quests.Any((quest) => quest is SpoilsMap));
+                if (anySpoilsQuestElsewhere)
+                {
+                    LocalMultiControlLogger.Info(
+                        "宝箱房间无藏宝图 quest 且该 quest 位于其它宝箱点，跳过藏宝图结算。");
+                    return totalGold;
+                }
+
+                LocalMultiControlLogger.Warn(
+                    $"宝箱房间检测到藏宝图 quest 丢失（读档后未恢复），按持卡兜底结算: coord={runState.CurrentMapCoord}");
             }
 
             List<Player> playersWithSpoilsMap = runState.Players

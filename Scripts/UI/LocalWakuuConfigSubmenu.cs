@@ -177,6 +177,11 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             "持有【瓦库形态】时，局内再获得的原版低语耳环只保留 +1 能量，不再重复触发自动出牌。",
             () => LocalWakuuAutopilotConfig.SuppressVanillaEarring,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("suppressVanillaEarring", value));
+        AddToggleRow(column,
+            "防止瓦库形态丢失",
+            "默认开。第三方遗物/事件（已见案例：东方「无底之胃」——拾起时吞噬初始遗物与先古遗物以外的全部遗物）会把【瓦库形态】一起移除，而托管判据只看是否持有该遗物，移除后瓦库会彻底停止自动操作。开启后：本 mod 会拦下对托管遗物的移除，并在遗物真的没了时按瓦库名单继续托管并补发。关闭 = 回到旧行为（可被移除，移除后瓦库停摆）。",
+            () => LocalWakuuAutopilotConfig.KeepWakuuFormRelic,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("keepWakuuFormRelic", value));
 
         column.AddChild(CreateSpacer(8));
 
@@ -225,6 +230,29 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             "默认开。开启后瓦库附魔选牌按「原版附魔一览表」里填写的规则挑牌（例如：伶俐/墨影/灵巧选费用最低的牌，腐化/本能选伤害最高的攻击牌，注能选能抽 3 张以上的技能牌，克隆按是否持有不休陀螺走两套优先级）。关闭后回到原来的选牌策略。",
             () => LocalWakuuAutopilotConfig.SmartEnchant,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("smartEnchant", value));
+        AddToggleRow(column,
+            "个人偏好记录",
+            "默认开。记录你自己点选的卡牌奖励与事件选项（只记真人决策，瓦库自动操作不记），写入 personal_stats.json，供「个人统计决策辅助」使用。只统计打完（胜/负）的局；进行中/半途退出的局不计。",
+            () => LocalWakuuAutopilotConfig.PersonalRecorder,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("personalRecorder", value));
+        AddToggleRow(column,
+            "个人统计决策辅助",
+            "默认关。开启后瓦库选牌/选事件优先参考你自己打出的个人统计（多人局优先参考多人局数据）；个人样本不足或无倾向时回退社区统计与默认策略。样本越多越贴合你的打法（含 mod 卡）。",
+            () => LocalWakuuAutopilotConfig.PersonalAssist,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("personalAssist", value));
+        column.AddChild(CreatePersonalTierRow(
+            "个人统计偏好档位",
+            "用个人统计做决策时按哪个切片查表。角色优先：先看本角色，不足再放宽（默认）；总量优先：角色样本不足时直接信跨角色总样本；只看角色：绝不用其他角色的数据兜底（适合角色专属牌）。影响瓦库卡牌奖励与事件选项两条决策链。"));
+        AddToggleRow(column,
+            "商店自动买卡",
+            "默认关（Phase 4 实验）。开启后瓦库角色的商店视图打开时，自动买「社区统计胜率 ≥ 20% 且付完仍保留 ≥ 50 金币」的卡。遗物/药水与删牌服务自动化尚未做。",
+            () => LocalWakuuAutopilotConfig.ShopAssist,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("shopAssist", value));
+        AddToggleRow(column,
+            "商店买卡·无统计数据也买",
+            "默认关。需「商店自动买卡」开启。商店里查不到社区统计胜率的卡（多为 mod 卡，皮皮军师未收录）也会按「付完仍保留 ≥ 50 金币」买入，否则无数据的卡静默跳过。",
+            () => LocalWakuuAutopilotConfig.ShopAssistBuyNoData,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("shopAssistBuyNoData", value));
         column.AddChild(CreateStrategyRow(
             "事件选项策略",
             "事件自动选择时挑哪个选项。很多事件一直选第一个会死，可切到最后一个或随机规避。",
@@ -241,6 +269,8 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             "允许自动选择涅奥（NEOW）开局奖励；默认关闭。",
             () => LocalWakuuAutopilotConfig.NeowAutoChoose,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("neowAutoChoose", value));
+
+        BuildOtherSection(column);
 
         column.AddChild(CreateSpacer(6));
         column.AddChild(CreateDivider(new Color(0.35f, 0.35f, 0.35f, 0.7f)));
@@ -272,6 +302,39 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
 
         // 首个布局帧后校准一次滚动内容尺寸（此时列宽已定，自动换行高度才准确）
         OnScrollContentResized();
+    }
+
+    /// <summary>
+    /// 「其它设置」分区（r83）：与瓦库托管无强关联的开关集中放到页面末尾，并用分隔线隔开，
+    /// 避免和上方「瓦库托管」区块混在一起——这些功能即便关闭瓦库形态总开关也照常按自身开关生效。
+    /// </summary>
+    private void BuildOtherSection(VBoxContainer column)
+    {
+        column.AddChild(CreateSpacer(18));
+        column.AddChild(CreateDivider(new Color(0.55f, 0.45f, 0.25f, 0.9f)));
+        column.AddChild(CreateLabel("其 它 设 置", 34, new Color(1f, 0.95f, 0.75f)));
+        column.AddChild(CreateDivider(new Color(0.55f, 0.45f, 0.25f, 0.9f)));
+        column.AddChild(CreateLabel(
+            "以下功能与「瓦库形态托管（总开关）」无关：即使不开托管也按各自的开关生效，改动同样立即写入 vakuu_autopilot.json。",
+            20, new Color(0.72f, 0.72f, 0.72f)));
+        column.AddChild(CreateSpacer(10));
+
+        AddToggleRow(column,
+            "跨角色卡组（战后奖励）",
+            "默认关。开启后每个角色的战后卡牌奖励追加一组从「其他角色」卡池抽取的 3 选 1（原作者未完成的 v1.30 设计）。",
+            () => LocalWakuuAutopilotConfig.ExtraCrossCharacterCardReward,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("extraCrossCharacterCardReward", value));
+        AddToggleRow(column,
+            "自有统计角标",
+            "默认关。开启后在「奖励选牌卡/商店卡/事件选项按钮」的角标位置（见下方「自有统计角标位置」）显示你自己记录的总抓取率/总选择率（XX%），鼠标悬停弹出分幕首抓/重复抓取率、胜率的详情。只显示本地个人统计，与皮皮军师（SkadaHelper）社区统计 UI 分开、互不覆盖。",
+            () => LocalWakuuAutopilotConfig.StatBadge,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("statBadge", value));
+        column.AddChild(CreateStatBadgeSourceRow(
+            "统计角标数据来源",
+            "角标百分比怎么算（**始终只显示一个数字**）：**仅个人**=只用你自己打出的统计；**个人+社区兜底**=该卡没有个人记录时才用皮皮军师的社区抓取率补足；**融合**=个人与社区按伪计数加权合成一个抓取率（个人样本越多越主导，个人 5 次以上即与社区平手以上）。社区数据来自皮皮军师（SkadaHelper）的数据接口；未装或查无数据时退回个人统计/0%。"));
+        column.AddChild(CreateStatBadgeCornerRow(
+            "自有统计角标位置",
+            "角标挂在目标（卡/事件选项）的哪个角，点右侧按钮在 左下 → 右下 → 右上 → 左上 之间循环。默认 **左下**——皮皮军师（SkadaHelper）会自己把社区统计标签画在卡的右侧，放右下会与它重叠并被本 mod 的顶层叠加盖住；若你想让两者挨在一起显示，可切到「右上/左上」自行比较。"));
     }
 
     /// <summary>
@@ -365,6 +428,204 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             "第一个" => LocalWakuuAutopilotConfig.LastChoiceMode,
             "最后一个" => LocalWakuuAutopilotConfig.RandomChoiceMode,
             _ => LocalWakuuAutopilotConfig.FirstChoiceMode,
+        };
+    }
+
+    /// <summary>
+    /// 个人统计偏好档位切换行（三档：角色优先 → 总量优先 → 只看角色，循环）。
+    /// 档位取值经 TrySetAndSaveString("personalTier", ...) 即时写回 json。
+    /// </summary>
+    private Control CreatePersonalTierRow(string title, string description)
+    {
+        HBoxContainer row = new();
+        row.AddThemeConstantOverride("separation", 28);
+
+        VBoxContainer textColumn = new();
+        textColumn.CustomMinimumSize = new Vector2(880f, 0f);
+        textColumn.SizeFlagsHorizontal = (SizeFlags)3; // ExpandFill
+        textColumn.AddThemeConstantOverride("separation", 2);
+
+        Label titleLabel = CreateLabel(title, 26, new Color(1f, 0.85f, 0.35f));
+        titleLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        textColumn.AddChild(titleLabel);
+
+        Label descLabel = CreateLabel(description, 19, new Color(0.8f, 0.78f, 0.72f));
+        descLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        descLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        textColumn.AddChild(descLabel);
+
+        row.AddChild(textColumn);
+
+        LocalSimpleTextButton tierButton = new()
+        {
+            ButtonText = GetPersonalTierDisplayText(LocalWakuuAutopilotConfig.PersonalTier),
+            FontSize = 24,
+            SizeFlagsVertical = (SizeFlags)4, // ShrinkCenter
+        };
+        tierButton.CustomMinimumSize = new Vector2(220f, 64f);
+        tierButton.Connect(NClickableControl.SignalName.Released, Callable.From<NClickableControl>(_ =>
+        {
+            string next = NextPersonalTier(LocalWakuuAutopilotConfig.PersonalTier);
+            if (LocalWakuuAutopilotConfig.TrySetAndSaveString("personalTier", next))
+            {
+                tierButton.ButtonText = GetPersonalTierDisplayText(LocalWakuuAutopilotConfig.PersonalTier);
+                LocalMultiControlLogger.Info($"个人统计偏好档位已切换: {next}");
+            }
+        }));
+        row.AddChild(tierButton);
+        return row;
+    }
+
+    private static string GetPersonalTierDisplayText(string tier)
+    {
+        return tier switch
+        {
+            LocalWakuuAutopilotConfig.VolumeFirstTier => "总量优先",
+            LocalWakuuAutopilotConfig.CharacterOnlyTier => "只看角色",
+            _ => "角色优先",
+        };
+    }
+
+    private static string NextPersonalTier(string tier)
+    {
+        return tier switch
+        {
+            LocalWakuuAutopilotConfig.CharacterFirstTier => LocalWakuuAutopilotConfig.VolumeFirstTier,
+            LocalWakuuAutopilotConfig.VolumeFirstTier => LocalWakuuAutopilotConfig.CharacterOnlyTier,
+            _ => LocalWakuuAutopilotConfig.CharacterFirstTier,
+        };
+    }
+
+    /// <summary>
+    /// 统计角标数据来源切换行（三档：仅个人 → 个人+社区兜底 → 融合，循环）。
+    /// 取值经 TrySetAndSaveString("statBadgeSource", ...) 即时写回 json。
+    /// </summary>
+    private Control CreateStatBadgeSourceRow(string title, string description)
+    {
+        HBoxContainer row = new();
+        row.AddThemeConstantOverride("separation", 28);
+
+        VBoxContainer textColumn = new();
+        textColumn.CustomMinimumSize = new Vector2(880f, 0f);
+        textColumn.SizeFlagsHorizontal = (SizeFlags)3; // ExpandFill
+        textColumn.AddThemeConstantOverride("separation", 2);
+
+        Label titleLabel = CreateLabel(title, 26, new Color(1f, 0.85f, 0.35f));
+        titleLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        textColumn.AddChild(titleLabel);
+
+        Label descLabel = CreateLabel(description, 19, new Color(0.8f, 0.78f, 0.72f));
+        descLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        descLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        textColumn.AddChild(descLabel);
+
+        row.AddChild(textColumn);
+
+        LocalSimpleTextButton sourceButton = new()
+        {
+            ButtonText = GetStatBadgeSourceDisplayText(LocalWakuuAutopilotConfig.StatBadgeSource),
+            FontSize = 24,
+            SizeFlagsVertical = (SizeFlags)4, // ShrinkCenter
+        };
+        sourceButton.CustomMinimumSize = new Vector2(260f, 64f);
+        sourceButton.Connect(NClickableControl.SignalName.Released, Callable.From<NClickableControl>(_ =>
+        {
+            string next = NextStatBadgeSource(LocalWakuuAutopilotConfig.StatBadgeSource);
+            if (LocalWakuuAutopilotConfig.TrySetAndSaveString("statBadgeSource", next))
+            {
+                sourceButton.ButtonText = GetStatBadgeSourceDisplayText(LocalWakuuAutopilotConfig.StatBadgeSource);
+                LocalMultiControlLogger.Info($"统计角标数据来源已切换: {next}");
+            }
+        }));
+        row.AddChild(sourceButton);
+        return row;
+    }
+
+    private static string GetStatBadgeSourceDisplayText(string source)
+    {
+        return source switch
+        {
+            WakuuStatBadgeSource.PersonalThenCommunity => "个人+社区兜底",
+            WakuuStatBadgeSource.Blended => "融合",
+            _ => "仅个人",
+        };
+    }
+
+    private static string NextStatBadgeSource(string source)
+    {
+        return source switch
+        {
+            WakuuStatBadgeSource.PersonalOnly => WakuuStatBadgeSource.PersonalThenCommunity,
+            WakuuStatBadgeSource.PersonalThenCommunity => WakuuStatBadgeSource.Blended,
+            _ => WakuuStatBadgeSource.PersonalOnly,
+        };
+    }
+
+    /// <summary>
+    /// 自有统计角标位置切换行（四档：左下 → 右下 → 右上 → 左上，循环）。
+    /// 默认左下：皮皮军师（SkadaHelper）会自己把社区统计标签画在卡的右侧，放右下会与它重叠。
+    /// 取值经 TrySetAndSaveString("statBadgeCorner", ...) 即时写回 json。
+    /// </summary>
+    private Control CreateStatBadgeCornerRow(string title, string description)
+    {
+        HBoxContainer row = new();
+        row.AddThemeConstantOverride("separation", 28);
+
+        VBoxContainer textColumn = new();
+        textColumn.CustomMinimumSize = new Vector2(880f, 0f);
+        textColumn.SizeFlagsHorizontal = (SizeFlags)3; // ExpandFill
+        textColumn.AddThemeConstantOverride("separation", 2);
+
+        Label titleLabel = CreateLabel(title, 26, new Color(1f, 0.85f, 0.35f));
+        titleLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        textColumn.AddChild(titleLabel);
+
+        Label descLabel = CreateLabel(description, 19, new Color(0.8f, 0.78f, 0.72f));
+        descLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        descLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        textColumn.AddChild(descLabel);
+
+        row.AddChild(textColumn);
+
+        LocalSimpleTextButton cornerButton = new()
+        {
+            ButtonText = GetStatBadgeCornerDisplayText(LocalWakuuAutopilotConfig.StatBadgeCorner),
+            FontSize = 24,
+            SizeFlagsVertical = (SizeFlags)4, // ShrinkCenter
+        };
+        cornerButton.CustomMinimumSize = new Vector2(220f, 64f);
+        cornerButton.Connect(NClickableControl.SignalName.Released, Callable.From<NClickableControl>(_ =>
+        {
+            string next = NextStatBadgeCorner(LocalWakuuAutopilotConfig.StatBadgeCorner);
+            if (LocalWakuuAutopilotConfig.TrySetAndSaveString("statBadgeCorner", next))
+            {
+                cornerButton.ButtonText = GetStatBadgeCornerDisplayText(LocalWakuuAutopilotConfig.StatBadgeCorner);
+                LocalMultiControlLogger.Info($"自有统计角标位置已切换: {next}");
+            }
+        }));
+        row.AddChild(cornerButton);
+        return row;
+    }
+
+    private static string GetStatBadgeCornerDisplayText(string corner)
+    {
+        return corner switch
+        {
+            WakuuStatBadgeCorner.BottomRight => "右下",
+            WakuuStatBadgeCorner.TopRight => "右上",
+            WakuuStatBadgeCorner.TopLeft => "左上",
+            _ => "左下",
+        };
+    }
+
+    private static string NextStatBadgeCorner(string corner)
+    {
+        return corner switch
+        {
+            WakuuStatBadgeCorner.BottomLeft => WakuuStatBadgeCorner.BottomRight,
+            WakuuStatBadgeCorner.BottomRight => WakuuStatBadgeCorner.TopRight,
+            WakuuStatBadgeCorner.TopRight => WakuuStatBadgeCorner.TopLeft,
+            _ => WakuuStatBadgeCorner.BottomLeft,
         };
     }
 

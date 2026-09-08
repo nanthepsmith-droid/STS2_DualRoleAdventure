@@ -74,6 +74,10 @@ internal static class NRewardButtonMergedRewardSelectPatch
         button.Disable();
         if (await reward.SelectUnsynchronized())
         {
+            // 领完即检查：若所属展示集已全部领完，立刻在后端标记完成——否则 RewardCollectedFrom
+            // 在最后一张按钮被领走时会把 Error 刷出来（2026-09-06 实机：4/5 的
+            // "All rewards have been taken..." 都发生在这一刻，原版在 SelectLocalReward 里有这步）
+            CombatRewardMergeContext.OnRewardClaimed(reward);
             button.EmitSignal(NRewardButton.SignalName.RewardClaimed, button);
             return;
         }

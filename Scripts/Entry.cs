@@ -14,7 +14,7 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    private const string BuildMarker = "Revival v1.39.0 (game v0.111.0, marker=2026-09-01-r55)";
+    private const string BuildMarker = "Revival v1.39.0 (game v0.111.0, marker=2026-09-08-r84)";
 
     private static Harmony? _harmony;
 
@@ -47,13 +47,19 @@ public partial class Entry
         "RewardsCmd.OfferCustom",
         "RewardsCmd.OfferForRoomEnd",
         "CombatRoom.OfferRoomEndRewards",
-        "RewardsSetSynchronizer.SelectLocalReward",
+        "RewardsSetSynchronizer.SelectLocalReward",       // 领取时把归属改绑到奖励的 owner player
         "PotionCmd.TryToProcure",
         "WhisperingEarring.AfterAutoPrePlayPhaseEnteredLate",
         "ActionQueueSet.CombatEnded",                     // 战斗结束残留动作清理
         "NEndTurnButton.CallReleaseLogic",
         "CardSelectCmd.FromDeckForEnchantment",           // 瓦库事件附魔选牌自动作答
         "CardCmd.Transform",                              // 手牌变换期间 NetId 钉住（UI 同步）
+        "RunManager.OnEnded",                             // 个人记录器：整局胜负归因
+        "NEventRoom.OptionButtonClicked",                 // 个人记录器：真人事件点选
+        "CardReward.OnSelect",                            // 个人记录器：真人卡牌奖励点选（单机/合并屏统一入口）
+        "EventModel.SelectCardsToAddToDeckFromGrid",      // 个人记录器：事件网格选 N 入卡组
+        "MerchantEntry.OnTryPurchaseWrapper",             // 个人记录器：商店购买记录
+        "CardSelectCmd.FromDeckForRemoval",               // 个人记录器：真人删牌统计
     };
 
     public static void Init()
@@ -61,6 +67,7 @@ public partial class Entry
         LocalMultiControlLogger.Info("开始初始化 Harmony 补丁。");
         LocalMultiControlLogger.Info(BuildMarker);
         LocalWakuuAutopilotConfig.Reload("entry-init");
+        LocalPersonalRecorder.Reload("entry-init"); // 个人偏好记录器（三级决策链第①级数据源）
         RegisterWakuuRelicsToPool();
         LocalWakuuRelicLocalization.Initialize();
         // 社区统计（SkadaHelper）为可选第三方依赖：探测失败只打日志，不阻断加载

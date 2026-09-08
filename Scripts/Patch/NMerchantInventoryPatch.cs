@@ -36,5 +36,8 @@ internal static class NMerchantInventoryPatch
         inventory = LocalMerchantInventoryRuntime.GetOrCreateInventory(merchantRoom, currentPlayer);
         LocalMerchantInventoryRuntime.BindInventoryToRoom(merchantRoom, currentPlayer, inventory);
         LocalMultiControlLogger.Info($"商店库存绑定到当前角色: player={currentPlayer.NetId}");
+
+        // Phase 4：瓦库角色的商店视图打开 → 触发自动采购（默认关 shopAssist）
+        LocalWakuuMerchantAuto.OnMerchantInventoryShown(currentPlayer);
     }
 }

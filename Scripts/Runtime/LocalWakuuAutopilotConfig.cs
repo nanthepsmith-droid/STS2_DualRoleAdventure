@@ -28,6 +28,13 @@ internal static class LocalWakuuAutopilotConfig
     /// <summary>瓦库形态：压制原版低语耳环的自动出牌钩子（保留其 +1 能量）。</summary>
     public static bool SuppressVanillaEarring { get; private set; } = true;
 
+    /// <summary>
+    /// 防止瓦库托管遗物被第三方效果移除（r83，默认开）：拦截 Player.RemoveRelicInternal 保住
+    /// 【瓦库形态】/【永久低语耳环】，并让托管判据在遗物缺失时按瓦库名单兜底 + 补发。
+    /// 关闭 = 回到 r82 行为（遗物可被引擎/第三方正常移除，移除后瓦库停止自动操作）。
+    /// </summary>
+    public static bool KeepWakuuFormRelic { get; private set; } = true;
+
     /// <summary>瓦库形态：战后卡牌奖励自动领最左（仅瓦库角色自己的奖励）。</summary>
     public static bool AutoClaimCards { get; private set; } = true;
 
@@ -77,6 +84,56 @@ internal static class LocalWakuuAutopilotConfig
     public static bool SmartEnchant { get; private set; } = true;
 
     /// <summary>
+    /// 跨角色卡组（默认关）：每个角色战后奖励追加一组从「其他角色」卡池抽取的 3 选 1 卡牌奖励
+    /// （原作者未完成的 v1.30 设计，上游 GuyGinat 69c7d99 实现）。
+    /// </summary>
+    public static bool ExtraCrossCharacterCardReward { get; private set; }
+
+    /// <summary>
+    /// 个人偏好记录器（默认开）：记录真人点选的卡牌奖励/事件选项（三级决策链第①级数据源，
+    /// 可行性分析 §8.4.1）。只记真人决策，瓦库自动不记。
+    /// </summary>
+    public static bool PersonalRecorder { get; private set; } = true;
+
+    /// <summary>
+    /// 个人统计决策辅助（默认关）：瓦库选牌/选事件优先参考本机个人统计，样本不足回退社区统计。
+    /// </summary>
+    public static bool PersonalAssist { get; private set; }
+
+    /// <summary>
+    /// 个人统计偏好档位（默认角色优先 = v1 现状，行为零变化）。
+    /// characterFirst 角色优先 / volumeFirst 总量优先 / characterOnly 只看角色，
+    /// 语义见 WakuuPersonalQuery.DecisionTiers 注释。同时影响瓦库卡牌奖励与事件选项两条决策链。
+    /// </summary>
+    public static string PersonalTier { get; private set; } = CharacterFirstTier;
+
+    /// <summary>
+    /// 商店自动化（Phase 4，默认关）：瓦库商店界面打开时自动买卡（社区统计胜率阈值 + 金币保底）。
+    /// </summary>
+    public static bool ShopAssist { get; private set; }
+
+    /// <summary>
+    /// 商店自动买卡补充项（默认关）：查不到社区统计胜率的卡（多为 mod 卡）也按金币保底买入。
+    /// </summary>
+    public static bool ShopAssistBuyNoData { get; private set; }
+
+    /// <summary>
+    /// 自有统计角标（默认关）：奖励选牌卡/商店卡/事件选项按钮的右下角个人统计角标 + 悬停弹窗。
+    /// 只显示本地个人记录器数据，与皮皮军师/SkadaHelper 社区统计 UI 分开。
+    /// </summary>
+    public static bool StatBadge { get; private set; }
+
+    /// <summary>
+    /// 自有统计角标位置档位（默认左下：避开皮皮军师/SkadaHelper 画在卡右侧的社区统计标签）。
+    /// </summary>
+    public static string StatBadgeCorner { get; private set; } = WakuuStatBadgeCorner.BottomLeft;
+
+    /// <summary>
+    /// 统计角标数据来源档位（默认仅个人）：personalOnly / personalThenCommunity / blended。
+    /// </summary>
+    public static string StatBadgeSource { get; private set; } = WakuuStatBadgeSource.PersonalOnly;
+
+    /// <summary>
     /// 事件自动选择的策略：first=第一个（最上）/ last=最后一个 / random=随机。
     /// 很多事件一直选第一个会死，可切到 last 或 random 规避。
     /// </summary>
@@ -101,6 +158,9 @@ internal static class LocalWakuuAutopilotConfig
     public const string RareChoiceMode = WakuuChoiceModes.Rare;
     public const string HeuristicBrainMode = WakuuBrainModes.Heuristic;
     public const string AutoBrainMode = WakuuBrainModes.Auto;
+    public const string CharacterFirstTier = WakuuPersonalQuery.PersonalTierCharacterFirst;
+    public const string VolumeFirstTier = WakuuPersonalQuery.PersonalTierVolumeFirst;
+    public const string CharacterOnlyTier = WakuuPersonalQuery.PersonalTierCharacterOnly;
 
     public static string ConfigFilePath =>
         Path.Combine(
@@ -128,6 +188,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.playAllCards): data.playAllCards = value; break;
                     case nameof(WakuuConfigData.backgroundMode): data.backgroundMode = value; break;
                     case nameof(WakuuConfigData.suppressVanillaEarring): data.suppressVanillaEarring = value; break;
+                    case nameof(WakuuConfigData.keepWakuuFormRelic): data.keepWakuuFormRelic = value; break;
                     case nameof(WakuuConfigData.autoClaimCards): data.autoClaimCards = value; break;
                     case nameof(WakuuConfigData.autoClaimGoldRelics): data.autoClaimGoldRelics = value; break;
                     case nameof(WakuuConfigData.autoClaimPotions): data.autoClaimPotions = value; break;
@@ -138,6 +199,12 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.skadaAssist): data.skadaAssist = value; break;
                     case nameof(WakuuConfigData.smartPick): data.smartPick = value; break;
                     case nameof(WakuuConfigData.smartEnchant): data.smartEnchant = value; break;
+                    case nameof(WakuuConfigData.extraCrossCharacterCardReward): data.extraCrossCharacterCardReward = value; break;
+                    case nameof(WakuuConfigData.personalRecorder): data.personalRecorder = value; break;
+                    case nameof(WakuuConfigData.personalAssist): data.personalAssist = value; break;
+                    case nameof(WakuuConfigData.shopAssist): data.shopAssist = value; break;
+                    case nameof(WakuuConfigData.shopAssistBuyNoData): data.shopAssistBuyNoData = value; break;
+                    case nameof(WakuuConfigData.statBadge): data.statBadge = value; break;
                     default:
                         LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：未知开关名 {key}");
                         return false;
@@ -156,7 +223,7 @@ internal static class LocalWakuuAutopilotConfig
     }
 
     /// <summary>
-    /// 设置界面专用：更新单个字符串型配置（当前仅 eventChoiceMode：first/last/random）。
+    /// 设置界面专用：更新单个字符串型配置（eventChoiceMode / cardPickMode / wakuuBrain / personalTier）。
     /// 立即刷新内存生效值并写回 json；返回 false 表示 key 未知、值非法或写盘失败。
     /// </summary>
     public static bool TrySetAndSaveString(string key, string value)
@@ -166,13 +233,16 @@ internal static class LocalWakuuAutopilotConfig
             try
             {
                 if (key is nameof(WakuuConfigData.eventChoiceMode) or nameof(WakuuConfigData.cardPickMode)
-                    or nameof(WakuuConfigData.wakuuBrain))
+                    or nameof(WakuuConfigData.wakuuBrain) or nameof(WakuuConfigData.personalTier)
+                    or nameof(WakuuConfigData.statBadgeCorner) or nameof(WakuuConfigData.statBadgeSource))
                 {
-                    // 事件选项策略不开放 rare（事件选项无稀有度概念）；卡牌选牌策略开放 rare
                     string? normalized = key switch
                     {
                         nameof(WakuuConfigData.wakuuBrain) => NormalizeBrainMode(value),
                         nameof(WakuuConfigData.cardPickMode) => NormalizeCardPickMode(value),
+                        nameof(WakuuConfigData.personalTier) => NormalizePersonalTier(value),
+                        nameof(WakuuConfigData.statBadgeCorner) => WakuuStatBadgeCorner.Normalize(value),
+                        nameof(WakuuConfigData.statBadgeSource) => WakuuStatBadgeSource.Normalize(value),
                         _ => NormalizeChoiceMode(value),
                     };
                     if (normalized == null)
@@ -182,17 +252,28 @@ internal static class LocalWakuuAutopilotConfig
                     }
 
                     WakuuConfigData data = ReadConfigDataOrThrow();
-                    if (key == nameof(WakuuConfigData.eventChoiceMode))
+                    // r83 修复：statBadgeCorner / statBadgeSource 此前落进 else 分支被写到了 wakuuBrain，
+                    // 导致角标位置改不动（永远停在默认左下）、数据来源也改不动。
+                    switch (key)
                     {
-                        data.eventChoiceMode = normalized;
-                    }
-                    else if (key == nameof(WakuuConfigData.cardPickMode))
-                    {
-                        data.cardPickMode = normalized;
-                    }
-                    else
-                    {
-                        data.wakuuBrain = normalized;
+                        case nameof(WakuuConfigData.eventChoiceMode):
+                            data.eventChoiceMode = normalized;
+                            break;
+                        case nameof(WakuuConfigData.cardPickMode):
+                            data.cardPickMode = normalized;
+                            break;
+                        case nameof(WakuuConfigData.personalTier):
+                            data.personalTier = normalized;
+                            break;
+                        case nameof(WakuuConfigData.statBadgeCorner):
+                            data.statBadgeCorner = normalized;
+                            break;
+                        case nameof(WakuuConfigData.statBadgeSource):
+                            data.statBadgeSource = normalized;
+                            break;
+                        default:
+                            data.wakuuBrain = normalized;
+                            break;
                     }
 
                     WriteConfigData(data);
@@ -258,6 +339,23 @@ internal static class LocalWakuuAutopilotConfig
         {
             HeuristicBrainMode => HeuristicBrainMode,
             AutoBrainMode => AutoBrainMode,
+            _ => null,
+        };
+    }
+
+    /// <summary>规范化个人统计偏好档位取值（characterFirst/volumeFirst/characterOnly）；非法返回 null。</summary>
+    public static string? NormalizePersonalTier(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            CharacterFirstTier => CharacterFirstTier,
+            VolumeFirstTier => VolumeFirstTier,
+            CharacterOnlyTier => CharacterOnlyTier,
             _ => null,
         };
     }
@@ -336,12 +434,17 @@ internal static class LocalWakuuAutopilotConfig
             LocalMultiControlLogger.Info(
                 $"瓦库托管生效配置: useVakuuForm={data.useVakuuForm}, playAllCards={data.playAllCards}, "
                 + $"backgroundMode={data.backgroundMode}, suppressVanillaEarring={data.suppressVanillaEarring}, "
+                + $"keepWakuuFormRelic={data.keepWakuuFormRelic}, "
                 + $"autoClaimCards={data.autoClaimCards}, autoClaimGoldRelics={data.autoClaimGoldRelics}, "
                 + $"autoClaimPotions={data.autoClaimPotions}, "
                 + $"autoChooseEvents={data.autoChooseEvents}, autoRestChoice={data.autoRestChoice}, "
                 + $"autoUsePotions={data.autoUsePotions}, "
                 + $"neowAutoChoose={data.neowAutoChoose}, skadaAssist={data.skadaAssist}, "
                 + $"smartPick={data.smartPick}, smartEnchant={data.smartEnchant}, "
+                + $"extraCrossCharacterCardReward={data.extraCrossCharacterCardReward}, "
+                + $"personalRecorder={data.personalRecorder}, personalAssist={data.personalAssist}, "
+                + $"shopAssist={data.shopAssist}, shopAssistBuyNoData={data.shopAssistBuyNoData}, statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, "
+                + $"personalTier={NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier}, "
                 + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}, "
                 + $"wakuuBrain={data.wakuuBrain}");
         }
@@ -350,6 +453,7 @@ internal static class LocalWakuuAutopilotConfig
         PlayAllCards = data.playAllCards;
         BackgroundMode = data.backgroundMode;
         SuppressVanillaEarring = data.suppressVanillaEarring;
+        KeepWakuuFormRelic = data.keepWakuuFormRelic;
         AutoClaimCards = data.autoClaimCards;
         AutoClaimGoldRelics = data.autoClaimGoldRelics;
         AutoClaimPotions = data.autoClaimPotions;
@@ -360,6 +464,15 @@ internal static class LocalWakuuAutopilotConfig
         SkadaAssist = data.skadaAssist;
         SmartPick = data.smartPick;
         SmartEnchant = data.smartEnchant;
+        ExtraCrossCharacterCardReward = data.extraCrossCharacterCardReward;
+        PersonalRecorder = data.personalRecorder;
+        PersonalAssist = data.personalAssist;
+        ShopAssist = data.shopAssist;
+        ShopAssistBuyNoData = data.shopAssistBuyNoData;
+        StatBadge = data.statBadge;
+        StatBadgeCorner = WakuuStatBadgeCorner.Normalize(data.statBadgeCorner);
+        StatBadgeSource = WakuuStatBadgeSource.Normalize(data.statBadgeSource);
+        PersonalTier = NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier;
         EventChoiceMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;
         CardPickMode = NormalizeCardPickMode(data.cardPickMode) ?? LastChoiceMode;
         BrainMode = NormalizeBrainMode(data.wakuuBrain) ?? HeuristicBrainMode;

@@ -283,6 +283,86 @@ internal static class LocalWakuuEventAutoChoice
         }
     }
 
+    /// <summary>
+    /// 个人偏好统计选事件（三级决策链第①级，开关 personalAssist）：
+    /// 按选项的稳定 loc key（TextKey）查本机个人记录，选个人胜率最高的可用选项；
+    /// 任一选项个人样本不足（无倾向）即忽略该选项，全部忽略返回 null → 回退社区统计/既有策略。
+    /// 多人局优先参考多人切片（WakuuPersonalQuery.TryGetEventDecisionSignal 内部处理）。
+    /// </summary>
+    private static EventOption? SelectByPersonalStats(EventModel eventModel, IReadOnlyList<EventOption> candidates)
+    {
+        if (!LocalWakuuAutopilotConfig.PersonalAssist || eventModel.Owner == null || candidates.Count < 2)
+        {
+            return null;
+        }
+
+        try
+        {
+            PersonalStore store = LocalPersonalRecorder.Snapshot();
+            if (store.eventChoices.Count == 0)
+            {
+                return null;
+            }
+
+            string characterId = eventModel.Owner.Character.Id.Entry.ToUpperInvariant();
+            string eventId = eventModel.Id.Entry.ToUpperInvariant();
+            bool isMulti = eventModel.Owner.RunState?.Players.Count > 1;
+
+            int bestIndex = -1;
+            double bestWinRate = 0.0;
+            long bestCount = 0;
+            int withData = 0;
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                string optionKey = candidates[i].TextKey;
+                if (string.IsNullOrEmpty(optionKey))
+                {
+                    continue;
+                }
+
+                WakuuEventSignal? signal = WakuuPersonalQuery.TryGetEventDecisionSignal(
+                    store, eventId, optionKey, isMulti, characterId,
+                    tierPreference: LocalWakuuAutopilotConfig.PersonalTier);
+                if (signal == null)
+                {
+                    continue;
+                }
+
+                withData++;
+                // 严格大于 → 同胜率保留更靠前的选项
+                if (signal.Value.WinRate > bestWinRate)
+                {
+                    bestIndex = i;
+                    bestWinRate = signal.Value.WinRate;
+                    bestCount = signal.Value.Count;
+                }
+            }
+
+            if (bestIndex >= 0)
+            {
+                LocalMultiControlLogger.Info(
+                    $"瓦库事件按个人统计选取: event={eventId}, char={characterId}, "
+                    + $"index={bestIndex}/{candidates.Count}, winRate={bestWinRate:F3}, offered={bestCount}, "
+                    + $"withData={withData}");
+                return candidates[bestIndex];
+            }
+
+            if (withData > 0)
+            {
+                LocalMultiControlLogger.Info(
+                    $"瓦库事件个人统计未采用，回退社区/原策略: event={eventId}, 选项={candidates.Count}, "
+                    + $"查到个人数据={withData}（样本低于 {WakuuPersonalQuery.DefaultMinPersonalCount}）");
+            }
+
+            return null;
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"瓦库事件个人统计选取失败，回退原策略: {exception.Message}");
+            return null;
+        }
+    }
+
     private static async Task RunAsync(EventModel eventModel, ulong ownerId)
     {
         try
@@ -327,8 +407,9 @@ internal static class LocalWakuuEventAutoChoice
                     return;
                 }
 
-                // 三级决策链的第②③级：社区统计（SkadaHelper）优先，无数据回退既有策略（first/last/random）。
-                EventOption? option = SelectByCommunityStats(eventModel, safeCandidates)
+                // 三级决策链：①个人统计（本机偏好）→ ②社区统计（SkadaHelper）→ ③既有策略（first/last/random）。
+                EventOption? option = SelectByPersonalStats(eventModel, safeCandidates)
+                                      ?? SelectByCommunityStats(eventModel, safeCandidates)
                                       ?? SelectByStrategy(safeCandidates);
                 if (option == null)
                 {

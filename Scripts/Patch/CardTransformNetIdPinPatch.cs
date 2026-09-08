@@ -64,6 +64,19 @@ internal static class CardTransformNetIdPinPatch
             return;
         }
 
+        // 只钉「当前前台角色」的手牌变换：变换动画要在前台手牌找原卡节点（FindOnTable），
+        // 后台角色（如瓦库托管中、或东方系 power 在回合开始时对他人手牌做变换）的卡不在前台桌上，
+        // 钉了 NetId 会让 vanilla 误以为"是我的牌"而到前台找节点 → InvalidOperationException
+        // 抛穿异步链杀死回合循环（实测 Combat#6 卡死：无法出牌/切人/结束回合）。
+        // 后台手牌变换本就不需要前台动画，让 vanilla 按 IsMine=false 跳过视觉即可（数据层照常生效）。
+        if (LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId is ulong controlledId
+            && controlledId != owner.NetId)
+        {
+            LocalMultiControlLogger.Info(
+                $"[手牌同步修复] 跳过后台角色手牌变换的前台动画钉线: owner={owner.NetId}, controlled={controlledId}");
+            return;
+        }
+
         if (LocalContext.NetId == owner.NetId)
         {
             return; // NetId 已对齐，无需干预

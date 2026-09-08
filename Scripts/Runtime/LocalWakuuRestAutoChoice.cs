@@ -204,7 +204,8 @@ internal static class LocalWakuuRestAutoChoice
 
                 LocalMultiControlLogger.Info(
                     $"瓦库火堆已自动选择: player={ownerId}, option={choice.OptionId}, "
-                    + $"hp={player.Creature?.CurrentHp}/{player.Creature?.MaxHp}, success={success}");
+                    + $"hp={player.Creature?.CurrentHp}/{player.Creature?.MaxHp}, "
+                    + $"全员≥50%={IsEveryoneAboveHpRatio(WakuuRestPicking.DefaultHealthyHpRatio)}, success={success}");
                 if (!success)
                 {
                     // OnSelect 返回 false（选项自身判定不可用，如 CHH_MUTUAL_AID）：排除后换下一个
@@ -266,6 +267,10 @@ internal static class LocalWakuuRestAutoChoice
         // 同时愈合失去意义（队友满血）直接跳过
         bool everyoneFull = IsEveryoneFull();
 
+        // 全员血量都 ≥50%（用户拍板 2026-09-07）：此时给队友"愈合"意义不大，
+        // 把 MEND 的优先级压到睡觉（HEAL）之后——先按正常顺序锻/睡，没得睡了才愈合。
+        bool everyoneHealthy = IsEveryoneAboveHpRatio(WakuuRestPicking.DefaultHealthyHpRatio);
+
         if (smith != null)
         {
             if (everyoneFull)
@@ -282,12 +287,12 @@ internal static class LocalWakuuRestAutoChoice
             }
         }
 
-        if (!everyoneFull)
+        // 愈合（原版多选项）：给存活队友回血。
+        // 有人血量 <50% 时它优先于睡觉（回血比无意义的睡觉更有价值）；
+        // 全员血量都 ≥50% 时按用户拍板把优先级压到睡觉之后（见下方兜底分支）。
+        if (!everyoneFull && !everyoneHealthy)
         {
-            // 愈合（原版多选项）：优先级低于自身休息——自己没得锻了才轮到它，
-            // 给存活队友回血比无意义的睡觉更有价值；没有可治疗对象时选项会返回
-            // false，由重试逻辑排除后落到下面的睡觉。
-            RestSiteOption? mend = others.FirstOrDefault((o) => o.OptionId == MendOptionId);
+            RestSiteOption? mend = TryGetMend(others);
             if (mend != null)
             {
                 return mend;
@@ -299,7 +304,50 @@ internal static class LocalWakuuRestAutoChoice
             return heal; // 没得升了、也没法愈合队友 → 睡觉（满血时也睡，按拍板）
         }
 
+        // 睡觉兜底之后才轮到愈合：全员血量 ≥50% 但有人不满血的场景
+        // （此时睡觉对自己意义有限，愈合优先级最后）
+        if (!everyoneFull)
+        {
+            RestSiteOption? mend = TryGetMend(others);
+            if (mend != null)
+            {
+                return mend;
+            }
+        }
+
         return others.Count > 0 ? others[0] : null;
+    }
+
+    /// <summary>取出愈合选项（没有可治疗对象时原版会返回 false，由重试逻辑排除）。</summary>
+    private static RestSiteOption? TryGetMend(List<RestSiteOption> others)
+    {
+        return others.FirstOrDefault((o) => o.OptionId == MendOptionId);
+    }
+
+    /// <summary>
+    /// 全员血量比例判定：所有存活玩家（含瓦库自己与队友）当前生命占上限的比例都 ≥ ratio。
+    /// 拿不到运行状态（如刚进房）时返回 false，保持既有优先级不变。
+    /// </summary>
+    private static bool IsEveryoneAboveHpRatio(decimal ratio)
+    {
+        RunState? runState = RunManager.Instance.DebugOnlyGetState();
+        if (runState?.Players == null)
+        {
+            return false;
+        }
+
+        List<(decimal CurrentHp, decimal MaxHp)> hpPairs = new();
+        foreach (Player p in runState.Players)
+        {
+            if (p?.Creature == null || p.Creature.IsDead)
+            {
+                continue;
+            }
+
+            hpPairs.Add((p.Creature.CurrentHp, p.Creature.MaxHp));
+        }
+
+        return WakuuRestPicking.IsAllAboveHpRatio(hpPairs, ratio);
     }
 
     /// <summary>牌库里是否存在"打击/防御以外"的可升级牌。</summary>

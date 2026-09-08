@@ -94,8 +94,10 @@ internal static class RewardsSetPatch
             }
 
             LocalMultiControlRuntime.EnsureOverlayNotCoveredForRewards("merged-rewards-offer-from-rewardsset");
+            CombatRewardMergeContext.BeginDisplaySet(displaySet);
             NRewardsScreen rewardScreen = NRewardsScreen.ShowScreen(displaySet, isTerminal: true, displayPlayer.RunState);
             await rewardScreen.ToSignal(rewardScreen, NRewardsScreen.SignalName.Completed);
+            CombatRewardMergeContext.CompleteDisplaySet(displaySet, "merged-rewards-offer-from-rewardsset");
         }
         finally
         {

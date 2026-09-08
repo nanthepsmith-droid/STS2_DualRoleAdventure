@@ -92,7 +92,7 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
     private static async Task OfferMergedCore(CombatRoom combatRoom, List<Player> allPlayers)
     {
         bool shouldGiveRewards = combatRoom.Encounter == null || combatRoom.Encounter.ShouldGiveRewards;
-        List<Reward> mergedRewards = new();
+        List<RewardsSet> generatedSets = new();
 
         foreach (Player player in allPlayers)
         {
@@ -139,9 +139,6 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
             try
             {
                 await perPlayerSet.GenerateWithoutOffering();
-
-                // 与原版保持一致：结算 BeforeCombatRewardOffered（持久奶糖计数等依赖它）
-                await Hook.BeforeCombatRewardOffered(perPlayerSet, player.RunState!, combatRoom);
             }
             catch (Exception rewardException)
             {
@@ -159,14 +156,37 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
                     + $"err={rewardException.Message}");
             }
 
+            generatedSets.Add(perPlayerSet);
+            LocalMultiControlLogger.Info(
+                $"角色独立奖励已生成(OfferRoomEnd): player={player.NetId}, rewardCount={perPlayerSet.Rewards.Count}");
+        }
+
+        // 可选功能：跨角色卡组（设置键 extraCrossCharacterCardReward，默认关）。
+        // 在各角色奖励生成完毕后、BeforeCombatRewardOffered 结算前追加，保证钩子能看到完整奖励集。
+        AddExtraCrossCharacterCardRewards(combatRoom, allPlayers, generatedSets, shouldGiveRewards);
+
+        List<Reward> mergedRewards = new();
+        foreach (RewardsSet perPlayerSet in generatedSets)
+        {
+            Player player = perPlayerSet.Player;
+            try
+            {
+                // 与原版保持一致：结算 BeforeCombatRewardOffered（持久奶糖计数等依赖它）
+                await Hook.BeforeCombatRewardOffered(perPlayerSet, player.RunState!, combatRoom);
+            }
+            catch (Exception hookException)
+            {
+                // 钩子失败不丢弃已生成的奖励，仅打 WARN 留痕。
+                LocalMultiControlLogger.Warn(
+                    $"角色奖励 BeforeCombatRewardOffered 结算失败: player={player.NetId}, err={hookException.Message}");
+            }
+
             foreach (Reward reward in perPlayerSet.Rewards)
             {
                 RewardPlayerLabelRegistry.Register(reward, player.NetId);
             }
 
             mergedRewards.AddRange(perPlayerSet.Rewards);
-            LocalMultiControlLogger.Info(
-                $"角色独立奖励已生成(OfferRoomEnd): player={player.NetId}, rewardCount={perPlayerSet.Rewards.Count}");
         }
 
         // 切换到第一个存活角色的控制上下文来展示奖励界面
@@ -190,6 +210,9 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
         }
 
         bool isTerminal = true; // CombatRoom 的奖励界面始终是 terminal
+        // 自建的展示集必须显式登记到同步器（原版 Offer() 内部会做这一步），
+        // 否则 Id 停在 -1，奖励屏退出时 NRewardsScreen 会报后端未完成
+        CombatRewardMergeContext.BeginDisplaySet(displaySet);
         LocalMultiControlRuntime.EnsureOverlayNotCoveredForRewards("merged-rewards-offer-room-end");
         NRewardsScreen rewardScreen = NRewardsScreen.ShowScreen(displaySet, isTerminal, displayPlayer.RunState);
         LocalMultiControlRuntime.DumpControlVisibilityChain(rewardScreen, "merged-rewards-offer-room-end");
@@ -199,5 +222,55 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
             LocalMultiControlRuntime.DumpTransitionOverlayState("merged-rewards-offer-room-end");
         }).CallDeferred();
         await rewardScreen.ToSignal(rewardScreen, NRewardsScreen.SignalName.Completed);
+        CombatRewardMergeContext.CompleteDisplaySet(displaySet, "merged-rewards-offer-room-end");
+    }
+
+    /// <summary>
+    /// 可选（设置键 "extraCrossCharacterCardReward"，默认关）：每个角色的战后奖励追加一组
+    /// 从「其他角色」卡池抽取的 3 选 1 卡牌奖励——原作者未完成的 v1.30 设计。
+    /// 奖励直接以接收者身份创建（旧的 combatRoom.AddExtraReward(otherPlayer, ...) 会把奖励
+    /// 挂到错误玩家的 ExtraRewards 键下导致永不显示）。
+    /// </summary>
+    private static void AddExtraCrossCharacterCardRewards(CombatRoom combatRoom, List<Player> allPlayers, List<RewardsSet> generatedSets, bool shouldGiveRewards)
+    {
+        if (!LocalWakuuAutopilotConfig.ExtraCrossCharacterCardReward)
+        {
+            return;
+        }
+
+        if (!shouldGiveRewards)
+        {
+            return;
+        }
+
+        foreach (RewardsSet perPlayerSet in generatedSets)
+        {
+            Player player = perPlayerSet.Player;
+            List<CardPoolModel> otherPools = allPlayers
+                .Where((candidate) => candidate.NetId != player.NetId && candidate.Creature?.IsDead != true && candidate.Character != null)
+                .Select((candidate) => candidate.Character!.CardPool)
+                .Distinct()
+                .ToList();
+            if (otherPools.Count == 0)
+            {
+                continue;
+            }
+
+            try
+            {
+                CardCreationOptions options = CardCreationOptions
+                    .ForRoom(player, combatRoom.RoomType)
+                    .WithCardPools(otherPools);
+                CardReward extraReward = new(options, 3, player);
+                extraReward.Populate();
+                perPlayerSet.Rewards.Add(extraReward);
+                LocalMultiControlLogger.Info(
+                    $"跨角色卡组已追加: player={player.NetId}, pools={otherPools.Count}");
+            }
+            catch (Exception exception)
+            {
+                LocalMultiControlLogger.Warn($"跨角色卡组生成失败: player={player.NetId}, err={exception.Message}");
+            }
+        }
     }
 }

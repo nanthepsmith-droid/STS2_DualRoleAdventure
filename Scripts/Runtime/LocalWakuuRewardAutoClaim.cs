@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using LocalMultiControl.Scripts.Patch;
 using MegaCrit.Sts2.Core.Commands;
@@ -42,8 +43,20 @@ internal static class LocalWakuuRewardAutoClaim
 
     private static bool _suppressCardRewardScreen;
 
+    /// <summary>
+    /// 卡牌奖励自动领取作用域内的归属玩家（供个人记录器区分「瓦库自动」与「真人点选」）。
+    /// 用 AsyncLocal 而非普通静态字段：OnSelect 是 await 链，普通字段在并发/嵌套下会读脏。
+    /// </summary>
+    private static readonly AsyncLocal<ulong?> _autoClaimCardOwner = new();
+
     /// <summary>NCardRewardSelectionScreenAutoClaimPatch 读取：true 时 ShowScreen 直接返回 null 不弹屏。</summary>
     internal static bool SuppressCardRewardScreen => _suppressCardRewardScreen;
+
+    /// <summary>
+    /// 个人记录器读取：非 null 表示当前 CardReward.OnSelect 由瓦库自动领取驱动（Selector 自动作答、不弹屏），
+    /// 不是真人决策，不应计入个人偏好样本。值为奖励归属玩家的 NetId。
+    /// </summary>
+    internal static ulong? AutoClaimCardOwnerId => _autoClaimCardOwner.Value;
 
     /// <summary>
     /// 结算合并奖励列表中归属瓦库角色的可自动领取项，返回剩余需要展示给真人的奖励。
@@ -129,6 +142,7 @@ internal static class LocalWakuuRewardAutoClaim
                     using (CardSelectCmd.PushSelector(new LocalWakuuStrategySelector(owner)))
                     {
                         _suppressCardRewardScreen = true;
+                        _autoClaimCardOwner.Value = owner.NetId;
                         try
                         {
                             await reward.SelectUnsynchronized();
@@ -139,6 +153,7 @@ internal static class LocalWakuuRewardAutoClaim
                         finally
                         {
                             _suppressCardRewardScreen = false;
+                            _autoClaimCardOwner.Value = null;
                         }
                     }
 
@@ -148,7 +163,17 @@ internal static class LocalWakuuRewardAutoClaim
                     return true;
 
                 case RelicReward relic:
-                    await reward.SelectUnsynchronized();
+                    // 拾遗物时若遗物效果触发卡牌选择（如 YUI「灵草丹」等"获得遗物时把一张卡变化"的
+                    // 遗物会走 FromDeckForTransformation / FromDeckForUpgrade / FromDeckForRemoval），
+                    // 压入策略选择器让瓦库自动作答不弹屏——否则会被 CardSelectManualConfirmationPatch
+                    // 强制 RequireManualConfirmation 弹牌组界面停住等真人（r81）。
+                    // 变化场景用 Transform 优先级（变掉基础打击/防御最不亏，硬排除诅咒/状态/任务/奇巧；
+                    // smartPick 关闭时退化为 cardPickMode，不影响其它遗物效果触发的通用选牌）。
+                    using (CardSelectCmd.PushSelector(CreateRelicEffectSelector()))
+                    {
+                        await reward.SelectUnsynchronized();
+                    }
+
                     LocalMultiControlLogger.Info(
                         $"瓦库遗物奖励已自动领取: player={owner.NetId}, relic={relic.Relic?.Id.Entry ?? "?"}");
                     return true;
@@ -170,6 +195,18 @@ internal static class LocalWakuuRewardAutoClaim
         {
             AlignLocalContext(previousNetId);
         }
+    }
+
+    /// <summary>
+    /// 遗物拾取期间的选择器：带 Transform 场景（拾遗物触发的"变化一张卡"效果最常走 FromDeckForTransformation），
+    /// 开日志便于实机核对拾取遗物时到底自动选了什么（无选牌则不打印）。
+    /// </summary>
+    private static LocalWakuuStrategySelector CreateRelicEffectSelector()
+    {
+        return new LocalWakuuStrategySelector(WakuuPickScenario.Transform)
+        {
+            LogLabel = "遗物拾取触发选牌",
+        };
     }
 
     private static void AlignLocalContext(ulong? playerId)

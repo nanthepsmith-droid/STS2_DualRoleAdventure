@@ -100,6 +100,8 @@ internal static class LocalMultiControlRuntime
             LocalMultiControlLogger.Info("当前运行未启用本地多控会话。");
         }
 
+        // r83：重置托管遗物兜底状态；若上一局/读档前遗物被第三方效果移除，本次会重新补发。
+        LocalWakuuRelicRuntime.ResetTakeoverFallbackState();
         TaskHelper.RunSafely(GrantWakuuRelicsAsync(runState));
     }
 
@@ -416,7 +418,11 @@ internal static class LocalMultiControlRuntime
         LocalMultiControlLogger.Info($"已记录手动结束回合意图: player={playerId}, round={_pendingManualEndTurnRound}, source={source}");
     }
 
-    private static async Task GrantWakuuRelicsAsync(RunState runState)
+    /// <summary>
+    /// 为瓦库名单内的玩家发放托管遗物（已持有则跳过，可重复调用）。
+    /// r83 起同时作为"遗物被第三方效果移除后的补发入口"。
+    /// </summary>
+    public static async Task GrantWakuuRelicsAsync(RunState runState)
     {
         if (!LocalSelfCoopContext.IsEnabled)
         {

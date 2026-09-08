@@ -38,6 +38,9 @@ internal static class LocalWakuuRelicRuntime
 
     private static readonly Dictionary<string, long> _watchdogLastRunAt = new();
     private static readonly HashSet<string> _watchdogInFlight = new();
+    // r83：托管遗物缺失兜底的去重集合（每个玩家每次运行只 WARN 一次 / 只调度补发一次）。
+    private static readonly HashSet<ulong> _takeoverRelicMissingWarned = new();
+    private static readonly HashSet<ulong> _takeoverRelicRestoreScheduled = new();
     private static readonly SemaphoreSlim SelectorScopeGate = new(1, 1);
     private static readonly FieldInfo? SelectorStackField =
         typeof(CardSelectCmd).GetField("_selectorStack", BindingFlags.NonPublic | BindingFlags.Static);
@@ -75,10 +78,18 @@ internal static class LocalWakuuRelicRuntime
         return (RelicModel?)TryGetWakuuRelic(player) ?? TryGetWakuuFormRelic(player);
     }
 
-    /// <summary>该角色是否处于瓦库形态新模式（持有形态遗物且总开关开启）。</summary>
+    /// <summary>
+    /// 该角色是否处于瓦库形态新模式（总开关开启 且 持有形态遗物）。
+    /// 遗物缺失时按瓦库名单兜底（见 <see cref="IsTakeoverPlayerFallback"/>）。
+    /// </summary>
     public static bool IsVakuuFormMode(Player player)
     {
-        return LocalWakuuAutopilotConfig.UseVakuuForm && TryGetWakuuFormRelic(player) != null;
+        if (!LocalWakuuAutopilotConfig.UseVakuuForm)
+        {
+            return false;
+        }
+
+        return TryGetWakuuFormRelic(player) != null || IsTakeoverPlayerFallback(player);
     }
 
     /// <summary>
@@ -95,7 +106,7 @@ internal static class LocalWakuuRelicRuntime
         try
         {
             Player? player = RunManager.Instance.DebugOnlyGetState()?.GetPlayer(netId);
-            return player != null && TryGetWakuuFormRelic(player) != null;
+            return player != null && (TryGetWakuuFormRelic(player) != null || IsTakeoverPlayerFallback(player));
         }
         catch
         {
@@ -129,9 +140,58 @@ internal static class LocalWakuuRelicRuntime
         return true;
     }
 
+    /// <summary>
+    /// 该角色是否被瓦库托管（持有接管遗物；遗物缺失时按瓦库名单兜底）。
+    /// </summary>
     public static bool HasWakuuRelic(Player player)
     {
-        return TryGetTakeoverRelic(player) != null;
+        return TryGetTakeoverRelic(player) != null || IsTakeoverPlayerFallback(player);
+    }
+
+    /// <summary>
+    /// 托管判据兜底（r83）：托管遗物被第三方效果移除后仍按瓦库名单维持托管，并补发一次遗物。
+    ///
+    /// 实证案例：TouhouAncients【无底之胃】"吞噬初始遗物与先古遗物以外的全部遗物"
+    /// 会把【瓦库形态】吃掉，纯"持有遗物"判据会让瓦库当场停摆。
+    /// 兜底后托管不中断，同时调度一次补发以恢复 +1 能量与遗物栏显示
+    /// （补发走 <see cref="LocalMultiControlRuntime.GrantWakuuRelicsAsync"/>，已有则跳过）。
+    /// </summary>
+    private static bool IsTakeoverPlayerFallback(Player? player)
+    {
+        if (!LocalWakuuAutopilotConfig.KeepWakuuFormRelic)
+        {
+            return false;
+        }
+
+        if (player == null || !LocalSelfCoopContext.IsEnabled)
+        {
+            return false;
+        }
+
+        if (!LocalSelfCoopContext.IsWakuuEnabled(player.NetId))
+        {
+            return false;
+        }
+
+        if (_takeoverRelicMissingWarned.Add(player.NetId))
+        {
+            LocalMultiControlLogger.Warn(
+                $"检测到瓦库托管遗物缺失（多半被第三方效果移除），按瓦库名单继续托管: player={player.NetId}");
+        }
+
+        if (_takeoverRelicRestoreScheduled.Add(player.NetId) && player.RunState is RunState runState)
+        {
+            TaskHelper.RunSafely(LocalMultiControlRuntime.GrantWakuuRelicsAsync(runState));
+        }
+
+        return true;
+    }
+
+    /// <summary>开局/读档时重置托管遗物兜底状态（重新武装 WARN 与补发调度）。</summary>
+    public static void ResetTakeoverFallbackState()
+    {
+        _takeoverRelicMissingWarned.Clear();
+        _takeoverRelicRestoreScheduled.Clear();
     }
 
     public static async Task ExecuteBeforePlayPhaseStartAsync(

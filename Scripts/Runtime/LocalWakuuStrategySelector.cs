@@ -169,7 +169,7 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
         }
 
         CardModel? leftmost = options[0].Card;
-        if (!LocalWakuuAutopilotConfig.SkadaAssist || _rewardOwner == null || count == 1)
+        if (_rewardOwner == null || count == 1)
         {
             return leftmost;
         }
@@ -177,6 +177,29 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
         try
         {
             string characterId = _rewardOwner.Character.Id.Entry.ToUpperInvariant();
+
+            // 三级决策链第①级：个人偏好记录器（personalAssist 开启时优先，多人局优先多人切片）
+            if (LocalWakuuAutopilotConfig.PersonalAssist)
+            {
+                int personalBest = PickBestCardByPersonalStats(options, characterId);
+                if (personalBest >= 0)
+                {
+                    WakuuCardSignal personalSignal = BuildPersonalSignals(options, characterId)[personalBest]!.Value;
+                    LocalMultiControlLogger.Info(
+                        $"瓦库卡牌奖励按个人统计选取: card={options[personalBest].Card!.Id.Entry}, "
+                        + $"index={personalBest}/{count}, char={characterId}, "
+                        + $"pickRate={personalSignal.PickRate:F3}, gain={personalSignal.WinRateGain:F3}, "
+                        + $"offered={personalSignal.OfferCount}");
+                    return options[personalBest].Card;
+                }
+            }
+
+            // 第②级：社区统计（skadaAssist 开启时参考 SkadaHelper 大数据）
+            if (!LocalWakuuAutopilotConfig.SkadaAssist)
+            {
+                return leftmost;
+            }
+
             WakuuCardSignal?[] signals = new WakuuCardSignal?[count];
             for (int i = 0; i < count; i++)
             {
@@ -215,9 +238,61 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
         }
         catch (Exception exception)
         {
-            LocalMultiControlLogger.Warn($"瓦库卡牌奖励社区统计选取失败，回退最左: {exception.Message}");
+            LocalMultiControlLogger.Warn($"瓦库卡牌奖励统计选取失败，回退最左: {exception.Message}");
             return leftmost;
         }
+    }
+
+    /// <summary>
+    /// 个人统计选牌（三级决策链第①级）：逐候选查个人信号，样本足够且非负面者参与竞选；
+    /// 全部无倾向/负面时返回 -1（回退社区统计/最左）。
+    /// </summary>
+    private int PickBestCardByPersonalStats(IReadOnlyList<CardCreationResult> options, string characterId)
+    {
+        WakuuCardSignal?[] signals = BuildPersonalSignals(options, characterId);
+        int withData = signals.Count((s) => s != null);
+        int bestIndex = WakuuSignalPicking.PickBestCardIndex(
+            signals, minOfferCount: WakuuPersonalQuery.DefaultMinPersonalCount);
+        if (bestIndex >= 0)
+        {
+            return bestIndex;
+        }
+
+        if (withData > 0)
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库卡牌奖励个人统计未采用，回退社区/最左: char={characterId}, 候选={options.Count}, "
+                + $"查到个人数据={withData}（样本低于 {WakuuPersonalQuery.DefaultMinPersonalCount} 或最佳候选负面）");
+        }
+
+        return -1;
+    }
+
+    /// <summary>逐候选查个人信号（个人记录器快照，非空才查询）。</summary>
+    private WakuuCardSignal?[] BuildPersonalSignals(IReadOnlyList<CardCreationResult> options, string characterId)
+    {
+        WakuuCardSignal?[] signals = new WakuuCardSignal?[options.Count];
+        PersonalStore store = LocalPersonalRecorder.Snapshot();
+        if (store.cardOffers.Count == 0)
+        {
+            return signals;
+        }
+
+        bool isMulti = _rewardOwner?.RunState?.Players.Count > 1;
+        for (int i = 0; i < options.Count; i++)
+        {
+            CardModel? card = options[i].Card;
+            if (card == null)
+            {
+                continue;
+            }
+
+            signals[i] = WakuuPersonalQuery.TryGetCardDecisionSignal(
+                store, card.Id.Entry, isMulti, characterId,
+                tierPreference: LocalWakuuAutopilotConfig.PersonalTier);
+        }
+
+        return signals;
     }
 
     /// <summary>random 策略用的独立随机源：不动游戏 RunState RNG，避免污染局内随机序列。</summary>
