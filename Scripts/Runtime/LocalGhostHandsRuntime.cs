@@ -74,6 +74,7 @@ internal static class LocalGhostHandsRuntime
         LoadConfigIfNeeded();
         OffsetX += deltaX;
         OffsetY += deltaY;
+        ClampOffsetsToScreen();
 
         ulong nowMs = Time.GetTicksMsec();
         if (nowMs - _lastNudgeSaveMs > NudgeSaveThrottleMs)
@@ -88,6 +89,19 @@ internal static class LocalGhostHandsRuntime
     {
         SaveConfig();
         LocalMultiControlLogger.Info($"Ghost hands offset saved: ({OffsetX:F0}, {OffsetY:F0})");
+    }
+
+    /// <summary>
+    /// 将叠加层偏移夹取到可见区域，防止跑出屏幕后无法拖回。
+    /// LayoutRow 把每行放在 (viewport.X * 0.5 + OffsetX, viewport.Y + OffsetY)，
+    /// 这些边界保证行锚点始终可见；配置加载时也调用一次，
+    /// 让曾经存到屏外的历史配置（Workshop 反馈 2026-08-26）下次启动自动回正。
+    /// </summary>
+    public static void ClampOffsetsToScreen()
+    {
+        Vector2 viewport = NGame.Instance?.GetViewport()?.GetVisibleRect().Size ?? new Vector2(1920f, 1080f);
+        OffsetX = Mathf.Clamp(OffsetX, -viewport.X * 0.5f + 100f, viewport.X * 0.5f - 100f);
+        OffsetY = Mathf.Clamp(OffsetY, -viewport.Y + 60f, 0f);
     }
 
     private static void TryAttachOverlay(NCombatRoom? room)
@@ -161,6 +175,7 @@ internal static class LocalGhostHandsRuntime
                 GhostScale = Mathf.Clamp((float)scale.AsDouble(), 0.2f, 1.5f);
             }
 
+            ClampOffsetsToScreen();
             LocalMultiControlLogger.Info($"Ghost hands config loaded: enabled={Enabled}, offset=({OffsetX:F0}, {OffsetY:F0}), scale={GhostScale:F2}");
         }
         catch (Exception exception)
@@ -173,13 +188,26 @@ internal static class LocalGhostHandsRuntime
     {
         try
         {
-            Godot.Collections.Dictionary settings = new()
+            // 合并写入：先读已有文件再覆盖本功能键，保证其他功能写入的设置键
+            // （如 extraCrossCharacterCardReward）不被 ghost hands 保存冲掉。
+            Godot.Collections.Dictionary settings = new();
+            if (GodotFileAccess.FileExists(ConfigPath))
             {
-                { "ghostHandsEnabled", Enabled },
-                { "ghostHandsOffsetX", OffsetX },
-                { "ghostHandsOffsetY", OffsetY },
-                { "ghostHandsScale", GhostScale }
-            };
+                using GodotFileAccess? existingFile = GodotFileAccess.Open(ConfigPath, GodotFileAccess.ModeFlags.Read);
+                if (existingFile != null)
+                {
+                    Variant parsed = Json.ParseString(existingFile.GetAsText());
+                    if (parsed.VariantType == Variant.Type.Dictionary)
+                    {
+                        settings = parsed.AsGodotDictionary();
+                    }
+                }
+            }
+
+            settings["ghostHandsEnabled"] = Enabled;
+            settings["ghostHandsOffsetX"] = OffsetX;
+            settings["ghostHandsOffsetY"] = OffsetY;
+            settings["ghostHandsScale"] = GhostScale;
 
             using GodotFileAccess? file = GodotFileAccess.Open(ConfigPath, GodotFileAccess.ModeFlags.Write);
             file?.StoreString(Json.Stringify(settings, "  "));
@@ -202,6 +230,8 @@ internal sealed partial class LocalGhostHandsOverlay : Control
     private const float CardSpacingFactor = 0.72f;
     private const float RowGapPixels = 26f;
     private const float RowAlpha = 0.85f;
+    private const float MoveSpeedPixelsPerSec = 600f;
+    private const float FineMoveSpeedPixelsPerSec = 120f;
 
     private sealed class GhostRow
     {
@@ -214,6 +244,7 @@ internal sealed partial class LocalGhostHandsOverlay : Control
 
     private readonly List<GhostRow> _rows = new();
     private double _sinceRefresh = RefreshIntervalSec;
+    private bool _wasNudging;
 
     public override void _Ready()
     {
@@ -224,6 +255,8 @@ internal sealed partial class LocalGhostHandsOverlay : Control
 
     public override void _Process(double delta)
     {
+        PollMoveKeys(delta);
+
         _sinceRefresh += delta;
         if (_sinceRefresh < RefreshIntervalSec)
         {
@@ -238,6 +271,60 @@ internal sealed partial class LocalGhostHandsOverlay : Control
         catch (Exception exception)
         {
             LocalMultiControlLogger.Warn($"Ghost hands refresh failed: {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Ctrl+方向键调整叠加层位置，改为逐帧轮询原始按键状态：
+    /// 部分节点会先于 NGame._Input 消费方向键事件（Workshop 反馈 Ctrl+Right 永远到不了），
+    /// 轮询能看到原始按键状态。
+    /// </summary>
+    private void PollMoveKeys(double delta)
+    {
+        if (!LocalGhostHandsRuntime.Enabled || !Input.IsKeyPressed(Key.Ctrl))
+        {
+            FinishNudgeIfNeeded();
+            return;
+        }
+
+        Vector2 direction = Vector2.Zero;
+        if (Input.IsPhysicalKeyPressed(Key.Left))
+        {
+            direction += Vector2.Left;
+        }
+
+        if (Input.IsPhysicalKeyPressed(Key.Right))
+        {
+            direction += Vector2.Right;
+        }
+
+        if (Input.IsPhysicalKeyPressed(Key.Up))
+        {
+            direction += Vector2.Up;
+        }
+
+        if (Input.IsPhysicalKeyPressed(Key.Down))
+        {
+            direction += Vector2.Down;
+        }
+
+        if (direction == Vector2.Zero)
+        {
+            FinishNudgeIfNeeded();
+            return;
+        }
+
+        _wasNudging = true;
+        float speed = Input.IsKeyPressed(Key.Shift) ? FineMoveSpeedPixelsPerSec : MoveSpeedPixelsPerSec;
+        LocalGhostHandsRuntime.Nudge(direction.X * speed * (float)delta, direction.Y * speed * (float)delta);
+    }
+
+    private void FinishNudgeIfNeeded()
+    {
+        if (_wasNudging)
+        {
+            _wasNudging = false;
+            LocalGhostHandsRuntime.CommitOffsets();
         }
     }
 

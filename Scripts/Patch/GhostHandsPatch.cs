@@ -33,46 +33,9 @@ internal static class GhostHandsHotkeysPatch
         if ((keycode == Key.F8 || physicalKeycode == Key.F8) && keyEvent.IsReleased())
         {
             LocalGhostHandsRuntime.Toggle();
-            return;
         }
 
-        if (!LocalGhostHandsRuntime.Enabled || !keyEvent.CtrlPressed)
-        {
-            return;
-        }
-
-        Vector2 direction = Vector2.Zero;
-        if (keycode == Key.Left || physicalKeycode == Key.Left)
-        {
-            direction = Vector2.Left;
-        }
-        else if (keycode == Key.Right || physicalKeycode == Key.Right)
-        {
-            direction = Vector2.Right;
-        }
-        else if (keycode == Key.Up || physicalKeycode == Key.Up)
-        {
-            direction = Vector2.Up;
-        }
-        else if (keycode == Key.Down || physicalKeycode == Key.Down)
-        {
-            direction = Vector2.Down;
-        }
-
-        if (direction == Vector2.Zero)
-        {
-            return;
-        }
-
-        if (keyEvent.Pressed)
-        {
-            // Echo events included: holding the arrow keeps nudging.
-            float step = keyEvent.ShiftPressed ? 4f : 20f;
-            LocalGhostHandsRuntime.Nudge(direction.X * step, direction.Y * step);
-        }
-        else if (keyEvent.IsReleased())
-        {
-            LocalGhostHandsRuntime.CommitOffsets();
-        }
+        // Ctrl+方向键调整位置已移到 LocalGhostHandsOverlay.PollMoveKeys（逐帧轮询原始按键）——
+        // 部分节点会先于 NGame._Input 消费方向键事件（Ctrl+Right 永远到不了）。
     }
 }
