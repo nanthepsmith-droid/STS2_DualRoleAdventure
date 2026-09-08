@@ -93,11 +93,18 @@ function Test-GameRunning {
 }
 
 function Get-Marker([string]$dllPath) {
-    # BuildMarker 形如 "...marker=2026-08-30-r30"，在元数据里是 UTF-16 字符串
+    # BuildMarker 形如 "...marker=2026-08-30-r30"，在元数据里是 UTF-16 字符串。
+    # 坑（r92）：#US 堆的字符串起始偏移可能是奇数，只按偶对齐解码会假阴性
+    # → 与 tools/dll_check.py、tools/deploy_dll.ps1 一致，两种对齐都扫。
     try {
         $bytes = [System.IO.File]::ReadAllBytes($dllPath)
-        $text = [System.Text.Encoding]::Unicode.GetString($bytes)
-        if ($text -match "marker=([\w-]+)") { return $Matches[1] }
+        foreach ($offset in 0, 1) {
+            $slice = New-Object byte[] ($bytes.Length - $offset)
+            [Array]::Copy($bytes, $offset, $slice, 0, $slice.Length)
+            $text = [System.Text.Encoding]::Unicode.GetString($slice)
+            if ($text -match "marker=(20\d\d-\d\d-\d\d-[\w-]+)") { return $Matches[1] }
+            if ($text -match "marker=([\w-]+)") { return $Matches[1] }
+        }
     } catch { }
     return $null
 }
@@ -194,6 +201,61 @@ function Test-SlotHygiene {
         Write-Host "[!] $($Mod.Name) 槽位缺少 *.json，游戏不会把它识别为 mod: $slotDir" -ForegroundColor Yellow
     }
 }
+
+# 读取槽位 json 的 id（游戏按它认 mod，缺失/解析失败返回空串）
+function Get-ModId([string]$jsonPath) {
+    try {
+        $text = Get-Content -LiteralPath $jsonPath -Raw -Encoding UTF8
+        $m = [regex]::Match($text, '"id"\s*:\s*"([^"]+)"')
+        if ($m.Success) { return $m.Groups[1].Value }
+    } catch { }
+    return ""
+}
+
+# 槽位身份一致性（backlog 第 3 项，r93）：游戏按槽位 json 的 id 认 mod，
+# 实测所有槽位都满足「<id>.dll」的命名契约（目录名可以与 id 不同，如 DualRoleAdventure 槽 →
+# DualRoleAdventurefixed.dll）。不匹配意味着：部署到了错槽位 / 改了 dll 名没同步 json /
+# json 被别的 mod 覆盖 —— 任一种都会让游戏加载不到或加载错 dll，因此判 **FAIL**。
+function Test-SlotIdentity {
+    param($Mod)
+    if (-not $Mod.Enabled) { return $true }
+    $slotDir = Join-Path $modsDir $Mod.Slot
+    if (-not (Test-Path -LiteralPath $slotDir)) { return $true }   # 槽位不存在：交给部署流程
+    $json = @(Get-ChildItem -LiteralPath $slotDir -Filter *.json -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if ($json.Count -eq 0) { return $true }                        # 缺 json 已由 Test-SlotHygiene WARN
+    $id = Get-ModId $json[0].FullName
+    if (-not $id) { return $true }
+    $dllBase = [System.IO.Path]::GetFileNameWithoutExtension($Mod.SlotDll)
+    if ($id -ne $dllBase) {
+        Write-Host "[X] 槽位身份不匹配: '$($Mod.Slot)' 的 json id='$id'，但部署的 dll 是 '$($Mod.SlotDll)'" -ForegroundColor Red
+        Write-Host "      （游戏按 id 找 dll；请核对 mod_registry.json 的 dll 覆盖与槽位 json）" -ForegroundColor Red
+        return $false
+    }
+    $expected = Join-Path $slotDir "$id.dll"
+    if (-not (Test-Path -LiteralPath $expected)) {
+        Write-Host "[X] 槽位缺少 id 对应的 dll: $expected（槽位内实际 dll: $(
+            (@(Get-ChildItem -LiteralPath $slotDir -Filter *.dll -File | ForEach-Object { $_.Name })) -join ', ')" -ForegroundColor Red
+        return $false
+    }
+    return $true
+}
+
+# 全槽位扫描（含备份槽 / 非本仓库的 mod）：id 找不到同名 dll 只 WARN
+# ——第三方 mod 可能存在合法的不同名写法，我们只提示、不阻断。
+function Find-SlotIdDllMismatch {
+    foreach ($dir in (Get-ChildItem -LiteralPath $modsDir -Directory -ErrorAction SilentlyContinue)) {
+        $json = @(Get-ChildItem -LiteralPath $dir.FullName -Filter *.json -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if ($json.Count -eq 0) { continue }
+        $id = Get-ModId $json[0].FullName
+        if (-not $id) { continue }
+        if (Test-Path -LiteralPath (Join-Path $dir.FullName "$id.dll")) { continue }
+        $actual = @(Get-ChildItem -LiteralPath $dir.FullName -Filter *.dll -File -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
+        Write-Host "[!] 槽位 '$($dir.Name)' 的 json id='$id' 找不到同名 dll（实际: $(
+            if ($actual.Count -gt 0) { $actual -join ', ' } else { '无 dll' })）" -ForegroundColor Yellow
+    }
+}
+# 全槽位扫描（定义之后立即执行；-List 也会走到这里）
+Find-SlotIdDllMismatch
 
 # 单仓库构建：返回 dll 路径（构建产物在仓库根）或 $null
 # 可选传 $TestCsproj：构建成功后跑 dotnet test，0 失败才算构建通过（任务 2.1 单元测试门槛）
@@ -318,6 +380,14 @@ $mainTestCsproj = Join-Path $mainRepoDir "tests\LocalMultiControl.Tests\LocalMul
 $mainOut = Join-Path $mainRepoDir "DualRoleAdventure.dll"
 $mainSlotDir = Join-Path $modsDir $MainSlot
 if (-not (Test-Path -LiteralPath $mainCsproj)) { Write-Err "主仓库 csproj 不存在: $mainCsproj" }
+# 主 mod 的槽位身份（槽位目录 ≠ dll 名，json id=DualRoleAdventurefixed）
+$mainMod = [pscustomobject]@{
+    Name    = $MainRepo
+    RepoDir = $mainRepoDir
+    Slot    = $MainSlot
+    SlotDll = $MainSlotDll
+    Enabled = $true
+}
 
 # ---------------------------------------------------------------- mod 集合：自动发现 + 注册表
 $registryMap = Read-ModRegistry
@@ -358,11 +428,13 @@ if ($List) {
     Write-Host ("-" * 128)
     $ms = Get-SlotState $mainOut $MainSlot $MainSlotDll
     Write-Host ("{0,-32} {1,-7} {2,-28} {3,-30} {4,-6} {5,-6} {6}" -f $MainRepo, "yes", $MainSlot, $MainSlotDll, $ms[0], $ms[1], "(主 mod)")
+    if (-not (Test-SlotIdentity $mainMod)) { $fail++ }
     foreach ($m in $mods) {
         $s = Get-SlotState $m.OutDll $m.Slot $m.SlotDll
         Write-Host ("{0,-32} {1,-7} {2,-28} {3,-30} {4,-6} {5,-6} {6}" -f $m.Name,
             $(if ($m.Enabled) { "yes" } else { "NO" }), $m.Slot, $m.SlotDll, $s[0], $s[1], $m.Note)
         Test-SlotHygiene $m
+        if (-not (Test-SlotIdentity $m)) { $fail++ }
     }
     $disabled = @($mods | Where-Object { -not $_.Enabled }).Count
     Write-Host ""
@@ -378,9 +450,11 @@ if ($mainSelected -and ($mode -eq "all" -or $mode -eq "deploy")) {
     if (-not (Test-Path -LiteralPath $mainOut)) { Write-Err "主 mod 构建产物缺失: $mainOut" }
     if (-not (Invoke-DeployOne $mainOut $mainSlotDir $MainSlotDll)) { $fail++ }
     elseif (-not (Invoke-DllCheck $mainOut $mainSlotDir $MainSlotDll)) { $fail++ }
+    if (-not (Test-SlotIdentity $mainMod)) { $fail++ }
 }
 if ($mainSelected -and ($mode -eq "check")) {
     if (-not (Invoke-CheckOne $mainOut $mainSlotDir $MainSlotDll)) { $fail++ }
+    if (-not (Test-SlotIdentity $mainMod)) { $fail++ }
 }
 
 # 其余 mod 仓库（自动发现，注册表控制启用/禁用 → 构建 → 部署 → 校验）
@@ -401,9 +475,11 @@ foreach ($m in $mods) {
             continue
         }
         if (-not (Invoke-DeployOne $m.OutDll $slotDir $m.SlotDll)) { $fail++ }
+        if (-not (Test-SlotIdentity $m)) { $fail++ }
     }
     if ($mode -eq "check") {
         if (-not (Invoke-CheckOne $m.OutDll $slotDir $m.SlotDll)) { $fail++ }
+        if (-not (Test-SlotIdentity $m)) { $fail++ }
     }
 }
 
