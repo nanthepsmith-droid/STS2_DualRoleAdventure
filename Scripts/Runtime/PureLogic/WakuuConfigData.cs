@@ -131,6 +131,15 @@ internal sealed class WakuuConfigData
     /// </summary>
     public string statBadgeSource { get; set; } = WakuuStatBadgeSource.PersonalOnly;
 
+    /// <summary>
+    /// 召唤物血量显示（r86，默认开）：本地多控顶部的「玩家状态条」上，给每个拥有召唤物的玩家
+    /// 在 HP 条旁显示其全部宠物/召唤物血条（Osty、以及任何走原版 AddPet/pet 体系的 mod 召唤物，
+    /// 如 TheQueen/女王的 minion）。判据是玩家自己 PlayerCombatState.Pets，不依赖角色职业
+    /// （Osty 可由亡灵契约师为别人召唤、其它角色也能合法持有 Necrobinder 卡召唤）。
+    /// 一只召唤物一行迷你血条 + 名字与 HP 数字；死亡（尸体保留可复活阶段）显示 0-X 置灰。
+    /// </summary>
+    public bool petHpBadge { get; set; } = true;
+
     public string eventChoiceMode { get; set; } = WakuuChoiceModes.First;
 
     public string cardPickMode { get; set; } = WakuuChoiceModes.Last;
