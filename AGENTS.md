@@ -149,6 +149,37 @@ When the game updates and the mod breaks:
 - `docs/architecture.md`, `docs/console-commands.md`, `docs/design/*` — developer docs.
 - `docs/archive/*.zh.md` — original Chinese documents, preserved verbatim; do not edit them.
 
+## 10. Fix verification contract
+
+> 每次修 bug 或加功能，交付必须带一份「验证契约」，格式固定、字段齐全。
+> 目标是让复现/验证可机械执行，而不是「帮我试试看还坏不坏」。
+
+```
+BUG / 改动:
+EXPECTED:           期望行为（一句话，能用日志锚点表达的写锚点）
+SETUP:              前置（存档/角色/进第几幕/开不开什么 mod）
+ACTION:             操作步骤（1. 2. 3.）
+OBSERVE:            执行后看什么（游戏画面 + 日志位置）
+PASS CONDITION:     通过 = 什么现象 + 什么日志锚点
+FAIL CONDITION:      失败 = 什么现象 + 什么日志锚点
+LOG ANCHORS:        相关固定 token（INIT_OK / PATCH_RESULT / SELECT_OWNER 等）
+```
+
+Example（炉心融解选牌卡死）:
+
+```
+BUG: 双角色同时选牌死锁
+EXPECTED: 两个请求串行完成，各自进选牌
+SETUP: 双人 run，瓦库在火堆/遗物触发选牌
+ACTION: 1.进战斗 2.让 P1 选牌的同时 P2 触发选牌
+OBSERVE: 看 P2 是否卡在“等待选择”
+PASS CONDITION: 两笔选择先后落定，回合正常推进；日志出 SELECT_COMPLETE x2
+FAIL CONDITION: P2 永久等待；日志停在 SELECT_QUEUE 无后续
+LOG ANCHORS: SELECT_ENTER / SELECT_QUEUE / SELECT_OWNER / SELECT_COMPLETE / TURN_RESUME
+```
+
+交付时本契约写进 commit message 或随改动的说明里；验证靠固定 token 的可直接放进 `log_parser.py --kw`。
+
 ## 9. Hard gates (run before every deploy)
 
 The goal is a single verdict, not a pile of logs. Every gate below must report PASS;
