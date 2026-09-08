@@ -165,6 +165,7 @@ WARN is tolerated only where marked.
 | 7 | marker 身份 | `deploy_dll.ps1` 解析 marker，缺失/畸形 = FAIL | 无法证明产物身份 |
 | 8 | Critical 补丁 | 运行期 `PATCH_RESULT`：Critical 缺失 → `INIT_FAILED` + 抛异常 | mod 在主菜单报红 |
 | 9 | 初始化终态 | `python ..\tools\log_parser.py <log> --init-status` → `INIT_STATUS=OK` | `FAILED` 即为不可用构建 |
+| 10 | 部署槽位身份 | `build_all_mods.ps1`（`-List` / 部署 / `-CheckOnly` 都会跑 `Test-SlotIdentity`） | 禁止部署（槽位 json id 与部署 dll 不同名 = 加载不到/加载错 dll） |
 
 Notes:
 

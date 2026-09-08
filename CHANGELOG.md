@@ -17,7 +17,17 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   为让测试能读 internal 清单，新增 `Scripts/AssemblyInfo.cs` 的 `InternalsVisibleTo`
   （Godot.NET.Sdk 下 csproj `<AssemblyAttribute>` 不生效，见 BuildIdentity 的 r89/r90 踩坑）。
 
+### Added
+- **部署槽位身份门禁（r93，2026-09-08）**：游戏按槽位 json 的 `id` 认 mod、按 `<id>.dll` 加载，
+  目录名可以与 id 不同（如 `mods\DualRoleAdventure\` 里其实是 `DualRoleAdventurefixed.dll`）。
+  `build_all_mods.ps1` 新增 `Test-SlotIdentity`：**本仓库已知 mod 的「槽位 json id ≠ 部署 dll 主文件名」
+  或「id 对应的 dll 不存在」= FAIL**（典型成因：部署到错槽位 / 改了 dll 名没同步 json / json 被别的 mod 覆盖）；
+  另加 `Find-SlotIdDllMismatch` 全槽位扫描（含备份槽与第三方 mod）只 WARN，避免误杀不同名写法。
+  `-List` / 构建部署 / `-CheckOnly` 三种模式都会跑。
+
 ### Fixed
+- **`build_all_mods.ps1` 的 marker 解析同 r92 的 UTF-16 单对齐假阴性**：与 `dll_check.py`、
+  `deploy_dll.ps1` 统一为扫两种字节对齐 + `YYYY-MM-DD-rNN` 形状优先匹配。
 - **部署脚本 marker 解析假阴性（r92）**：`deploy_dll.ps1` 的 `Get-Marker` 只按偶对齐解码 UTF-16，
   而 #US 用户字符串堆的起始偏移可能是奇数 → 本次构建（新增字符串后）marker 落到奇偏移，
   部署后门禁 7 直接报「未能解析 marker，拒绝视为部署成功」。改为与 `dll_check.py` 一致扫两种对齐，
