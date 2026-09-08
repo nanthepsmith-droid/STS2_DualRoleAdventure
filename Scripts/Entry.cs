@@ -14,7 +14,7 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    private const string BuildMarker = "Revival v1.40.0 (game v0.111.0, marker=2026-09-08-r91)";
+    private const string BuildMarker = "Revival v1.40.0 (game v0.111.0, marker=2026-09-08-r92)";
 
     private static Harmony? _harmony;
 
@@ -40,62 +40,81 @@ public partial class Entry
     /// 启动自检期望清单：这些目标必须被 Harmony 打上，否则说明被 PatchAll 静默跳过
     /// （本 mod 坑 1：类上缺类级 [HarmonyPatch] 时整个类被跳过且无任何报错）。
     ///
-    /// 匹配口径（兼容两种写法，可渐进升级到签名级）：
-    ///   "Type.Method"                      简单类型名（现有写法）
-    ///   "Namespace.Type.Method"            完整类型名（推荐，避免同名类型歧义）
-    ///   "Type.Method/2"                    追加参数个数，用于区分重载
+    /// 匹配口径（升级到完整名，消除同名类型 / 重载歧义）：
+    ///   "Namespace.Type.Method"            完整类型名（清单标准写法，含命名空间）
+    ///   "Namespace.Type.Method/2"          追加参数个数，用于区分重载（仅在确知补丁目标重载时写）
+    /// 运行期会把「已打补丁方法」同时展开成 simple / full / simple+argc / full+argc 四种键，
+    /// 所以写 full 一定能命中；写 full+argc 只在重载之间做精确区分。
+    ///
+    /// 门禁：tests/LocalMultiControl.Tests/ExpectedPatchTargetsTests.cs 会拿 sts2.dll 元数据
+    /// 逐条核对（类型/方法存在、参数个数一致、格式合规）——写错在游戏更新或手误时**单测先红**，
+    /// 不会等到实机才误报 Critical 缺失（那会 INIT_FAILED 让 mod 报红）。
     /// 维护口径：与 Scripts/Tools/patch_coverage.py 生成的 patch-coverage.md（pain/maintenance-docs/，无 git）一致。
     ///
     /// 【Critical】缺失 = 本地多控不可用 → 计入致命清单 → INIT_FAILED + 抛异常。
     /// </summary>
-    private static readonly string[] CriticalPatchTargets =
+    internal static readonly string[] CriticalPatchTargets =
     {
         // ---- 选牌串行化 / 本地选牌判定（本地多控的核心，缺一个就会双角色同时选牌）----
-        "NPlayerHand.SelectCards",
-        "CardSelectCmd.FromHand",
-        "CardSelectCmd.FromHandForDiscard",
-        "CardSelectCmd.FromHandForUpgrade",
-        "CardSelectCmd.FromSimpleGrid",
-        "CardSelectCmd.FromChooseACardScreen",
-        "CardSelectCmd.FromCombatPile",
-        "CardSelectCmd.ShouldSelectLocalCard",
+        "MegaCrit.Sts2.Core.Nodes.Combat.NPlayerHand.SelectCards",
+        "MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromHand",
+        "MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromHandForDiscard",
+        "MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromHandForUpgrade",
+        "MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromSimpleGrid",
+        "MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromChooseACardScreen",
+        // FromCombatPile 有两个重载（参数 4 / 5），本 mod 两个都打了补丁 → 分别钉死签名，
+        // 任意一个没打上就是真的漏了（r91 实机日志实证两条都在）。
+        "MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromCombatPile/4",
+        "MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromCombatPile/5",
+        "MegaCrit.Sts2.Core.Commands.CardSelectCmd.ShouldSelectLocalCard",
         // ---- 回合流程 / 切前台 ----
-        "CombatManager.SetupPlayerTurn",
-        "CombatManager.DoTurnEnd",
-        "CombatManager.FlushPlayerHand",
-        "CombatManager.SetReadyToEndTurn",
-        "CombatManager.SetReadyToBeginEnemyTurn",
+        "MegaCrit.Sts2.Core.Combat.CombatManager.SetupPlayerTurn",
+        "MegaCrit.Sts2.Core.Combat.CombatManager.DoTurnEnd",
+        "MegaCrit.Sts2.Core.Combat.CombatManager.FlushPlayerHand",
+        "MegaCrit.Sts2.Core.Combat.CombatManager.SetReadyToEndTurn",
+        "MegaCrit.Sts2.Core.Combat.CombatManager.SetReadyToBeginEnemyTurn",
         // ---- 击杀结算 ----
-        "CreatureCmd.Kill",
+        "MegaCrit.Sts2.Core.Commands.CreatureCmd.Kill",
         // ---- 事件 ----
-        "EventSynchronizer.BeginEvent",
-        "EventSynchronizer.ChooseLocalOption",
+        "MegaCrit.Sts2.Core.Multiplayer.Game.EventSynchronizer.BeginEvent",
+        "MegaCrit.Sts2.Core.Multiplayer.Game.EventSynchronizer.ChooseLocalOption",
         // ---- 奖励归属（错归属 = 奖励给错角色）----
-        "RewardsSet.Offer",
-        "RewardsCmd.OfferCustom",
-        "RewardsCmd.OfferForRoomEnd",
-        "CombatRoom.OfferRoomEndRewards",
-        "RewardsSetSynchronizer.SelectLocalReward",
+        "MegaCrit.Sts2.Core.Rewards.RewardsSet.Offer",
+        "MegaCrit.Sts2.Core.Commands.RewardsCmd.OfferCustom",
+        "MegaCrit.Sts2.Core.Commands.RewardsCmd.OfferForRoomEnd",
+        "MegaCrit.Sts2.Core.Rooms.CombatRoom.OfferRoomEndRewards",
+        "MegaCrit.Sts2.Core.Multiplayer.Game.RewardsSetSynchronizer.SelectLocalReward",
         // ---- 药水 / 动作队列 / 手牌变换 NetId 钉住 ----
-        "PotionCmd.TryToProcure",
-        "ActionQueueSet.CombatEnded",
-        "CardCmd.Transform",
+        // TryToProcure 有 1 / 3 参数两个重载，补丁钉的是 3 参数那个（PotionModel, Player, int）
+        "MegaCrit.Sts2.Core.Commands.PotionCmd.TryToProcure/3",
+        "MegaCrit.Sts2.Core.GameActions.Multiplayer.ActionQueueSet.CombatEnded",
+        "MegaCrit.Sts2.Core.Commands.CardCmd.Transform",
     };
 
     /// <summary>
     /// 【Optional】缺失只 WARN、不阻断加载：第三方联动、纯 UI 表现、瓦库自动化、个人偏好记录器。
     /// </summary>
-    private static readonly string[] OptionalPatchTargets =
+    internal static readonly string[] OptionalPatchTargets =
     {
-        "WhisperingEarring.AfterAutoPrePlayPhaseEnteredLate", // 第三方遗物联动
-        "NEndTurnButton.CallReleaseLogic",                    // 纯 UI：结束回合按钮重评
-        "CardSelectCmd.FromDeckForEnchantment",               // 瓦库：事件附魔自动作答
-        "RunManager.OnEnded",                                 // 个人记录器：整局胜负归因
-        "NEventRoom.OptionButtonClicked",                     // 个人记录器：真人事件点选
-        "CardReward.OnSelect",                                // 个人记录器：真人卡牌奖励点选
-        "EventModel.SelectCardsToAddToDeckFromGrid",          // 个人记录器：事件网格选 N 入卡组
-        "MerchantEntry.OnTryPurchaseWrapper",                 // 个人记录器：商店购买记录
-        "CardSelectCmd.FromDeckForRemoval",                   // 个人记录器：真人删牌统计
+        // 第三方遗物联动
+        "MegaCrit.Sts2.Core.Models.Relics.WhisperingEarring.AfterAutoPrePlayPhaseEnteredLate",
+        // 纯 UI：结束回合按钮重评
+        "MegaCrit.Sts2.Core.Nodes.Combat.NEndTurnButton.CallReleaseLogic",
+        // 瓦库：事件附魔自动作答（FromDeckForEnchantment 有三个重载，补丁钉的是
+        // (IReadOnlyList<CardModel>, EnchantmentModel, int, CardSelectorPrefs) 那个）
+        "MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromDeckForEnchantment/4",
+        // 个人记录器：整局胜负归因
+        "MegaCrit.Sts2.Core.Runs.RunManager.OnEnded",
+        // 个人记录器：真人事件点选
+        "MegaCrit.Sts2.Core.Nodes.Rooms.NEventRoom.OptionButtonClicked",
+        // 个人记录器：真人卡牌奖励点选
+        "MegaCrit.Sts2.Core.Rewards.CardReward.OnSelect",
+        // 个人记录器：事件网格选 N 入卡组
+        "MegaCrit.Sts2.Core.Models.EventModel.SelectCardsToAddToDeckFromGrid",
+        // 个人记录器：商店购买记录
+        "MegaCrit.Sts2.Core.Entities.Merchant.MerchantEntry.OnTryPurchaseWrapper",
+        // 个人记录器：真人删牌统计
+        "MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromDeckForRemoval",
     };
 
     /// <summary>
@@ -266,6 +285,12 @@ public partial class Entry
             foreach (string target in CriticalPatchTargets.Concat(OptionalPatchTargets))
             {
                 wanted.Add(target);
+                // 签名级写法（.../参数个数）同时登记去掉后缀的写法，owner 审计按「方法」匹配
+                int slash = target.LastIndexOf('/');
+                if (slash > 0)
+                {
+                    wanted.Add(target.Substring(0, slash));
+                }
             }
 
             int logged = 0;
