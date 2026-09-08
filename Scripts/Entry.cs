@@ -14,20 +14,44 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    private const string BuildMarker = "Revival v1.40.0 (game v0.111.0, marker=2026-09-08-r86)";
+    private const string BuildMarker = "Revival v1.40.0 (game v0.111.0, marker=2026-09-08-r90)";
 
     private static Harmony? _harmony;
 
     /// <summary>
+    /// 致命错误码（AGENTS.md §9）。日志 / 解析器 / issue 统一使用同一套 ID。
+    /// </summary>
+    private static class FatalCode
+    {
+        internal const string Config = "CONFIG001";      // 配置 / 记录器加载失败
+        internal const string Model = "MODEL001";        // 遗物注册 / 本地化失败
+        internal const string ClrRuntime = "CLR001";     // 进程架构 / 映像运行时版本不符
+        internal const string ClrImage = "CLR002";       // 必需依赖 BadImageFormatException
+        internal const string AsmAbi = "ASM002";         // 游戏程序集 ABI 版本漂移
+        internal const string DepMissing = "DEP001";     // 必需依赖缺失
+        internal const string DepLoad = "DEP002";        // 必需依赖加载失败
+        internal const string PatchApply = "PATCH001";   // Harmony 应用中断
+        internal const string PatchCritical = "PATCH002"; // Critical 补丁缺失
+        internal const string PatchSelfTest = "PATCH003"; // 补丁自检无法执行
+        internal const string Stage = "STG001";          // 阶段抛出未处理异常
+    }
+
+    /// <summary>
     /// 启动自检期望清单：这些目标必须被 Harmony 打上，否则说明被 PatchAll 静默跳过
     /// （本 mod 坑 1：类上缺类级 [HarmonyPatch] 时整个类被跳过且无任何报错）。
-    /// 用「简单类型名.方法名」匹配 GetPatchedMethods() 的 (DeclaringType.Name, Name)。
-    /// 维护口径：与 Scripts/Tools/patch_coverage.py 生成的 patch-coverage.md（pain/maintenance-docs/，无 git）一致，
-    /// 覆盖最关键、最易被游戏更新波及的目标；缺失只报错、不阻止加载。
+    ///
+    /// 匹配口径（兼容两种写法，可渐进升级到签名级）：
+    ///   "Type.Method"                      简单类型名（现有写法）
+    ///   "Namespace.Type.Method"            完整类型名（推荐，避免同名类型歧义）
+    ///   "Type.Method/2"                    追加参数个数，用于区分重载
+    /// 维护口径：与 Scripts/Tools/patch_coverage.py 生成的 patch-coverage.md（pain/maintenance-docs/，无 git）一致。
+    ///
+    /// 【Critical】缺失 = 本地多控不可用 → 计入致命清单 → INIT_FAILED + 抛异常。
     /// </summary>
-    private static readonly string[] ExpectedPatchTargets =
+    private static readonly string[] CriticalPatchTargets =
     {
-        "NPlayerHand.SelectCards",                        // 战斗内手牌选牌串行化
+        // ---- 选牌串行化 / 本地选牌判定（本地多控的核心，缺一个就会双角色同时选牌）----
+        "NPlayerHand.SelectCards",
         "CardSelectCmd.FromHand",
         "CardSelectCmd.FromHandForDiscard",
         "CardSelectCmd.FromHandForUpgrade",
@@ -35,105 +59,380 @@ public partial class Entry
         "CardSelectCmd.FromChooseACardScreen",
         "CardSelectCmd.FromCombatPile",
         "CardSelectCmd.ShouldSelectLocalCard",
-        "CombatManager.SetupPlayerTurn",                  // 回合开始切前台 / 结束按钮重评
+        // ---- 回合流程 / 切前台 ----
+        "CombatManager.SetupPlayerTurn",
         "CombatManager.DoTurnEnd",
         "CombatManager.FlushPlayerHand",
         "CombatManager.SetReadyToEndTurn",
         "CombatManager.SetReadyToBeginEnemyTurn",
-        "CreatureCmd.Kill",                               // 击杀后战斗胜利结算
+        // ---- 击杀结算 ----
+        "CreatureCmd.Kill",
+        // ---- 事件 ----
         "EventSynchronizer.BeginEvent",
         "EventSynchronizer.ChooseLocalOption",
+        // ---- 奖励归属（错归属 = 奖励给错角色）----
         "RewardsSet.Offer",
         "RewardsCmd.OfferCustom",
         "RewardsCmd.OfferForRoomEnd",
         "CombatRoom.OfferRoomEndRewards",
-        "RewardsSetSynchronizer.SelectLocalReward",       // 领取时把归属改绑到奖励的 owner player
+        "RewardsSetSynchronizer.SelectLocalReward",
+        // ---- 药水 / 动作队列 / 手牌变换 NetId 钉住 ----
         "PotionCmd.TryToProcure",
-        "WhisperingEarring.AfterAutoPrePlayPhaseEnteredLate",
-        "ActionQueueSet.CombatEnded",                     // 战斗结束残留动作清理
-        "NEndTurnButton.CallReleaseLogic",
-        "CardSelectCmd.FromDeckForEnchantment",           // 瓦库事件附魔选牌自动作答
-        "CardCmd.Transform",                              // 手牌变换期间 NetId 钉住（UI 同步）
-        "RunManager.OnEnded",                             // 个人记录器：整局胜负归因
-        "NEventRoom.OptionButtonClicked",                 // 个人记录器：真人事件点选
-        "CardReward.OnSelect",                            // 个人记录器：真人卡牌奖励点选（单机/合并屏统一入口）
-        "EventModel.SelectCardsToAddToDeckFromGrid",      // 个人记录器：事件网格选 N 入卡组
-        "MerchantEntry.OnTryPurchaseWrapper",             // 个人记录器：商店购买记录
-        "CardSelectCmd.FromDeckForRemoval",               // 个人记录器：真人删牌统计
+        "ActionQueueSet.CombatEnded",
+        "CardCmd.Transform",
     };
+
+    /// <summary>
+    /// 【Optional】缺失只 WARN、不阻断加载：第三方联动、纯 UI 表现、瓦库自动化、个人偏好记录器。
+    /// </summary>
+    private static readonly string[] OptionalPatchTargets =
+    {
+        "WhisperingEarring.AfterAutoPrePlayPhaseEnteredLate", // 第三方遗物联动
+        "NEndTurnButton.CallReleaseLogic",                    // 纯 UI：结束回合按钮重评
+        "CardSelectCmd.FromDeckForEnchantment",               // 瓦库：事件附魔自动作答
+        "RunManager.OnEnded",                                 // 个人记录器：整局胜负归因
+        "NEventRoom.OptionButtonClicked",                     // 个人记录器：真人事件点选
+        "CardReward.OnSelect",                                // 个人记录器：真人卡牌奖励点选
+        "EventModel.SelectCardsToAddToDeckFromGrid",          // 个人记录器：事件网格选 N 入卡组
+        "MerchantEntry.OnTryPurchaseWrapper",                 // 个人记录器：商店购买记录
+        "CardSelectCmd.FromDeckForRemoval",                   // 个人记录器：真人删牌统计
+    };
+
+    /// <summary>
+    /// 严格模式：致命失败时向游戏上报（抛异常 → 主菜单显示 MOD_ERROR.ASSEMBLY_LOAD）。
+    /// 置 LMC_INIT_STRICT=0/off/false 可临时降级为「只打 INIT_FAILED 不抛」，用于救急排查。
+    /// </summary>
+    private static readonly bool StrictMode = ResolveStrictMode();
 
     public static void Init()
     {
-        LocalMultiControlLogger.Info("开始初始化 Harmony 补丁。");
-        LocalMultiControlLogger.Info(BuildMarker);
-        LocalWakuuAutopilotConfig.Reload("entry-init");
-        LocalPersonalRecorder.Reload("entry-init"); // 个人偏好记录器（三级决策链第①级数据源）
-        RegisterWakuuRelicsToPool();
-        LocalWakuuRelicLocalization.Initialize();
-        // 社区统计（SkadaHelper）为可选第三方依赖：探测失败只打日志，不阻断加载
-        WakuuSkadaAdapter.Probe();
-        _harmony = new Harmony("sts2.dualroleadventure");
-        try
-        {
-            if (PatchDomainMap.UseGroupedPatchAll)
-            {
-                ApplyAllPatchGroups();
-            }
-            else
-            {
-                // 回滚预案（实施方案 2.3）：整体关闭分组容错，回到旧 PatchAll 直跑。
-                _harmony.PatchAll();
-            }
-        }
-        catch (Exception patchException)
-        {
-            // r38 防御 + 2.3 分组：Core 组失败即停时会走到这里（后续补丁组未应用）。
-            // 已应用的补丁保留；缺失会在下方启动自检中报出。
-            LocalMultiControlLogger.Error($"Harmony 补丁初始化中断（请结合启动自检缺失清单定位具体补丁）: {patchException}");
-        }
+        var fatalFailures = new List<string>();
 
+        LocalMultiControlLogger.Info("INIT_BEGIN");
+        LocalMultiControlLogger.Info($"BUILD_ID {BuildMarker}");
+        LocalMultiControlLogger.Info($"BUILD_IDENTITY {DescribeBuildIdentity()}");
+        LocalMultiControlLogger.Info("开始初始化 Harmony 补丁。");
+
+        // 阶段 1：运行期兼容性（PE/CLR/Assembly/依赖）
+        RunStage(fatalFailures, "RUNTIME_COMPAT_CHECK",
+            () => RuntimeCompatibilityCheck.Run(fatalFailures));
+
+        // 阶段 2：配置与记录器
+        RunStage(fatalFailures, "SERVICE_INIT", () =>
+        {
+            SafeAction(fatalFailures, FatalCode.Config, "配置重载", () => LocalWakuuAutopilotConfig.Reload("entry-init"));
+            SafeAction(fatalFailures, FatalCode.Config, "个人记录器重载", () => LocalPersonalRecorder.Reload("entry-init"));
+        });
+
+        // 阶段 3：模型注册（遗物入池 / 本地化 / 可选第三方探测）
+        RunStage(fatalFailures, "MODEL_REGISTRATION", () =>
+        {
+            RegisterWakuuRelicsToPool();
+            SafeAction(fatalFailures, FatalCode.Model, "瓦库遗物本地化", () => LocalWakuuRelicLocalization.Initialize());
+            // 社区统计（SkadaHelper）为可选第三方依赖：探测失败只打日志，永不阻断
+            WakuuSkadaAdapter.Probe();
+        });
+
+        // 阶段 4：应用 Harmony 补丁
+        RunStage(fatalFailures, "PATCH_APPLY", () =>
+        {
+            _harmony = new Harmony("sts2.dualroleadventure");
+            try
+            {
+                if (PatchDomainMap.UseGroupedPatchAll)
+                {
+                    ApplyAllPatchGroups();
+                }
+                else
+                {
+                    // 回滚预案（实施方案 2.3）：整体关闭分组容错，回到旧 PatchAll 直跑。
+                    _harmony.PatchAll();
+                }
+            }
+            catch (Exception patchException)
+            {
+                // r38 防御 + 2.3 分组：Core 组失败即停时会走到这里（后续补丁组未应用）。
+                // 已应用的补丁保留；缺失会在下方启动自检中报出。
+                LocalMultiControlLogger.Error($"Harmony 补丁初始化中断（请结合启动自检缺失清单定位具体补丁）: {patchException}");
+                fatalFailures.Add($"[{FatalCode.PatchApply}] Harmony 补丁应用中断: {patchException.GetType().Name}");
+            }
+        });
+
+        // 阶段 5：补丁自检（Critical 缺失 → 致命）
+        RunStage(fatalFailures, "PATCH_SELF_TEST", () => ValidatePatches(fatalFailures));
+
+        // 终态：INIT_OK / INIT_FAILED 二选一，互斥
+        FinishInitialization(fatalFailures);
+    }
+
+    /// <summary>
+    /// 启动自检：期望补丁清单 vs 实际已打补丁。
+    /// Critical 缺失 → 致命（PATCH002）；Optional 缺失 → WARN。
+    /// </summary>
+    private static void ValidatePatches(ICollection<string> fatalFailures)
+    {
         try
         {
-            var patchedMethods = _harmony.GetPatchedMethods();
-            var patchedList = patchedMethods.ToList();
+            List<MethodBase> patchedList = _harmony!.GetPatchedMethods().ToList();
             LocalMultiControlLogger.Info($"Harmony 补丁统计: 已打补丁方法数={patchedList.Count}");
-            foreach (var method in patchedList)
+
+            // 同时构造简单名键与完整名键（含参数个数），清单可写 Type.Method 或 Namespace.Type.Method 或 Type.Method/argc
+            var patchedKeys = new HashSet<string>(StringComparer.Ordinal);
+            var signatureCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (MethodBase method in patchedList)
             {
+                if (method.DeclaringType == null)
+                {
+                    continue;
+                }
+
+                string simple = $"{method.DeclaringType.Name}.{method.Name}";
+                string full = $"{method.DeclaringType.FullName}.{method.Name}";
+                int argCount = method.GetParameters().Length;
+                patchedKeys.Add(simple);
+                patchedKeys.Add(full);
+                patchedKeys.Add($"{simple}/{argCount}");
+                patchedKeys.Add($"{full}/{argCount}");
+
+                // 同名方法被多个重载/同名类型命中 → 提示升级到签名级写法
+                string signature = $"{full}/{argCount}";
+                signatureCounts[signature] = signatureCounts.TryGetValue(signature, out int count) ? count + 1 : 1;
+
                 if (method.Name.Contains("SelectCards") || method.Name.Contains("FromHand")
                     || method.Name.Contains("FromSimpleGrid") || method.Name.Contains("FromChooseACard")
                     || method.Name.Contains("FromCombatPile") || method.Name.Contains("ShouldSelectLocalCard"))
                 {
-                    LocalMultiControlLogger.Info($"  已打补丁: {method.DeclaringType?.FullName}.{method.Name}");
+                    LocalMultiControlLogger.Info($"  已打补丁: {method.DeclaringType.FullName}.{method.Name}/{argCount}");
                 }
             }
 
-            // 启动自检：期望补丁清单 vs 实际已打补丁，缺失即 ERROR（多为方法级-only 被静默跳过）。
-            var patchedKeys = patchedList
-                .Where(method => method.DeclaringType != null)
-                .Select(method => $"{method.DeclaringType!.Name}.{method.Name}")
-                .ToHashSet(StringComparer.Ordinal);
-            List<string> missingTargets = ExpectedPatchTargets.Where(target => !patchedKeys.Contains(target)).ToList();
-            if (missingTargets.Count > 0)
+            foreach (KeyValuePair<string, int> entry in signatureCounts.Where(pair => pair.Value > 1))
             {
-                foreach (string target in missingTargets)
-                {
-                    LocalMultiControlLogger.Error($"启动自检: 期望补丁缺失(可能被 PatchAll 静默跳过): {target}");
-                }
+                LocalMultiControlLogger.Warn($"启动自检: 同一签名被多次打补丁（第三方 mod 也可能是这里）: {entry.Key} x{entry.Value}");
+            }
 
-                LocalMultiControlLogger.Error(
-                    $"启动自检: {missingTargets.Count}/{ExpectedPatchTargets.Length} 个期望补丁缺失，请用 Scripts/Tools/patch_coverage.py 重新生成覆盖清单核对。");
+            List<string> missingCritical = CriticalPatchTargets.Where(target => !patchedKeys.Contains(target)).ToList();
+            List<string> missingOptional = OptionalPatchTargets.Where(target => !patchedKeys.Contains(target)).ToList();
+
+            foreach (string target in missingCritical)
+            {
+                LocalMultiControlLogger.Error($"[{FatalCode.PatchCritical}] Critical 补丁缺失(可能被 PatchAll 静默跳过): {target}");
+                fatalFailures.Add($"[{FatalCode.PatchCritical}] Critical 补丁缺失: {target}");
+            }
+
+            foreach (string target in missingOptional)
+            {
+                LocalMultiControlLogger.Warn($"启动自检: Optional 补丁缺失（不影响可用性）: {target}");
+            }
+
+            int criticalOk = CriticalPatchTargets.Length - missingCritical.Count;
+            int optionalOk = OptionalPatchTargets.Length - missingOptional.Count;
+            LocalMultiControlLogger.Info(
+                $"PATCH_RESULT critical={criticalOk}/{CriticalPatchTargets.Length} " +
+                $"optional={optionalOk}/{OptionalPatchTargets.Length} total_patched={patchedList.Count}");
+
+            if (missingCritical.Count == 0)
+            {
+                LocalMultiControlLogger.Info($"启动自检: {CriticalPatchTargets.Length} 个 Critical 补丁全部生效。");
             }
             else
             {
-                LocalMultiControlLogger.Info($"启动自检: {ExpectedPatchTargets.Length} 个期望补丁全部生效。");
+                LocalMultiControlLogger.Error(
+                    $"启动自检: {missingCritical.Count}/{CriticalPatchTargets.Length} 个 Critical 补丁缺失，" +
+                    "请用 Scripts/Tools/patch_coverage.py 重新生成覆盖清单核对。");
+            }
+
+            LogKeyPatchOwners(patchedList);
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Error($"启动自检执行失败: {exception}");
+            fatalFailures.Add($"[{FatalCode.PatchSelfTest}] 补丁自检执行失败: {exception.GetType().Name}");
+        }
+    }
+
+    /// <summary>
+    /// Harmony owner 审计（backlog：第三方 Patch 冲突检查）。
+    ///
+    /// 对每个「命中 Critical/Optional 清单的关键方法」打印该方法上的全部补丁 owner 与种类，
+    /// 一眼区分「我们的补丁没执行」与「第三方补丁也打在这个方法上」（Koishi 等 mod 冲突场景）。
+    /// 仅输出到日志，不影响初始化成败。
+    /// </summary>
+    private static void LogKeyPatchOwners(List<MethodBase> patchedList)
+    {
+        try
+        {
+            var wanted = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string target in CriticalPatchTargets.Concat(OptionalPatchTargets))
+            {
+                wanted.Add(target);
+            }
+
+            int logged = 0;
+            foreach (MethodBase method in patchedList)
+            {
+                if (method.DeclaringType == null)
+                {
+                    continue;
+                }
+
+                string simple = $"{method.DeclaringType.Name}.{method.Name}";
+                string full = $"{method.DeclaringType.FullName}.{method.Name}";
+                if (!wanted.Contains(simple) && !wanted.Contains(full))
+                {
+                    continue;
+                }
+
+                HarmonyLib.Patches? info = Harmony.GetPatchInfo(method);
+                if (info == null)
+                {
+                    continue;
+                }
+
+                var perOwner = new Dictionary<string, (int Prefix, int Postfix, int Transpiler, int Finalizer)>(StringComparer.Ordinal);
+                void Count(IEnumerable<HarmonyLib.Patch> patches, string kind)
+                {
+                    foreach (HarmonyLib.Patch patch in patches)
+                    {
+                        string owner = string.IsNullOrEmpty(patch.owner) ? "(unknown)" : patch.owner;
+                        if (!perOwner.TryGetValue(owner, out (int Prefix, int Postfix, int Transpiler, int Finalizer) tuple))
+                        {
+                            tuple = (0, 0, 0, 0);
+                        }
+
+                        switch (kind)
+                        {
+                            case "Prefix": tuple.Prefix++; break;
+                            case "Postfix": tuple.Postfix++; break;
+                            case "Transpiler": tuple.Transpiler++; break;
+                            case "Finalizer": tuple.Finalizer++; break;
+                        }
+                        perOwner[owner] = tuple;
+                    }
+                }
+
+                Count(info.Prefixes, "Prefix");
+                Count(info.Postfixes, "Postfix");
+                Count(info.Transpilers, "Transpiler");
+                Count(info.Finalizers, "Finalizer");
+
+                foreach (KeyValuePair<string, (int Prefix, int Postfix, int Transpiler, int Finalizer)> owner in perOwner)
+                {
+                    string counts =
+                        $"P{owner.Value.Prefix}Po{owner.Value.Postfix}T{owner.Value.Transpiler}F{owner.Value.Finalizer}";
+                    bool isSelf = owner.Key == "sts2.dualroleadventure";
+                    if (isSelf)
+                    {
+                        LocalMultiControlLogger.Info($"  关键目标 {simple} — {owner.Key} [{counts}]");
+                    }
+                    else
+                    {
+                        LocalMultiControlLogger.Warn(
+                            $"关键目标 {simple} 存在第三方补丁 owner「{owner.Key}」[{counts}]：若行为异常，" +
+                            "先确认是不是它的补丁与我们冲突（Harmony 按优先级执行）。");
+                    }
+                }
+
+                logged++;
+            }
+
+            if (logged > 0)
+            {
+                LocalMultiControlLogger.Info($"Harmony owner 审计完成: 关键目标 {logged} 个均已记录补丁归属。");
             }
         }
         catch (Exception exception)
         {
-            LocalMultiControlLogger.Warn($"Harmony 补丁统计失败: {exception.Message}");
+            // 审计是辅助诊断，绝不允许它反过来拖垮初始化
+            LocalMultiControlLogger.Warn($"Harmony owner 审计失败（不影响加载）: {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 初始化终态收口：全绿 → INIT_OK；任一致命项 → INIT_FAILED，并在严格模式下抛异常上报游戏。
+    /// 严格模式下抛出的异常会被 ModManager.CallModInitializer 捕获并写入 MOD_ERROR.ASSEMBLY_LOAD，
+    /// 这是游戏侧唯一能表达「该 mod 加载失败」的机制（主菜单可见）。
+    /// </summary>
+    private static void FinishInitialization(List<string> fatalFailures)
+    {
+        if (fatalFailures.Count == 0)
+        {
+            LocalMultiControlLogger.Info("INIT_OK");
+            LocalMultiControlLogger.Info("Mod 初始化完成（状态=OK）。");
+            return;
         }
 
-        LocalMultiControlLogger.Info("Mod 初始化完成。");
+        LocalMultiControlLogger.Error($"INIT_FAILED fatal={fatalFailures.Count}");
+        foreach (string failure in fatalFailures)
+        {
+            LocalMultiControlLogger.Error(failure);
+        }
+
+        LocalMultiControlLogger.Error(
+            $"Mod 初始化失败（状态=FAILED）：{fatalFailures.Count} 项致命问题，本 mod 未处于可用状态。");
+
+        if (!StrictMode)
+        {
+            LocalMultiControlLogger.Warn(
+                "严格模式已关闭（LMC_INIT_STRICT=0）：仅记录 INIT_FAILED，未向游戏上报，mod 可能处于半损坏状态。");
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"LocalMultiControl 初始化失败（{fatalFailures.Count} 项致命问题）: {string.Join(" | ", fatalFailures)}");
+    }
+
+    private static void RunStage(ICollection<string> fatalFailures, string stage, Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Error($"初始化阶段[{stage}] 抛出未处理异常: {exception}");
+            fatalFailures.Add($"[{FatalCode.Stage}] 阶段 {stage} 未处理异常: {exception.GetType().Name}");
+        }
+    }
+
+    private static void SafeAction(ICollection<string> fatalFailures, string code, string what, Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Error($"[{code}] {what}失败: {exception}");
+            fatalFailures.Add($"[{code}] {what}失败: {exception.GetType().Name}");
+        }
+    }
+
+    private static bool ResolveStrictMode()
+    {
+        string? raw = Environment.GetEnvironmentVariable("LMC_INIT_STRICT");
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        return !raw.Equals("0", StringComparison.OrdinalIgnoreCase)
+               && !raw.Equals("false", StringComparison.OrdinalIgnoreCase)
+               && !raw.Equals("off", StringComparison.OrdinalIgnoreCase)
+               && !raw.Equals("no", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 结构化构建身份（BuildIdentity）：读注入到 AssemblyMetadata 的 git commit / dirty / 构建时间。
+    /// 与 BuildMarker（人工维护、可读）互为补充——这个回答「从哪个 commit、何时构建、工作区是否干净」。
+    /// </summary>
+    private static string DescribeBuildIdentity()
+    {
+        string Read(string key) => Assembly.GetExecutingAssembly()
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => attribute.Key == key)?.Value ?? "unknown";
+
+        return $"commit={Read("GitCommit")} state={Read("GitDirty")} built={Read("BuildTimeUtc")}";
     }
 
     /// <summary>
