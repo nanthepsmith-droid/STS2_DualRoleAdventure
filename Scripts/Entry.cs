@@ -14,7 +14,7 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    private const string BuildMarker = "Revival v1.40.0 (game v0.111.0, marker=2026-09-08-r90)";
+    private const string BuildMarker = "Revival v1.40.0 (game v0.111.0, marker=2026-09-08-r91)";
 
     private static Harmony? _harmony;
 
@@ -423,16 +423,12 @@ public partial class Entry
     }
 
     /// <summary>
-    /// 结构化构建身份（BuildIdentity）：读注入到 AssemblyMetadata 的 git commit / dirty / 构建时间。
+    /// 结构化构建身份（BuildIdentity）：构建时由 csproj 生成 BuildIdentity.g.cs 编译进来。
     /// 与 BuildMarker（人工维护、可读）互为补充——这个回答「从哪个 commit、何时构建、工作区是否干净」。
     /// </summary>
     private static string DescribeBuildIdentity()
     {
-        string Read(string key) => Assembly.GetExecutingAssembly()
-            .GetCustomAttributes<AssemblyMetadataAttribute>()
-            .FirstOrDefault(attribute => attribute.Key == key)?.Value ?? "unknown";
-
-        return $"commit={Read("GitCommit")} state={Read("GitDirty")} built={Read("BuildTimeUtc")}";
+        return $"commit={BuildIdentity.GitCommit} state={BuildIdentity.GitDirty} built={BuildIdentity.BuildTimeUtc}";
     }
 
     /// <summary>

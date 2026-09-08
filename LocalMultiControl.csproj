@@ -63,15 +63,15 @@
     <Copy SourceFiles="$(TargetPath)" DestinationFiles="$(MSBuildProjectDirectory)\$(AssemblyName).dll" />
   </Target>
 
-  <!-- 结构化 BuildIdentity（AGENTS.md §9）：git commit + 构建时间注入 AssemblyMetadata，
-       日志 BUILD_ID 可直接回答「这一版从哪个 commit、何时构建」。git 不可用时回退为 no-git。
+  <!-- 结构化 BuildIdentity（AGENTS.md §9）：git commit + 构建时间生成源文件 BuildIdentity.g.cs。
+       日志 BUILD_ID 可直接回答「这一版从哪个 commit、何时构建」。git 不可用时回退 no-git。
 
-       踩坑记录：AssemblyMetadata 必须在 Target 内、且 BeforeTargets=GenerateAssemblyInfo 才生效——
-       顶层 ItemGroup 在 Target 运行前就静态求值，会把 $(GitCommit) 锁死在初始值 "no-git"（r89 实测踩中）。 -->
-  <PropertyGroup>
-    <BuildTimeUtc>$([System.DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))</BuildTimeUtc>
-  </PropertyGroup>
-  <Target Name="WriteBuildIdentityMetadata" BeforeTargets="GenerateAssemblyInfo"
+       踩坑记录：
+       r89 - 顶层 <ItemGroup> AssemblyMetadata 在 Target 前静态求值，值锁死在初始值 → no-git。
+       r90 - 改 BeforeTargets=GenerateAssemblyInfo + Target 内 ItemGroup，但 **Godot.NET.Sdk 下
+             GenerateAssemblyInfo 从未被调度**，三个值全丢 → unknown。
+       结论：不走 AssemblyMetadata，直接生成一个 .g.cs 源文件加入 @(Compile)，必然进汇编。 -->
+  <Target Name="WriteBuildIdentitySource" BeforeTargets="CoreCompile"
           Condition="'$(DesignTimeBuild)' != 'true'">
     <Exec Command="git -C $(MSBuildProjectDirectory) rev-parse --short HEAD"
           ConsoleToMSBuild="true" StandardOutputImportance="low" IgnoreExitCode="true">
@@ -85,11 +85,25 @@
       <GitCommit Condition="'$(GitCommit)' == ''">no-git</GitCommit>
       <GitDirty Condition="'$(GitDirtyRaw)' != ''">dirty</GitDirty>
       <GitDirty Condition="'$(GitDirtyRaw)' == ''">clean</GitDirty>
+      <BuildTimeUtc>$([System.DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))</BuildTimeUtc>
+      <BuildIdentityFile>$(IntermediateOutputPath)BuildIdentity.g.cs</BuildIdentityFile>
     </PropertyGroup>
     <ItemGroup>
-      <AssemblyMetadata Include="GitCommit" Value="$(GitCommit)" />
-      <AssemblyMetadata Include="GitDirty" Value="$(GitDirty)" />
-      <AssemblyMetadata Include="BuildTimeUtc" Value="$(BuildTimeUtc)" />
+      <!-- 注意：C# 分号在 MSBuild item include 里是列表分隔符，必须写 %3B；否则会被吞（实测踩中） -->
+      <_BILines Include="// &lt;auto-generated&gt; by LocalMultiControl.csproj (WriteBuildIdentitySource)" />
+      <_BILines Include="namespace LocalMultiControl.Scripts.Runtime" />
+      <_BILines Include="{" />
+      <_BILines Include="    internal static class BuildIdentity" />
+      <_BILines Include="    {" />
+      <_BILines Include="        internal const string GitCommit = &quot;$(GitCommit)&quot;%3B" />
+      <_BILines Include="        internal const string GitDirty = &quot;$(GitDirty)&quot;%3B" />
+      <_BILines Include="        internal const string BuildTimeUtc = &quot;$(BuildTimeUtc)&quot;%3B" />
+      <_BILines Include="    }" />
+      <_BILines Include="}" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(BuildIdentityFile)" Overwrite="true" Encoding="UTF-8" Lines="@(_BILines)" />
+    <ItemGroup>
+      <Compile Include="$(BuildIdentityFile)" />
     </ItemGroup>
   </Target>
 </Project>
