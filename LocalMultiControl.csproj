@@ -14,13 +14,31 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Decompiled game source lives in src/ as read-only reference; never compile it -->
+    <!-- 反编译游戏源码是只读参考，绝不能参与编译：
+           编译进去会导致 DLL 体积暴涨、类型重复、依赖混入且极难排查。
+           src/**   = 仓库内的反编译源码（历史约定）
+           sts2src/** = 仓库外反编译源码被拷进仓库时的目录（AGENTS.md §1）
+           新增任何反编译目录都必须在这里同步加排除，Guard 目标会兜底校验。 -->
     <Compile Remove="src/**" />
+    <Compile Remove="sts2src/**" />
     <None Remove="src/**" />
+    <None Remove="sts2src/**" />
     <!-- Unit tests live in tests/; never compile them into the mod assembly -->
     <Compile Remove="tests/**" />
     <None Remove="tests/**" />
   </ItemGroup>
+
+  <!-- 源码隔离 Guard（AGENTS.md §9 门禁 2）：
+       兜底拦截任何漏网的反编译源码进入编译，并输出参与编译的 .cs 数量供人工审计。 -->
+  <Target Name="GuardDecompiledSourceIsolation" BeforeTargets="BeforeCompile">
+    <ItemGroup>
+      <_DecompiledLeak Include="@(Compile)"
+                       Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('%(FullPath)', '[\\/](src|sts2src|decompiled)[\\/]', 'System.Text.RegularExpressions.RegexOptions.IgnoreCase'))" />
+    </ItemGroup>
+    <Error Condition="'@(_DecompiledLeak)' != ''"
+           Text="[SOURCE-ISOLATION] 反编译游戏源码被纳入编译，已阻止构建：@(_DecompiledLeak, '%0A  ')%0A请在 LocalMultiControl.csproj 的 &lt;Compile Remove=&quot;...&quot; /&gt; 中排除该目录（见 AGENTS.md §1）。" />
+    <Message Text="[SOURCE-ISOLATION] 通过；参与编译的 .cs 数量 = @(Compile->Count())" Importance="high" />
+  </Target>
 
   <ItemGroup>
     <Reference Include="sts2">
@@ -43,5 +61,35 @@
   <Target Name="CopyDllToProjectRoot" AfterTargets="Build">
     <Message Text="Copying DLL to project root..." Importance="high" />
     <Copy SourceFiles="$(TargetPath)" DestinationFiles="$(MSBuildProjectDirectory)\$(AssemblyName).dll" />
+  </Target>
+
+  <!-- 结构化 BuildIdentity（AGENTS.md §9）：git commit + 构建时间注入 AssemblyMetadata，
+       日志 BUILD_ID 可直接回答「这一版从哪个 commit、何时构建」。git 不可用时回退为 no-git。
+
+       踩坑记录：AssemblyMetadata 必须在 Target 内、且 BeforeTargets=GenerateAssemblyInfo 才生效——
+       顶层 ItemGroup 在 Target 运行前就静态求值，会把 $(GitCommit) 锁死在初始值 "no-git"（r89 实测踩中）。 -->
+  <PropertyGroup>
+    <BuildTimeUtc>$([System.DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))</BuildTimeUtc>
+  </PropertyGroup>
+  <Target Name="WriteBuildIdentityMetadata" BeforeTargets="GenerateAssemblyInfo"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="git -C $(MSBuildProjectDirectory) rev-parse --short HEAD"
+          ConsoleToMSBuild="true" StandardOutputImportance="low" IgnoreExitCode="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitCommit" />
+    </Exec>
+    <Exec Command="git -C $(MSBuildProjectDirectory) status --porcelain"
+          ConsoleToMSBuild="true" StandardOutputImportance="low" IgnoreExitCode="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitDirtyRaw" />
+    </Exec>
+    <PropertyGroup>
+      <GitCommit Condition="'$(GitCommit)' == ''">no-git</GitCommit>
+      <GitDirty Condition="'$(GitDirtyRaw)' != ''">dirty</GitDirty>
+      <GitDirty Condition="'$(GitDirtyRaw)' == ''">clean</GitDirty>
+    </PropertyGroup>
+    <ItemGroup>
+      <AssemblyMetadata Include="GitCommit" Value="$(GitCommit)" />
+      <AssemblyMetadata Include="GitDirty" Value="$(GitDirty)" />
+      <AssemblyMetadata Include="BuildTimeUtc" Value="$(BuildTimeUtc)" />
+    </ItemGroup>
   </Target>
 </Project>
