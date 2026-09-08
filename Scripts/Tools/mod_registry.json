@@ -1,0 +1,24 @@
+{
+  "_readme": [
+    "mod registry - OPTIONAL overrides for build_all_mods.ps1.",
+    "Default behavior = auto-discovery: every directory under ReposRoot that contains a *.csproj",
+    "is treated as a mod repo (repo root artifact <AssemblyName>.dll -> slot mods\\<slot>\\<dll>).",
+    "Use this file ONLY for exceptions:",
+    "  enabled=false  -> skip build/deploy (obsolete fix, official game already fixed it).",
+    "                    The script still WARNS if the game slot still holds a dll, because the",
+    "                    game keeps loading whatever is in the slot - disabling here does NOT uninstall.",
+    "  slot / dll     -> override slot directory name / deployed dll file name.",
+    "  note           -> free text, printed by -List.",
+    "Unknown repos not listed here are auto-discovered and enabled by default."
+  ],
+  "mods": [
+    { "name": "Act4FinalAscentFixes", "enabled": true, "note": "" },
+    { "name": "LexNinja2LaserFix", "enabled": true, "note": "" },
+    { "name": "OddmeltGaugeCardRenderFix", "enabled": true, "note": "" },
+    { "name": "TouhouAncientsAncientFixes", "enabled": false, "note": "OBSOLETE 2026-09-08: no longer needed" },
+    { "name": "TouhouAncientsMiniHakkeroFixed", "enabled": false, "note": "OBSOLETE 2026-09-08: no longer needed" },
+    { "name": "YuWanCardWhiteScarfFix", "enabled": true, "note": "" },
+    { "name": "HistoryFilter", "enabled": true, "note": "aux mod, not a fix" },
+    { "name": "HistoryLoadoutExport", "enabled": true, "note": "aux mod, not a fix" }
+  ]
+}
