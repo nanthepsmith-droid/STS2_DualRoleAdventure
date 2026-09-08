@@ -113,3 +113,27 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
 [INFO] [LocalMultiControl] 药水已固定归属1号位: FIRE_POTION, from=76561198388115947, to=76561198388115946
 [WARN] [LocalMultiControl] 跳过药水动画：当前视图不存在药水 FIRE_POTION
 ```
+
+---
+
+## 维护性改进 backlog（门禁体系 2026-09-08 之后的下一批）
+
+已落地（见 `AGENTS.md` §9 门禁表 + `Scripts/Tools/clr_compat_check.py`）：
+源码隔离 Guard、单元测试门禁、CLR/PE/Assembly 三层兼容检查、Critical/Optional 补丁分级、
+`INIT_OK`/`INIT_FAILED` 终态收口 + 统一错误码、`dll_check` false-green 修复、marker 缺失 FAIL、
+`log_parser --init-status`。
+
+下一轮候选（按性价比排序，2026-09-08 更新）：
+
+1. ~~**Harmony owner / 第三方 Patch 冲突检查**~~ ✅ 已做（Entry.cs `LogKeyPatchOwners`，r88）：
+   `关键目标 NPlayerHand.SelectCards — sts2.dualroleadventure [P2Po0...]`，
+   第三方 owner 单独 WARN。
+2. ~~**BuildIdentity 增强**~~ ✅ 已做（csproj 注入 GitCommit/GitDirty/BuildTimeUtc，r89）：
+   `BUILD_IDENTITY commit=<hash> state=clean|dirty built=<UTC>`。
+3. **部署槽唯一性检查**：已加跨槽位 json id 重复检测（WARN，含备份槽 DUPLICATE_ID 隐患）；
+   下一步「槽位 dll 与 json id 不匹配 = FAIL」仍需按各槽实际命名规则定制。
+4. **标准化回归验证契约**：把「改完给复现步骤」规范成
+   `BUG / EXPECTED / SETUP / ACTION / OBSERVE / PASS CONDITION / FAIL CONDITION / LOG ANCHORS`，
+   配合上面的固定 token 做机器可校验。
+5. **ExpectedPatchTargets 升级到完整签名**：现在兼容 `Type.Method`、`Namespace.Type.Method`、
+   `Type.Method/argc` 三种写法，但清单仍以简单名为主；逐步替换为 FullName 以消除同名类型/重载歧义。

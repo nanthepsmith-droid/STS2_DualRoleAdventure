@@ -4,11 +4,25 @@ Rules for automated coding agents (and humans) working in this repository. Goal:
 
 ## 1. Scope & hard constraints
 
-- Modify only mod code and mod metadata: `Scripts/`, `*.csproj`, `*.json`, docs, `workshop/`.
-- `src/` is decompiled game source — **read-only reference, never committed** (gitignored). Regenerate it after each game patch (see §5).
+Allowed to modify (everything else needs an explicit ask):
+
+```
+Scripts/            mod 源码
+tests/              单元测试（可以新增 regression test；修 bug 优先补测试）
+*.csproj            项目文件（含依赖与源码隔离规则）
+*.json              mod 元数据（DualRoleAdventure.json / mod_manifest.json）
+docs/, workshop/    文档与创意工坊素材
+AGENTS.md, CHANGELOG.md, README*.md, PLAYER_GUIDE*.md, TODO.md
+```
+
+- Decompiled game source is **read-only reference, never compiled, never committed**:
+  `src/`（仓库内，若存在）与 `sts2src/`（仓库外，`D:\Download\pain\sts2src\src`）。
+  二者都被 `LocalMultiControl.csproj` 的 `<Compile Remove="..."/>` 排除；
+  改 csproj 时**不得**删掉这些排除项，新增反编译目录必须同步加排除（见 §9 源码隔离门禁）。
 - No destructive git operations (`reset --hard`, force-push, `checkout --` over user changes). Never push to `upstream` (GuyGinat's fork) or the original author's repo; pushes go to `origin` (nanthepsmith-droid's repo). `lanternx` is a read-only reference remote.
+- **Do not commit or push unless the user explicitly asks.** Default = leave changes in the working tree.
+  When the user does ask, commit per logical change with a clear Chinese message.
 - Language: **Chinese** for all new code comments, commits, logs, and documentation. Original Chinese documents are preserved under `docs/archive/`.
-- Commit after each logical change with a clear message.
 
 ## 2. Build, format, deploy
 
@@ -20,6 +34,26 @@ dotnet build LocalMultiControl.csproj -c Debug     # or -c Release for shipping
 dotnet format LocalMultiControl.csproj --verify-no-changes
 ```
 
+Then the gates that must pass before any deploy (see §9 for the full list):
+
+```bash
+python Scripts/Tools/clr_compat_check.py --mod-dll DualRoleAdventure.dll   # PE/CLR/ABI 结构校验
+dotnet test tests/LocalMultiControl.Tests/LocalMultiControl.Tests.csproj   # 纯逻辑 + 程序集 ABI
+```
+
+`Scripts/Tools/build_all_mods.ps1` runs build → tests → clr_compat_check → deploy → SHA256 in one shot.
+**Deployment scripts must never bypass the gates** — do not hand-roll a copy step to "save time".
+
+The mod set is **dynamic** — never hand-maintain a repo list in the script:
+
+- 默认**自动发现**：`D:\Download\pain` 下任何含 `*.csproj` 的目录就是一个 mod 仓库，
+  产物名取 csproj 的 `<AssemblyName>`，槽位默认同名。**新增 mod 只需建仓库，不用改脚本。**
+- 例外写在 `Scripts/Tools/mod_registry.json`：`enabled=false` 停用已废弃的 mod（官方已修复的那种）、
+  `slot`/`dll` 覆盖槽位名、`note` 备注。
+- 常用：`-List` 看全部 mod 的启用/部署/一致状态；`-Only <name>` 只处理指定 mod。
+- 注意：**禁用 ≠ 卸载**。禁用的 mod 若槽位还留着 dll，游戏照样加载，脚本会 WARN 让你手动删槽位；
+  新 mod 槽位缺 `*.json` 也会 WARN（游戏不会把它识别为 mod）。
+
 - The build copies the DLL to the repo root: `DualRoleAdventure.dll`. **Always deploy/ship the root artifact**, not `.godot/mono/temp/...`.
 - Deploy = copy `DualRoleAdventure.dll` + `DualRoleAdventure.json` to `<game>\mods\DualRoleAdventure\` (`copy_pck_to_game.ps1`, or plain copy). No pck export — this is a dll-only mod.
 - If the copy fails with *permission denied*, the game is running and holds the DLL lock; retry after it closes.
@@ -28,8 +62,30 @@ dotnet format LocalMultiControl.csproj --verify-no-changes
 
 - Log file: `%APPDATA%\SlayTheSpire2\logs\godot.log`.
 - Log via `Log.Info` with the unified prefix `[LocalMultiControl]` (`Log.Debug` is invisible by default). Add logs for anything you fix.
-- On startup the mod logs `开始初始化 Harmony 补丁` → build marker → `Mod 初始化完成`; any Harmony exception between those lines means a patch target broke.
-- There are no automated tests; the maintainer playtests. Provide focused, step-by-step test scripts and read the log after each round.
+- Startup logs a machine-readable anchor sequence (human-readable Chinese lines are kept alongside):
+
+  ```
+  [LocalMultiControl] INIT_BEGIN
+  [LocalMultiControl] BUILD_ID   ...      # BuildMarker
+  [LocalMultiControl] BUILD_IDENTITY ...  # commit=<git> state=clean|dirty built=<UTC>
+  [LocalMultiControl] GAME_ID    ...      # 游戏版本 + 进程架构
+  [LocalMultiControl] COMPAT_RESULT PASS|WARN|FAIL ...
+  [LocalMultiControl] PATCH_RESULT <n>/<n> critical=... optional_missing=...
+  [LocalMultiControl] INIT_OK            # 只有成功才会出现
+  [LocalMultiControl] INIT_FAILED        # 只有失败才会出现，随后 mod 抛异常（游戏侧标记 MOD_ERROR.ASSEMBLY_LOAD）
+  ```
+
+  **Never grep `Mod 初始化完成` to decide health**: on failure that line is *not* printed.
+  `INIT_OK` 与 `INIT_FAILED` 互斥，是唯一终态判据（`log_parser.py --init-status` 会直接给出）。
+- Harmony 异常只会被 catch 并计入致命清单，不会中断流程；真正决定是否失败的是上面的终态行。
+- Automated unit tests exist for pure logic & metadata: `tests/LocalMultiControl.Tests/` (NUnit,
+  net9.0; covers the PureLogic layer, picking strategies, potion rule tables, patch-domain grouping).
+  Run them with `dotnet test tests/LocalMultiControl.Tests/LocalMultiControl.Tests.csproj`
+  (also enforced as a deploy gate by `build_all_mods.ps1`; there is no CI, tests run locally).
+  They reference the game assemblies but do **not** exercise live Godot/Harmony behavior.
+- Everything tests cannot cover (Harmony patches in the running game: combat UI, reward attribution,
+  event flows, foreground switching) is still verified by the maintainer playtesting. Provide focused,
+  step-by-step test scripts and read the log after each round.
 
 ## 4. Harmony & domain conventions
 
@@ -92,3 +148,28 @@ When the game updates and the mod breaks:
 - `README.md` — project front door; `PLAYER_GUIDE.md` — player-facing usage; `CHANGELOG.md` — history; `TODO.md` — open issues.
 - `docs/architecture.md`, `docs/console-commands.md`, `docs/design/*` — developer docs.
 - `docs/archive/*.zh.md` — original Chinese documents, preserved verbatim; do not edit them.
+
+## 9. Hard gates (run before every deploy)
+
+The goal is a single verdict, not a pile of logs. Every gate below must report PASS;
+WARN is tolerated only where marked.
+
+| # | 门禁 | 命令 | 失败后果 |
+|---|---|---|---|
+| 1 | 构建（0 警告 0 错误） | `dotnet build LocalMultiControl.csproj -c Release` | 禁止部署 |
+| 2 | 源码隔离 | `LocalMultiControl.csproj` 的 `<Compile Remove="src/**" />` / `sts2src/**`；构建日志不得出现反编译游戏源码 | 禁止部署（体积膨胀 / 类型冲突） |
+| 3 | 单元测试 | `dotnet test tests/.../LocalMultiControl.Tests.csproj` | 禁止部署（由 `build_all_mods.ps1` 强制） |
+| 4 | CLR/PE 结构 | `python Scripts/Tools/clr_compat_check.py --mod-dll DualRoleAdventure.dll` | 禁止部署（截断 DLL / 非托管 DLL / 架构不符 / 运行时版本不符） |
+| 5 | Assembly ABI | 同上（对比 mod 引用的 sts2 与游戏目录实际 sts2 的名称+版本+PublicKeyToken） | 禁止部署（版本漂移） |
+| 6 | 部署字节校验 | `python ..\tools\dll_check.py --deployed --marker <marker> --expect-deployed` | 退出码非 0 即失败；**缺文件 = FAIL，不允许“跳过即绿”** |
+| 7 | marker 身份 | `deploy_dll.ps1` 解析 marker，缺失/畸形 = FAIL | 无法证明产物身份 |
+| 8 | Critical 补丁 | 运行期 `PATCH_RESULT`：Critical 缺失 → `INIT_FAILED` + 抛异常 | mod 在主菜单报红 |
+| 9 | 初始化终态 | `python ..\tools\log_parser.py <log> --init-status` → `INIT_STATUS=OK` | `FAILED` 即为不可用构建 |
+
+Notes:
+
+- Gate 4/5 的期望值（TargetFramework、游戏目录）来自**单一来源**：`--game-dir` 参数 → 环境变量
+  `STS2_DIR` → csproj `<Sts2Dir>` → 默认路径；期望 TFM 由 `--expect-tfm` 给出，默认 `net9.0`。
+  不要在多个文件里各写一份 `net9.0` / `D:\SteamLibrary\...`。
+- Gate 8 的 Critical 清单在 `Scripts/Entry.cs`（`CriticalPatchTargets`）；可选目标缺失只报 WARN。
+- 可选第三方依赖（Koishi / SkadaHelper 等）加载失败**永远只是 WARN**，不得判为致命。
