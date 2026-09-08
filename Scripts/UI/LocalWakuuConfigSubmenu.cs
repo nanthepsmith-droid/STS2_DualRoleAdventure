@@ -325,6 +325,11 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.ExtraCrossCharacterCardReward,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("extraCrossCharacterCardReward", value));
         AddToggleRow(column,
+            "召唤物血量显示",
+            "默认开。本地多控时，顶部每个玩家的状态条旁显示其持有的全部召唤物/宠物血条（每只一行，含名字与血量，如亡灵契约师的奥斯蒂 Osty）。判据是「该玩家是否拥有召唤物」而非职业——奥斯蒂也可以由亡灵契约师为其他玩家召唤、或其它角色合法持有 Necrobinder 卡召唤；女王 mod 等走原版宠物体系的召唤物同样会显示。召唤物死亡后显示 0-X（置灰），提示需要复活/再召唤。",
+            () => LocalWakuuAutopilotConfig.PetHpBadge,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("petHpBadge", value));
+        AddToggleRow(column,
             "自有统计角标",
             "默认关。开启后在「奖励选牌卡/商店卡/事件选项按钮」的角标位置（见下方「自有统计角标位置」）显示你自己记录的总抓取率/总选择率（XX%），鼠标悬停弹出分幕首抓/重复抓取率、胜率的详情。只显示本地个人统计，与皮皮军师（SkadaHelper）社区统计 UI 分开、互不覆盖。",
             () => LocalWakuuAutopilotConfig.StatBadge,

@@ -202,6 +202,7 @@ internal static class PatchDomainMap
             ["NMerchantInventoryPatch"] = PatchDomain.Ui,
             ["NMultiplayerPlayerIntentHandlerPatch"] = PatchDomain.Ui,
             ["NMultiplayerPlayerStateReadyPatch"] = PatchDomain.Ui,
+            ["NMultiplayerPlayerStatePetHpPatch"] = PatchDomain.Ui,
             ["NOverlayStackPatch"] = PatchDomain.Ui,
             ["NPauseMenuRestartRoomPatch"] = PatchDomain.Ui,
             ["NPlayerHandAddOwnerGuardPatch"] = PatchDomain.Ui,
