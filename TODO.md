@@ -135,5 +135,9 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
 4. **标准化回归验证契约**：把「改完给复现步骤」规范成
    `BUG / EXPECTED / SETUP / ACTION / OBSERVE / PASS CONDITION / FAIL CONDITION / LOG ANCHORS`，
    配合上面的固定 token 做机器可校验。
-5. **ExpectedPatchTargets 升级到完整签名**：现在兼容 `Type.Method`、`Namespace.Type.Method`、
-   `Type.Method/argc` 三种写法，但清单仍以简单名为主；逐步替换为 FullName 以消除同名类型/重载歧义。
+5. ~~**ExpectedPatchTargets 升级到完整签名**~~ ✅ 已做（r92）：Critical/Optional 清单全部换成
+   FullName，重载目标钉死参数个数（`FromCombatPile/4`+`/5`、`TryToProcure/3`、`FromDeckForEnchantment/4`）；
+   新增 `ExpectedPatchTargetsTests` 用 sts2.dll 元数据逐条核对（格式 + 可解析 + 参数个数 + 无重复），
+   清单写错在游戏更新/手误时**单测先红**，不再等到实机误报 Critical 缺失。
+6. **marker 解析的对齐坑**：`deploy_dll.ps1` 的 UTF-16 解码已修（r92，两种对齐都扫）。
+   同类隐患：`dll_check.py` 早就是双对齐，其它自研脚本若从 dll 里抠字符串需同样处理。
