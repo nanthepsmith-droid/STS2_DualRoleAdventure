@@ -54,12 +54,30 @@ Configure via `%APPDATA%\SlayTheSpire2\vakuu_autopilot.json`
 | `neowAutoChoose` | `false` | Also auto-pick Neow bonuses |
 | `autoUsePotions` | `false` | Auto-use potions in combat by a per-potion rule table: heals at <50% HP, Fruit Juice on pickup, buffs/debuffs/card potions on round 1 of Elite/Boss fights, defensive potions before end turn when enemy intent damage is high, character-specific potions thrown to the matching teammate, Duplicator/Gigantification to the human player first, targeted picks for Ashwater/Gambler's Brew/etc., Foul Potion only thrown at merchants for gold, mod potions consumed at a random round in normal fights |
 
-### What Vakuu handles automatically (v1.37)
+### What Vakuu handles automatically (v1.37+)
 
 With the switches above on, a backgrounded Vakuu also: claims their combat/event rewards,
 resolves non-shared events, picks rest-site options, uses potions per the rule table, and
-throws Foul Potions at merchants. Everything else (shops, shared events, crystal sphere)
-stays manual.
+throws Foul Potions at merchants. Shared events and the crystal sphere stay manual;
+shopping can optionally be handed to Vakuu via "Auto-buy cards" (below).
+
+### New in v1.40 (all inside the in-game "Vakuu autopilot" / "Other settings" submenus, saved instantly)
+
+- **Personal preference recorder**: on by default. Records your own card-reward/event choices to
+  `personal_stats.json` (only human decisions; Vakuu's automated picks are excluded; only finished runs count).
+- **Personal-stats decision assist**: off by default. Vakuu prefers your own stats when picking cards/events,
+  falling back to community stats when samples are thin. The "preference tier" cycles
+  Character-first / Volume-first / Character-only.
+- **Auto-buy cards in shops** (experimental, off): buys cards with ≥20% community win rate while keeping ≥50 gold;
+  "also buy without data" lets mod cards buy on the gold floor alone.
+- **Personal stat badge**: off by default. Shows your own pick/win percentages (XX%) with hover details on card
+  rewards / shop / event buttons; data source has three modes (personal only / personal+community fallback / blended)
+  and the badge corner is selectable (default bottom-left to avoid overlapping community-stat labels).
+- **Keep the Vakuu form relic**: on by default. Third-party "devour relics" effects (e.g. TouhouAncients'
+  Bottomless Stomach) can no longer remove the Vakuu Form relic; if it is ever lost, Vakuu keeps autopiloting
+  via the configured Vakuu players and re-grants the relic. Turning this off restores the old behavior.
+- **Other settings**: features not tied to Vakuu autopilot (cross-character card rewards, stat badges) live at the
+  end of the settings page under their own "Other settings" section and work even when Vakuu autopilot is off.
 
 ## During a run
 

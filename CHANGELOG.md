@@ -2,6 +2,221 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
+## [1.40.0] - 2026-09-08
+
+> v1.40 = r56~r84 全量（2026-09-02 起），自 v1.39（r55）以来最大的一版：
+> ① 上游合入（ghost hands 逐帧轮询+夹取 / min_game_version / opt-in 跨角色卡组）；
+> ② **个人偏好记录器**（三级决策链第①级：真人决策记录 → personal_stats.json → 个人统计决策辅助 + 跨角色档位）；
+> ③ **商店自动化 Phase 4 v1**（自动买卡 + 删牌统计 + 无数据开关 + 不买 Null）+ 火堆愈合优先级；
+> ④ **自有统计角标全套**（overlay 角标/悬停面板、来源三档、位置四档、奖励/商店/事件多挂载点）；
+> ⑤ 稳定性修复：后台手牌变换卡死、击杀结算非阻塞、合并奖励屏 backend ERROR、藏宝图读档兜底、
+>    托管遗物防吞噬（可开关）等。单测 307 → 321。
+
+### Fixed
+- **瓦库托管遗物被第三方"吞噬遗物"效果移除导致瓦库彻底停摆（r83，2026-09-08 实机日志定位）**：
+  实证：TouhouAncients 遗物【无底之胃】（`TOUHOUANCIENTS-BOTTOMLESS_STOMACH`，描述"拾起时，
+  吞噬你初始遗物与先古遗物以外的全部遗物"）被瓦库自动选中后，2 号玩家遗物栏 **19 → 4**，
+  【瓦库形态】被一并吃掉；而托管判据只看"是否持有形态遗物"，遗物没了 → 瓦库不再自动操作。
+  修复两层：① 新增 `PlayerRemoveRelicInternalGuardPatch`（Wakuu 域）拦截
+  `Player.RemoveRelicInternal`（原版 `RelicCmd.Remove` 也只是转调它，覆盖所有第三方移除链路），
+  待移除的遗物是【瓦库形态】/【永久低语耳环】且该玩家仍在瓦库名单时跳过移除并打 WARN；
+  玩家已取消瓦库勾选则照常移除。② 判据兜底：`IsVakuuFormMode` / `IsVakuuFormModeById` /
+  `HasWakuuRelic` 在遗物缺失时改按瓦库名单继续托管（WARN 一次），并调度一次补发
+  （复用 `LocalMultiControlRuntime.GrantWakuuRelicsAsync`，已持有则跳过）以恢复 +1 能量与遗物栏显示。
+  **r84 起整项由 `keepWakuuFormRelic` 开关控制（默认开）**，见下方 Added。
+- **自有统计角标位置/数据来源改不动（r84，2026-09-08）**：设置页点「自有统计角标位置」只会在
+  界面上短暂变化、重进即回到默认的**左下**；「统计角标数据来源」同样无效。根因在
+  `LocalWakuuAutopilotConfig.TrySetAndSaveString`：写回 json 时用的是
+  `eventChoiceMode / cardPickMode / personalTier / else → wakuuBrain` 的 if/else 链，
+  `statBadgeCorner` 与 `statBadgeSource` 都掉进最后的 `else`，被写进了 **`wakuuBrain`** 字段，
+  角标位置本身从未落盘。改为按 key 的 switch 各写回各自字段（`LocalStatBadgeUi._Process`
+  本来就每帧读 `StatBadgeCorner`，修好后切档即时生效）。
+- **合并奖励屏 backend ERROR 残留修复（r63，2026-09-06 实机回归发现）**：
+  r60 的 `BeginDisplaySet/CompleteDisplaySet` 只覆盖「离房时未领完」的路径；实机发现
+  `All rewards have been taken...` 仍有 4/5 发生在**最后一张奖励按钮被领走那一刻**
+  （RewardCollectedFrom → UpdateScreenState），因为领奖走 `SelectUnsynchronized` 不会像原版
+  `SelectLocalReward` 那样在每次领取后 `CompleteRewardsSetIfNecessary`。修复：新增
+  `CombatRewardMergeContext.OnRewardClaimed`（真人领完一个奖励后若所属展示集已全部领完即完成后端），
+  并在 `NRewardButtonMergedRewardSelectPatch` 成功落点调用；另把「完成时同步器本地玩家与展示集归属
+  不一致」（领奖期间切过角色）从"放弃兜底"改为**临时对齐本地玩家后跳过栈顶再恢复**，消除离房路径的残留报错。
+- **Ghost hands 位置调整改为逐帧轮询 + 偏移屏幕夹取**（移植上游 e055e8f）：
+  部分节点会先于 `NGame._Input` 消费方向键事件（Workshop 反馈 Ctrl+Right 永远到不了），
+  现改为 overlay 每帧轮询原始按键状态（`LocalGhostHandsOverlay.PollMoveKeys`，Shift+方向键为微调）；
+  偏移在拖动与配置加载时夹取到可见区（`LocalGhostHandsRuntime.ClampOffsetsToScreen`），
+  跑出屏幕的历史配置下次启动自动回正。`GhostHandsHotkeysPatch` 仅保留 F8 开关。
+- **个人记录器三处修复（r58，2026-09-03 观者实机回归发现）**：
+  ① 整局胜负**重入护栏**：原版 `WinRun` 在 `OnEnded(true)` 后 `GuaranteeKillAllPlayers()` 会触发
+    `CreatureCmd.Kill → OnEnded(false)` 第二次调用（原版靠 `_runHistoryWasUploaded` 早退），我们的前缀
+    在护栏前 → 一局被记成 win+loss 两条。改为前缀读取同一私有字段，重入即跳过。
+  ② 卡牌奖励点选检测改**牌组对比**：原「快照候选 − 剩余候选」差分依赖 `CardReward.OnSelect` 把点中的
+    卡从 `_cards` 移除，但移除的是 `CardPileCmd.Add` 返回的实例（实测不一定是同实例）→ 真人点的卡牌
+    奖励一条都没记（观者局日志 8 次 `obtained ... from card reward`，记录器 0 条）。改为前缀快照牌组构成、
+    后缀对比出「新增进主牌组的卡 = 点中的卡」，ground truth 可靠。
+  ③ 事件页过滤**单选项/对话推进页**：`THE_ARCHITECT` 结局对话、探索者等待/前进等页只有一个"继续"按钮，
+    无偏好信号却污染事件统计；现只记「过滤锁定/继续后可选 ≥2」的真实取舍页。
+- **修复后台角色手牌变换导致战斗卡死（r59，2026-09-04 多人实测）**：
+  `CardCmd.Transform` 的视觉分支会用 `NCard.FindOnTable(original, Hand)` 在**前台手牌**找原卡节点，
+  找不到就抛 `InvalidOperationException`。本 mod 的 `CardTransformNetIdPinPatch` 把 `LocalContext.NetId`
+  钉到变换牌主人后，会把**后台角色**（瓦库托管中/其他本地角色）的手牌变换也误判成"我的牌"而去前台找节点 →
+  异常抛穿异步链（含 RitsuLib 桥）杀死回合循环：第一回合起无法出牌/切人/结束回合
+  （实测：GensokyoSpire「不明妖怪之力」回合开始变换 LexNinja2「等离子之手」）。
+  修复：仅当变换牌主人 == 当前前台角色（`SessionState.CurrentControlledPlayerId`）时才钉 NetId；
+  后台手牌变换本就无需前台动画，让 vanilla 按 `IsMine=false` 跳过视觉即可（数据层照常生效）。
+
+### Added
+- **「防止瓦库形态丢失」开关（r84，2026-09-08，默认开）**：r83 的托管遗物防移除由
+  `keepWakuuFormRelic` 控制，设置页位于「压制原版低语耳环」下方。开启 = 拦下对【瓦库形态】/
+  【永久低语耳环】的移除 + 遗物缺失时按瓦库名单兜底并补发；**关闭 = 完全回到 r82 行为**
+  （遗物可被第三方/引擎正常移除，移除后瓦库停止自动操作）。同时门禁补丁
+  `PlayerRemoveRelicInternalGuardPatch` 与判据兜底 `IsTakeoverPlayerFallback`。
+- **设置页新增「其它设置」分区（r84，2026-09-08）**：与瓦库托管无强关联的开关统一挪到页面末尾，
+  用两条分隔线 + 小标题隔开并附说明「即使不开托管也按各自开关生效」。本次移入：
+  **跨角色卡组（战后奖励）**、**自有统计角标**、**统计角标数据来源**、**自有统计角标位置**。
+  瓦库区只保留「只有瓦库托管才会用到」的开关。
+- **声明 `min_game_version: 0.111.0`**（移植上游 17feed7）：`DualRoleAdventure.json` /
+  `mod_manifest.json` / `workshop/content/DualRoleAdventure.json` 三处补齐——
+  游戏版本不符时由加载器清晰拒绝加载，而非 `ReflectionTypeLoadException`。
+- **opt-in 跨角色卡组**（移植上游 69c7d99，配置键 `extraCrossCharacterCardReward`，默认关）：
+  每个角色战后奖励追加一组从「其他角色」卡池抽取的 3 选 1 卡牌奖励——原作者未完成的 v1.30 设计。
+  开关已接入瓦库托管设置页（`LocalWakuuConfigSubmenu` 新增「跨角色卡组（战后奖励）」勾选行，
+  即时写回 `vakuu_autopilot.json`），无需手工编辑文件；
+  `CombatRoomOfferRoomEndRewardsPatch` 在各角色奖励生成完毕后、`BeforeCombatRewardOffered`
+  结算前追加；ghost hands 保存配置改为**合并写入**，不冲掉设置文件里其他功能写入的键。
+- **个人偏好记录器 Phase 1**（可行性分析 §8.4.1 三级决策链第①级，分支 `feat/personal-recorder`）：
+  - **记录（只记真人决策）**：真人领奖（`RewardsSetSynchronizer.SelectLocalReward`）与真人选事件
+    （`NEventRoom.OptionButtonClicked`）两个入口都是瓦库自动路径不经过的——自动领奖走
+    `SelectUnsynchronized`、自动选事件直调 `Chosen()`，因此瓦库数据天然排除，无需额外标记。
+    记录字段：模式（单/多）/ 幕数 / 角色 / 首次-重复（牌组已持有同 id）/ 整局结果。
+  - **存储**：`%APPDATA%\SlayTheSpire2\personal_stats.json`；runKey = 种子+玩家数，
+    记录逐条落盘、整局结束补写结果，跨存档会话也能归因；只统计打完的局（win/loss），
+    abandon 局丢弃、进行中局不计、stale 超 60 天清理。
+  - **决策参考（personalAssist，默认关）**：瓦库选卡牌奖励/事件选项先查个人统计
+    （多人局优先多人切片，按 ①模式+角色→②模式→③角色→④全量 放宽），样本达到
+    `DefaultMinPersonalCount=3` 且非负面才采用，否则回退社区统计（skadaAssist）→ 最左/最上。
+    纯逻辑 `PureLogic/WakuuPersonalData.cs` 全部可单测（新增 10 用例）。
+  - 设置页新增「个人偏好记录」（默认开）与「个人统计决策辅助」（默认关）两行。
+
+### 记录覆盖补全（Phase 1.5，r61，2026-09-06）
+- **事件网格选 N 张入卡组**（`EventModel.SelectCardsToAddToDeckFromGrid` 钩子）：
+  脑蛭「分享知识」（5 选 1）、满屋芝士（选 2）等不可跳过的 `FromSimpleGridForRewards` 路径
+  此前不记——系统性漏掉"入卡组"决策，且"展示了但没选"的候选是高质量负信号。
+  现与卡牌奖励同构记入 `cardOffers`（共用牌组差分 ground truth，`PersonalCardBatchTracker` 抽取共享）；
+  瓦库事件自动选择（`InEventAutoChoiceScope`）与"无真实取舍（自动全选）"分支排除。
+- **商店购买记录**（`MerchantEntry.OnTryPurchaseWrapper` 钩子，用户口径：只记「买了」）：
+  卡/遗物/药水三个购买落点记入新增的 `shopPurchases` 表
+  （runKey/模式/角色/幕/kind/item/实付金币），删卡服务（花钱删牌）不记；
+  前缀在扣款清栏前快照商品（购买成功后条目会被 Clear/Restock），购买成功才入账。
+- `PersonalStore` 增 `shopPurchases` 列表并接入过期清理；单测 +2（JSON 往返含商店记录、随局清理）。
+  瓦库商店自动化（Phase 4）落地后需在此处补瓦库自动购买的作用域排除。
+
+### 商店自动化 v1 与删牌统计（Phase 4 起步，r64，2026-09-06）
+- **删牌统计记录**（个人记录器）：真人删牌（事件删牌 / 营地删牌 / 商店删牌服务，都走
+  `CardSelectCmd.FromDeckForRemoval`）记入新 `cardRemovals` 表（runKey/模式/角色/幕/被删卡）；
+  `WakuuPersonalQuery.CountCardRemovals / CountAllCardRemovals` 纯函数（只计已结束局），
+  「被删概率」口径 = 某卡被删次数 ÷ 同类切片删牌总数（删牌偏好占比），接入过期清理。
+- **商店自动买卡（shopAssist，默认关，Phase 4 v1）**：瓦库角色的商店视图打开
+  （`NMerchantInventory.Initialize`）且库存绑定后触发 `LocalWakuuMerchantAuto`——
+  对角色卡+无色卡按 `WakuuMerchantPicking.SelectCardBuys` 决策（社区统计胜率 ≥ 20% 且
+  支付后保留 ≥ 50 金保底），经 entry 公共购买链路直接成交；同一房间×角色只自动采购一次。
+  **r65（2026-09-06）**：买卡胜率门槛从 50% 下调到 **20%**——用户实测反馈绝大多数牌社区胜率
+  集中在 20%~30%，原 50% 门槛导致几乎无牌可买。
+  **r66（2026-09-06）**：新增「无统计数据也买」补充开关 `shopAssistBuyNoData`（默认关）——
+  实测发现商店多为 mod 卡（SkadaHelper 无数据），降门槛后仍买不到；开启后无数据的卡也按
+  「付后保留 ≥ 50 金」金币保底买入（`WakuuMerchantPicking.SelectCardBuys` 增 `buyNoData` 参数）。
+- **作用域**：自动采购全程置位 `LocalWakuuMerchantAuto.PurchaseOwnerId`（AsyncLocal），
+  个人记录器的商店购买 / 删牌两个钩子据此不把瓦库自动数据当真人记录。
+- 设置页新增「商店自动买卡」开关与「商店买卡·无统计数据也买」开关。
+  遗物/药水与删牌服务自动化留待后续增量（§9.3）。
+- 单测：`WakuuMerchantPicking` 决策 7 例（+2 无数据购买语义、+1 Null 占位卡）+ 删牌统计 1 例；**315 用例全绿**。
+- **r67（2026-09-07 实测修复）**：自动采购买过游戏内置的 Null 占位卡
+  （`MegaCrit.Sts2.Core.Models.Cards.Null`，Id.Entry="NULL"，社区统计里有数据所以过了 0.2 门槛），
+  白花金币。修复：运行侧按类型跳过该卡，纯函数侧加 `IsPlaceholderCardId` 兜底（空 id / "NULL" 一律不买）。
+
+### 火堆选项优先级：全员血量 ≥50% 时愈合排最后（r68，2026-09-07）
+- 用户拍板：全员（含瓦库自己与队友）当前血量占上限都 ≥50% 时，给队友「愈合」（MEND）意义不大，
+  优先级压到睡觉（HEAL）之后——先按原顺序锻造/睡觉，都没得做了才愈合。
+- 有人血量 <50% 时维持原行为：愈合仍优先于睡觉（回血比无意义的睡觉更有价值）。
+- 判定抽为纯函数 `WakuuRestPicking.IsAllAboveHpRatio`（默认 50%，可自定义比例），运行时侧
+  `LocalWakuuRestAutoChoice.IsEveryoneAboveHpRatio` 组装存活玩家血量后调用；单测 +4。
+- 火堆选择日志增加 `全员≥50%=` 字段，便于核对优先级走向。
+- 商店自动买卡「不买」日志补充 `候选数/金币/最便宜价`——此前无法区分"没候选"与"买完跌破 50 金保底"。
+
+### 自有统计角标与悬停详情（statBadge，r69，2026-09-07）
+- 需求（用户拍板）：把「我们的个人数据统计显示」与皮皮军师/SkadaHelper 的社区统计显示**分开、可并存**——
+  只显示个人记录器算出的数据，社区数据不进本 UI。
+- **角标**：奖励选牌卡 / 商店卡 / 事件选项按钮右下角常驻一个百分比——卡牌 = 总抓取率、事件 = 总选择率。
+  挂载点：`NCardRewardSelectionScreen.RefreshOptions`、`NMerchantInventory.Initialize`（含伪商店子类）、
+  `NEventRoom.RefreshEventState` 三个 postfix（re-roll / 换卡 / 事件状态切换都会重建并同步）。
+- **悬停弹窗**：postfix 游戏 hover 统一入口 `NHoverTipSet.CreateAndShow`，向 hover tip 文本容器追加
+  自绘统计块（随 hover 关闭整树销毁）——卡牌 = 1/2/3 幕「首抓/重复」抓取率 + 拿了/没拿的整体胜率；
+  事件 = 分幕选择率 + 选了/没选胜率。
+- 数据层纯函数 `WakuuStatBadgeQuery.BuildCard/BuildEvent` + 格式化 `WakuuStatBadgeFormat`
+  （只读 `LocalPersonalRecorder.Snapshot`，口径与决策链一致：只计已结束且非 abandon 的局；
+  isMulti = 当前是否本地双控 run，角色全部合并）。
+- 视觉用 Godot 基础控件 + SystemFont（微软雅黑等兜底）自绘，不碰 MegaLabel/场景主题、不挡点击
+  （MouseFilter=Ignore），不读任何社区数据；所有绘制异常 try/catch 降级 WARN 不影响游戏。
+- 默认关，设置页新增「自有统计角标」开关；单测 +3（纯逻辑聚合/文本 3 例，config 断言 +2）→ **318 用例全绿**。
+  **r70（2026-09-07 实机修正）**：涅奥/事件选项的角标跑到了选项**左侧**——事件按钮在
+  `NEventRoom.RefreshEventState` 时刚被加入容器、`Size` 尚未由容器排布（=0），按当时几何锚定
+  bottom-right 全落到按钮原点。改为角标「布局后自动重贴」：订阅 `area.Resized`（同一 area 只订一次）
+  且初始零尺寸时 `CallDeferred` 延迟一帧重贴。
+  **r71（同日复测仍错位后重构）**：放弃「子节点锚点跟随父布局」路线，改为**常驻全屏 overlay
+  `StatBadgeOverlay` 每帧摆位**——读取目标节点实际 `GetGlobalRect()`，把角标钉到其右下角；
+  不再依赖父节点何时排布尺寸/锚点是否重算，事件入场动画、晚排布、换页重建天然免疫。
+  **r72（同日用户确认呈现后定稿）**：悬停详情不再追加进游戏 hover tip（那会跟随原生 hover 出现在
+  选项左侧/卡片右侧），改为 overlay **自绘正下方面板**——`_Process` 用视口鼠标位置判定当前悬停目标，
+  在其正下方（底部放不下时自动翻到上方）显示统计详情；右下角角标机制不变。移除原
+  `StatBadgeHoverPatch`（`NHoverTipSet.CreateAndShow` 追加注入）及其域登记。
+  **r73（2026-09-07 实机反馈：商店看不到角标）**：商店挂载点补充 `NMerchantCard.FillSlot`
+  postfix（单卡填充完立即刷新，原只有 `NMerchantInventory.Initialize`）；商品条目
+  （`CreationResult`）晚于填充生成时自动排一次 0.35s 延迟重试；`Initialize` 增加一条统计日志
+  「卡槽数/已挂角标/未挂」，用于区分「没挂上（取不到卡或条目未生成）」与「该卡无个人记录」。
+  **r74（2026-09-07 实机反馈：战斗后卡牌奖励无角标）**：奖励选牌原来依赖节点路径 `UI/CardRow`
+  取卡容器，路径不匹配时会静默不出角标。改为**遍历整个选牌屏子树**找 `NCardHolder`
+  （`FindChildren("*", recursive, owned:false)`），不再依赖路径；同样加一条统计日志
+  「卡牌 holder 数/已挂角标/无个人数据」，完全没找到 holder 时额外 WARN 提示 UI 结构变化。
+  **r75（2026-09-07 用户拍板：无数据显示 0%）**：日志实证 `卡牌holder=3，已挂角标=0，无个人数据=3`
+  ——功能正常，是**个人样本太稀疏**（存档 6 局 / 240 种卡，多数卡仅 1~5 次 offer，很多卡历史上一张没见过）。
+  按用户要求：**无个人记录的卡角标也显示 `0%`**（角标常显），悬停时给出「暂无该卡的个人记录（样本 0）」
+  而不是什么都不弹。决策链的严格口径（只计已结束且非 abandon 局）不变，仅展示层改为常显。
+  **r76（2026-09-07 用户反馈「我们的 mod 压制了皮皮军师自己的社区统计显示」）**：查证
+  `SkadaHelper.dll`（workshop 3763804482，即皮皮军师）**自己会把社区统计标签画在卡上**
+  ——它 patch 了 `NCardRewardSelectionScreen` / `NGridCardHolder`，dll 内有
+  `StatsLabelWidth` / `GetStatsLabelX` / **`StatsRightInset`**（标签从卡的右侧内缩）。
+  而我们的角标是挂在树根的顶层 overlay、又固定钉在卡右下角 → 正好把它盖住。
+  修复：角标位置改为**可配置四档**（左下/右下/右上/左上，循环按钮在设置页「自有统计角标位置」），
+  **默认改为左下**以避开皮皮军师的右侧标签；摆位抽为纯函数 `WakuuStatBadgeLayout.Resolve`
+  （可单测，+1 例）。两者现在可以同时看到、互不遮挡。
+- **统计角标可接入皮皮军师社区数据（r78，2026-09-07 用户拍板改需求）**：
+  查证用户装的 `SkadaHelper 0.8.7「轻量版」` manifest 自述
+  「**仅保留本地路线参考，不再提供选牌、商店等 AI 决策建议**」——它加载正常、数据包可用
+  （996677 runs），但**卡牌/商店的社区统计它自己已经不画了**（所以不是被我们压制）。
+  因此不再追求"同时显示两套数字"，改为**单一数字 + 可选社区兜底**：
+  新增 `statBadgeCommunityFallback`（**默认关**），开启后**仅当某张卡没有个人记录时**，
+  用皮皮军师的社区抓取率/胜率补足角标与悬停面板，面板标注「来源：社区·皮皮军师」；
+  有个人记录时仍只显示个人统计。取数走既有 `WakuuSkadaAdapter.TryGetCardSignal`（按卡所属角色查表），
+  未装/查无数据则退回 0%。单测 +1（社区兜底正文格式化）→ **320 用例全绿**。
+- **统计角标数据来源改三档（r79，2026-09-07 用户拍板）**：把 r78 的布尔兜底开关升级为
+  `statBadgeSource` 三档（设置页循环按钮，**默认 `personalOnly` 仅个人**），始终只显示一个百分比：
+  ① **仅个人**：只用自己打出的统计（无记录显示 0%）；
+  ② **个人+社区兜底**：该卡没有个人记录时才用社区抓取率补足；
+  ③ **融合**：个人与社区按**伪计数加权**合成一个抓取率——
+  `BlendPickRate = (picked + K·社区抓取率) / (offered + K)`，默认 `K=5`
+  （个人样本越多越主导，个人 5 次以上即与社区平手以上；社区无数据退化为纯个人）。
+  融合档悬停面板同时给出「融合抓取率 / 个人 / 社区（含样本）」三行 + 分幕与胜率明细。
+  单测 +2（档位归一化 + 融合算式的三种退化/加权情形）→ **321 用例全绿**。
+
+### 跨角色偏好档位（Phase 1.5，r62，2026-09-06）
+- 配置键 **`personalTier`**（设置页三档按钮：「角色优先 → 总量优先 → 只看角色」循环，即时写回 json）：
+  - `characterFirst` **角色优先（默认 = v1 现状，行为零变化）**：①模式+角色 → ②模式 → ③角色 → ④全量；
+  - `volumeFirst` **总量优先**：跳过「跨模式单角色」档（该档样本往往最稀疏），样本集中在模式内与全量；
+  - `characterOnly` **只看角色**：只信本角色数据（模式×角色 → 跨模式×角色），不足即回退社区统计，
+    绝不用其他角色的数据兜底（适合角色专属牌）。
+- `WakuuPersonalQuery.TryGetCardDecisionSignal / TryGetEventDecisionSignal` 加 `tierPreference` 参数
+  （默认 characterFirst）；**瓦库卡牌奖励与事件选项两条决策链**均接入
+  （`LocalWakuuStrategySelector` / `LocalWakuuEventAutoChoice`）。
+- 纯逻辑档位用例 +3；**303 用例全绿**。
+
 ## [v1.39] - 2026-09-01
 
 > 维护性改进 **Phase 1（1.1~1.5）+ Phase 2（2.1~2.4）+ Phase 3（r47~r54，瓦库智能选择）已全部合并到 `master`**
