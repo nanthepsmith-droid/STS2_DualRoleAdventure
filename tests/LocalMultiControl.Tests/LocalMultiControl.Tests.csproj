@@ -9,11 +9,25 @@
     <AssemblyName>LocalMultiControl.Tests</AssemblyName>
     <RootNamespace>LocalMultiControl.Tests</RootNamespace>
 
-    <!-- 游戏数据目录（sts2.dll / GodotSharp.dll / 0Harmony.dll） -->
-    <Sts2DataDir>D:\SteamLibrary\steamapps\common\Slay the Spire 2\data_sts2_windows_x86_64</Sts2DataDir>
+    <!-- 游戏目录 / 游戏数据目录（sts2.dll / GodotSharp.dll / 0Harmony.dll）
+         优先级：-p:Sts2Dir=<path>  >  环境变量 STS2_DIR  >  下面的默认路径。
+         测试不硬编码绝对路径，全部经 AssemblyMetadata 注入（见 AssemblyCompatibilityTests）。 -->
+    <Sts2Dir Condition="'$(Sts2Dir)' == '' AND '$(STS2_DIR)' != ''">$(STS2_DIR)</Sts2Dir>
+    <Sts2Dir Condition="'$(Sts2Dir)' == ''">D:\SteamLibrary\steamapps\common\Slay the Spire 2</Sts2Dir>
+    <Sts2DataDir>$(Sts2Dir)\data_sts2_windows_x86_64</Sts2DataDir>
+    <!-- 部署门禁：true = 缺游戏安装判失败；false（本地开发默认）= Skip。
+         build_all_mods.ps1 用 -p:RequireGameInstall=true 跑门禁。 -->
+    <RequireGameInstall Condition="'$(RequireGameInstall)' == ''">false</RequireGameInstall>
     <!-- 主程序集构建产物（仓库根，先 dotnet build 主项目再跑测试） -->
     <MainModDll>$(MSBuildProjectDirectory)\..\..\DualRoleAdventure.dll</MainModDll>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 把游戏目录注入程序集元数据，供 AssemblyCompatibilityTests 读取（避免硬编码绝对路径） -->
+    <AssemblyMetadata Include="Sts2DataDir" Value="$(Sts2DataDir)" />
+    <AssemblyMetadata Include="Sts2Dir" Value="$(Sts2Dir)" />
+    <AssemblyMetadata Include="RequireGameInstall" Value="$(RequireGameInstall)" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
