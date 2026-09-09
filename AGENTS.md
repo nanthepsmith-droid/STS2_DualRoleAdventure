@@ -149,6 +149,37 @@ When the game updates and the mod breaks:
 - `docs/architecture.md`, `docs/console-commands.md`, `docs/design/*` — developer docs.
 - `docs/archive/*.zh.md` — original Chinese documents, preserved verbatim; do not edit them.
 
+## 9. Hard gates (run before every deploy)
+
+The goal is a single verdict, not a pile of logs. Every gate below must report PASS;
+WARN is tolerated only where marked.
+
+| # | 门禁 | 命令 | 失败后果 |
+|---|---|---|---|
+| 1 | 构建（0 警告 0 错误） | `dotnet build LocalMultiControl.csproj -c Release` | 禁止部署 |
+| 2 | 源码隔离 | `LocalMultiControl.csproj` 的 `<Compile Remove="src/**" />` / `sts2src/**`；构建日志不得出现反编译游戏源码 | 禁止部署（体积膨胀 / 类型冲突） |
+| 3 | 单元测试 | `dotnet test tests/.../LocalMultiControl.Tests.csproj` | 禁止部署（由 `build_all_mods.ps1` 强制） |
+| 4 | CLR/PE 结构 | `python Scripts/Tools/clr_compat_check.py --mod-dll DualRoleAdventure.dll` | 禁止部署（截断 DLL / 非托管 DLL / 架构不符 / 运行时版本不符） |
+| 5 | Assembly ABI | 同上（对比 mod 引用的 sts2 与游戏目录实际 sts2 的名称+版本+PublicKeyToken） | 禁止部署（版本漂移） |
+| 6 | 部署字节校验 | `python ..\tools\dll_check.py --deployed --marker <marker> --expect-deployed` | 退出码非 0 即失败；**缺文件 = FAIL，不允许“跳过即绿”** |
+| 7 | marker 身份 | `deploy_dll.ps1` 解析 marker，缺失/畸形 = FAIL | 无法证明产物身份 |
+| 8 | Critical 补丁 | 运行期 `PATCH_RESULT`：Critical 缺失 → `INIT_FAILED` + 抛异常 | mod 在主菜单报红 |
+| 9 | 初始化终态 | `python ..\tools\log_parser.py <log> --init-status` → `INIT_STATUS=OK` | `FAILED` 即为不可用构建 |
+| 10 | 部署槽位身份 | `build_all_mods.ps1`（`-List` / 部署 / `-CheckOnly` 都会跑 `Test-SlotIdentity`） | 禁止部署（槽位 json id 与部署 dll 不同名 = 加载不到/加载错 dll） |
+
+Notes:
+
+- Gate 4/5 的期望值（TargetFramework、游戏目录）来自**单一来源**：`--game-dir` 参数 → 环境变量
+  `STS2_DIR` → csproj `<Sts2Dir>` → 默认路径；期望 TFM 由 `--expect-tfm` 给出，默认 `net9.0`。
+  不要在多个文件里各写一份 `net9.0` / `D:\SteamLibrary\...`。
+- Gate 8 的 Critical 清单在 `Scripts/Entry.cs`（`CriticalPatchTargets`）；可选目标缺失只报 WARN。
+  清单必须写**完整类型名**（`Namespace.Type.Method`，重载写 `.../参数个数`），
+  由 `tests/.../ExpectedPatchTargetsTests.cs` 拿 sts2.dll 元数据逐条核对——**改清单前先跑单测**，
+  写错会在实机误报 Critical 缺失并让 mod 报红。
+- 从 dll 里抠字符串（marker 等）的脚本必须扫 **UTF-16 的两种字节对齐**（#US 堆起始偏移可能为奇数），
+  否则会假阴性；`dll_check.py` 与 `deploy_dll.ps1` 都已按此实现（r92 修复）。
+- 可选第三方依赖（Koishi / SkadaHelper 等）加载失败**永远只是 WARN**，不得判为致命。
+
 ## 10. Fix verification contract
 
 > 每次修 bug 或加功能，交付必须带一份「验证契约」，格式固定、字段齐全。
@@ -179,28 +210,3 @@ LOG ANCHORS: SELECT_ENTER / SELECT_QUEUE / SELECT_OWNER / SELECT_COMPLETE / TURN
 ```
 
 交付时本契约写进 commit message 或随改动的说明里；验证靠固定 token 的可直接放进 `log_parser.py --kw`。
-
-## 9. Hard gates (run before every deploy)
-
-The goal is a single verdict, not a pile of logs. Every gate below must report PASS;
-WARN is tolerated only where marked.
-
-| # | 门禁 | 命令 | 失败后果 |
-|---|---|---|---|
-| 1 | 构建（0 警告 0 错误） | `dotnet build LocalMultiControl.csproj -c Release` | 禁止部署 |
-| 2 | 源码隔离 | `LocalMultiControl.csproj` 的 `<Compile Remove="src/**" />` / `sts2src/**`；构建日志不得出现反编译游戏源码 | 禁止部署（体积膨胀 / 类型冲突） |
-| 3 | 单元测试 | `dotnet test tests/.../LocalMultiControl.Tests.csproj` | 禁止部署（由 `build_all_mods.ps1` 强制） |
-| 4 | CLR/PE 结构 | `python Scripts/Tools/clr_compat_check.py --mod-dll DualRoleAdventure.dll` | 禁止部署（截断 DLL / 非托管 DLL / 架构不符 / 运行时版本不符） |
-| 5 | Assembly ABI | 同上（对比 mod 引用的 sts2 与游戏目录实际 sts2 的名称+版本+PublicKeyToken） | 禁止部署（版本漂移） |
-| 6 | 部署字节校验 | `python ..\tools\dll_check.py --deployed --marker <marker> --expect-deployed` | 退出码非 0 即失败；**缺文件 = FAIL，不允许“跳过即绿”** |
-| 7 | marker 身份 | `deploy_dll.ps1` 解析 marker，缺失/畸形 = FAIL | 无法证明产物身份 |
-| 8 | Critical 补丁 | 运行期 `PATCH_RESULT`：Critical 缺失 → `INIT_FAILED` + 抛异常 | mod 在主菜单报红 |
-| 9 | 初始化终态 | `python ..\tools\log_parser.py <log> --init-status` → `INIT_STATUS=OK` | `FAILED` 即为不可用构建 |
-
-Notes:
-
-- Gate 4/5 的期望值（TargetFramework、游戏目录）来自**单一来源**：`--game-dir` 参数 → 环境变量
-  `STS2_DIR` → csproj `<Sts2Dir>` → 默认路径；期望 TFM 由 `--expect-tfm` 给出，默认 `net9.0`。
-  不要在多个文件里各写一份 `net9.0` / `D:\SteamLibrary\...`。
-- Gate 8 的 Critical 清单在 `Scripts/Entry.cs`（`CriticalPatchTargets`）；可选目标缺失只报 WARN。
-- 可选第三方依赖（Koishi / SkadaHelper 等）加载失败**永远只是 WARN**，不得判为致命。

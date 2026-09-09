@@ -2,6 +2,37 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
+## [Unreleased]
+
+### Added
+- **期望补丁清单升级到完整类型名 + 签名级，并纳入单测门禁（r92，2026-09-08）**：
+  `Entry.CriticalPatchTargets` / `OptionalPatchTargets` 由 `"Type.Method"` 简写改为
+  `"MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromHand"` 这类**完整类型名**，
+  消除同名类型歧义；确有重载的三个目标钉死参数个数——
+  `CardSelectCmd.FromCombatPile/4` 与 `/5`（两个重载本 mod 都打了补丁，r91 实机日志实证）、
+  `PotionCmd.TryToProcure/3`、`CardSelectCmd.FromDeckForEnchantment/4`。
+  配套新增 `tests/.../ExpectedPatchTargetsTests.cs`：用 `System.Reflection.Metadata` 读 sts2.dll
+  元数据逐条核对「类型/方法存在 + 参数个数一致 + 格式合规 + 无重复」，
+  **游戏更新或手误时单测先红**，不再等到实机才误报 Critical 缺失（那会 INIT_FAILED 让 mod 报红）。
+  为让测试能读 internal 清单，新增 `Scripts/AssemblyInfo.cs` 的 `InternalsVisibleTo`
+  （Godot.NET.Sdk 下 csproj `<AssemblyAttribute>` 不生效，见 BuildIdentity 的 r89/r90 踩坑）。
+
+### Added
+- **部署槽位身份门禁（r93，2026-09-08）**：游戏按槽位 json 的 `id` 认 mod、按 `<id>.dll` 加载，
+  目录名可以与 id 不同（如 `mods\DualRoleAdventure\` 里其实是 `DualRoleAdventurefixed.dll`）。
+  `build_all_mods.ps1` 新增 `Test-SlotIdentity`：**本仓库已知 mod 的「槽位 json id ≠ 部署 dll 主文件名」
+  或「id 对应的 dll 不存在」= FAIL**（典型成因：部署到错槽位 / 改了 dll 名没同步 json / json 被别的 mod 覆盖）；
+  另加 `Find-SlotIdDllMismatch` 全槽位扫描（含备份槽与第三方 mod）只 WARN，避免误杀不同名写法。
+  `-List` / 构建部署 / `-CheckOnly` 三种模式都会跑。
+
+### Fixed
+- **`build_all_mods.ps1` 的 marker 解析同 r92 的 UTF-16 单对齐假阴性**：与 `dll_check.py`、
+  `deploy_dll.ps1` 统一为扫两种字节对齐 + `YYYY-MM-DD-rNN` 形状优先匹配。
+- **部署脚本 marker 解析假阴性（r92）**：`deploy_dll.ps1` 的 `Get-Marker` 只按偶对齐解码 UTF-16，
+  而 #US 用户字符串堆的起始偏移可能是奇数 → 本次构建（新增字符串后）marker 落到奇偏移，
+  部署后门禁 7 直接报「未能解析 marker，拒绝视为部署成功」。改为与 `dll_check.py` 一致扫两种对齐，
+  并补 `marker=YYYY-MM-DD-rNN` 兜底正则。
+
 ## [1.40.0] - 2026-09-08
 
 > v1.40 = r56~r84 全量（2026-09-02 起），自 v1.39（r55）以来最大的一版：

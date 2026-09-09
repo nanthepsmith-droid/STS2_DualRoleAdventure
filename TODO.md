@@ -116,6 +116,44 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
 
 ---
 
+## 实机反馈待办（2026-09-08，用户拍板：先记录、暂不修）
+
+> 都是「能用但别扭」的**多人规模化**体验问题，数据层未见错误；先留档排期，本轮不动代码。
+> 同类既有备案：`maintenance-docs/decision-records/瓦库托管优化可行性分析.md` §16.2。
+
+### BUG-1 战斗第一回合能量不同步（新增，2026-09-08）
+
+- **现象**：进战斗前选中的是**瓦库托管角色**时，进入战斗后第一回合——手牌等内容显示的是真人玩家
+  （同时也是战斗开始时的默认第一个玩家），**能量条却是瓦库的**；手动切换一下角色即恢复同步。
+- **初判**：战斗开始时「前台 / 控制上下文」与「能量 UI 归属」不是同一份状态源——手牌按战斗开始的
+  默认玩家渲染，能量按当前托管上下文渲染；切角色会重刷两者所以自愈。与 §16.2 同源（前台上下文切换层）。
+- **排查入口**：`CombatManager.SetupPlayerTurn`、本 mod 的 `CombatManagerTurnHookForegroundPatch`
+  （回合开始 hook 前切前台）、能量 UI 的归属刷新（战斗 UI 能量条 / `PlayerCombatState` 能量同步）。
+- 待确认：能量**数值**本身是否也错（数据层），还是仅 UI 串了（表现层）。
+
+### BUG-2 真人先结束回合后，切到瓦库点结束回合无效（已备案，2026-09-08 用户再确认）
+
+- 已记录于 `瓦库托管优化可行性分析.md` §16.2 第 1 条（结束按钮状态机绑定前台）；用户本轮反馈仍然存在。
+- 现状绕法：切回自己 → 再切到瓦库 → 点结束回合才生效。
+
+### 改进-1 每回合开始必须逐个看完所有真人玩家的抽牌演出（新增）
+
+- **现象**：回合开始会依次把前台切到每个真人玩家、播完其自动抽牌动画再切下一个；2 人还好，
+  **满员 12 人时要等很久**。
+- **方向（未做）**：提供「跳过 / 加速他人回合开始抽牌演出」开关——后台玩家不切前台、不建抽牌节点，
+  或统一缩短动画时长。注意别误伤数据层（演出与数据分离，见 §11.4 的 `CardPileCmd.Add` 相关补丁）。
+
+### 改进-2 多瓦库串行打牌 + 视角跟着切（新增）
+
+- **现象**：多个瓦库时只能「一个瓦库打完 → 切到下一个瓦库」串行进行，且真人视角会跟着切到
+  瓦库正在操作的角色；瓦库多时同样很慢。
+- **方向（未做）**：① 后台托管免切前台（类似单人双角色的后台模式）→ 多瓦库可并行 / 准并行推进；
+  ② 视角策略可配置（不跟随 / 仅关键节点跟随）。
+- **风险**：与选牌串行化、前台绑定类 UI（结束回合按钮，见 BUG-2）强耦合，
+  需先解决「前台归属」的单一事实来源，否则会把 BUG-2 放大。
+
+---
+
 ## 维护性改进 backlog（门禁体系 2026-09-08 之后的下一批）
 
 已落地（见 `AGENTS.md` §9 门禁表 + `Scripts/Tools/clr_compat_check.py`）：
@@ -130,10 +168,17 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
    第三方 owner 单独 WARN。
 2. ~~**BuildIdentity 增强**~~ ✅ 已做（csproj 注入 GitCommit/GitDirty/BuildTimeUtc，r89）：
    `BUILD_IDENTITY commit=<hash> state=clean|dirty built=<UTC>`。
-3. **部署槽唯一性检查**：已加跨槽位 json id 重复检测（WARN，含备份槽 DUPLICATE_ID 隐患）；
-   下一步「槽位 dll 与 json id 不匹配 = FAIL」仍需按各槽实际命名规则定制。
-4. **标准化回归验证契约**：把「改完给复现步骤」规范成
+3. ~~**部署槽唯一性检查**~~ ✅ 已做（r93）：跨槽位 json id 重复检测（WARN，既有）+ 新增
+   `Test-SlotIdentity`（本仓库 mod 的「json id ≠ dll 主文件名 / id 对应 dll 缺失」= **FAIL**，
+   `-List`/部署/`-CheckOnly` 三种模式都跑）与全槽位 WARN 扫描 `Find-SlotIdDllMismatch`。
+   命名规则已按各槽实证确认：**目录名可与 id 不同，但 dll 必须与 id 同名**
+   （`DualRoleAdventure` 槽 = `DualRoleAdventurefixed.dll` + id `DualRoleAdventurefixed`）。
+4. ~~**标准化回归验证契约**~~ ✅ 已做（AGENTS.md §10）：
    `BUG / EXPECTED / SETUP / ACTION / OBSERVE / PASS CONDITION / FAIL CONDITION / LOG ANCHORS`，
-   配合上面的固定 token 做机器可校验。
-5. **ExpectedPatchTargets 升级到完整签名**：现在兼容 `Type.Method`、`Namespace.Type.Method`、
-   `Type.Method/argc` 三种写法，但清单仍以简单名为主；逐步替换为 FullName 以消除同名类型/重载歧义。
+   配合固定 token（`INIT_OK` / `PATCH_RESULT` 等）可机器校验；每轮交付随改动写明。
+5. ~~**ExpectedPatchTargets 升级到完整签名**~~ ✅ 已做（r92）：Critical/Optional 清单全部换成
+   FullName，重载目标钉死参数个数（`FromCombatPile/4`+`/5`、`TryToProcure/3`、`FromDeckForEnchantment/4`）；
+   新增 `ExpectedPatchTargetsTests` 用 sts2.dll 元数据逐条核对（格式 + 可解析 + 参数个数 + 无重复），
+   清单写错在游戏更新/手误时**单测先红**，不再等到实机误报 Critical 缺失。
+6. **marker 解析的对齐坑**：`deploy_dll.ps1` 的 UTF-16 解码已修（r92，两种对齐都扫）。
+   同类隐患：`dll_check.py` 早就是双对齐，其它自研脚本若从 dll 里抠字符串需同样处理。
