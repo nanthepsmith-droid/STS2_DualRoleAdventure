@@ -17,6 +17,8 @@ internal static class NCombatRoomPatch
             return;
         }
 
+        // 每场战斗清一次能量归属诊断去重，保证下一场战斗的核对日志照样打得出（BUG-1 排查用）。
+        LocalMultiControlRuntime.ResetCombatUiDiagnostics("combat-setup");
         LocalMultiControlRuntime.SwitchControlledPlayerTo(LocalSelfCoopContext.PrimaryPlayerId, "combat-setup");
         LocalMultiControlRuntime.RefreshSharedTopBarForCombat("combat-setup");
         LocalMultiControlRuntime.RefreshCombatEnergyForCurrentPlayer("combat-setup");

@@ -235,5 +235,8 @@ internal sealed partial class LocalCombatSwitchTracker : Node
 
         LocalCombatSwitchButtons.Refresh(_combatUi);
         LocalMultiControlRuntime.TryAutoEndTurnForRelicControlledPlayer();
+        // r104（BUG-2）：结束回合按钮状态机绑定前台角色，而自动切人/瓦库自动结束回合会绕开
+        // 原版按钮事件，可能把按钮留在禁用/隐藏状态 → 点结束回合没反应。这里逐帧兜底自愈（内部节流）。
+        LocalMultiControlRuntime.ReconcileEndTurnButtonForForeground("combat-tick");
     }
 }

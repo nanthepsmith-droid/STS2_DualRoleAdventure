@@ -24,6 +24,15 @@ internal static class NEndTurnButtonPatch
             return true;
         }
 
+        // r104（BUG-2）：点击目标一律取**前台玩家**，不再直接信会为瓦库后台出牌漂移的 LocalContext。
+        // 漂移到「已经结束回合的角色」身上时，原版会把这次点击当成「撤销结束回合」处理——
+        // 观感就是点结束回合完全没反应（切回自己再切到瓦库、上下文重新对齐后才恢复）。
+        // 这里顺带把上下文校正到前台玩家，保证后续原版逻辑结算的正是玩家正在看的角色。
+        ulong? clickTargetId = LocalMultiControlRuntime.AlignLocalContextToForegroundForEndTurn();
+        Player? me = clickTargetId.HasValue
+            ? combatState.GetPlayer(clickTargetId.Value)
+            : LocalContext.GetMe(combatState);
+
         bool handled = LocalMultiControlRuntime.TryManualEndTurnAutoCloseAllPlayers();
         if (handled)
         {
@@ -31,7 +40,6 @@ internal static class NEndTurnButtonPatch
             return false;
         }
 
-        Player? me = LocalContext.GetMe(combatState);
         if (me != null)
         {
             LocalMultiControlRuntime.RecordManualEndTurnIntent(me.NetId, "end-turn-button");
@@ -39,10 +47,17 @@ internal static class NEndTurnButtonPatch
 
         if (me != null && CombatManager.Instance.IsPlayerReadyToEndTurn(me))
         {
-            LocalMultiControlLogger.Info($"忽略结束回合回退点击: player={me.NetId}");
+            // 本地多控下这个分支只在「点击目标自己已经结束回合」时命中；
+            // 一旦是上下文漂移导致的误判，r104 的前台校正已经把目标修正回前台玩家，
+            // 所以不会再把正常点结束吞掉。
+            LocalMultiControlLogger.Info(
+                $"忽略结束回合回退点击（点击目标已结束回合）: player={me.NetId}, context={LocalContext.NetId?.ToString() ?? "null"}");
             return false;
         }
 
+        // 诊断：走到这里仍未被接管（返回 true 交回原版）时打出全部门禁条件，
+        // 便于下次复现直接定位是「按钮被禁用（连这里都进不来）」还是「判定取错玩家」。
+        LocalMultiControlRuntime.LogEndTurnButtonClickGate(me, __instance, "end-turn-button");
         return true;
     }
 }

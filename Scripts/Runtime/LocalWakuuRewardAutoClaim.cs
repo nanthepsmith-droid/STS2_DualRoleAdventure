@@ -165,14 +165,10 @@ internal static class LocalWakuuRewardAutoClaim
                 case RelicReward relic:
                     // 拾遗物时若遗物效果触发卡牌选择（如 YUI「灵草丹」等"获得遗物时把一张卡变化"的
                     // 遗物会走 FromDeckForTransformation / FromDeckForUpgrade / FromDeckForRemoval），
-                    // 压入策略选择器让瓦库自动作答不弹屏——否则会被 CardSelectManualConfirmationPatch
-                    // 强制 RequireManualConfirmation 弹牌组界面停住等真人（r81）。
-                    // 变化场景用 Transform 优先级（变掉基础打击/防御最不亏，硬排除诅咒/状态/任务/奇巧；
-                    // smartPick 关闭时退化为 cardPickMode，不影响其它遗物效果触发的通用选牌）。
-                    using (CardSelectCmd.PushSelector(CreateRelicEffectSelector()))
-                    {
-                        await reward.SelectUnsynchronized();
-                    }
+                    // 由 LocalWakuuRelicEffectAutoChoice 在 RelicCmd.Obtain 期间统一自动作答（r94）。
+                    // r81 曾在本处压栈，但只覆盖"奖励自动领取"一条路径——控制台/事件/商店/第三方授予
+                    // 都不走 RelicReward，仍然弹屏；已下沉到公共入口，此处不再压栈（避免重复作答日志）。
+                    await reward.SelectUnsynchronized();
 
                     LocalMultiControlLogger.Info(
                         $"瓦库遗物奖励已自动领取: player={owner.NetId}, relic={relic.Relic?.Id.Entry ?? "?"}");
@@ -195,18 +191,6 @@ internal static class LocalWakuuRewardAutoClaim
         {
             AlignLocalContext(previousNetId);
         }
-    }
-
-    /// <summary>
-    /// 遗物拾取期间的选择器：带 Transform 场景（拾遗物触发的"变化一张卡"效果最常走 FromDeckForTransformation），
-    /// 开日志便于实机核对拾取遗物时到底自动选了什么（无选牌则不打印）。
-    /// </summary>
-    private static LocalWakuuStrategySelector CreateRelicEffectSelector()
-    {
-        return new LocalWakuuStrategySelector(WakuuPickScenario.Transform)
-        {
-            LogLabel = "遗物拾取触发选牌",
-        };
     }
 
     private static void AlignLocalContext(ulong? playerId)

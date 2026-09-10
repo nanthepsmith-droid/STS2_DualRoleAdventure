@@ -59,6 +59,7 @@ internal static class PatchDomainMap
             ["CardSelectForegroundSwitchPatch"] = PatchDomain.Core,
             ["CardSelectCmdSelectorGuardPatch"] = PatchDomain.Core,
             ["CardSelectManualConfirmationPatch"] = PatchDomain.Core,
+            ["CardSelectDeckScenarioPatch"] = PatchDomain.Core,
             ["CardPileAddForegroundContextPinPatch"] = PatchDomain.Core,
             ["CardTransformNetIdPinPatch"] = PatchDomain.Core,
             ["RelicSelectCmdPatch"] = PatchDomain.Core,
@@ -139,6 +140,7 @@ internal static class PatchDomainMap
             ["FoulPotionOnUsePatch"] = PatchDomain.Combat,
             ["LavaRockPatch"] = PatchDomain.Combat,
             ["NCombatRoomPatch"] = PatchDomain.Combat,
+            ["NCombatRoomReadyForegroundPatch"] = PatchDomain.Combat,
             ["NEndTurnButtonPatch"] = PatchDomain.Combat,
             ["PaelsWingPatch"] = PatchDomain.Combat,
             ["SpoilsMapPatch"] = PatchDomain.Combat,
@@ -225,6 +227,7 @@ internal static class PatchDomainMap
 
             // ============ ThirdParty：第三方 mod 适配（反射字符串目标） ============
             ["IdAfterCardDrawnOwnerGuardPatch"] = PatchDomain.ThirdParty,
+            ["SecondaryResourceCombatUiOwnerPatch"] = PatchDomain.ThirdParty,
             ["IdLiberationBeforeHandDrawFixPatch"] = PatchDomain.ThirdParty,
         };
 

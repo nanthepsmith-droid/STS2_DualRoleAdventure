@@ -130,11 +130,120 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
 - **排查入口**：`CombatManager.SetupPlayerTurn`、本 mod 的 `CombatManagerTurnHookForegroundPatch`
   （回合开始 hook 前切前台）、能量 UI 的归属刷新（战斗 UI 能量条 / `PlayerCombatState` 能量同步）。
 - 待确认：能量**数值**本身是否也错（数据层），还是仅 UI 串了（表现层）。
+- ✅ **2026-09-10 r96 已修并部署（待实机复测）**：根因 = 能量球与手牌分属两个玩家；
+  按不变量「能量球必须与当前展示的手牌同属一个玩家」收口——新纯函数
+  `CombatEnergyOwnership.TryResolveMismatch` + 手牌归属追踪 `_lastCombatUiPlayerId`
+  （入战先记原版 `NCombatUi.Activate` 那一版）+ 入战延迟刷新改按手牌归属 +
+  `SetupPlayerTurn` 前缀校正两次（切前台前后各一次）。校验日志：
+  `战斗能量归属不一致已校正: 能量=…, 手牌=…, 受控=… → 重建为 …`、
+  基准日志 `入战战斗UI归属已记录` / `战斗UI已刷新到当前角色`。marker **r96**，344 单测全绿。
+- ⚠ **r96 实测未修复 → r97 再修（2026-09-10）**：r96 日志实证两处错误——
+  ① 入战刷新的 `CombatManager.IsInProgress` 门禁在 `OnCombatSetUp` 时还是 false（战斗真正开始在其之后），
+  三次调用全部空转，能量球从未重建（放宽为 `ActiveCombat` 亦可刷新）；
+  ② 归属基准取了入战瞬间的 `LocalContext`（=瓦库），而真实手牌是开战后按**当前受控玩家**抽出来的，
+  导致"基准=瓦库、能量=瓦库"被判成一致、一次校正都没触发 →
+  改为**直接读手牌区实际卡牌的持有者**（`NCardHolder.CardNode.Model.Owner`），空手牌才退化到受控玩家，
+  并删掉不可靠的 `_lastCombatUiPlayerId` 追踪。另加帧末延迟补校 + 每场一条
+  `战斗能量归属核对: 能量=…, 手牌=…(cardOwner/emptyHand), 受控=…`。marker **r97**。
+- ✅ **BUG-1 已闭环（2026-09-10，用户实机确认）**：r97 能量同步 + r99 辉星（储君第二资源）正常显示。
+- ✅ **r97 能量已实机确认同步（2026-09-10）**；**辉星（储君/Regent 第二资源 Stars）不同步 → r98 已修（待复测）**：
+  ① 入战切人提前到 `NCombatRoom._Ready` **前缀**（新 `NCombatRoomReadyForegroundPatch`，Combat 域已登记）——
+  原版 `NCombatUi.Activate` 与第三方按 LocalContext 绑定本地玩家的 mod（本机装有
+  RegentFX「万象辉星」，dll 内可见 `NCombatRoomReadyPatch`/`SetupStarRingForLocalPlayer`）
+  都在旧时机之前就绑完了；前缀一定早于任何 mod 的后缀。只处理 `ActiveCombat`。
+  ② 辉星纳入同一条不变量：`EnsureCombatEnergyMatchesHand` 同时核对辉星，能量一致时也会单独校正
+  （新日志 `辉星归属不一致已校正`，核对行加 `辉星=` 字段）。
+  ③ 修原版 `NStarCounter` 订阅死角：`Initialize` 只有 `!_isListeningToCombatState` 才订阅 `StarsChanged`，
+  该标志无人复位 → 重绑改为「先退订旧玩家 + 复位标志」。marker **r98**。
+- 🔧 **r98 实机证明归属本来就对 → 真根因是生命周期，r99 已修（待复测）**：r98 日志
+  `战斗能量归属核对: 能量=326, 辉星=326, 手牌=326(cardOwner)` 全对、无校正 WARN；
+  用户复测「**单人储君正常，本地多控下无论入战时是不是瓦库都不显示辉星**」。
+  根因：原版把辉星计数器 `Reparent` 进能量球，而本 mod 每次切角色都**重建能量球并 QueueFree 旧的**
+  → 辉星作为旧球子节点被一并带走（单人走原版路径，所以正常）。
+  修法 `EnsureStarCounterDisplay`：辉星与能量球**解耦**——直接从 `star_counter.tscn` 实例化、
+  挂在**战斗UI**下（场景原始父节点/设计位置），每次切人重绑 + 显式显隐 + 一条
+  `辉星计数器就绪: player=…, visible=…, parent=…, pos=…` 诊断。marker **r99**。
 
-### BUG-2 真人先结束回合后，切到瓦库点结束回合无效（已备案，2026-09-08 用户再确认）
+### BUG-2 真人先结束回合后，切到瓦库点结束回合无效（2026-09-08 备案；2026-09-10 r104 已修，✅ 已实机确认）
 
-- 已记录于 `瓦库托管优化可行性分析.md` §16.2 第 1 条（结束按钮状态机绑定前台）；用户本轮反馈仍然存在。
+- 已记录于 `瓦库托管优化可行性分析.md` §16.2 第 1 条（结束按钮状态机绑定前台）；用户 2026-09-08 再确认。
 - 现状绕法：切回自己 → 再切到瓦库 → 点结束回合才生效。
+- 🔧 **r104 修法（2026-09-10）**：根因 = **按钮归属取错来源**。原版 `NEndTurnButton.CallReleaseLogic`
+  用 `LocalContext.GetMe(...)` 判定「结束谁的回合」，而本 mod 的 `LocalContext` 会为**瓦库后台出牌的动作归属**
+  临时漂移；漂移到「已结束回合的角色」上时，点击被当成「撤销结束回合」（本 mod 补丁还会直接拦掉）→ 点了没反应。
+  三条一起收口：
+  ① **点击目标改取前台玩家**：新增 `LocalMultiControlRuntime.AlignLocalContextToForegroundForEndTurn()`，
+  在点击瞬间把上下文校正到前台（`Session.CurrentControlledPlayerId`），后续原版逻辑即结算玩家正在看的角色；
+  ② **按钮自愈**：新增 `ReconcileEndTurnButtonForForeground()`（战斗逐帧调用、内部 500ms 节流，判定用纯函数
+  `EndTurnButtonReconcilePolicy.ShouldReconcile`）——前台角色可操作却按钮处于禁用/隐藏时重评一次
+  （原版按钮只在 `TurnStarted`/`PlayerEndedTurn` 切状态，自动切人/瓦库自动结束回合会绕开它们）；
+  ③ **文字与目标玩家对齐**：切到瓦库后不再残留「撤销结束回合」文案。
+  新增诊断 `结束回合点击门禁: target=…, foreground=…, context=…, state=…, inputEnabled=…, focused=…, handMode=…, inPickFlow=…`。
+- **验证步骤**：`marker=2026-09-10-r104` + `INIT_OK`；真人先结束回合 → 自动/手动切到瓦库（瓦库还有牌可出）→
+  **第一次**点结束回合即生效；日志应有 `结束回合点击门禁` 或 `结束回合按钮自愈`（按钮曾被留在禁用态时）。
+  回归：瓦库回合正常自动结束、真人回合结束按钮文字正确（未结束时 END TURN、结束后 UNDO）。
+- ✅ **已闭环（2026-09-10，用户实机确认「测试过了确实没问题」）**。
+
+### BUG-3 事件选项角标把「投票角色头像」挤到很右边（新增，2026-09-10，不影响游玩，先记录不修）
+
+- **现象**：多人（本地多控）事件里选了某个选项后，该选项按钮上会出现**投票玩家的角色头像**
+  （原版 `NEventOptionButton.PlayerVoteContainer` / `NMultiplayerVoteContainer`，头像= `player.Character.IconTexture`）；
+  开着统计角标（`statBadge`）时，这些头像被「顶」到选项按钮很靠右的位置。
+- **已核对的底层事实**（sts2src）：
+  - 按钮场景 `scenes/events/event_option_button.tscn`：根 Control `custom_minimum_size = (800,100)`，
+    `PlayerVoteContainer` 是**普通子节点**（`layout_mode = 0`，offset `532,75 → 781,105`，宽 249 高 30，`alignment = 2`=END 右对齐）。
+  - `NMultiplayerVoteContainer.RefreshPlayerVotes` 给每个投票玩家 `AddChildSafely` 一个
+    `ui/multiplayer_vote_icon`（`TextureRect`），由父容器排布；`alignment=END` → 图标从右往左排。
+  - 我们的角标（`LocalStatBadgeUi.StatBadgeOverlay`）是**树根顶层 overlay，不是按钮子节点**，
+    理论上不该参与按钮内部排布 —— 所以「顶开头像」的机理还不清楚，待复现确认。
+- **待复现时收集**：① 角标位置档位 `statBadgeCorner`（默认左下；若当时在**右下**，角标矩形
+  x≈728~792 / y≈75~95 与投票容器 x 532~781 / y 75~105 **正好重叠**，最可能就是这个）；
+  ② 头像数量（玩家数越多、END 对齐越容易整体偏右溢出）；
+  ③ 关掉 `statBadge` 后头像位置是否回正（用于确认因果，而不是「多人本来就这样」）。
+- **修法备选**：① 角标档位落在右下时，对事件按钮目标做「避让投票容器」的横向偏移（纯函数
+  `WakuuStatBadgeLayout.Resolve` 增参数，可单测）；② 事件角标改用按钮矩形**左侧**固定偏移，
+  彻底避开右下投票区；③ 若确认是 overlay 每帧写 `Size/Position` 触发了按钮重排，则改为
+  只画不写（CanvasItem `_Draw` 自绘）。
+
+### BUG-4 第三方「次级资源」战斗UI切角色后仍显示（蕾克拉，2026-09-10 已修 r100，待复测）
+
+- **现象**：LexNinja2 的**蕾克拉**在蕾忍角色上正常显示在能量旁边，但**切到其它角色后依旧显示**。
+- **定性**：蕾克拉走 **RitsuLib 次级资源框架**（`[NodeAttachment] LEX_NINJA2_NODEATTACHMENT_LEX_KELA_COMBAT_COUNTER:
+  NCombatUi -> NSecondaryResourceCounter`）。反编译 `SecondaryResourceCombatUiStateTracker` 实证：
+  它**只在 `CombatStateChanged`** 时 `UpdateCombatUi(parent, LocalContext.GetMe(state))`——
+  「本地玩家」在原版联机语义下是固定的；本 mod 切前台不触发该事件 → 计数器停在旧角色
+  （`Refresh` 里的 `_hasBeenMaterial` 粘滞标记又让它不会自己消失；公共 `Bind(player)` 在玩家变化时会复位它）。
+- **修法（r100）**：`Scripts/Runtime/LocalThirdPartySecondaryResourceBridge.cs`（**全反射 + 缓存 + try/catch**），
+  每次重建战斗UI（切角色/入战）后调用 RitsuLib 公共入口
+  `SecondaryResourceUiRuntime.UpdateCombatUi(NCombatUi, Player)`；未装 RitsuLib / 失败只记一次日志并跳过。
+  成功日志 `第三方次级资源战斗UI已同步到当前玩家: player=…`。
+- **验证**：切到非蕾忍角色 → 蕾克拉消失；切回 → 恢复。
+- ⚠ **r100 残留场景 → r101 补强 → r102 改对根因（2026-09-10，待复测）**：蕾忍是瓦库 + 非 1 号位 +
+  入战前停在瓦库视角时，进战斗后蕾克拉仍在，直到瓦库打完牌才自己消失。
+  **r101 实机日志推翻粘滞假设**：入战时计数器本来就绑在 1 号位且已隐藏
+  （`counters=1, bound=326, material=False, visible=False`）→ 是**之后**被改回瓦库的。
+  真根因：RitsuLib 把「本地玩家」等同于 `LocalContext.GetMe`，而本 mod 的 `LocalContext.NetId`
+  会为**瓦库后台出牌的动作归属**漂移 → 瓦库出牌期间 RitsuLib 自带刷新把计数器重绑到瓦库（显示），
+  出牌结束上下文回真人 → 下次状态变化又隐藏。
+  **r102**：新增 `SecondaryResourceCombatUiOwnerPatch`（ThirdParty 域，反射字符串目标
+  `...SecondaryResourceUiRuntime:UpdateCombatUi`，前缀把归属强制为**前台玩家**；
+  新增 `LocalMultiControlRuntime.TryGetForegroundPlayer()`，只认 `Session.CurrentControlledPlayerId`），
+  r101 的桥也统一改用同一前台来源。marker **r102**。
+- ✅ **BUG-4 已闭环（2026-09-10，用户实机确认）**：r102 起蕾克拉随前台正确显示/隐藏。
+
+### BUG-5 进战斗后第一次切角色被弹回自己（2026-09-10 已修 r103，✅ 已确认）
+
+- **现象**：战斗开始前停在瓦库视角 → 进战斗后**第一次**切角色只看到一次刷新动画、人还在自己身上，
+  第二次才切到瓦库。
+- **根因（r102 日志实证）**：不是"切换顺序差一位"，第一次热键确实切到了瓦库
+  （`切换操控角色(指定): 326 -> 327` + `战斗UI已刷新到当前角色 327`），
+  紧接着被 `source=wakuu-no-playable-cards-tick` 的自动化**弹回**（`TryAutoSwitchFromWakuuWhenAllWakuuNoPlayableCards`）。
+  该自动化**每回合一次**（弹回后登记 `_wakuuToNonWakuuSwitchedRounds`），所以第一次弹回把名额用掉、第二次才停住。
+- **修法（r103）**：`NoteManualSwitchToWakuu(source)` 挂在三个切人入口之后——手动来源
+  （`hotkey*` / `player-state*`）切到瓦库、且该角色当前**确实没有可出的牌**时，本回合直接登记为已处理；
+  有牌可出时不登记（不白占名额，免得削弱「瓦库打完把视图交回真人」的自动化）。
+- **验证**：第一次切角色即停在瓦库；日志 `手动切到瓦库角色，本轮不再因「无牌可出」自动切走`。
+- ✅ **已闭环（2026-09-10，用户实机确认）**。
 
 ### 改进-1 每回合开始必须逐个看完所有真人玩家的抽牌演出（新增）
 

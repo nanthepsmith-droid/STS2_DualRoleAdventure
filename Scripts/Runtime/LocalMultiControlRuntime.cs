@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Models.Relics;
 using LocalMultiControl.Scripts.Patch;
+using MegaCrit.Sts2.Core.Assets;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Cards;
@@ -14,6 +15,7 @@ using MegaCrit.Sts2.Core.Entities.Multiplayer;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Events;
 using MegaCrit.Sts2.Core.Helpers;
+using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Nodes.Combat;
 using MegaCrit.Sts2.Core.Nodes.Cards;
 using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
@@ -47,6 +49,9 @@ internal static class LocalMultiControlRuntime
     private static readonly HashSet<string> _flowBlockSignalDedupeRoundPlayer = new HashSet<string>();
     private static int _lastAutoEndCombatIdentity = -1;
     private static Vector2? _combatEnergyContainerDefaultPosition;
+
+    /// <summary>战斗能量归属诊断日志去重（每场战斗入战时清一次，避免每回合刷屏）。</summary>
+    private static readonly HashSet<string> _combatEnergyDiagKeys = new HashSet<string>();
     private static long _flowBlockSignalWindowStartMs;
     private static long _watchdogScheduleWindowStartMs;
     private static int _watchdogScheduleSuccessCount;
@@ -57,6 +62,10 @@ internal static class LocalMultiControlRuntime
     private static string? _pendingWakuuAutoSwitchSource;
     private static ulong? _pendingManualEndTurnPlayerId;
     private static int _pendingManualEndTurnRound = -1;
+
+    /// <summary>结束回合按钮自愈（r104）节流：同一场战斗最多尝试间隔 500ms，失败日志每场最多 5 条。</summary>
+    private static long _lastEndTurnReconcileAttemptMs;
+    private static int _endTurnReconcileLogCount;
 
     public static LocalMultiSessionState SessionState => Session;
 
@@ -163,6 +172,7 @@ internal static class LocalMultiControlRuntime
 
             if (TrySwitchCombatPlayer(next: true, source))
             {
+                NoteManualSwitchToWakuu(source);
                 return;
             }
         }
@@ -170,6 +180,59 @@ internal static class LocalMultiControlRuntime
         if (Session.SwitchNextPlayer())
         {
             ApplyControlContext(source);
+            NoteManualSwitchToWakuu(source);
+        }
+    }
+
+    /// <summary>
+    /// 手动切**到**瓦库角色时，把本回合登记为「已处理过」，避免自动化立刻以
+    /// 「瓦库角色无牌可出」把玩家弹回自己（r103）。
+    ///
+    /// 实机现象：战斗开始前停在瓦库视角 → 进战斗后第一次切角色会被立刻弹回自己
+    /// （只看到一次刷新动画），第二次才停住——因为弹回本身是按「每回合一次」登记的，
+    /// 第一次弹回把名额用掉了，第二次才没人再弹。这里把「用户手动选择了瓦库」
+    /// 也视为该名额已用掉，从第一次起就不再弹。
+    /// 只在「该瓦库当前确实没有可出的牌」时登记：有牌可出的情况下自动化本来也不会切走，
+    /// 不该抢掉本回合的名额。
+    /// </summary>
+    private static void NoteManualSwitchToWakuu(string source)
+    {
+        if (!source.StartsWith("hotkey", StringComparison.Ordinal)
+            && !source.StartsWith("player-state", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (!LocalSelfCoopContext.IsEnabled || !CombatManager.Instance.IsInProgress)
+        {
+            return;
+        }
+
+        ulong playerId = Session.CurrentControlledPlayerId ?? LocalContext.NetId ?? 0UL;
+        if (playerId == 0UL || !LocalSelfCoopContext.IsWakuuEnabled(playerId))
+        {
+            return;
+        }
+
+        NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+        CombatState? combatState = combatUi != null ? TryGetCombatState(combatUi) : null;
+        if (combatState == null)
+        {
+            return;
+        }
+
+        Player? player = combatState.GetPlayer(playerId);
+        if (player == null || PileType.Hand.GetPile(player).Cards.Any((card) => card.CanPlay()))
+        {
+            return;
+        }
+
+        RefreshAutoEndTrackingForCombat(combatState);
+        if (_wakuuToNonWakuuSwitchedRounds.Add(BuildWakuuSwitchRoundKey(combatState.RoundNumber)))
+        {
+            LocalMultiControlLogger.Info(
+                $"手动切到瓦库角色，本轮不再因「无牌可出」自动切走: player={playerId}, "
+                + $"round={combatState.RoundNumber}, source={source}");
         }
     }
 
@@ -204,6 +267,7 @@ internal static class LocalMultiControlRuntime
 
             if (TrySwitchCombatPlayer(next: false, source))
             {
+                NoteManualSwitchToWakuu(source);
                 return;
             }
         }
@@ -211,6 +275,7 @@ internal static class LocalMultiControlRuntime
         if (Session.SwitchPreviousPlayer())
         {
             ApplyControlContext(source);
+            NoteManualSwitchToWakuu(source);
         }
     }
 
@@ -224,6 +289,7 @@ internal static class LocalMultiControlRuntime
         if (Session.TrySetCurrentPlayer(playerId))
         {
             ApplyControlContext(source);
+            NoteManualSwitchToWakuu(source);
         }
     }
 
@@ -405,6 +471,8 @@ internal static class LocalMultiControlRuntime
         _pendingWakuuAutoSwitchSource = null;
         _pendingManualEndTurnPlayerId = null;
         _pendingManualEndTurnRound = -1;
+        _lastEndTurnReconcileAttemptMs = 0L;
+        _endTurnReconcileLogCount = 0;
         LocalMultiControlLogger.Info($"检测到战斗场次切换，重置瓦库自动结束回合状态: combat={combatIdentity}");
         LocalWakuuRelicRuntime.ProbeAndRecoverSelectorStack($"combat-switch-{combatIdentity}", allowRecover: true);
     }
@@ -806,6 +874,17 @@ internal static class LocalMultiControlRuntime
         {
             CollectTransitionNodes(child, found, source);
         }
+    }
+
+    /// <summary>
+    /// 当前前台（受控）玩家——即屏幕上正在显示的那位。
+    /// 注意与 <see cref="LocalContext"/> 区分：LocalContext 会为「瓦库后台出牌的动作归属」临时漂移，
+    /// 前台归属只认本 mod 的会话状态（第三方 UI 归属用它，见 SecondaryResourceCombatUiOwnerPatch）。
+    /// </summary>
+    internal static Player? TryGetForegroundPlayer()
+    {
+        ulong playerId = Session.CurrentControlledPlayerId ?? LocalContext.NetId ?? 0UL;
+        return playerId == 0UL ? null : TryGetCombatPlayer(playerId);
     }
 
     internal static Player? TryGetCombatPlayer(ulong playerId)
@@ -1524,32 +1603,11 @@ internal static class LocalMultiControlRuntime
 
     private static void RefreshCombatEnergyUi(NCombatUi combatUi, Player player)
     {
-        NStarCounter? starCounter = AccessTools.Field(typeof(NCombatUi), "_starCounter")?.GetValue(combatUi) as NStarCounter;
         NEnergyCounter? oldEnergyCounter = AccessTools.Field(typeof(NCombatUi), "_energyCounter")?.GetValue(combatUi) as NEnergyCounter;
         PlayerCombatState? playerCombatState = player.PlayerCombatState;
         if (!_combatEnergyContainerDefaultPosition.HasValue)
         {
             _combatEnergyContainerDefaultPosition = combatUi.EnergyCounterContainer.Position;
-        }
-
-        if (starCounter != null)
-        {
-            Player? previousPlayer = AccessTools.Field(typeof(NStarCounter), "_player")?.GetValue(starCounter) as Player;
-            if (previousPlayer != null)
-            {
-                MethodInfo? onStarsChangedMethod = AccessTools.Method(typeof(NStarCounter), "OnStarsChanged");
-                if (onStarsChangedMethod != null)
-                {
-                    Action<int, int> onStarsChanged = (Action<int, int>)onStarsChangedMethod.CreateDelegate(typeof(Action<int, int>), starCounter);
-                    if (previousPlayer.PlayerCombatState != null)
-                    {
-                        previousPlayer.PlayerCombatState.StarsChanged -= onStarsChanged;
-                    }
-                }
-            }
-
-            starCounter.Initialize(player);
-            AccessTools.Method(typeof(NStarCounter), "RefreshVisibility")?.Invoke(starCounter, Array.Empty<object>());
         }
 
         if (oldEnergyCounter != null)
@@ -1565,14 +1623,15 @@ internal static class LocalMultiControlRuntime
                 : _combatEnergyContainerDefaultPosition ?? combatUi.EnergyCounterContainer.Position;
             combatUi.EnergyCounterContainer.SetPosition(targetPosition, keepOffsets: true);
             combatUi.EnergyCounterContainer.AddChildSafely(newEnergyCounter);
-            starCounter?.Reparent(newEnergyCounter);
-            if (starCounter != null)
-            {
-                starCounter.Visible = player.Character.ShouldAlwaysShowStarCounter || (playerCombatState?.Stars ?? 0) > 0;
-            }
-
             AccessTools.Field(typeof(NCombatUi), "_energyCounter")?.SetValue(combatUi, newEnergyCounter);
         }
+
+        // 辉星计数器在能量球之前处理：它现在常驻战斗UI，与「随时会被重建的能量球」解耦（r99）。
+        EnsureStarCounterDisplay(combatUi, player, recreate: true);
+
+        // 第三方次级资源计数器（RitsuLib 框架，如 LexNinja2 的蕾克拉）只会跟着 CombatStateChanged 刷新，
+        // 我们切前台不走那个事件 → 切到别的角色后它仍显示上一个角色的资源，这里主动补一次刷新（r100）。
+        LocalThirdPartySecondaryResourceBridge.RefreshCombatUiForPlayer(combatUi, player);
     }
 
     private static void RefreshTopBarForControlledPlayer(ulong playerId)
@@ -1618,7 +1677,17 @@ internal static class LocalMultiControlRuntime
 
     public static void RefreshCombatEnergyForCurrentPlayer(string source)
     {
-        if (!LocalSelfCoopContext.IsEnabled || !RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)
+        if (!LocalSelfCoopContext.IsEnabled || !RunManager.Instance.IsInProgress)
+        {
+            return;
+        }
+
+        // r97：入战瞬间 CombatManager.IsInProgress 还是 false（CombatSetUp 事件早于战斗真正开始，
+        // 见日志 7838「Combat started」在 OnCombatSetUp 之后），原门禁会让这三次刷新**全部空转**
+        // （r96 日志实证：一条「入战能量显示已刷新」都没有）。此时原版 NCombatUi.Activate 已经建好
+        // 能量球容器、PlayerCombatState 也已就绪，放宽到「战斗房已进入 ActiveCombat」即可安全刷新。
+        CombatRoomMode? roomMode = NCombatRoom.Instance?.Mode;
+        if (!CombatManager.Instance.IsInProgress && roomMode != CombatRoomMode.ActiveCombat)
         {
             return;
         }
@@ -1630,7 +1699,11 @@ internal static class LocalMultiControlRuntime
             return;
         }
 
-        ulong playerId = Session.CurrentControlledPlayerId ?? LocalContext.NetId ?? LocalSelfCoopContext.PrimaryPlayerId;
+        // 入战刷新目标 = 当前受控玩家（此时手牌还没发出来，读不到真实手牌归属；
+        // 手牌随后按同一受控玩家抽出，两者一致。真出错由回合开始的归属核对兜底）。
+        ulong playerId = Session.CurrentControlledPlayerId
+            ?? LocalContext.NetId
+            ?? LocalSelfCoopContext.PrimaryPlayerId;
         Player? player = combatState.GetPlayer(playerId);
         if (player == null)
         {
@@ -1645,6 +1718,294 @@ internal static class LocalMultiControlRuntime
         catch (Exception exception)
         {
             LocalMultiControlLogger.Warn($"入战能量显示刷新失败: player={playerId}, source={source}, error={exception.Message}");
+        }
+    }
+
+    /// <summary>每场战斗入战时清一次能量归属诊断去重，避免同一 key 在后续战斗中不再打日志。</summary>
+    public static void ResetCombatUiDiagnostics(string source)
+    {
+        _combatEnergyDiagKeys.Clear();
+        LocalMultiControlLogger.Info($"战斗UI归属诊断已重置: source={source}");
+    }
+
+    /// <summary>
+    /// 延迟到下一帧再核对一次能量归属（回合开始瞬间手牌可能还没发出来，帧末才有真实手牌可判）。
+    /// </summary>
+    public static void ScheduleEnsureCombatEnergyMatchesHand(string source)
+    {
+        try
+        {
+            Callable.From(() => EnsureCombatEnergyMatchesHand(source)).CallDeferred();
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"排程能量归属核对失败: source={source}, error={exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 保证能量球与当前展示的手牌同属一个玩家（BUG-1：战斗第一回合能量不同步）。
+    /// 不变量：能量球所属玩家 == 手牌所属玩家；不一致时按「手牌归属 &gt; 受控玩家」重建能量球。
+    /// 手牌归属**直接读手牌区里实际卡牌的持有者**（r97 修正：不能用入战瞬间的 LocalContext 当基准——
+    /// 原版 NCombatUi.Activate 按入战瞬间的 me 建能量球，而手牌是开战后按「当前受控玩家」抽出来的，
+    /// 入战前停在瓦库角色、入战后切回真人时两者必然分家；r96 正是基准取错所以一次都没校正）。
+    /// 只在检测到不一致时动手；取不到归属信息时一律不改（不做无依据的重建）。
+    /// </summary>
+    public static void EnsureCombatEnergyMatchesHand(string source)
+    {
+        if (!LocalSelfCoopContext.IsEnabled || !RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)
+        {
+            return;
+        }
+
+        NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+        CombatState? combatState = combatUi != null ? TryGetCombatState(combatUi) : null;
+        if (combatUi == null || combatState == null)
+        {
+            return;
+        }
+
+        ulong? handPlayerId = TryGetDisplayedHandPlayerId(combatUi, out string handSource);
+        ulong? energyPlayerId = TryGetCombatEnergyPlayerId(combatUi);
+        ulong? controlledPlayerId = Session.CurrentControlledPlayerId ?? LocalContext.NetId;
+
+        NStarCounter? starCounter = TryGetStarCounter(combatUi);
+        ulong? starPlayerId = starCounter != null ? TryGetStarCounterPlayerId(starCounter) : null;
+
+        if (_combatEnergyDiagKeys.Add($"{source}:round{combatState.RoundNumber}"))
+        {
+            LocalMultiControlLogger.Info(
+                $"战斗能量归属核对: 能量={energyPlayerId?.ToString() ?? "null"}, "
+                + $"辉星={starPlayerId?.ToString() ?? "null"}, "
+                + $"手牌={handPlayerId?.ToString() ?? "null"}({handSource}), "
+                + $"受控={controlledPlayerId?.ToString() ?? "null"}, round={combatState.RoundNumber}, source={source}");
+        }
+
+        if (CombatEnergyOwnership.TryResolveMismatch(energyPlayerId, handPlayerId, controlledPlayerId, out ulong targetPlayerId))
+        {
+            Player? target = combatState.GetPlayer(targetPlayerId);
+            if (target == null)
+            {
+                return;
+            }
+
+            try
+            {
+                // 能量球重建会顺带把辉星计数器一起重绑（同一个函数里处理）。
+                RefreshCombatEnergyUi(combatUi, target);
+                LocalMultiControlLogger.Warn(
+                    $"战斗能量归属不一致已校正: 能量={energyPlayerId?.ToString() ?? "null"}, "
+                    + $"辉星={starPlayerId?.ToString() ?? "null"}, "
+                    + $"手牌={handPlayerId?.ToString() ?? "null"}({handSource}), 受控={controlledPlayerId?.ToString() ?? "null"} "
+                    + $"→ 重建为 {targetPlayerId}, source={source}");
+            }
+            catch (Exception exception)
+            {
+                LocalMultiControlLogger.Warn(
+                    $"战斗能量归属校正失败: target={targetPlayerId}, source={source}, error={exception.Message}");
+            }
+
+            return;
+        }
+
+        // 能量一致时仍要单独核对辉星：辉星是另一个节点，可以单独分家（储君/Regent 的第二资源）。
+        ulong? starTarget = handPlayerId ?? controlledPlayerId;
+        if (starCounter == null || !starTarget.HasValue || starPlayerId == starTarget)
+        {
+            return;
+        }
+
+        Player? starPlayer = combatState.GetPlayer(starTarget.Value);
+        if (starPlayer == null)
+        {
+            return;
+        }
+
+        EnsureStarCounterDisplay(combatUi, starPlayer, recreate: false);
+        LocalMultiControlLogger.Warn(
+            $"辉星归属不一致已校正: 辉星={starPlayerId?.ToString() ?? "null"} → {starTarget.Value}, "
+            + $"手牌={handPlayerId?.ToString() ?? "null"}({handSource}), 受控={controlledPlayerId?.ToString() ?? "null"}, source={source}");
+    }
+
+    /// <summary>
+    /// 读「当前手牌区里真实展示的是谁的牌」——遍历手牌 holder 取第一张牌的持有者。
+    /// 这是唯一可靠的基准（比任何上下文/追踪变量都准）；手牌为空时返回 null（交给受控玩家兜底）。
+    /// </summary>
+    private static ulong? TryGetDisplayedHandPlayerId(NCombatUi combatUi, out string source)
+    {
+        source = "none";
+        try
+        {
+            foreach (Node child in combatUi.Hand.CardHolderContainer.GetChildren())
+            {
+                if (child is not NCardHolder holder || !GodotObject.IsInstanceValid(holder))
+                {
+                    continue;
+                }
+
+                Player? owner = holder.CardNode?.Model?.Owner;
+                if (owner != null)
+                {
+                    source = "cardOwner";
+                    return owner.NetId;
+                }
+            }
+
+            source = "emptyHand";
+            return null;
+        }
+        catch (Exception exception)
+        {
+            source = "error";
+            LocalMultiControlLogger.Warn($"读取手牌归属失败: {exception.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 保证辉星计数器（储君/Regent 第二资源）存在、挂在**战斗UI**下、绑定到目标玩家并正确显示（r99）。
+    ///
+    /// 为什么不塞进能量球：能量球每次切角色都会重建并 QueueFree 旧的，辉星计数器作为它的子节点
+    /// 极易被一并带走（实机表现：单人储君正常，本地多控下辉星**完全不显示**——正是我们接管 UI 之后）。
+    /// 这里改为常驻战斗UI（= 场景里的原始父节点，锚点相对全屏，位置就是 star_counter.tscn 里设计的位置），
+    /// 生命周期与能量球彻底解耦；重建时直接从场景实例化，避免继承旧节点被反复 Reparent 后的排布。
+    /// </summary>
+    private static void EnsureStarCounterDisplay(NCombatUi combatUi, Player player, bool recreate)
+    {
+        try
+        {
+            NStarCounter? starCounter = TryGetStarCounter(combatUi);
+            bool invalid = starCounter == null
+                || !GodotObject.IsInstanceValid(starCounter)
+                || starCounter.GetParent() != combatUi;
+            if (recreate || invalid)
+            {
+                NStarCounter? fresh = CreateStarCounter();
+                if (fresh == null)
+                {
+                    LocalMultiControlLogger.Warn("辉星计数器重建失败：场景实例化返回 null（改动已跳过，不影响战斗）。");
+                    return;
+                }
+
+                if (starCounter != null && GodotObject.IsInstanceValid(starCounter) && starCounter.GetParent() == combatUi)
+                {
+                    starCounter.QueueFreeSafely();
+                }
+
+                combatUi.AddChildSafely(fresh);
+                AccessTools.Field(typeof(NCombatUi), "_starCounter")?.SetValue(combatUi, fresh);
+                starCounter = fresh;
+            }
+
+            RefreshStarCounterForPlayer(starCounter!, player);
+            bool shouldShow = player.Character.ShouldAlwaysShowStarCounter
+                || (player.PlayerCombatState?.Stars ?? 0) > 0;
+            starCounter!.Visible = shouldShow;
+
+            if (_combatEnergyDiagKeys.Add($"star:{player.NetId}"))
+            {
+                LocalMultiControlLogger.Info(
+                    $"辉星计数器就绪: player={player.NetId}, alwaysShow={player.Character.ShouldAlwaysShowStarCounter}, "
+                    + $"stars={player.PlayerCombatState?.Stars ?? -1}, visible={starCounter.Visible}, "
+                    + $"parent={starCounter.GetParent()?.Name.ToString() ?? "null"}, "
+                    + $"pos={starCounter.GlobalPosition}, size={starCounter.Size}, scale={starCounter.Scale}");
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"辉星计数器准备失败: player={player.NetId}, error={exception.Message}");
+        }
+    }
+
+    /// <summary>按原版场景新建一个辉星计数器（布局取场景默认值，不沿用旧节点的偏移）。</summary>
+    private static NStarCounter? CreateStarCounter()
+    {
+        try
+        {
+            string path = SceneHelper.GetScenePath("combat/energy_counters/star_counter");
+            PackedScene? scene = PreloadManager.Cache.GetScene(path);
+            return scene?.Instantiate<NStarCounter>(PackedScene.GenEditState.Disabled);
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"辉星计数器场景实例化失败: {exception.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 把辉星计数器（NStarCounter，储君/Regent 的第二资源）重新绑定到目标玩家。
+    /// 原版坑：Initialize 里只有 !_isListeningToCombatState 才会订阅 StarsChanged，
+    /// 而这个标志一旦置起就没人复位 → 必须「先退订旧玩家 + 复位标志」再 Initialize，
+    /// 否则重绑后辉星再也不会响应 StarsChanged（数值只能靠 _Process 轮询勉强跟上）。
+    /// </summary>
+    private static void RefreshStarCounterForPlayer(NStarCounter starCounter, Player player)
+    {
+        try
+        {
+            if (AccessTools.Field(typeof(NStarCounter), "_player")?.GetValue(starCounter) is Player previous
+                && previous.PlayerCombatState != null)
+            {
+                MethodInfo? onStarsChangedMethod = AccessTools.Method(typeof(NStarCounter), "OnStarsChanged");
+                if (onStarsChangedMethod != null)
+                {
+                    Action<int, int> onStarsChanged = (Action<int, int>)onStarsChangedMethod.CreateDelegate(typeof(Action<int, int>), starCounter);
+                    previous.PlayerCombatState.StarsChanged -= onStarsChanged;
+                }
+            }
+
+            AccessTools.Field(typeof(NStarCounter), "_isListeningToCombatState")?.SetValue(starCounter, false);
+            starCounter.Initialize(player);
+            AccessTools.Method(typeof(NStarCounter), "RefreshVisibility")?.Invoke(starCounter, Array.Empty<object>());
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"辉星计数器重绑失败: player={player.NetId}, error={exception.Message}");
+        }
+    }
+
+    private static NStarCounter? TryGetStarCounter(NCombatUi combatUi)
+    {
+        try
+        {
+            return AccessTools.Field(typeof(NCombatUi), "_starCounter")?.GetValue(combatUi) as NStarCounter;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static ulong? TryGetStarCounterPlayerId(NStarCounter starCounter)
+    {
+        try
+        {
+            return (AccessTools.Field(typeof(NStarCounter), "_player")?.GetValue(starCounter) as Player)?.NetId;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>读取当前能量球绑定的玩家（取不到返回 null，不抛异常）。</summary>
+    private static ulong? TryGetCombatEnergyPlayerId(NCombatUi combatUi)
+    {
+        try
+        {
+            NEnergyCounter? counter = AccessTools.Field(typeof(NCombatUi), "_energyCounter")?.GetValue(combatUi) as NEnergyCounter;
+            if (counter == null)
+            {
+                return null;
+            }
+
+            Player? player = AccessTools.Field(typeof(NEnergyCounter), "_player")?.GetValue(counter) as Player;
+            return player?.NetId;
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"读取能量球归属失败: {exception.Message}");
+            return null;
         }
     }
 
@@ -1985,6 +2346,8 @@ internal static class LocalMultiControlRuntime
             }
 
             button.RefreshEnabled();
+            // r104：文字也跟目标玩家对齐（否则切到瓦库后可能仍写着「撤销结束回合」）
+            TrySyncEndTurnButtonLabel(button, currentPlayer);
 
             string handMode = "?";
             try
@@ -2050,6 +2413,227 @@ internal static class LocalMultiControlRuntime
 
         ReevaluateEndTurnButtonState(combatUi, combatState, player);
         LocalMultiControlLogger.Info($"回合开始兜底重评结束回合按钮: player={player.NetId}, source={source}");
+    }
+
+    /// <summary>
+    /// 结束回合按钮点击前的归属校正（r104，BUG-2）。
+    ///
+    /// 原版 <c>NEndTurnButton.CallReleaseLogic</c> 用 <c>LocalContext.GetMe(...)</c> 决定「这次点击是
+    /// 结束谁的回合」；而本 mod 的 <c>LocalContext</c> 会为**瓦库后台出牌的动作归属**临时漂移。
+    /// 一旦漂移到「已经结束回合的角色」身上，点击就会被当成「撤销结束回合」处理，
+    /// 表现为**点结束回合完全没反应**；切回自己再切到瓦库（重新对齐上下文）才恢复。
+    ///
+    /// 这里在点击瞬间把上下文校正到**前台玩家**（<see cref="Session"/>.CurrentControlledPlayerId，
+    /// 不受漂移影响），保证后续原版逻辑结算的是玩家正在看的那个角色。
+    /// 返回校正后的前台玩家 id；无战斗中前台角色时返回 null（交回原版自行处理）。
+    /// </summary>
+    internal static ulong? AlignLocalContextToForegroundForEndTurn()
+    {
+        if (!LocalSelfCoopContext.IsEnabled || !RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)
+        {
+            return null;
+        }
+
+        Player? foreground = TryGetForegroundPlayer();
+        if (foreground == null)
+        {
+            return null;
+        }
+
+        ulong playerId = foreground.NetId;
+        if (LocalContext.NetId == playerId)
+        {
+            return playerId;
+        }
+
+        ulong? previousNetId = LocalContext.NetId;
+        LocalContext.NetId = playerId;
+        LocalSelfCoopContext.NetService?.SetCurrentSenderId(playerId);
+        SyncRunSynchronizerLocalPlayerId(playerId);
+        LocalMultiControlLogger.Info(
+            $"结束回合点击：上下文已校正到前台玩家 {previousNetId?.ToString() ?? "null"} -> {playerId}");
+        return playerId;
+    }
+
+    /// <summary>
+    /// 结束回合按钮自愈（r104，BUG-2）：前台角色可操作（存活且未结束回合）时，若按钮仍处于
+    /// 禁用/隐藏状态就重评一次。
+    ///
+    /// 修复「真人先结束回合 → 自动切到瓦库 → 点结束回合无效，切回自己再切到瓦库才生效」：
+    /// 按钮状态机绑定前台角色，而自动切人 / 瓦库自动结束回合会绕开原版按钮事件，
+    /// 于是按钮可能被留在旧状态（被 <c>Disable()</c> 时点击事件根本不会派发）。
+    /// 判定口径见 <see cref="EndTurnButtonReconcilePolicy"/>；只在真需要时动手并节流，
+    /// 避免与游戏状态机打架、避免日志刷屏。
+    /// </summary>
+    public static void ReconcileEndTurnButtonForForeground(string source)
+    {
+        if (!LocalSelfCoopContext.IsEnabled || !RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)
+        {
+            return;
+        }
+
+        NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+        if (combatUi == null)
+        {
+            return;
+        }
+
+        CombatState? combatState = TryGetCombatState(combatUi);
+        if (combatState == null)
+        {
+            return;
+        }
+
+        ulong playerId = Session.CurrentControlledPlayerId ?? LocalContext.NetId ?? 0UL;
+        if (playerId == 0UL)
+        {
+            return;
+        }
+
+        Player? player = combatState.GetPlayer(playerId);
+        bool foregroundAlive = player?.Creature != null && player.Creature.IsAlive;
+        bool foregroundReady = player != null && CombatManager.Instance.IsPlayerReadyToEndTurn(player);
+
+        NEndTurnButton button = combatUi.EndTurnButton;
+        if (button == null)
+        {
+            return;
+        }
+
+        FieldInfo? stateField = AccessTools.Field(typeof(NEndTurnButton), "_state");
+        bool buttonStateEnabled = stateField?.GetValue(button) != null
+            && Convert.ToInt32(stateField.GetValue(button)) == 0;
+
+        if (!EndTurnButtonReconcilePolicy.ShouldReconcile(
+                playerSideActive: combatState.CurrentSide == CombatSide.Player,
+                combatInProgress: CombatManager.Instance.IsInProgress,
+                foregroundAlive: foregroundAlive,
+                foregroundReady: foregroundReady,
+                inPickFlow: IsCombatUiInPickFlow(),
+                buttonStateEnabled: buttonStateEnabled,
+                buttonInputEnabled: button.IsEnabled))
+        {
+            return;
+        }
+
+        // 节流：同一场战斗最多 500ms 尝试一次（自愈失败时别每帧硬刷）
+        long nowMs = (long)Time.GetTicksMsec();
+        if (nowMs - _lastEndTurnReconcileAttemptMs < 500L)
+        {
+            return;
+        }
+
+        _lastEndTurnReconcileAttemptMs = nowMs;
+
+        try
+        {
+            int stateBefore = stateField?.GetValue(button) != null ? Convert.ToInt32(stateField.GetValue(button)) : -1;
+            bool inputBefore = button.IsEnabled;
+            ReevaluateEndTurnButtonState(combatUi, combatState, player!);
+
+            if (_endTurnReconcileLogCount < 5)
+            {
+                _endTurnReconcileLogCount++;
+                int stateAfter = stateField?.GetValue(button) != null ? Convert.ToInt32(stateField.GetValue(button)) : -1;
+                LocalMultiControlLogger.Info(
+                    $"结束回合按钮自愈: player={playerId}, state={stateBefore}->{stateAfter}, " +
+                    $"input={inputBefore}->{button.IsEnabled}, source={source}");
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"结束回合按钮自愈失败: {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 结束回合按钮点击门禁诊断（r104，BUG-2）：一次性打出「点击为什么没反应」需要的全部条件。
+    /// 只在真的点了按钮（走到 <c>CallReleaseLogic</c>）时调用，不会刷屏。
+    /// </summary>
+    internal static void LogEndTurnButtonClickGate(Player? clickTarget, NEndTurnButton button, string source)
+    {
+        try
+        {
+            NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+            string handMode = "?";
+            bool inPickFlow = false;
+            if (combatUi != null)
+            {
+                try
+                {
+                    handMode = combatUi.Hand.CurrentMode.ToString();
+                }
+                catch
+                {
+                    // 忽略：诊断用
+                }
+
+                inPickFlow = IsCombatUiInPickFlow();
+            }
+
+            FieldInfo? stateField = AccessTools.Field(typeof(NEndTurnButton), "_state");
+            int state = button != null && stateField?.GetValue(button) != null
+                ? Convert.ToInt32(stateField.GetValue(button))
+                : -1;
+
+            bool focused = false;
+            try
+            {
+                PropertyInfo? focusedProperty = AccessTools.Property(
+                    typeof(MegaCrit.Sts2.Core.Nodes.GodotExtensions.NClickableControl), "IsFocused");
+                focused = focusedProperty?.GetValue(button) is bool value && value;
+            }
+            catch
+            {
+                // 忽略：诊断用
+            }
+
+            Player? foreground = TryGetForegroundPlayer();
+            LocalMultiControlLogger.Info(
+                $"结束回合点击门禁: target={clickTarget?.NetId.ToString() ?? "null"}, " +
+                $"foreground={foreground?.NetId.ToString() ?? "null"}, context={LocalContext.NetId?.ToString() ?? "null"}, " +
+                $"state={state}(0=Enabled), inputEnabled={button?.IsEnabled.ToString() ?? "null"}, focused={focused}, " +
+                $"handMode={handMode}, inPickFlow={inPickFlow}, source={source}");
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"结束回合点击门禁诊断失败: {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 让结束回合按钮的文字与**目标玩家**的状态一致（r104）。
+    ///
+    /// 原版只在 <c>OnTurnStarted</c> / <c>AfterPlayerEndedTurn</c>（且 <c>LocalContext.IsMe(player)</c>）时写按钮文字，
+    /// 本地多控下切换前台不走这些事件 → 切到瓦库后按钮可能还写着「撤销结束回合」，
+    /// 与按钮此刻的真实行为（结束瓦库回合）不符。这里按目标玩家是否已 ready 同步成
+    /// END_TURN / UNDO_END_TURN，视觉与行为对齐。
+    /// </summary>
+    private static void TrySyncEndTurnButtonLabel(NEndTurnButton button, Player player)
+    {
+        if (button == null || player?.PlayerCombatState == null)
+        {
+            return;
+        }
+
+        try
+        {
+            object? label = AccessTools.Field(typeof(NEndTurnButton), "_label")?.GetValue(button);
+            if (label == null)
+            {
+                return;
+            }
+
+            bool ready = CombatManager.Instance.IsPlayerReadyToEndTurn(player);
+            LocString text = new("gameplay_ui", ready ? "UNDO_END_TURN_BUTTON" : "END_TURN_BUTTON");
+            text.Add("turnNumber", player.PlayerCombatState.TurnNumber);
+            AccessTools.Method(label.GetType(), "SetTextAutoSize", new[] { typeof(string) })
+                ?.Invoke(label, new object[] { text.GetFormattedText() });
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"同步结束回合按钮文字失败: {exception.Message}");
+        }
     }
 
     private static void TryRepairEndTurnButtonOffscreenPosition(NEndTurnButton button, bool forceAnimateIn)
