@@ -18,6 +18,7 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   路径生效（回合结束 / 弃牌不适用，保持既有观感）；跳过时打一条
   `已跳过回合开始抽牌演出（非前台玩家，改进-1）: player=…, foreground=…, round=…`。
   默认关 = 与既有观感完全一致。357 单测全绿，marker r105。
+  ✅ **2026-09-10 用户实机确认**（日志实证 9 条 `已跳过回合开始抽牌演出（非前台玩家，改进-1）`，覆盖 round 1~4）。
 
 ### Added
 - **期望补丁清单升级到完整类型名 + 签名级，并纳入单测门禁（r92，2026-09-08）**：
@@ -53,7 +54,9 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   真人（含后台那位）走原版 `FromChooseACardScreen` → 自动切前台 → 真人自己选。
   （注：该现象在「跳过他人回合开始抽牌演出」开启时最容易撞上，因为回合开始不再逐个切前台，
   非前台玩家成了常态；但即使不开关它也是错的。）
-  marker r106，357 单测全绿。
+  ✅ **2026-09-10 用户实机确认**（`FromChooseACardScreen` 对后台角色正常切前台 ×2；
+  `工具箱自动接管已命中: reason=background-player` / `工具箱已自动选择首张卡` 均已 0 条）。
+  用户拍板：**真人一律弹界面自己选，暂不做开关**。marker r106，357 单测全绿。
 - **「真人先结束回合后，切到瓦库点结束回合无效」（r104，2026-09-10）**：真人先结束回合 → 自动切到瓦库 →
   点结束回合没反应，**切回自己再切到瓦库**才能点（BUG-2）。
   根因是**结束回合按钮的归属取错来源**：原版 `NEndTurnButton.CallReleaseLogic` 用
