@@ -41,6 +41,20 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
     /// </summary>
     internal string? LogLabel { get; set; }
 
+    /// <summary>
+    /// 动态场景提供器（可选）：非空且返回非 null 时，优先于构造时传入的场景。
+    /// 用于「同一个选择器实例要按实际入口决定优先级表」的场合（r94）：遗物获取期间既可能是
+    /// "变化一张卡"（Transform 表）也可能是"删除一张卡"（Remove 表），压栈时还不知道会走哪个入口。
+    /// 返回 <see cref="WakuuPickScenario.Unknown"/> 表示退回既有 cardPickMode 策略。
+    /// </summary>
+    internal Func<WakuuPickScenario?>? ScenarioProvider { get; set; }
+
+    /// <summary>实际生效的选牌场景：动态提供器优先，否则用构造时传入的场景。</summary>
+    private WakuuPickScenario ResolveScenario()
+    {
+        return ScenarioProvider?.Invoke() ?? _scenario;
+    }
+
     public LocalWakuuStrategySelector()
     {
     }
@@ -60,12 +74,13 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
     public Task<IEnumerable<CardModel>> GetSelectedCards(IEnumerable<CardModel> options, int minSelect, int maxSelect)
     {
         List<CardModel> list = options.ToList();
+        WakuuPickScenario scenario = ResolveScenario();
 
         // 智能选牌优先级（§9.1/9.2）：开关开启且场景明确时套优先级表，否则维持既有策略
         List<CardModel> picked;
-        if (LocalWakuuAutopilotConfig.SmartPick && _scenario != WakuuPickScenario.Unknown)
+        if (LocalWakuuAutopilotConfig.SmartPick && scenario != WakuuPickScenario.Unknown)
         {
-            picked = PickByScenario(list, maxSelect);
+            picked = PickByScenario(list, maxSelect, scenario);
         }
         else
         {
@@ -83,7 +98,7 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
         if (LogLabel != null)
         {
             LocalMultiControlLogger.Info(
-                $"瓦库自动选牌作答: source={LogLabel}, scenario={_scenario}, options={list.Count}, "
+                $"瓦库自动选牌作答: source={LogLabel}, scenario={scenario}, options={list.Count}, "
                 + $"select={maxSelect}, mode={LocalWakuuAutopilotConfig.CardPickMode}, "
                 + $"picked={string.Join(",", picked.Select((c) => c?.Id?.Entry ?? "?"))}");
         }
@@ -95,21 +110,21 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
     /// 按场景优先级表选牌（§9.2）：候选归类 → 规则表排序 → 取前 maxSelect 张。
     /// 任一步异常回退既有策略——智能选牌不能因为自身失败而卡住瓦库。
     /// </summary>
-    private List<CardModel> PickByScenario(List<CardModel> options, int maxSelect)
+    private List<CardModel> PickByScenario(List<CardModel> options, int maxSelect, WakuuPickScenario scenario)
     {
         try
         {
             List<WakuuCardKind> kinds = options
                 .Select((c) => WakuuPriorityPicking.ClassifyCard(c.Id.Entry, (int)c.Type, c.IsSlyThisTurn))
                 .ToList();
-            List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(_scenario, kinds);
+            List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(scenario, kinds);
             List<CardModel> picked = ranked
                 .Take(maxSelect)
                 .Select((i) => options[i])
                 .ToList();
 
             LocalMultiControlLogger.Info(
-                $"瓦库智能选牌: scenario={_scenario}, options={options.Count}, select={maxSelect}, "
+                $"瓦库智能选牌: scenario={scenario}, options={options.Count}, select={maxSelect}, "
                 + $"picked={string.Join(",", picked.Select((c) => c.Id.Entry))}");
             return picked;
         }

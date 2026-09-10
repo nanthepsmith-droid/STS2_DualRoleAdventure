@@ -31,6 +31,13 @@ internal static class CombatManagerSetupPlayerTurnForegroundPatch
         // 注意：放在瓦库前台抑制判断之前，保证真人角色回合开始也必然重评，不受瓦库托管影响。
         LocalMultiControlRuntime.ReevaluateEndTurnButtonForControlledPlayer("turn-start-setup");
 
+        // BUG-1：能量球必须与当前展示的手牌同属一个玩家。进战斗前前台停在瓦库托管角色时，
+        // 会出现「手牌是真人玩家、能量球是瓦库的（含 +1 能量数值）」。这里在回合开始校正一次，
+        // 无论本回合是否要切前台；只在真的不一致时重建能量球（基准 = 手牌区里实际卡牌的持有者）。
+        LocalMultiControlRuntime.EnsureCombatEnergyMatchesHand("turn-start-setup");
+        // 回合开始瞬间手牌可能还没发出来（读不到真实归属）→ 帧末再校一次。
+        LocalMultiControlRuntime.ScheduleEnsureCombatEnergyMatchesHand("turn-start-deferred");
+
         if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: false))
         {
             return;

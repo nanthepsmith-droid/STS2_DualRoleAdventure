@@ -26,6 +26,145 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   `-List` / 构建部署 / `-CheckOnly` 三种模式都会跑。
 
 ### Fixed
+- **「真人先结束回合后，切到瓦库点结束回合无效」（r104，2026-09-10）**：真人先结束回合 → 自动切到瓦库 →
+  点结束回合没反应，**切回自己再切到瓦库**才能点（BUG-2）。
+  根因是**结束回合按钮的归属取错来源**：原版 `NEndTurnButton.CallReleaseLogic` 用
+  `LocalContext.GetMe(...)` 决定「这次点击结束谁的回合」，而本 mod 的 `LocalContext` 会为
+  **瓦库后台出牌的动作归属**临时漂移；一旦漂移到「已经结束回合的角色」身上，
+  点击就被当成「撤销结束回合」处理（本 mod 的补丁还会直接把这种点击拦掉）→ 表现为点了没反应；
+  切换角色会重新对齐上下文，所以「切回自己再切回来」就好了。
+  修法（三条一起收口）：
+  ① `NEndTurnButtonPatch` 的点击目标改为**前台玩家**（`Session.CurrentControlledPlayerId`，
+  新增 `LocalMultiControlRuntime.AlignLocalContextToForegroundForEndTurn()` 在点击瞬间把上下文校正到前台，
+  保证后续原版逻辑结算的正是玩家正在看的角色），不再直接信会漂移的 `LocalContext`；
+  ② 新增**按钮自愈**：`LocalMultiControlRuntime.ReconcileEndTurnButtonForForeground()` 在战斗逐帧
+  （`LocalCombatSwitchTracker._Process`，内部 500ms 节流）检查——前台角色确认可操作却按钮处于
+  禁用/隐藏时重评一次。原版按钮只在 `TurnStarted`/`PlayerEndedTurn` 里切状态，而自动切人 /
+  瓦库自动结束回合会绕开这些事件，按钮可能被留在旧状态（`Disable()` 后点击事件根本不会派发）；
+  判定口径抽为纯函数 `EndTurnButtonReconcilePolicy.ShouldReconcile`（+8 单测）；
+  ③ 按钮**文字与目标玩家对齐**：切到瓦库后不再残留「撤销结束回合」文案。
+  另加 `结束回合点击门禁` 诊断日志（一次性打出 target/foreground/context/state/inputEnabled/focused/handMode），
+  下次复现可直接定位是「按钮被禁用（连日志都进不来）」还是「判定取错玩家」。
+  ✅ **2026-09-10 用户实机确认已修复**。marker r104，352 单测全绿。
+- **「进入战斗后第一次切角色会被弹回自己」（r103，2026-09-10）**：战斗开始前停在瓦库视角时，
+  进战斗后第一次切角色只看到一次刷新动画、人还停在原地，第二次才真的切到瓦库。
+  实机日志（r102）实证：第一次热键确实切到了瓦库（`切换操控角色(指定): 326 -> 327`、
+  `战斗UI已刷新到当前角色 327，手牌数量=0`），紧接着被
+  `source=wakuu-no-playable-cards-tick` 的自动化**立刻弹回 326**——
+  该自动化是「每回合一次」的（弹回后会把回合登记进 `_wakuuToNonWakuuSwitchedRounds`），
+  所以第一次弹回把名额用掉了，第二次才停住，表现为"差一次"。
+  修法：新增 `NoteManualSwitchToWakuu(source)`，在**手动**（`hotkey*` / `player-state*`）
+  切到瓦库角色且该角色**当前确实没有可出的牌**时，直接把本回合登记为已处理，
+  从第一次起就不再弹（有牌可出时不登记——那种情况自动化本来也不会切走，不能白占名额）。
+  ✅ **2026-09-10 用户实机确认已修复**（第一次切角色即停在瓦库）。marker r103，344 单测全绿。
+- **r102：次级资源战斗UI归属改为「跟随前台」——拦 RitsuLib 的刷新入口**：r101 的实机日志显示，
+  入战时计数器**本来就绑在 1 号位且已隐藏**（`counters=1, bound=326, material=False, visible=False`），
+  说明它是**之后**才被改回瓦库的。根因：RitsuLib 的 `SecondaryResourceCombatUiStateTracker` 把
+  「本地玩家」等同于 `LocalContext.GetMe(...)`，而本 mod 的 `LocalContext.NetId` 会为**瓦库后台出牌的动作归属**
+  临时漂移（`AlignContextForActionOwner`）→ 瓦库出牌期间 RitsuLib 把计数器重绑到瓦库（蕾克拉显示），
+  出牌结束上下文回到真人 → 下次状态变化又隐藏，正是「进战斗后仍有蕾克拉、瓦库打完牌后自动消失」。
+  修法：新增 `SecondaryResourceCombatUiOwnerPatch`（**ThirdParty 域**，反射定位字符串目标
+  `STS2RitsuLib.Combat.SecondaryResources.SecondaryResourceUiRuntime:UpdateCombatUi`，`Prepare()` 找不到即跳过、
+  并支持运行期延迟补挂），在它的**前缀**把归属玩家强制为**前台上场玩家**
+  （新增 `LocalMultiControlRuntime.TryGetForegroundPlayer()`，只认 `Session.CurrentControlledPlayerId`，
+  不受 LocalContext 漂移影响）；取不到前台玩家时保持原样。r101 的桥也统一改用同一前台事实来源。
+  ✅ **2026-09-10 用户实机确认已修复**（蕾克拉不再残留）。marker r102，344 单测全绿。
+- **r101 补强 r100：次级资源计数器必须「重绑」而不是「刷新」**：用户复测 r100 后仍有一种残留场景——
+  蕾忍是瓦库且不是 1 号位、入战前停在瓦库视角时，进战斗后蕾克拉仍在，直到瓦库打完牌才自己消失。
+  实机日志证明 r100 的桥确实生效（`已接入第三方次级资源战斗UI刷新入口: STS2-RitsuLib` +
+  `第三方次级资源战斗UI已同步到当前玩家: player=326`），但可见性没跟着变：
+  反编译可见 `NSecondaryResourceCounter.Refresh(player)` 里 `_hasBeenMaterial`（**曾经有过该资源就常显**）
+  是粘滞标记，`Refresh` 不复位它——**只有公共 `Bind(player)` 在绑定玩家变化时才复位**，
+  而挂载回调只调了 `Refresh`。修法：桥在调用官方入口之后，再遍历战斗UI子树里每个
+  `NSecondaryResourceCounter` 显式 `Bind(player, autoRefresh: true)`；并打印一条带前后状态的诊断
+  `第三方次级资源战斗UI已同步: player=…, counters=N, 详情=[bound=327, material=True, visible=True → ...]`。
+  marker r101，344 单测全绿。
+- **第三方「次级资源」战斗UI切换到别的角色后仍显示（r100，2026-09-10）**：LexNinja2 的**蕾克拉**计数器在切到
+  其它角色后依旧显示。反编译定位：蕾克拉走 **RitsuLib 的次级资源框架**
+  （`STS2RitsuLib.Combat.SecondaryResources`，挂载日志 `LEX_NINJA2_NODEATTACHMENT_LEX_KELA_COMBAT_COUNTER:
+  NCombatUi -> NSecondaryResourceCounter`），其 `SecondaryResourceCombatUiStateTracker` **只在
+  `CombatStateChanged` 时**用 `LocalContext.GetMe(state)` 刷新归属——在它看来「本地玩家」是固定的；
+  本 mod 切前台不走该事件 → 计数器一直停留在上一个角色。
+  修法：新增 `LocalThirdPartySecondaryResourceBridge`（**全反射 + 缓存 + try/catch**），
+  每次重建战斗UI（切角色/入战）后调用 RitsuLib 自己的公共入口
+  `SecondaryResourceUiRuntime.UpdateCombatUi(NCombatUi, Player)`，让它按新玩家重算可见性与数值
+  （内部走 `NSecondaryResourceCounter.Bind/Refresh`，切玩家会复位「曾经有过资源就常显」的粘滞标记）。
+  未安装 RitsuLib / 类型改名 / 反射失败都只记一次日志并静默跳过。marker r100，344 单测全绿。
+- **辉星（储君/Regent 第二资源）在本地多控下完全不显示（r99，2026-09-10）**：r98 的实机日志显示归属其实是对的
+  （`战斗能量归属核对: 能量=326, 辉星=326, 手牌=326(cardOwner)`，且无校正 WARN），
+  用户复测也确认「单人储君正常、本地多控下**无论入战时是不是瓦库都不显示辉星**」。
+  根因是**生命周期**而不是归属：原版把辉星计数器 `Reparent` 进能量球，而本 mod 每次切角色都会
+  **重建能量球并 `QueueFree` 旧的**，辉星计数器作为其子节点被一并带走（单人模式不走我们的重建路径，所以正常）。
+  修法：辉星计数器与能量球**彻底解耦**——新增 `EnsureStarCounterDisplay`
+  （重建时直接从 `star_counter.tscn` 实例化，挂在**战斗UI**下 = 场景原始父节点，锚点相对全屏、
+  位置即设计位置；不再塞进能量球、不再依赖反复 Reparent 后的偏移），每次切角色重绑 + 显式设置显隐，
+  并打印一条 `辉星计数器就绪: player=…, alwaysShow=…, stars=…, visible=…, parent=…, pos=…` 诊断。
+  ✅ **2026-09-10 用户实机确认已修复**（储君辉星在本地多控下正常显示）。marker r99，344 单测全绿。
+- **辉星（储君/Regent 第二资源）不同步 + 入战切人时机提前（r98，2026-09-10）**：能量已同步但辉星仍串。
+  ① **入战切人提前到 `NCombatRoom._Ready` 前缀**（新补丁 `NCombatRoomReadyForegroundPatch`，Combat 域已登记）：
+  原先只在 `OnCombatSetUp` 之后才切回 1 号位，而原版 `NCombatUi.Activate` 与**第三方按 LocalContext 绑定本地玩家的
+  mod**（如 RegentFX「万象辉星」在 `NCombatRoom._Ready` 里 `SetupStarRingForLocalPlayer`）都已经绑完了，
+  于是能量球/辉星/星环全留在瓦库身上。前缀一定早于任何 mod 的后缀，第三方在 `_Ready` 后缀里做的绑定
+  也能拿到正确的 me（只处理 `ActiveCombat`，战斗风事件房 VisualOnly 不抢事件归属）。
+  ② **辉星纳入同一条不变量**：`EnsureCombatEnergyMatchesHand` 现在同时读辉星计数器归属，
+  能量一致时也会单独校正辉星（日志 `辉星归属不一致已校正`），核对日志增加 `辉星=` 字段。
+  ③ 修原版 `NStarCounter` 的订阅死角：`Initialize` 只有 `!_isListeningToCombatState` 才订阅 `StarsChanged`，
+  该标志没人复位 → 重绑前改为「先退订旧玩家 + 复位标志」，否则重绑后辉星不再响应变化事件。
+  marker r98，344 单测全绿。
+- **r97 修正：r96 的修法两处都没落到实处（2026-09-10，BUG-1 复测仍未修复）**：r96 实机日志
+  （marker r96，`PATCH_RESULT critical=25/25`、`INIT_OK`）实证两个错误：
+  ① **入战刷新整体空转**——`RefreshCombatEnergyForCurrentPlayer` 的 `CombatManager.IsInProgress`
+  门禁在 `NCombatRoom.OnCombatSetUp` 时还是 false（日志里「Combat started」发生在入战事件之后），
+  三次调用（含两次延迟）**一条「入战能量显示已刷新」都没有**，能量球一直是原版 `NCombatUi.Activate`
+  按入战瞬间 me（瓦库）建的那个；门禁放宽为「战斗房处于 `ActiveCombat` 也可刷新」。
+  ② **归属基准取错**——r96 用入战瞬间的 `LocalContext`（=瓦库）当"手牌归属"，而真实手牌是开战后
+  按**当前受控玩家**抽出来的，于是「基准=瓦库、能量球=瓦库」被判成一致，一次校正都没触发。
+  改为**直接读手牌区里实际卡牌的持有者**（`NCardHolder.CardNode.Model.Owner`），
+  手牌为空才退化到受控玩家；并去掉了不可靠的 `_lastCombatUiPlayerId` 追踪。
+ ③ 回合开始核对除即时一次外，再排一次**帧末延迟**核对（手牌此刻才发得出来）；
+  每场战斗打一条 `战斗能量归属核对: 能量=…, 手牌=…(cardOwner/emptyHand), 受控=…` 便于核对。
+  marker r97，344 单测全绿。
+- **战斗第一回合能量不同步（r96，2026-09-10，BUG-1）**：进战斗前把前台停在**瓦库托管角色**上时，
+  第一回合会出现「手牌/UI 是真人玩家（战斗开始的默认第一个玩家）、能量球却是瓦库的
+  （瓦库带【瓦库形态】+1 能量，数值也跟着串）」，手动切一次角色自愈。
+  根因是**能量球与手牌分属两个玩家**：入战刷新/延迟刷新取的是「当前受控玩家」，
+  而手牌归属是另一条链（原版 `NCombatUi.Activate` 按入战瞬间的 `LocalContext` 建，
+  切前台时若 UI 刷新部分失败还可能出现回滚后「手牌新、能量旧」）。
+  修法按一条不变量收口——**能量球必须与当前展示的手牌同属一个玩家**：
+  ① 新增纯函数 `CombatEnergyOwnership.TryResolveMismatch`（手牌归属 &gt; 受控玩家兜底，
+  取不到归属信息绝不动手），可单测；
+  ② 战斗 UI 重建成功后记录手牌归属（`_lastCombatUiPlayerId`，写在能量球刷新**之前**，
+  保证能量刷新抛异常时归属仍准），入战瞬间先记下原版 Activate 建好的那一版；
+  ③ 入战的两次延迟刷新改为优先按手牌归属刷新，不再重读「当前受控玩家」
+  （防瓦库在这 1~2 帧接走前台后把能量球单独刷走）；
+  ④ 回合开始（`CombatManager.SetupPlayerTurn` 前缀）校正两次：切前台前一次、
+  切完再来一次，只在真不一致时重建能量球并打 WARN
+  （`战斗能量归属不一致已校正: 能量=…, 手牌=…, 受控=… → 重建为 …`）。
+  ✅ **r97 起能量同步已实机确认**（2026-09-10）。正常回合零开销（归属一致直接返回）。单测 +7 → 344。marker r96。
+- **瓦库拾遗物触发的「变化一张卡」等选牌仍弹屏等真人（r94，2026-09-09，修 r81 覆盖不全）**：
+  r81 只在 `LocalWakuuRewardAutoClaim` 的 `RelicReward` 自动领取分支压入策略选择器，
+  而**控制台授予 / 事件授予 / 商店购买 / 第三方效果授予**都不走 `RelicReward`
+  ——实机日志实证：控制台给瓦库 YUI【灵草丹】后，`RelicCmd.Obtain` → `relic.AfterObtained()` →
+  `CardSelectCmd.FromDeckForTransformation` 时选择器栈为空，又被
+  `CardSelectManualConfirmationPatch` 强制 `RequireManualConfirmation`，弹
+  `deck_transform_select_screen.tscn` 停住等真人。
+  修法：把自动作答下沉到公共入口 `RelicCmd.Obtain`（`RelicCmdObtainPatch`），
+  新增 `LocalWakuuRelicEffectAutoChoice`——获得者是瓦库托管角色时在整个 Obtain 期间压入
+  Transform 场景策略选择器（原版 `FromDeckForTransformation` 里 `Selector != null`
+  优先于 `RequireManualConfirmation`，压栈即自动作答、不弹屏）。
+  两个时序要点：① 必须在**前缀**压栈（`await relic.AfterObtained()` 的调用发生在方法返回 Task 之前，
+  兜不住）；② 选择器栈是静态 Stack，但 `CardSelectCmdSelectorGuardPatch` 按 AsyncLocal 的
+  `CurrentChoicePlayerId` 判归属，故进入时同步写入瓦库 NetId，避免被异步链上残留的真人 NetId 摘掉。
+  作用域在**原版 Obtain 完成后立即释放**，之后的「共享镜像给其它玩家」恢复真人手动。
+  战斗进行中不接（战斗期另有出牌循环的选择器，且避开开局遗物二选一等依赖真人的场景）。
+  r81 的窄分支已移除（功能被公共入口覆盖，避免重复作答日志）；新增 5 条单测（334 全绿）。
+- **r94 场景细化（r95，2026-09-09）**：遗物触发的不止"变化一张卡"——删除/升级类遗物走的入口不同，
+  smartPick 开启时用错优先级表会明显变差（Transform 表**硬排除**诅咒/状态/任务，
+  而"拾取时删除一张卡"应优先删诅咒）。选择器新增**动态场景提供器**
+  （`LocalWakuuStrategySelector.ScenarioProvider`，构造场景变兜底）；
+  新增 `CardSelectDeckScenarioPatch`（Core 域已登记）按实际入口写场景覆盖：
+  `FromDeckForRemoval` → `Remove` 表、`FromDeckForUpgrade` → `Unknown`（退回 cardPickMode，不套 Transform 表）、
+  无覆盖（变化类）维持 `Transform`。单测 +3 → 337。marker r95。
 - **`build_all_mods.ps1` 的 marker 解析同 r92 的 UTF-16 单对齐假阴性**：与 `dll_check.py`、
   `deploy_dll.ps1` 统一为扫两种字节对齐 + `YYYY-MM-DD-rNN` 形状优先匹配。
 - **部署脚本 marker 解析假阴性（r92）**：`deploy_dll.ps1` 的 `Get-Marker` 只按偶对齐解码 UTF-16，

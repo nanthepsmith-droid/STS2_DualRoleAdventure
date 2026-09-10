@@ -25,15 +25,24 @@ internal static class RelicCmdObtainPatch
     }
 
     [HarmonyPrefix]
-    private static void Prefix()
+    private static void Prefix(Player player)
     {
         GoldMirrorSuppressionContext.EnterSuppression();
+
+        // 遗物「获得时触发选牌」（灵草丹等"获得遗物把一张卡变化"）的瓦库自动作答作用域。
+        // 必须在前缀压栈：Obtain 内部 await relic.AfterObtained() 的调用发生在返回 Task 之前，
+        // 后缀会晚一步、兜不住（r94；详见 LocalWakuuRelicEffectAutoChoice 注释）。
+        LocalWakuuRelicEffectAutoChoice.Enter(player);
     }
 
     [HarmonyPostfix]
     private static void Postfix(Player player, ref Task<RelicModel> __result)
     {
-        __result = GoldMirrorSuppressionContext.ExitSuppressionWhenCompleteAsync(MirrorObtainForOtherLocalPlayersAsync(player, __result));
+        // 前缀压入的选择器作用域交给后续异步链释放（原版 Obtain 完成后立即释放，
+        // 之后的"镜像给其它玩家"属于别人的遗物获取，必须恢复真人手动）。
+        IDisposable? relicEffectScope = LocalWakuuRelicEffectAutoChoice.TakePendingScope();
+        __result = GoldMirrorSuppressionContext.ExitSuppressionWhenCompleteAsync(
+            MirrorObtainForOtherLocalPlayersAsync(player, __result, relicEffectScope));
     }
 
     [HarmonyFinalizer]
@@ -41,15 +50,26 @@ internal static class RelicCmdObtainPatch
     {
         if (__exception != null)
         {
+            LocalWakuuRelicEffectAutoChoice.DisposePendingScope();
             GoldMirrorSuppressionContext.ExitSuppressionOnce();
         }
 
         return __exception;
     }
 
-    private static async Task<RelicModel> MirrorObtainForOtherLocalPlayersAsync(Player player, Task<RelicModel> originalTask)
+    private static async Task<RelicModel> MirrorObtainForOtherLocalPlayersAsync(
+        Player player, Task<RelicModel> originalTask, IDisposable? relicEffectScope)
     {
-        RelicModel obtainedRelic = await originalTask;
+        RelicModel obtainedRelic;
+        try
+        {
+            obtainedRelic = await originalTask;
+        }
+        finally
+        {
+            relicEffectScope?.Dispose();
+        }
+
         if (!LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.UseSingleAdventureMode)
         {
             return obtainedRelic;
