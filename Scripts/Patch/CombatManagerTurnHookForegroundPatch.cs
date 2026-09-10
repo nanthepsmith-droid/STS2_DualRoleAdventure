@@ -43,6 +43,13 @@ internal static class CombatManagerSetupPlayerTurnForegroundPatch
             return;
         }
 
+        // 改进-1：跳过「其他人」的回合开始抽牌演出——只保留「当前正在看的那位」的演出，
+        // 其他人不再切前台（其抽牌按原版规则对非本地玩家不做动画，数据照常）。
+        if (LocalMultiControlRuntime.ShouldSkipTurnStartDrawAnimationFor(player, "turn-start-setup"))
+        {
+            return;
+        }
+
         LocalMultiControlRuntime.TryEnsureForegroundForPlayer(player, "turn-start-setup");
     }
 }

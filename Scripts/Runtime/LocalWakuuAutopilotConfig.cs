@@ -140,6 +140,12 @@ internal static class LocalWakuuAutopilotConfig
     public static bool PetHpBadge { get; private set; } = true;
 
     /// <summary>
+    /// 跳过「其他人」的回合开始抽牌演出（改进-1，默认关）：
+    /// 回合开始只保留当前前台玩家的抽牌演出，其余玩家不切前台（其抽牌按原版规则瞬时生效）。
+    /// </summary>
+    public static bool SkipTurnStartDrawAnim { get; private set; }
+
+    /// <summary>
     /// 事件自动选择的策略：first=第一个（最上）/ last=最后一个 / random=随机。
     /// 很多事件一直选第一个会死，可切到 last 或 random 规避。
     /// </summary>
@@ -212,6 +218,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.shopAssistBuyNoData): data.shopAssistBuyNoData = value; break;
                     case nameof(WakuuConfigData.statBadge): data.statBadge = value; break;
                     case nameof(WakuuConfigData.petHpBadge): data.petHpBadge = value; break;
+                    case nameof(WakuuConfigData.skipTurnStartDrawAnim): data.skipTurnStartDrawAnim = value; break;
                     default:
                         LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：未知开关名 {key}");
                         return false;
@@ -450,7 +457,7 @@ internal static class LocalWakuuAutopilotConfig
                 + $"smartPick={data.smartPick}, smartEnchant={data.smartEnchant}, "
                 + $"extraCrossCharacterCardReward={data.extraCrossCharacterCardReward}, "
                 + $"personalRecorder={data.personalRecorder}, personalAssist={data.personalAssist}, "
-                + $"shopAssist={data.shopAssist}, shopAssistBuyNoData={data.shopAssistBuyNoData}, statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, "
+                + $"shopAssist={data.shopAssist}, shopAssistBuyNoData={data.shopAssistBuyNoData}, statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, "
                 + $"personalTier={NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier}, "
                 + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}, "
                 + $"wakuuBrain={data.wakuuBrain}");
@@ -480,6 +487,7 @@ internal static class LocalWakuuAutopilotConfig
         StatBadgeCorner = WakuuStatBadgeCorner.Normalize(data.statBadgeCorner);
         StatBadgeSource = WakuuStatBadgeSource.Normalize(data.statBadgeSource);
         PetHpBadge = data.petHpBadge;
+        SkipTurnStartDrawAnim = data.skipTurnStartDrawAnim;
         PersonalTier = NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier;
         EventChoiceMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;
         CardPickMode = NormalizeCardPickMode(data.cardPickMode) ?? LastChoiceMode;

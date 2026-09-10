@@ -245,7 +245,37 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
 - **验证**：第一次切角色即停在瓦库；日志 `手动切到瓦库角色，本轮不再因「无牌可出」自动切走`。
 - ✅ **已闭环（2026-09-10，用户实机确认）**。
 
-### 改进-1 每回合开始必须逐个看完所有真人玩家的抽牌演出（新增）
+### BUG-6 两个角色都带【工具箱】时，非前台那位被静默自动选卡（2026-09-10 r106 已修，待实机确认）
+
+- **现象（2026-09-10 用户实机反馈）**：控制台给两个角色各塞了一堆「战斗开始/回合结束时选择卡牌」的遗物后，
+  【工具箱】只有**前台那位**被问到、可以选；**另一位没被问，却照样自动拿到了工具箱该给的无色牌**。
+- **日志实证（marker r105）**：
+  `工具箱自动接管已命中: player=…327, reason=background-player` →
+  `工具箱已自动选择首张卡: player=…327, card=RALLY`。
+- **根因**：`Scripts/Patch/ToolboxPatch.cs` 的 `ShouldAutoPickFirstCard` 里有一条
+  `isBackgroundPlayer = !LocalContext.IsMe(player)` → 非前台的玩家一律"自动选首张"。
+  这是 **d2c2c31（2026-03-21「升级工具箱接管逻辑并绕过后台三选一阻塞」）** 加的临时手段；
+  2026-08 之后后台选牌链路已经成熟（`CardSelectForegroundSwitchPatch` 切前台交真人 +
+  `ShouldSelectLocalCard` 强制本地手选；b949dfa 实证「作用域外选牌必须切前台交真人，
+  自动作答会导致进战斗黑屏」），这条自动选卡就变成**把真人的选择静默吃掉**了。
+- **修法（r106）**：`ShouldAutoPickFirstCard` 只对**瓦库托管角色**接管（`IsWakuuEnabled`）；
+  真人（包括此刻不在前台的另一位）走原版 `FromChooseACardScreen` → 自动切前台 → 真人自己选。
+- **验证**：`marker=2026-09-10-r106`；两个角色都带工具箱进战斗 →
+  两位都各自弹三选一（后台那位会先自动切前台，日志 `... source=combat-choice-FromChooseACardScreen`）；
+  **不应**再出现 `工具箱自动接管已命中: reason=background-player`；瓦库角色的工具箱仍自动选首张
+  （日志 `reason=wakuu-player`）。
+
+### 改进-1 每回合开始必须逐个看完所有真人玩家的抽牌演出（2026-09-10 r105 已实现，待实机确认）
+
+> 🔧 **r105 实现**：设置页「其 它 设 置」新增开关 **「跳过他人回合开始抽牌演出」**（配置键
+> `skipTurnStartDrawAnim`，**默认关**）。开启后回合开始只保留「当前正在看的那位」的抽牌演出，
+> 其他人不切前台 → 其抽牌瞬时生效（依据原版 `CardPileCmd.GetTweenForCardsChangingPiles`：
+> 非本地玩家的 Draw→Hand 本就不建节点、不做补间），数据照常，切过去即见完整手牌。
+> 判定抽为纯函数 `TurnStartDrawAnimPolicy.ShouldSkipSwitch`（+5 单测）；日志
+> `已跳过回合开始抽牌演出（非前台玩家，改进-1）: player=…, foreground=…, round=…`。
+> 只在回合开始路径生效（回合结束/弃牌不受影响）。门禁：0 警告 0 错误、357 单测全绿、marker r105。
+> **验证**：开开关进战斗 → 回合开始只应看到一位的抽牌动画，其余人的抽牌不播（日志有跳过行）；
+> 切到其他角色时手牌应完整；关掉开关回到原观感。
 
 - **现象**：回合开始会依次把前台切到每个真人玩家、播完其自动抽牌动画再切下一个；2 人还好，
   **满员 12 人时要等很久**。

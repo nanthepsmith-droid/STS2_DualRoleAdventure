@@ -330,6 +330,11 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.PetHpBadge,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("petHpBadge", value));
         AddToggleRow(column,
+            "跳过他人回合开始抽牌演出",
+            "默认关。本地多控下每回合开始会依次把前台切到每个真人玩家、逐个播完自动抽牌动画才轮到下一个，10 人以上时要等很久。开启后回合开始只保留「当前正在看的那位」的抽牌演出，其他人的回合开始不再切前台——原版对非本地玩家的抽牌本来就不做动画（只走数据），所以他们的抽牌瞬时生效，之后切到该角色时会立刻看到完整手牌。",
+            () => LocalWakuuAutopilotConfig.SkipTurnStartDrawAnim,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("skipTurnStartDrawAnim", value));
+        AddToggleRow(column,
             "自有统计角标",
             "默认关。开启后在「奖励选牌卡/商店卡/事件选项按钮」的角标位置（见下方「自有统计角标位置」）显示你自己记录的总抓取率/总选择率（XX%），鼠标悬停弹出分幕首抓/重复抓取率、胜率的详情。只显示本地个人统计，与皮皮军师（SkadaHelper）社区统计 UI 分开、互不覆盖。",
             () => LocalWakuuAutopilotConfig.StatBadge,

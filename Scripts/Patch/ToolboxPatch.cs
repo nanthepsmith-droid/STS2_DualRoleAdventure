@@ -5,7 +5,6 @@ using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Commands;
-using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Factories;
@@ -51,14 +50,22 @@ internal static class ToolboxPatch
             return false;
         }
 
-        bool isWakuuPlayer = LocalSelfCoopContext.IsWakuuEnabled(player.NetId);
-        bool isBackgroundPlayer = !LocalContext.IsMe(player);
-        if (!isWakuuPlayer && !isBackgroundPlayer)
+        // r106：只接管**瓦库托管角色**的回合初工具箱三选一；真人（包括此刻不在前台的另一位真人）
+        // 必须自己选 —— 走原版 FromChooseACardScreen，由 CardSelectForegroundSwitchPatch 先把前台
+        // 切到牌主人再弹给真人（与其它后台选牌同一条已验证链路：b949dfa 实证"作用域外选牌一律切前台
+        // 交真人处理，改成自动作答会导致进战斗黑屏"）。
+        //
+        // 历史坑：d2c2c31（2026-03）曾把「非 LocalContext 玩家（background-player）」也一并自动选，
+        // 那是当时为了绕开"后台三选一阻塞"的临时手段；2026-08 的后台选牌链路（切前台 + 强制本地手选）
+        // 成熟后它就变成有害了 —— 实机 2026-09-10（marker r105）两个角色都带工具箱时，
+        // 只有前台那位能看到三选一，另一位被静默塞了首张无色牌：
+        // `工具箱自动接管已命中: reason=background-player` → `工具箱已自动选择首张卡: card=RALLY`。
+        if (!LocalSelfCoopContext.IsWakuuEnabled(player.NetId))
         {
             return false;
         }
 
-        reason = isWakuuPlayer ? "wakuu-player" : "background-player";
+        reason = "wakuu-player";
         return true;
     }
 
