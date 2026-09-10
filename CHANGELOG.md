@@ -5,6 +5,21 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 ## [Unreleased]
 
 ### Added
+- **「跳过他人回合开始抽牌演出」开关（改进-1，r105，2026-09-10，默认关）**：本地多控下回合开始会
+  **依次把前台切到每个真人玩家、逐个播完其自动抽牌动画再切下一个**（`CombatManager.SetupPlayerTurn`
+  前缀里的 `TryEnsureForegroundForPlayer`），2 人尚可、满员 10+ 人时要等很久。
+  设置页「其 它 设 置」区新增开关（配置键 `skipTurnStartDrawAnim`）。开启后回合开始**只保留
+  「当前正在看的那位」**的抽牌演出，其他人的回合开始不再切前台 —— 依据反编译
+  `CardPileCmd.GetTweenForCardsChangingPiles` 的既有门禁
+  （`if (!LocalContext.IsMe(owner) && 不涉及 Play 堆) continue;`），原版对非本地玩家的 Draw→Hand
+  **本来就不建卡牌节点、不做补间**，所以这些抽牌瞬时生效、数据完全照常；之后切到该角色时
+  `RefreshCombatUiForControlledPlayer` 会按手牌区重建 UI，手牌完整可见。
+  判定口径抽为纯函数 `TurnStartDrawAnimPolicy.ShouldSkipSwitch`（+5 单测），只在回合开始这一条
+  路径生效（回合结束 / 弃牌不适用，保持既有观感）；跳过时打一条
+  `已跳过回合开始抽牌演出（非前台玩家，改进-1）: player=…, foreground=…, round=…`。
+  默认关 = 与既有观感完全一致。357 单测全绿，marker r105。
+
+### Added
 - **期望补丁清单升级到完整类型名 + 签名级，并纳入单测门禁（r92，2026-09-08）**：
   `Entry.CriticalPatchTargets` / `OptionalPatchTargets` 由 `"Type.Method"` 简写改为
   `"MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromHand"` 这类**完整类型名**，
@@ -26,6 +41,19 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   `-List` / 构建部署 / `-CheckOnly` 三种模式都会跑。
 
 ### Fixed
+- **两个角色都带【工具箱】时，非前台那位被静默自动选卡（r106，2026-09-10）**：实机日志（marker r105）
+  `工具箱自动接管已命中: player=…327, reason=background-player` → `工具箱已自动选择首张卡: card=RALLY`，
+  即**后台那位真人的三选一被 mod 直接吞掉**，静默塞了首张无色牌；只有前台那位能看到选择界面。
+  根因：`ToolboxPatch` 里那条 `background-player` 自动选卡是 **2026-03（d2c2c31）**为了绕开
+  当时的「后台三选一阻塞」加的临时手段；2026-08 之后本 mod 的后台选牌链路已成熟
+  （`CardSelectForegroundSwitchPatch` 把前台切到牌主人 + `ShouldSelectLocalCard` 强制本地手选，
+  见 b949dfa 实证「作用域外选牌一律切前台交真人，改成自动作答会导致进战斗黑屏」），
+  这条自动选卡就变成**有害**了：它把真人的选择静默吃掉。
+  修法：`ShouldAutoPickFirstCard` 只对**瓦库托管角色**接管（`IsWakuuEnabled`），
+  真人（含后台那位）走原版 `FromChooseACardScreen` → 自动切前台 → 真人自己选。
+  （注：该现象在「跳过他人回合开始抽牌演出」开启时最容易撞上，因为回合开始不再逐个切前台，
+  非前台玩家成了常态；但即使不开关它也是错的。）
+  marker r106，357 单测全绿。
 - **「真人先结束回合后，切到瓦库点结束回合无效」（r104，2026-09-10）**：真人先结束回合 → 自动切到瓦库 →
   点结束回合没反应，**切回自己再切到瓦库**才能点（BUG-2）。
   根因是**结束回合按钮的归属取错来源**：原版 `NEndTurnButton.CallReleaseLogic` 用

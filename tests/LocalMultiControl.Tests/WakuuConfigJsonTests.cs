@@ -26,6 +26,7 @@ public class WakuuConfigJsonTests
             Assert.That(data.shopAssist, Is.False);
             Assert.That(data.shopAssistBuyNoData, Is.False);
             Assert.That(data.statBadge, Is.False);
+            Assert.That(data.skipTurnStartDrawAnim, Is.False);
             // 默认开
             Assert.That(data.playAllCards, Is.True);
             Assert.That(data.backgroundMode, Is.True);
@@ -214,6 +215,7 @@ public class WakuuConfigJsonTests
             Assert.That(json, Does.Contain("\"autoClaimPotions\""));
             Assert.That(json, Does.Contain("\"shopAssistBuyNoData\""));
             Assert.That(json, Does.Contain("\"statBadge\""));
+            Assert.That(json, Does.Contain("\"skipTurnStartDrawAnim\""));
             Assert.That(json, Does.Contain("\"eventChoiceMode\""));
             Assert.That(json, Does.Contain("\"cardPickMode\""));
             Assert.That(json, Does.Contain("\"wakuuBrain\""));

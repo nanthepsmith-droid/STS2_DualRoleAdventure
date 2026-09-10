@@ -67,6 +67,10 @@ internal static class LocalMultiControlRuntime
     private static long _lastEndTurnReconcileAttemptMs;
     private static int _endTurnReconcileLogCount;
 
+    /// <summary>改进-1 跳过回合开始抽牌演出的日志去重（战斗场次变化时清空）。</summary>
+    private static readonly HashSet<string> _skipDrawAnimLogged = new HashSet<string>();
+    private static int _skipDrawAnimCombatIdentity = int.MinValue;
+
     public static LocalMultiSessionState SessionState => Session;
 
     public static void OnRunLaunched(RunState runState)
@@ -660,6 +664,57 @@ internal static class LocalMultiControlRuntime
         SyncRunSynchronizerLocalPlayerId(playerId);
         LocalMultiControlLogger.Warn(
             $"检测到手动出牌上下文漂移，已强制校正: {previousNetId?.ToString() ?? "null"} -> {playerId}, source={source}");
+    }
+
+    /// <summary>
+    /// 改进-1：是否跳过该玩家在**回合开始**的前台切换（等价于跳过其抽牌演出）。
+    ///
+    /// 本地多控下回合开始会依次把前台切到每个真人玩家、逐个播完自动抽牌动画再切下一个；
+    /// 满员时太慢。开启配置后只保留「当前正在看的那位」的演出，其他人不切前台 ——
+    /// 原版对非本地玩家（<c>LocalContext.IsMe == false</c>）的 Draw→Hand 本来就不建卡牌节点、
+    /// 不做补间（CardPileCmd.GetTweenForCardsChangingPiles 里 <c>IsMe</c> 为假且不涉及 Play 堆
+    /// 就直接 continue），所以其抽牌瞬时生效、数据完全照常；之后切到该角色时
+    /// <c>RefreshCombatUiForControlledPlayer</c> 会按手牌区重建 UI，手牌完整可见。
+    ///
+    /// 只在**回合开始**（<c>SetupPlayerTurn</c>）这一条路径上调用：回合结束 / 弃牌
+    /// （<c>DoTurnEnd</c> / <c>FlushPlayerHand</c>）不适用本开关，保持既有观感。
+    /// 判定口径见 <see cref="TurnStartDrawAnimPolicy"/>。
+    /// </summary>
+    internal static bool ShouldSkipTurnStartDrawAnimationFor(Player player, string source)
+    {
+        if (player?.Creature?.CombatState == null)
+        {
+            return false;
+        }
+
+        ulong foregroundPlayerId = Session.CurrentControlledPlayerId ?? LocalContext.NetId ?? 0UL;
+        if (!TurnStartDrawAnimPolicy.ShouldSkipSwitch(
+                toggleEnabled: LocalWakuuAutopilotConfig.SkipTurnStartDrawAnim,
+                localMultiControlEnabled: LocalSelfCoopContext.IsEnabled,
+                foregroundPlayerId: foregroundPlayerId,
+                playerId: player.NetId))
+        {
+            return false;
+        }
+
+        // 日志：每场战斗每人每回合一条，便于核对「谁被跳过了、当时前台是谁」
+        int combatIdentity = RuntimeHelpers.GetHashCode(player.Creature.CombatState);
+        if (combatIdentity != _skipDrawAnimCombatIdentity)
+        {
+            _skipDrawAnimCombatIdentity = combatIdentity;
+            _skipDrawAnimLogged.Clear();
+        }
+
+        int round = player.PlayerCombatState?.TurnNumber ?? -1;
+        string key = $"{combatIdentity}:{round}:{player.NetId}";
+        if (_skipDrawAnimLogged.Add(key))
+        {
+            LocalMultiControlLogger.Info(
+                $"已跳过回合开始抽牌演出（非前台玩家，改进-1）: player={player.NetId}, "
+                + $"foreground={foregroundPlayerId}, round={round}, source={source}");
+        }
+
+        return true;
     }
 
     public static bool TryEnsureForegroundForPlayer(Player player, string source)

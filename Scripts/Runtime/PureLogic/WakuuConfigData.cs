@@ -140,6 +140,17 @@ internal sealed class WakuuConfigData
     /// </summary>
     public bool petHpBadge { get; set; } = true;
 
+    /// <summary>
+    /// 跳过「其他人」的回合开始抽牌演出（改进-1，默认关）。
+    /// 本地多控下回合开始会依次把前台切到每个真人玩家、逐个播完自动抽牌动画再切下一个，
+    /// 满员（10+ 玩家）时要等很久。开启后回合开始**只保留当前正在看的那位**的演出：
+    /// 其他人的回合开始不再切前台 —— 原版对非本地玩家（<c>LocalContext.IsMe == false</c>）的
+    /// Draw→Hand 本来就不建卡牌节点、不做补间（见 CardPileCmd.GetTweenForCardsChangingPiles），
+    /// 所以这些人的抽牌瞬时生效、数据照常，之后切到该角色时按手牌区重建 UI 即可看到手牌。
+    /// 默认关（关 = 与既有观感完全一致）。
+    /// </summary>
+    public bool skipTurnStartDrawAnim { get; set; }
+
     public string eventChoiceMode { get; set; } = WakuuChoiceModes.First;
 
     public string cardPickMode { get; set; } = WakuuChoiceModes.Last;
