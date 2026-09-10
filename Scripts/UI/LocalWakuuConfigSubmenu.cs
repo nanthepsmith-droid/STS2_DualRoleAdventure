@@ -169,9 +169,12 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             value => LocalWakuuAutopilotConfig.TrySetAndSave("playAllCards", value));
         AddToggleRow(column,
             "后台托管（不切前台）",
-            "瓦库回合不再强制切换到该角色视角，全程后台自动出牌与结束回合。",
+            "瓦库回合不再强制切换到该角色视角，全程后台自动出牌与结束回合。关闭时下方「瓦库托管视角」档位不生效（等同全程跟随）。",
             () => LocalWakuuAutopilotConfig.BackgroundMode,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("backgroundMode", value));
+        column.AddChild(CreateViewModeRow(
+            "瓦库托管视角",
+            "本档位细化「后台托管」的跟随程度，默认不跟随。**不跟随**：瓦库全程不抢视角，只保留两处防软锁兜底（作用域外需要你自己操作的选牌、安全网超时救援）；**仅关键节点**：瓦库回合开始时跳过去看一眼（看到轮到谁、抽了什么），约 1 秒后自动切回你自己，日常出牌不跟随；**全程跟随**：回合开始/结束、Hook 入队、瓦库出牌前都切过去（约等于关闭「后台托管」的观感）。仅当上方「后台托管（不切前台）」开启时生效。"));
         AddToggleRow(column,
             "压制原版低语耳环",
             "持有【瓦库形态】时，局内再获得的原版低语耳环只保留 +1 能量，不再重复触发自动出牌。",
@@ -503,6 +506,72 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             LocalWakuuAutopilotConfig.CharacterFirstTier => LocalWakuuAutopilotConfig.VolumeFirstTier,
             LocalWakuuAutopilotConfig.VolumeFirstTier => LocalWakuuAutopilotConfig.CharacterOnlyTier,
             _ => LocalWakuuAutopilotConfig.CharacterFirstTier,
+        };
+    }
+
+    /// <summary>
+    /// 「瓦库托管视角」策略切换行（三档：不跟随 → 仅关键节点 → 全程跟随，循环，改进-2 Phase 0）。
+    /// 默认不跟随；取值经 TrySetAndSaveString("wakuuViewMode", ...) 即时写回 json。
+    /// 仅当「后台托管（不切前台）」开启时生效（关闭时一律按全程跟随，向后兼容）。
+    /// </summary>
+    private Control CreateViewModeRow(string title, string description)
+    {
+        HBoxContainer row = new();
+        row.AddThemeConstantOverride("separation", 28);
+
+        VBoxContainer textColumn = new();
+        textColumn.CustomMinimumSize = new Vector2(880f, 0f);
+        textColumn.SizeFlagsHorizontal = (SizeFlags)3; // ExpandFill
+        textColumn.AddThemeConstantOverride("separation", 2);
+
+        Label titleLabel = CreateLabel(title, 26, new Color(1f, 0.85f, 0.35f));
+        titleLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        textColumn.AddChild(titleLabel);
+
+        Label descLabel = CreateLabel(description, 19, new Color(0.8f, 0.78f, 0.72f));
+        descLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        descLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        textColumn.AddChild(descLabel);
+
+        row.AddChild(textColumn);
+
+        LocalSimpleTextButton viewButton = new()
+        {
+            ButtonText = GetViewModeDisplayText(LocalWakuuAutopilotConfig.ViewMode),
+            FontSize = 24,
+            SizeFlagsVertical = (SizeFlags)4, // ShrinkCenter
+        };
+        viewButton.CustomMinimumSize = new Vector2(260f, 64f);
+        viewButton.Connect(NClickableControl.SignalName.Released, Callable.From<NClickableControl>(_ =>
+        {
+            string next = NextViewMode(LocalWakuuAutopilotConfig.ViewMode);
+            if (LocalWakuuAutopilotConfig.TrySetAndSaveString("wakuuViewMode", next))
+            {
+                viewButton.ButtonText = GetViewModeDisplayText(LocalWakuuAutopilotConfig.ViewMode);
+                LocalMultiControlLogger.Info($"瓦库托管视角已切换: {next}");
+            }
+        }));
+        row.AddChild(viewButton);
+        return row;
+    }
+
+    private static string GetViewModeDisplayText(string mode)
+    {
+        return mode switch
+        {
+            LocalWakuuAutopilotConfig.ViewModeKeyNodes => "仅关键节点",
+            LocalWakuuAutopilotConfig.ViewModeAlways => "全程跟随",
+            _ => "不跟随",
+        };
+    }
+
+    private static string NextViewMode(string mode)
+    {
+        return mode switch
+        {
+            LocalWakuuAutopilotConfig.ViewModeNever => LocalWakuuAutopilotConfig.ViewModeKeyNodes,
+            LocalWakuuAutopilotConfig.ViewModeKeyNodes => LocalWakuuAutopilotConfig.ViewModeAlways,
+            _ => LocalWakuuAutopilotConfig.ViewModeNever,
         };
     }
 

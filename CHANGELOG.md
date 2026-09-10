@@ -19,6 +19,54 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   `已跳过回合开始抽牌演出（非前台玩家，改进-1）: player=…, foreground=…, round=…`。
   默认关 = 与既有观感完全一致。357 单测全绿，marker r105。
   ✅ **2026-09-10 用户实机确认**（日志实证 9 条 `已跳过回合开始抽牌演出（非前台玩家，改进-1）`，覆盖 round 1~4）。
+- **「瓦库托管视角」三档策略（改进-2 Phase 0，r107，2026-09-10，默认不跟随）**：多瓦库托管时，
+  真人视角会被反复抢过去（回合开始/结束、Hook 入队、出牌前各自为政）。新增配置键 `wakuuViewMode`
+  （设置页「瓦库托管」区新增循环按钮）：**不跟随**（默认）= 瓦库全程不抢视角；**仅关键节点** =
+  只在瓦库回合开始时切过去一次（看到轮到谁、抽了什么）；**全程跟随** = 上面四处都跟随
+  （≈ 关闭「后台托管」的观感）。判定收敛为纯函数 `WakuuViewPolicy.ShouldSuppressSwitch`
+  （档位 × 触发场景 × 三条不变式），`CombatManagerTurnHookForegroundPatch` / `HookEnqueueForegroundPatch`
+  / `CardSelectForegroundSwitchPatch` / `EnsureWakuuPerspective` / 安全网全部改走它，不再各自为政。
+  **两处防软锁兜底不受档位影响**（用户拍板：「不然软锁死我就炸了」）——作用域外需要真人处理的选牌、
+  安全网超时救援，该切就切；「后台托管」关闭时档位不生效（等价全程跟随，向后兼容）。
+  安全网候选甄别改用与档位无关的 `IsBackgroundHostedWakuu`。+12 单测（`WakuuViewPolicyTests`）
+  → **369 全绿**，marker r107。
+- **瓦库「作用域外」选牌自动作答补齐 `FromSimpleGrid`（r108，2026-09-10）**：实机日志（marker r107）显示
+  战斗开始时【工具箱】类遗物给的无色牌三选一走的是 `CardSelectCmd.FromSimpleGrid`，而
+  `CardSelectWakuuTurnStartAutoAnswerPatch` **只覆盖了 `FromChooseACardScreen`** → 后台瓦库的这次选牌
+  没人自动作答，只能切前台让真人替它选。补上同款前缀（复用同一 `ShouldAutoAnswer` 判据 +
+  `prefs.MinSelect/MaxSelect`），瓦库直接按 `cardPickMode` / 智能选牌作答；`ShouldAutoAnswer` 同时被
+  `CardSelectForegroundSwitchPatch` 复用，命中时**跳过无意义的切前台**（顺带消灭「跳到瓦库又跳回来」的闪一下）。
+- **「仅关键节点」档位改为 peek（看一眼自动切回）+ 与「改进-1」解耦（r108，2026-09-10）**：
+  r107 的 keyNodes 靠「回合开始不抑制切换」实现，但紧接着被同一钩子里的 `改进-1`（`skipTurnStartDrawAnim`）
+  再拦一次 → 整段 keyNodes 只有跳过日志、**档位实际无效**（实机 marker r107 实证）。
+  修法：`ShouldSkipTurnStartDrawAnimationFor` 跳过「后台托管的瓦库形态角色」（瓦库的回合开始视角完全由
+  档位决定，改进-1 只管真人）；keyNodes 放行后由新增
+  `LocalMultiControlRuntime.ScheduleReturnToForegroundAfterPeek` 在约 1.2 秒后自动切回原真人视角
+  （用户已手动切走、或有进行中的出牌/选牌/瞄准则不抢）。纯逻辑新增
+  `WakuuViewPolicy.ShouldPeekAtTurnStart`（+3 单测）。**372 单测全绿**，marker r108。
+- **瓦库打出「手牌变换」类牌会中断（r109，2026-09-10）**：实机（marker r108）瓦库打出 YUI「数据链」
+  （把旁边的牌变成数据链）与酒狐「不等价交换」等**手牌变换**牌时，日志
+  `瓦库选择器作用域异常退出: player=…327, round=1, error=Couldn't get hand node for original card CARD.INJURY (50470768)!`
+  → 牌停在屏幕中间、效果没跑完、也没消耗（本局共 18 次，3 种原牌）。
+  根因：原版 `CardCmd.Transform` 视觉分支在 `if (!LocalContext.IsMine(cardAdded)) continue;` 之后会
+  `NCard.FindOnTable(original, PileType.Hand)`，找不到就抛异常；而瓦库自动出牌期间
+  `RunWatchdogAsync` **已把 `LocalContext.NetId` 钉在瓦库身上** → 瓦库自己的手牌被判成"我的牌"，
+  于是去**前台手牌**（显示的是真人手牌）找原卡节点 → 必然找不到 → 异常抛穿异步链 → 出牌中断。
+  `CardTransformNetIdPinPatch`（r59）只覆盖了「要不要**钉** NetId」，没覆盖「NetId **已经**是牌主人」。
+  修法：判定抽为纯函数 `CardTransformNetIdPolicy.Decide(...)`，补第三种处置
+  **`ShiftAwayFromOwner`** —— 后台角色变换时把 NetId 临时让到当前前台玩家（一个合法本地玩家），
+  让原版按 `IsMine=false` 跳过视觉；数据层在视觉分支之前就已生效，不受影响。+6 单测 → **378 全绿**，marker r109。
+- **两条历史小尾巴清理（r110，2026-09-10）**：
+  ① **清理期异常不再误报**：退出这一局/回主菜单时 `RunManager.CleanUp` 会拆掉游戏状态，而此时
+  瓦库自动出牌作用域可能仍在飞（探针 `source=run-cleanup, …, inFlight=1`），异步链里访问已失效的
+  Nullable 会抛 `Nullable object must have a value.`，日志出现 `瓦库选择器作用域异常退出` +
+  `瓦库看门狗重启失败` 两条 WARN。判定抽为纯函数
+  `WakuuTeardownPolicy.ShouldTreatAsExpectedAbort(runInProgress, hasRunState)`，命中即降级为 INFO
+  且**不上抛**（上抛会让看门狗再报一条失败，把一次正常退出记成两个问题）。
+  ② **磁盘历史脏值自愈**：旧版（r84 之前）会把 `statBadgeCorner` 的值误写进 `wakuuBrain`，
+  盘上留下 `"wakuuBrain": "bottomRight"`（被 `Normalize` 兜成 heuristic，无功能影响但日志/排查误导）。
+  加载配置时用 `LocalWakuuAutopilotConfig.TryRepairHistoricalValues` 把所有字符串型策略字段归一
+  并写回，**只改一次**（已合法则不写盘）。+10 单测 → **388 全绿**，marker r110。
 
 ### Added
 - **期望补丁清单升级到完整类型名 + 签名级，并纳入单测门禁（r92，2026-09-08）**：

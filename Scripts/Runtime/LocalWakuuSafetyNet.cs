@@ -201,7 +201,9 @@ internal static class LocalWakuuSafetyNet
 
     private static bool IsBackgroundFormPlayer(Player player)
     {
-        return LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: false);
+        // 改进-2 Phase 0：这里只是「客观甄别候选（后台托管中的瓦库形态角色）」，与视角档位无关——
+        // 安全网是防软锁兜底，必须始终能识别并救援，不能因为玩家把视角档位设成「全程跟随」就失效。
+        return LocalWakuuRelicRuntime.IsBackgroundHostedWakuu(player);
     }
 
     private static bool IsForeground(ulong playerId)

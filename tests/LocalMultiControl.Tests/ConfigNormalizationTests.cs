@@ -100,6 +100,9 @@ public class ConfigNormalizationTests
             Assert.That(LocalWakuuAutopilotConfig.RareChoiceMode, Is.EqualTo(WakuuChoiceModes.Rare));
             Assert.That(LocalWakuuAutopilotConfig.HeuristicBrainMode, Is.EqualTo(WakuuBrainModes.Heuristic));
             Assert.That(LocalWakuuAutopilotConfig.AutoBrainMode, Is.EqualTo(WakuuBrainModes.Auto));
+            Assert.That(LocalWakuuAutopilotConfig.ViewModeNever, Is.EqualTo(WakuuViewModes.Never));
+            Assert.That(LocalWakuuAutopilotConfig.ViewModeKeyNodes, Is.EqualTo(WakuuViewModes.KeyNodes));
+            Assert.That(LocalWakuuAutopilotConfig.ViewModeAlways, Is.EqualTo(WakuuViewModes.Always));
         });
     }
 }

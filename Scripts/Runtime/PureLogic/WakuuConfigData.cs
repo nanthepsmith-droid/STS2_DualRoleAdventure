@@ -151,6 +151,16 @@ internal sealed class WakuuConfigData
     /// </summary>
     public bool skipTurnStartDrawAnim { get; set; }
 
+    /// <summary>
+    /// 瓦库托管视角策略（改进-2 / Phase 0，默认 `never` **不跟随**，2026-09-10 用户拍板）：
+    /// - `never`：瓦库全程不抢视角；只保留两处防软锁兜底（作用域外真人交互选牌、安全网超时救援）；
+    /// - `keyNodes`：仅关键节点跟随 —— 瓦库**回合开始**时切过去一次（看到轮到谁、抽了什么），日常出牌不跟随；
+    /// - `always`：全程跟随（回合开始/结束、Hook 入队、出牌前都切），≈ 关闭「后台托管」的观感。
+    /// 仅当 `backgroundMode` 为 true 时生效；后台托管关闭时一律按 `always`（向后兼容）。
+    /// 取值见 WakuuViewModes（纯逻辑单一来源）。
+    /// </summary>
+    public string wakuuViewMode { get; set; } = WakuuViewModes.Default;
+
     public string eventChoiceMode { get; set; } = WakuuChoiceModes.First;
 
     public string cardPickMode { get; set; } = WakuuChoiceModes.Last;
