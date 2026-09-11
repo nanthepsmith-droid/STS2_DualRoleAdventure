@@ -76,7 +76,8 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   **再无** `Couldn't get hand node for original card`；⑤ **r107** 视角档 `never` 生效，出场各点
   均按 `WakuuViewPolicy` 跳过切前台。启动日志
   `BUILD_IDENTITY commit=5c295c3 state=clean` 反证部署位二进制就是那份干净提交。
-  ⏳ 唯一未验证：「仅关键节点 peek」本局未切到该档，待下次确认。
+  **补 2026-09-11**：唯一未验证项「仅关键节点 peek」也已实机确认 —— 切过去看一眼后约 1.2s
+  自动切回真人，round 1 / round 2 各一次完整闭环（日志实证见 `TODO.md` ⑫）。至此本轮验证项全部出清。
 - **已知项（暂不修，完整记录见 `TODO.md` § BUG-8）**：当局出现 **1 次**
   `瓦库选择器作用域异常退出 / 瓦库看门狗重启失败 … error=OrbQueue is full`。追查确认这是
   **游戏原生异常**（`Core/Entities/Orbs/OrbQueue.cs` 在 `Orbs.Count >= Capacity` 时抛

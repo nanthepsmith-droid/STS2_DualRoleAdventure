@@ -375,7 +375,15 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
 > 且**无** `Couldn't get hand node`；⑤ 视角档 `wakuuViewMode=never` 生效，多处
 > `瓦库形态后台模式，跳过自动切换视角`；⑥ `BUILD_IDENTITY commit=5c295c3 state=clean`
 > → 反证部署位二进制就是那份干净提交。
-> ⏳ **唯一未验证**：「仅关键节点 peek」本局未切到该档，仍未验证（下次切过去看一眼 + 约 1.2s 自动切回）。
+> ⑫ **2026-09-11 追加：「仅关键节点 peek」✅ 也已实机确认**（本轮最后一个未验证项出清）：
+> 用户切到该档后，round 1 / round 2 各出现一次完整闭环 ——
+> `检测到后台角色触发战斗效果/选牌，自动切换前台: 326 -> 327, source=turn-start-setup` →
+> `控制上下文已更新: 326 -> 327, source=auto-foreground-turn-start-setup` → 约 1.2 秒后
+> `仅关键节点：瓦库回合开始已看过，自动切回原视角: 327 -> 326, source=turn-start-setup` →
+> `控制上下文已更新: 327 -> 326, source=wakuu-peek-return-turn-start-setup`。
+> 即「跳过去看一眼再自动切回」与观察一致，符合设计预期（用户原话：跳过去看一眼然后自动切回）。
+> **附带确认**：该会话**没有**再次出现脏值自愈 WARN（`wakuuBrain=heuristic` 保持）→
+> 证明 r110 的「每刀只改一次」在**跨会话**同样成立。
 
 - **现象**：多个瓦库时只能「一个瓦库打完 → 切到下一个瓦库」串行进行，且真人视角会跟着切到
   瓦库正在操作的角色；瓦库多时同样很慢。
