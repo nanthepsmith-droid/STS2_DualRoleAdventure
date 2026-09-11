@@ -36,10 +36,19 @@ internal static class CardSelectForegroundSwitchPatch
 
         CurrentChoicePlayerId.Value = player.NetId;
 
-        // 瓦库形态后台托管：存在全局选择器时该次选择会被自动作答、不会弹 UI，免切换；
-        // 无选择器（作用域外的真实交互，如酒狐初始遗物战斗开局二选一）则保留切换，
-        // 由真人手动处理——此行为经实机验证不可改为自动作答（会导致战斗开局流程异常）。
-        if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: true))
+        // 「会被自动作答、不弹 UI」的两种情况：
+        //   ① 栈上已有全局选择器（瓦库自动出牌作用域内，如攻击药水选牌）；
+        //   ② 该入口由 CardSelectWakuuTurnStartAutoAnswerPatch 对瓦库做「作用域外自动作答」
+        //      （FromChooseACardScreen / FromSimpleGrid，如工具箱三选一）。
+        // 两种都不需要真人，切前台没有意义（改进-2：避免无谓的视角"闪一下"）。
+        // 其余情况是「防软锁兜底」——必须切给真人，此行为经实机验证不可改为自动作答
+        // （会导致战斗开局流程异常），且**不受视角档位影响**（WakuuViewPolicy 里做了保证）。
+        bool willAutoAnswer = CardSelectCmd.Selector != null
+            || (CardSelectWakuuTurnStartAutoAnswerPatch.IsAutoAnswerEntry(source)
+                && CardSelectWakuuTurnStartAutoAnswerPatch.ShouldAutoAnswer(player));
+
+        if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(
+                player, WakuuViewTrigger.HumanInteractionChoice, willAutoAnswer))
         {
             LocalMultiControlLogger.Info(
                 $"瓦库形态后台模式，选牌将自动作答，跳过切换: player={player.NetId}, source={source}");

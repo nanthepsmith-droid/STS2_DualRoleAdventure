@@ -59,36 +59,62 @@ internal static class CardTransformNetIdPinPatch
         }
 
         Player? owner = ResolveOwner(transformations);
-        if (owner == null || !LocalSelfCoopContext.LocalPlayerIds.Contains(owner.NetId))
+        bool isOwnerLocal = owner != null && LocalSelfCoopContext.LocalPlayerIds.Contains(owner.NetId);
+        if (!isOwnerLocal)
         {
             return;
         }
 
-        // 只钉「当前前台角色」的手牌变换：变换动画要在前台手牌找原卡节点（FindOnTable），
-        // 后台角色（如瓦库托管中、或东方系 power 在回合开始时对他人手牌做变换）的卡不在前台桌上，
-        // 钉了 NetId 会让 vanilla 误以为"是我的牌"而到前台找节点 → InvalidOperationException
-        // 抛穿异步链杀死回合循环（实测 Combat#6 卡死：无法出牌/切人/结束回合）。
-        // 后台手牌变换本就不需要前台动画，让 vanilla 按 IsMine=false 跳过视觉即可（数据层照常生效）。
-        if (LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId is ulong controlledId
-            && controlledId != owner.NetId)
+        // 前台/后台 × NetId 是否已等于牌主人 → 用纯函数判定，避免逻辑散落（见 CardTransformNetIdPolicy 注释）。
+        bool isOwnerForeground = LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId == owner!.NetId;
+        bool currentNetIdIsOwner = LocalContext.NetId == owner.NetId;
+
+        switch (CardTransformNetIdPolicy.Decide(isOwnerLocal, isOwnerForeground, currentNetIdIsOwner))
         {
-            LocalMultiControlLogger.Info(
-                $"[手牌同步修复] 跳过后台角色手牌变换的前台动画钉线: owner={owner.NetId}, controlled={controlledId}");
-            return;
+            case CardTransformNetIdAction.PinToOwner:
+                // 只钉 NetId、不跳过原方法：保证其它 mod 在本方法上的 Prefix/__state 照常执行。
+                _previousNetId.Value = LocalContext.NetId;
+                LocalContext.NetId = owner.NetId;
+                _pinActive.Value = true;
+
+                LocalMultiControlLogger.Info(
+                    $"[手牌同步修复] 变换期间钉 NetId 到牌主人: owner={owner.NetId}, prevNetId={_previousNetId.Value}");
+                break;
+
+            case CardTransformNetIdAction.ShiftAwayFromOwner:
+            {
+                // 后台角色的手牌变换：原版视觉分支会在**前台手牌**里找原卡节点，找到就等于抛
+                // "Couldn't get hand node for original card ..."（实机：瓦库打「数据链」/酒狐「不等价交换」，
+                // 异常抛穿异步链 → 出牌中断、牌停在屏幕中间不生效不消耗）。
+                // 自动出牌期间 NetId 已被 RunWatchdogAsync 钉在瓦库身上，所以 r59 的「跳过钉」不够，
+                // 必须显式把 NetId 让到当前前台玩家（一个合法的本地玩家），让 vanilla 按 IsMine=false 跳过视觉。
+                // 数据层在视觉分支之前就已生效，不受影响。
+                ulong? controlledId = LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId;
+                ulong? safeNetId = controlledId.HasValue && LocalSelfCoopContext.LocalPlayerIds.Contains(controlledId.Value)
+                    ? controlledId
+                    : null;
+
+                _previousNetId.Value = LocalContext.NetId;
+                LocalContext.NetId = safeNetId;
+                _pinActive.Value = true;
+
+                LocalMultiControlLogger.Info(
+                    $"[手牌同步修复] 后台角色手牌变换：临时让开 NetId 以跳过前台动画查找: owner={owner.NetId}, "
+                    + $"controlled={controlledId?.ToString() ?? "none"}, "
+                    + $"netId={_previousNetId.Value?.ToString() ?? "null"} -> {safeNetId?.ToString() ?? "null"}");
+                break;
+            }
+
+            default:
+                if (!isOwnerForeground && currentNetIdIsOwner)
+                {
+                    // 理论不可达（该组合会走 ShiftAwayFromOwner），保留便于日后核对。
+                    LocalMultiControlLogger.Warn(
+                        $"[手牌同步修复] 后台角色手牌变换未被处理: owner={owner.NetId}");
+                }
+
+                break;
         }
-
-        if (LocalContext.NetId == owner.NetId)
-        {
-            return; // NetId 已对齐，无需干预
-        }
-
-        // 只钉 NetId、不跳过原方法：保证其它 mod 在本方法上的 Prefix/__state 照常执行。
-        _previousNetId.Value = LocalContext.NetId;
-        LocalContext.NetId = owner.NetId;
-        _pinActive.Value = true;
-
-        LocalMultiControlLogger.Info(
-            $"[手牌同步修复] 变换期间钉 NetId 到牌主人: owner={owner.NetId}, prevNetId={_previousNetId.Value}");
     }
 
     [HarmonyPostfix]

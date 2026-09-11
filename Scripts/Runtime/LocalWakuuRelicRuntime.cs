@@ -115,29 +115,81 @@ internal static class LocalWakuuRelicRuntime
     }
 
     /// <summary>
-    /// 后台托管判定：瓦库形态玩家且后台模式开启时，不再为其自动切换前台。
-    /// <paramref name="onlyWhenSelectorActive"/> 为 true 时仅当存在全局选择器
-    /// （选牌会被自动作答、不弹 UI）才免切换；无选择器时保留切换作为防软锁兜底，
-    /// 由交互安全网负责超时后的二次救援。
+    /// 视角策略判定（改进-2 / Phase 0）：是否抑制这次为瓦库形态角色切换前台的动作。
+    /// 判定口径全部收敛到纯函数 <see cref="WakuuViewPolicy"/>（档位 × 触发场景），
+    /// 调用方必须传入与自己语义一致的 <see cref="WakuuViewTrigger"/>。
     /// </summary>
-    public static bool ShouldSuppressForegroundSwitch(Player? player, bool onlyWhenSelectorActive)
+    public static bool ShouldSuppressForegroundSwitch(
+        Player? player,
+        WakuuViewTrigger trigger,
+        bool willAutoAnswerOverride = false)
     {
         if (player == null || !LocalSelfCoopContext.IsEnabled)
         {
             return false;
         }
 
-        if (!LocalWakuuAutopilotConfig.BackgroundMode || !IsVakuuFormMode(player))
+        // 只有「作用域外真人交互选牌」这一条需要判断"会不会被自动作答"（其余场景该参数无意义）：
+        // ① 调用方已判定会被自动作答（作用域外自动作答入口，见 CardSelectWakuuTurnStartAutoAnswerPatch）；
+        // ② 栈上已有全局选择器（瓦库自动出牌作用域内）。
+        bool willAutoAnswer = trigger == WakuuViewTrigger.HumanInteractionChoice
+            && (willAutoAnswerOverride || CardSelectCmd.Selector != null);
+
+        return WakuuViewPolicy.ShouldSuppressSwitch(
+            LocalWakuuAutopilotConfig.ViewMode,
+            LocalWakuuAutopilotConfig.BackgroundMode,
+            trigger,
+            IsVakuuFormMode(player),
+            willAutoAnswer);
+    }
+
+    /// <summary>
+    /// 兼容重载（旧布尔语义）：仅供「按有无全局选择器兜底」的老调用点使用。
+    /// true = 作用域外真人交互选牌兜底（<see cref="WakuuViewTrigger.HumanInteractionChoice"/>）；
+    /// false = 常规出牌路径（<see cref="WakuuViewTrigger.ReactivePlay"/>）。
+    /// 新代码请直接用 <see cref="WakuuViewTrigger"/> 重载，语义更明确。
+    /// </summary>
+    public static bool ShouldSuppressForegroundSwitch(Player? player, bool onlyWhenSelectorActive)
+    {
+        return ShouldSuppressForegroundSwitch(
+            player,
+            onlyWhenSelectorActive ? WakuuViewTrigger.HumanInteractionChoice : WakuuViewTrigger.ReactivePlay);
+    }
+
+    /// <summary>
+    /// 该角色是否「后台托管中的瓦库形态角色」——**与视角档位无关**的客观判定。
+    /// 供安全网候选甄别、大脑 <c>isBackground</c> 提示等场合使用：
+    /// 视角档位只决定「要不要切前台」，不改变「这个角色确实是后台托管的瓦库」这一事实。
+    /// </summary>
+    /// <summary>
+    /// 运行是否已进入「清理 / 已结束」阶段 —— 此时自动出牌异步链里抛出的异常属**预期中止**
+    /// （游戏状态已被 <c>RunManager.CleanUp</c> 拆掉），不该报 WARN 也不该上抛。
+    /// 判定口径见纯函数 <see cref="WakuuTeardownPolicy"/>。
+    /// </summary>
+    private static bool IsRunTeardown()
+    {
+        try
+        {
+            RunState? runState = RunManager.Instance.DebugOnlyGetState();
+            return WakuuTeardownPolicy.ShouldTreatAsExpectedAbort(
+                RunManager.Instance.IsInProgress,
+                runState != null);
+        }
+        catch
+        {
+            // 连 RunManager 都读不动了 = 一定在清理/退出过程里。
+            return true;
+        }
+    }
+
+    public static bool IsBackgroundHostedWakuu(Player? player)
+    {
+        if (player == null || !LocalSelfCoopContext.IsEnabled)
         {
             return false;
         }
 
-        if (onlyWhenSelectorActive && CardSelectCmd.Selector == null)
-        {
-            return false;
-        }
-
-        return true;
+        return LocalWakuuAutopilotConfig.BackgroundMode && IsVakuuFormMode(player);
     }
 
     /// <summary>
@@ -295,7 +347,7 @@ internal static class LocalWakuuRelicRuntime
                         energy: relic.Owner.PlayerCombatState?.Energy ?? 0,
                         turnNumber: combatState.RoundNumber,
                         playedThisTurn: cardsPlayed,
-                        isBackground: ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: false));
+                        isBackground: IsBackgroundHostedWakuu(player));
 
                     if (!brain.TryDecideNext(ctx, out WakuuPlannedAction next)
                         || next.Kind != WakuuActionKind.PlayCard
@@ -324,6 +376,16 @@ internal static class LocalWakuuRelicRuntime
         }
         catch (Exception exception)
         {
+            // 运行清理期（退出这一局/回主菜单）自动出牌作用域仍在飞 → 游戏状态已被拆掉，异常属**预期中止**：
+            // 降级为 INFO 且不上抛（上抛会让看门狗再报一条失败，把一次正常退出记成两个问题）。
+            if (IsRunTeardown())
+            {
+                LocalMultiControlLogger.Info(
+                    $"瓦库自动出牌在运行清理期正常中止（预期）: player={player.NetId}, "
+                    + $"round={combatState.RoundNumber}, error={exception.Message}");
+                return;
+            }
+
             LocalMultiControlLogger.Warn(
                 $"瓦库选择器作用域异常退出: player={player.NetId}, round={combatState.RoundNumber}, error={exception.Message}");
             throw;
@@ -489,7 +551,15 @@ internal static class LocalWakuuRelicRuntime
         }
         catch (Exception exception)
         {
-            LocalMultiControlLogger.Warn($"瓦库看门狗重启失败: player={player.NetId}, source={source}, error={exception.Message}");
+            if (IsRunTeardown())
+            {
+                LocalMultiControlLogger.Info(
+                    $"瓦库自动出牌看门狗在运行清理期正常中止（预期）: player={player.NetId}, source={source}, error={exception.Message}");
+            }
+            else
+            {
+                LocalMultiControlLogger.Warn($"瓦库看门狗重启失败: player={player.NetId}, source={source}, error={exception.Message}");
+            }
         }
         finally
         {
@@ -502,8 +572,8 @@ internal static class LocalWakuuRelicRuntime
 
             Callable.From(delegate
             {
-                // 后台托管模式下前台从未切到瓦库，不需要也不应该再自动切走。
-                if (ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: false))
+                // 后台托管模式下前台从未切到瓦库（视角档位=不跟随/仅关键节点时），不需要也不应该再自动切走。
+                if (ShouldSuppressForegroundSwitch(player, WakuuViewTrigger.ReactivePlay))
                 {
                     return;
                 }
@@ -599,8 +669,8 @@ internal static class LocalWakuuRelicRuntime
 
     private static void EnsureWakuuPerspective(Player player, string source)
     {
-        // 后台托管模式：瓦库形态角色不再切前台，直接以临时 owner 上下文出牌。
-        if (ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: false))
+        // 后台托管模式：瓦库形态角色不再切前台，直接以临时 owner 上下文出牌（视角档位=不跟随/仅关键节点时抑制）。
+        if (ShouldSuppressForegroundSwitch(player, WakuuViewTrigger.ReactivePlay))
         {
             LocalMultiControlLogger.Info(
                 $"瓦库形态后台模式，跳过自动切换视角: player={player.NetId}, source={source}");

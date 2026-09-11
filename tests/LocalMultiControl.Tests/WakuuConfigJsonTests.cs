@@ -39,6 +39,8 @@ public class WakuuConfigJsonTests
             // 策略默认值
             Assert.That(data.eventChoiceMode, Is.EqualTo("first"));
             Assert.That(data.cardPickMode, Is.EqualTo("last"));
+            // 视角策略默认「不跟随」（改进-2 Phase 0）
+            Assert.That(data.wakuuViewMode, Is.EqualTo("never"));
             // 大脑默认值
             Assert.That(data.wakuuBrain, Is.EqualTo("heuristic"));
         });
@@ -216,6 +218,7 @@ public class WakuuConfigJsonTests
             Assert.That(json, Does.Contain("\"shopAssistBuyNoData\""));
             Assert.That(json, Does.Contain("\"statBadge\""));
             Assert.That(json, Does.Contain("\"skipTurnStartDrawAnim\""));
+            Assert.That(json, Does.Contain("\"wakuuViewMode\""));
             Assert.That(json, Does.Contain("\"eventChoiceMode\""));
             Assert.That(json, Does.Contain("\"cardPickMode\""));
             Assert.That(json, Does.Contain("\"wakuuBrain\""));

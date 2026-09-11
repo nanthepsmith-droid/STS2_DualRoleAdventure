@@ -146,6 +146,14 @@ internal static class LocalWakuuAutopilotConfig
     public static bool SkipTurnStartDrawAnim { get; private set; }
 
     /// <summary>
+    /// 瓦库托管视角策略（改进-2 / Phase 0，默认 <see cref="WakuuViewModes.Never"/> 不跟随）：
+    /// never=不跟随 / keyNodes=仅关键节点（瓦库回合开始）跟随 / always=全程跟随。
+    /// 仅当 <see cref="BackgroundMode"/> 开启时生效；后台托管关闭时一律按 always（向后兼容）。
+    /// 判定由纯函数 <see cref="WakuuViewPolicy"/> 统一收口。
+    /// </summary>
+    public static string ViewMode { get; private set; } = WakuuViewModes.Default;
+
+    /// <summary>
     /// 事件自动选择的策略：first=第一个（最上）/ last=最后一个 / random=随机。
     /// 很多事件一直选第一个会死，可切到 last 或 random 规避。
     /// </summary>
@@ -171,6 +179,9 @@ internal static class LocalWakuuAutopilotConfig
     public const string HeuristicBrainMode = WakuuBrainModes.Heuristic;
     public const string AutoBrainMode = WakuuBrainModes.Auto;
     public const string CharacterFirstTier = WakuuPersonalQuery.PersonalTierCharacterFirst;
+    public const string ViewModeNever = WakuuViewModes.Never;
+    public const string ViewModeKeyNodes = WakuuViewModes.KeyNodes;
+    public const string ViewModeAlways = WakuuViewModes.Always;
     public const string VolumeFirstTier = WakuuPersonalQuery.PersonalTierVolumeFirst;
     public const string CharacterOnlyTier = WakuuPersonalQuery.PersonalTierCharacterOnly;
 
@@ -237,7 +248,8 @@ internal static class LocalWakuuAutopilotConfig
     }
 
     /// <summary>
-    /// 设置界面专用：更新单个字符串型配置（eventChoiceMode / cardPickMode / wakuuBrain / personalTier）。
+    /// 设置界面专用：更新单个字符串型配置（eventChoiceMode / cardPickMode / wakuuBrain / personalTier /
+    /// statBadgeCorner / statBadgeSource / wakuuViewMode）。
     /// 立即刷新内存生效值并写回 json；返回 false 表示 key 未知、值非法或写盘失败。
     /// </summary>
     public static bool TrySetAndSaveString(string key, string value)
@@ -248,7 +260,8 @@ internal static class LocalWakuuAutopilotConfig
             {
                 if (key is nameof(WakuuConfigData.eventChoiceMode) or nameof(WakuuConfigData.cardPickMode)
                     or nameof(WakuuConfigData.wakuuBrain) or nameof(WakuuConfigData.personalTier)
-                    or nameof(WakuuConfigData.statBadgeCorner) or nameof(WakuuConfigData.statBadgeSource))
+                    or nameof(WakuuConfigData.statBadgeCorner) or nameof(WakuuConfigData.statBadgeSource)
+                    or nameof(WakuuConfigData.wakuuViewMode))
                 {
                     string? normalized = key switch
                     {
@@ -257,6 +270,7 @@ internal static class LocalWakuuAutopilotConfig
                         nameof(WakuuConfigData.personalTier) => NormalizePersonalTier(value),
                         nameof(WakuuConfigData.statBadgeCorner) => WakuuStatBadgeCorner.Normalize(value),
                         nameof(WakuuConfigData.statBadgeSource) => WakuuStatBadgeSource.Normalize(value),
+                        nameof(WakuuConfigData.wakuuViewMode) => WakuuViewModes.Normalize(value),
                         _ => NormalizeChoiceMode(value),
                     };
                     if (normalized == null)
@@ -285,6 +299,9 @@ internal static class LocalWakuuAutopilotConfig
                         case nameof(WakuuConfigData.statBadgeSource):
                             data.statBadgeSource = normalized;
                             break;
+                        case nameof(WakuuConfigData.wakuuViewMode):
+                            data.wakuuViewMode = normalized;
+                            break;
                         default:
                             data.wakuuBrain = normalized;
                             break;
@@ -304,6 +321,48 @@ internal static class LocalWakuuAutopilotConfig
                 return false;
             }
         }
+    }
+
+    /// <summary>
+    /// 修正磁盘配置里的历史脏值（返回是否有改动），加载时自愈一次。
+    ///
+    /// 已知案例（r84 之前）：<c>TrySetAndSaveString</c> 的 if/else 链没认
+    /// <c>statBadgeCorner</c>/<c>statBadgeSource</c>，把它们落进了最后的 else 写进 <c>wakuuBrain</c>，
+    /// 于是磁盘上留下 `"wakuuBrain": "bottomRight"` 这类非法值。r84 已修掉写入路径，但**旧的脏值会一直留在盘上**
+    /// （被 <see cref="NormalizeBrainMode"/> 兜成 heuristic，功能无影响，但日志与排查都容易误导）。
+    /// 这里把所有字符串型策略字段归一到合法取值并写回；已合法则不写盘。
+    /// </summary>
+    public static bool TryRepairHistoricalValues(WakuuConfigData data)
+    {
+        string brain = NormalizeBrainMode(data.wakuuBrain) ?? HeuristicBrainMode;
+        string eventMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;
+        string cardMode = NormalizeCardPickMode(data.cardPickMode) ?? LastChoiceMode;
+        string tier = NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier;
+        string corner = WakuuStatBadgeCorner.Normalize(data.statBadgeCorner);
+        string source = WakuuStatBadgeSource.Normalize(data.statBadgeSource);
+        string viewMode = WakuuViewModes.Normalize(data.wakuuViewMode);
+
+        bool changed =
+            brain != data.wakuuBrain
+            || eventMode != data.eventChoiceMode
+            || cardMode != data.cardPickMode
+            || tier != data.personalTier
+            || corner != data.statBadgeCorner
+            || source != data.statBadgeSource
+            || viewMode != data.wakuuViewMode;
+
+        if (changed)
+        {
+            data.wakuuBrain = brain;
+            data.eventChoiceMode = eventMode;
+            data.cardPickMode = cardMode;
+            data.personalTier = tier;
+            data.statBadgeCorner = corner;
+            data.statBadgeSource = source;
+            data.wakuuViewMode = viewMode;
+        }
+
+        return changed;
     }
 
     /// <summary>规范化事件选择策略取值（first/last/random）；非法返回 null。</summary>
@@ -431,6 +490,14 @@ internal static class LocalWakuuAutopilotConfig
                     return;
                 }
 
+                // 历史脏值自愈：把非法取值归一后写回（只改一次，之后盘上就是合法值）。
+                if (TryRepairHistoricalValues(data))
+                {
+                    LocalMultiControlLogger.Warn(
+                        "瓦库托管配置检测到历史脏值（如旧版把角标位置误写进 wakuuBrain），已自动归一并写回。");
+                    WriteConfigData(data);
+                }
+
                 Apply(data, logChanges: true);
                 LocalMultiControlLogger.Info($"瓦库托管配置已加载: source={source}, path={path}");
             }
@@ -457,7 +524,7 @@ internal static class LocalWakuuAutopilotConfig
                 + $"smartPick={data.smartPick}, smartEnchant={data.smartEnchant}, "
                 + $"extraCrossCharacterCardReward={data.extraCrossCharacterCardReward}, "
                 + $"personalRecorder={data.personalRecorder}, personalAssist={data.personalAssist}, "
-                + $"shopAssist={data.shopAssist}, shopAssistBuyNoData={data.shopAssistBuyNoData}, statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, "
+                + $"shopAssist={data.shopAssist}, shopAssistBuyNoData={data.shopAssistBuyNoData}, statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, wakuuViewMode={WakuuViewModes.Normalize(data.wakuuViewMode)}, "
                 + $"personalTier={NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier}, "
                 + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}, "
                 + $"wakuuBrain={data.wakuuBrain}");
@@ -488,6 +555,7 @@ internal static class LocalWakuuAutopilotConfig
         StatBadgeSource = WakuuStatBadgeSource.Normalize(data.statBadgeSource);
         PetHpBadge = data.petHpBadge;
         SkipTurnStartDrawAnim = data.skipTurnStartDrawAnim;
+        ViewMode = WakuuViewModes.Normalize(data.wakuuViewMode);
         PersonalTier = NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier;
         EventChoiceMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;
         CardPickMode = NormalizeCardPickMode(data.cardPickMode) ?? LastChoiceMode;

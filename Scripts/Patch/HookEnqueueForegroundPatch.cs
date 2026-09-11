@@ -43,10 +43,10 @@ internal static class HookEnqueueForegroundPatch
             return;
         }
 
-        // 瓦库形态后台托管：不为该角色在入队瞬间切前台。
+        // 瓦库形态后台托管：不为该角色在入队瞬间切前台（改进-2 Phase 0：判定走视角策略，档位=不跟随/仅关键节点时抑制）。
         // 若该 hook 稍后需要真实选牌，CardSelectForegroundSwitchPatch 会在无全局选择器时兜底切换。
         Player? ownerPlayer = LocalMultiControlRuntime.TryGetCombatPlayer(gameAction.OwnerId);
-        if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(ownerPlayer, onlyWhenSelectorActive: false))
+        if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(ownerPlayer, WakuuViewTrigger.HookEnqueue))
         {
             LocalMultiControlLogger.Info(
                 $"瓦库形态后台模式，跳过 Hook 入队切换: player={gameAction.OwnerId}, hook={gameAction.HookId}");

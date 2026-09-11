@@ -1,6 +1,7 @@
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
 using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Players;
 
 namespace LocalMultiControl.Scripts.Patch;
@@ -38,19 +39,34 @@ internal static class CombatManagerSetupPlayerTurnForegroundPatch
         // 回合开始瞬间手牌可能还没发出来（读不到真实归属）→ 帧末再校一次。
         LocalMultiControlRuntime.ScheduleEnsureCombatEnergyMatchesHand("turn-start-deferred");
 
-        if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: false))
+        if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(player, WakuuViewTrigger.TurnStart))
         {
             return;
         }
 
         // 改进-1：跳过「其他人」的回合开始抽牌演出——只保留「当前正在看的那位」的演出，
         // 其他人不再切前台（其抽牌按原版规则对非本地玩家不做动画，数据照常）。
+        // 注意：后台托管的瓦库形态角色**不由此开关管辖**（见 ShouldSkipTurnStartDrawAnimationFor），
+        // 它的回合开始视角完全由「瓦库托管视角」档位决定，否则 keyNodes 会被本开关静默吃掉。
         if (LocalMultiControlRuntime.ShouldSkipTurnStartDrawAnimationFor(player, "turn-start-setup"))
         {
             return;
         }
 
-        LocalMultiControlRuntime.TryEnsureForegroundForPlayer(player, "turn-start-setup");
+        // 改进-2「仅关键节点」：切过去看一眼（peek），随后延时自动切回原先的真人视角。
+        bool peek = WakuuViewPolicy.ShouldPeekAtTurnStart(
+            LocalWakuuAutopilotConfig.ViewMode,
+            LocalWakuuAutopilotConfig.BackgroundMode,
+            LocalWakuuRelicRuntime.IsVakuuFormMode(player));
+        ulong? previousForegroundId = peek
+            ? LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId ?? LocalContext.NetId
+            : null;
+
+        if (LocalMultiControlRuntime.TryEnsureForegroundForPlayer(player, "turn-start-setup") && peek)
+        {
+            LocalMultiControlRuntime.ScheduleReturnToForegroundAfterPeek(
+                player.NetId, previousForegroundId, "turn-start-setup");
+        }
     }
 }
 
@@ -65,7 +81,7 @@ internal static class CombatManagerDoTurnEndForegroundPatch
             return;
         }
 
-        if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: false))
+        if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(player, WakuuViewTrigger.TurnEnd))
         {
             return;
         }
@@ -85,7 +101,7 @@ internal static class CombatManagerFlushPlayerHandForegroundPatch
             return;
         }
 
-        if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(player, onlyWhenSelectorActive: false))
+        if (LocalWakuuRelicRuntime.ShouldSuppressForegroundSwitch(player, WakuuViewTrigger.TurnEnd))
         {
             return;
         }

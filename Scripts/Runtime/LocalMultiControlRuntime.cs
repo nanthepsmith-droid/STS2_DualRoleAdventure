@@ -687,6 +687,15 @@ internal static class LocalMultiControlRuntime
             return false;
         }
 
+        // 改进-2：后台托管的瓦库形态角色**不由本开关管辖** —— 它的回合开始是否切前台由
+        // 「瓦库托管视角」档位统一决定（不跟随 = 已被 WakuuViewPolicy 抑制在前；仅关键节点 = peek；
+        // 全程跟随 = 正常切）。不加这条的话 keyNodes 的回合开始跟随会被本开关静默吃掉
+        // （实机 marker r107 日志实证：整段 keyNodes 只有本开关的跳过日志、没有任何 turn-start 切前台）。
+        if (LocalWakuuRelicRuntime.IsBackgroundHostedWakuu(player))
+        {
+            return false;
+        }
+
         ulong foregroundPlayerId = Session.CurrentControlledPlayerId ?? LocalContext.NetId ?? 0UL;
         if (!TurnStartDrawAnimPolicy.ShouldSkipSwitch(
                 toggleEnabled: LocalWakuuAutopilotConfig.SkipTurnStartDrawAnim,
@@ -715,6 +724,72 @@ internal static class LocalMultiControlRuntime
         }
 
         return true;
+    }
+
+    /// <summary>「仅关键节点」peek 后自动切回原视角的延时（秒）。</summary>
+    private const double PeekReturnDelaySeconds = 1.2;
+
+    /// <summary>
+    /// 改进-2「仅关键节点」peek：瓦库回合开始切过去看一眼后，延时自动切回**原先的真人视角**。
+    /// 只在「前台仍是那个瓦库」（说明用户没手动切走）、原前台是本地玩家、且当前无进行中的
+    /// 出牌/选牌/瞄准流程时才切回；任一条件不满足就放弃（宁可不切，也不打断用户操作）。
+    /// </summary>
+    public static void ScheduleReturnToForegroundAfterPeek(
+        ulong peekPlayerId,
+        ulong? previousPlayerId,
+        string source)
+    {
+        if (!previousPlayerId.HasValue || previousPlayerId.Value == peekPlayerId)
+        {
+            return;
+        }
+
+        SceneTree? sceneTree = NGame.Instance?.GetTree();
+        if (sceneTree == null)
+        {
+            return;
+        }
+
+        ulong returnPlayerId = previousPlayerId.Value;
+        sceneTree.CreateTimer(PeekReturnDelaySeconds).Timeout += () =>
+        {
+            try
+            {
+                if (!LocalSelfCoopContext.IsEnabled || !RunManager.Instance.IsInProgress)
+                {
+                    return;
+                }
+
+                if (!LocalSelfCoopContext.LocalPlayerIds.Contains(returnPlayerId))
+                {
+                    return;
+                }
+
+                // 用户已经手动切走（或又切回瓦库自己操作）→ 不抢视角。
+                if (Session.CurrentControlledPlayerId != peekPlayerId)
+                {
+                    return;
+                }
+
+                NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+                if (combatUi != null)
+                {
+                    NPlayerHand hand = combatUi.Hand;
+                    if (hand.InCardPlay || hand.IsInCardSelection || (NTargetManager.Instance?.IsInSelection ?? false))
+                    {
+                        return;
+                    }
+                }
+
+                LocalMultiControlLogger.Info(
+                    $"仅关键节点：瓦库回合开始已看过，自动切回原视角: {peekPlayerId} -> {returnPlayerId}, source={source}");
+                SwitchControlledPlayerTo(returnPlayerId, $"wakuu-peek-return-{source}");
+            }
+            catch (Exception exception)
+            {
+                LocalMultiControlLogger.Warn($"仅关键节点自动切回原视角失败: {exception.Message}");
+            }
+        };
     }
 
     public static bool TryEnsureForegroundForPlayer(Player player, string source)
