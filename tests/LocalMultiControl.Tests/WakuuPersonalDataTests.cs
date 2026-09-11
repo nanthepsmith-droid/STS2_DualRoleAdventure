@@ -240,6 +240,55 @@ public class WakuuPersonalDataTests
     }
 
     [Test]
+    public void 事件决策信号_回填选择率与没选它的局胜率()
+    {
+        // 改进-3：此前 TryGetEventDecisionSignal 只回填胜率、把 slice.ChosenRate 整条丢掉，
+        // 导致事件侧只能按胜率单信号决策。这里钉死回填口径。
+        PersonalStore store = MakeStore();
+        store.runs.Add(Run("r1", false, "win"));
+        store.runs.Add(Run("r2", false, "loss"));
+        store.eventChoices.Add(Evt("r1", false, "IRONCLAD", 1, "EVENT1", "OPT_A", false));
+        store.eventChoices.Add(Evt("r1", false, "IRONCLAD", 1, "EVENT1", "OPT_B", true));
+        store.eventChoices.Add(Evt("r2", false, "IRONCLAD", 1, "EVENT1", "OPT_B", false));
+        store.eventChoices.Add(Evt("r2", false, "IRONCLAD", 1, "EVENT1", "OPT_C", true));
+
+        WakuuEventSignal? signal = WakuuPersonalQuery.TryGetEventDecisionSignal(
+            store, "EVENT1", "OPT_B", isMultiPreference: false, characterPreference: "IRONCLAD", minOffered: 1);
+
+        Assert.That(signal, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(signal!.Value.HasChosenRate, Is.True);
+            Assert.That(signal.Value.ChosenRate, Is.EqualTo(0.5).Within(1e-9), "展示 2 次、点过 1 次 → 选择率 0.5");
+            Assert.That(signal.Value.Count, Is.EqualTo(2));
+            Assert.That(signal.Value.WinRate, Is.EqualTo(1.0).Within(1e-9), "点过它的只有 r1（胜）");
+            Assert.That(signal.Value.WinRateSkipped, Is.EqualTo(0.0).Within(1e-9), "没点它的只有 r2（负）");
+            Assert.That(signal.Value.WinRateGain, Is.EqualTo(1.0).Within(1e-9));
+        });
+    }
+
+    [Test]
+    public void 事件决策信号_没有没选的局时因果增益为空()
+    {
+        // SkippedRuns=0 时 WinRateSkipped 的默认 0.0 是"假基准"，
+        // 直接拿来算增益会把该选项算成强正信号 —— 必须回填为 null（改进-3）。
+        PersonalStore store = MakeStore();
+        store.runs.Add(Run("r1", false, "win"));
+        store.eventChoices.Add(Evt("r1", false, "IRONCLAD", 1, "EVENT2", "OPT_X", true));
+
+        WakuuEventSignal? signal = WakuuPersonalQuery.TryGetEventDecisionSignal(
+            store, "EVENT2", "OPT_X", isMultiPreference: false, characterPreference: "IRONCLAD", minOffered: 1);
+
+        Assert.That(signal, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(signal!.Value.ChosenRate, Is.EqualTo(1.0).Within(1e-9));
+            Assert.That(signal.Value.WinRateSkipped, Is.Null, "没有『展示过但没选』的局 → 不给假基准");
+            Assert.That(signal.Value.WinRateGain, Is.Null);
+        });
+    }
+
+    [Test]
     public void JSON往返_字段保留()
     {
         PersonalStore store = MakeStore();

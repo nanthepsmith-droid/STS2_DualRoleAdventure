@@ -498,7 +498,17 @@ internal static class WakuuPersonalQuery
                 store, eventId, optionKey,
                 isMulti: useMode ? isMultiPreference : (bool?)null,
                 character: useChar ? characterPreference : null);
-            return new WakuuEventSignal(optionKey, win.WinRateHeld, slice.Offered);
+
+            // 改进-3：选择率（slice.ChosenRate）原先被整条丢弃，导致事件侧只剩胜率单信号。
+            // 「没选它的局」胜率只在**确实存在没选的局**时回填——SkippedRuns=0 时其值为 0.0，
+            // 直接当基准会把该选项算成强正增益（假信号）。
+            double? winRateSkipped = win.SkippedRuns > 0 ? win.WinRateSkipped : null;
+            return new WakuuEventSignal(
+                optionKey,
+                win.WinRateHeld,
+                slice.Offered,
+                chosenRate: slice.ChosenRate,
+                winRateSkipped: winRateSkipped);
         }
 
         return null;

@@ -240,7 +240,7 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             value => LocalWakuuAutopilotConfig.TrySetAndSave("personalRecorder", value));
         AddToggleRow(column,
             "个人统计决策辅助",
-            "默认关。开启后瓦库选牌/选事件优先参考你自己打出的个人统计（多人局优先参考多人局数据）；个人样本不足或无倾向时回退社区统计与默认策略。样本越多越贴合你的打法（含 mod 卡）。",
+            "默认关。开启后瓦库选牌/选事件优先参考你自己打出的个人统计（多人局优先参考多人局数据）：事件选项按你的「选择率」（遇到这个事件时你多选哪个）+ 胜率综合选取，用稳定 loc key 查表、不受界面语言影响；选牌按抓取率 + 拿了之后的胜率增益。个人样本不足或无倾向时回退社区统计与默认策略。样本越多越贴合你的打法（含 mod 卡）。",
             () => LocalWakuuAutopilotConfig.PersonalAssist,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("personalAssist", value));
         column.AddChild(CreatePersonalTierRow(

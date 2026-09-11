@@ -16,6 +16,11 @@ public class SignalPickingTests
     private static WakuuEventSignal Event_(string text, double winRate, long count)
         => new(text, winRate, count);
 
+    /// <summary>个人链信号：带选择率与「没选它的局」胜率（改进-3）。</summary>
+    private static WakuuEventSignal Event_(
+        string text, double winRate, long count, double? chosenRate, double? winRateSkipped = null)
+        => new(text, winRate, count, chosenRate, winRateSkipped);
+
     // ---------------------------------------------------------------
     // NormalizeRate：统一 0~1 量纲
     // ---------------------------------------------------------------
@@ -306,5 +311,143 @@ public class SignalPickingTests
 
         Assert.That(WakuuSignalPicking.PickBestEventIndex(new int[0], stats), Is.EqualTo(-1));
         Assert.That(WakuuSignalPicking.PickBestEventIndex(null!, stats), Is.EqualTo(-1));
+    }
+
+    // ---------------------------------------------------------------
+    // 事件信号结构：选择率 / 因果增益（改进-3）
+    // ---------------------------------------------------------------
+
+    [Test]
+    public void 事件信号_个人链带选择率_社区链无选择率()
+    {
+        WakuuEventSignal personal = Event_("OPT_A", 0.55, 10, chosenRate: 0.6, winRateSkipped: 0.5);
+        WakuuEventSignal community = Event_("Take the gold", 0.55, 500);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(personal.HasChosenRate, Is.True);
+            Assert.That(personal.ChosenRate, Is.EqualTo(0.6).Within(1e-9));
+            Assert.That(personal.WinRateGain, Is.EqualTo(0.05).Within(1e-9));
+
+            Assert.That(community.HasChosenRate, Is.False);
+            Assert.That(community.ChosenRate, Is.Null, "社区链没有选择率字段，必须为 null 而不是 0");
+            Assert.That(community.WinRateGain, Is.Null, "社区链没有 skipped 胜率 → 无因果增益");
+        });
+    }
+
+    // ---------------------------------------------------------------
+    // PickBestEventOptionIndex：个人统计口径（选择率为主、胜率否决）
+    // ---------------------------------------------------------------
+
+    [Test]
+    public void PickBestEventOptionIndex_按选择率选最高()
+    {
+        List<WakuuEventSignal?> signals = new()
+        {
+            Event_("A", 0.50, 100, chosenRate: 0.20),
+            Event_("B", 0.50, 100, chosenRate: 0.70),
+            Event_("C", 0.50, 100, chosenRate: 0.40),
+        };
+
+        Assert.That(WakuuSignalPicking.PickBestEventOptionIndex(signals), Is.EqualTo(1));
+    }
+
+    [Test]
+    public void PickBestEventOptionIndex_选择率相同时由因果增益决胜()
+    {
+        List<WakuuEventSignal?> signals = new()
+        {
+            Event_("A", 0.50, 100, chosenRate: 0.60, winRateSkipped: 0.60), // gain 0
+            Event_("B", 0.55, 100, chosenRate: 0.60, winRateSkipped: 0.50), // gain +0.05 → 胜出
+        };
+
+        Assert.That(WakuuSignalPicking.PickBestEventOptionIndex(signals), Is.EqualTo(1));
+    }
+
+    [Test]
+    public void PickBestEventOptionIndex_无选择率时退化为按胜率比较()
+    {
+        // 社区链语义：没有选择率，只能按胜率选
+        List<WakuuEventSignal?> signals = new()
+        {
+            Event_("a", 0.40, 500),
+            Event_("b", 0.65, 500),
+            Event_("c", 0.55, 500),
+        };
+
+        Assert.That(WakuuSignalPicking.PickBestEventOptionIndex(signals), Is.EqualTo(1));
+    }
+
+    [Test]
+    public void PickBestEventOptionIndex_负面信号出局_让位给正向候选()
+    {
+        // 0 号选择率很高（0.80）但"选了反而更容易输"（gain −0.20）→ 出局；
+        // 1 号选择率低但正向（gain +0.05）→ 胜出。与卡牌同一套 r48 口径。
+        List<WakuuEventSignal?> signals = new()
+        {
+            Event_("A", 0.30, 500, chosenRate: 0.80, winRateSkipped: 0.50),
+            Event_("B", 0.55, 500, chosenRate: 0.20, winRateSkipped: 0.50),
+        };
+
+        Assert.That(WakuuSignalPicking.PickBestEventOptionIndex(signals), Is.EqualTo(1));
+    }
+
+    [Test]
+    public void PickBestEventOptionIndex_唯一有数据但为负则不采用()
+    {
+        List<WakuuEventSignal?> signals = new()
+        {
+            null,
+            Event_("B", 0.35, 500, chosenRate: 0.30, winRateSkipped: 0.50), // gain −0.15
+        };
+
+        Assert.That(WakuuSignalPicking.PickBestEventOptionIndex(signals), Is.EqualTo(-1));
+    }
+
+    [Test]
+    public void PickBestEventOptionIndex_降低增益门槛可放行负面信号()
+    {
+        List<WakuuEventSignal?> signals = new()
+        {
+            Event_("B", 0.35, 500, chosenRate: 0.30, winRateSkipped: 0.50),
+        };
+
+        Assert.That(WakuuSignalPicking.PickBestEventOptionIndex(signals), Is.EqualTo(-1));
+        Assert.That(WakuuSignalPicking.PickBestEventOptionIndex(signals, minGain: -1.0), Is.EqualTo(0));
+    }
+
+    [Test]
+    public void PickBestEventOptionIndex_样本量门槛()
+    {
+        List<WakuuEventSignal?> signals = new()
+        {
+            Event_("A", 0.90, 3, chosenRate: 0.95),    // 样本太少
+            Event_("B", 0.50, 500, chosenRate: 0.40),
+        };
+
+        Assert.That(WakuuSignalPicking.PickBestEventOptionIndex(signals, minCount: 100), Is.EqualTo(1));
+    }
+
+    [Test]
+    public void PickBestEventOptionIndex_同分保留更靠前的选项()
+    {
+        List<WakuuEventSignal?> signals = new()
+        {
+            Event_("A", 0.50, 500, chosenRate: 0.50),
+            Event_("B", 0.50, 500, chosenRate: 0.50),
+        };
+
+        Assert.That(WakuuSignalPicking.PickBestEventOptionIndex(signals), Is.EqualTo(0));
+    }
+
+    [Test]
+    public void PickBestEventOptionIndex_空输入与全无数据返回负一()
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(WakuuSignalPicking.PickBestEventOptionIndex(new List<WakuuEventSignal?>()), Is.EqualTo(-1));
+            Assert.That(WakuuSignalPicking.PickBestEventOptionIndex(null!), Is.EqualTo(-1));
+            Assert.That(WakuuSignalPicking.PickBestEventOptionIndex(new List<WakuuEventSignal?> { null, null }), Is.EqualTo(-1));
+        });
     }
 }

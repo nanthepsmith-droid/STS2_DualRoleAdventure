@@ -39,25 +39,56 @@ internal readonly struct WakuuCardSignal
 }
 
 /// <summary>
-/// 事件选项社区统计信号（SkadaHelper EventOptionStats 的镜像快照）。
+/// 事件选项统计信号（两种数据源的统一镜像快照）：
+/// - **个人记录器**（三级决策链第①级，`personal_stats.json`）：提供**选择率** + 胜率 + 「没选它的局」胜率；
+/// - **社区统计 SkadaHelper**：只提供选项文本（用于模糊匹配）+ 选了它的局胜率。
+/// 刻意不引用第三方类型，纯数据可单测；所有比率统一为 0~1。
 /// </summary>
 internal readonly struct WakuuEventSignal
 {
-    public WakuuEventSignal(string text, double winRate, long count)
+    public WakuuEventSignal(
+        string text,
+        double winRate,
+        long count,
+        double? chosenRate = null,
+        double? winRateSkipped = null)
     {
         Text = text ?? string.Empty;
         WinRate = winRate;
         Count = count;
+        ChosenRate = chosenRate;
+        WinRateSkipped = winRateSkipped;
     }
 
-    /// <summary>数据集记录的选项文本（英文），用于与本地化后的选项文本做模糊匹配。</summary>
+    /// <summary>
+    /// 匹配/标识用文本：社区链是数据集里的选项文本（英文，用于与本地化文本做模糊匹配）；
+    /// 个人链是选项的稳定 loc key（<c>EventOption.TextKey</c>，**不受界面语言影响**）。
+    /// </summary>
     public string Text { get; }
 
     /// <summary>选了该选项的那批局的胜率（0~1）。</summary>
     public double WinRate { get; }
 
-    /// <summary>样本局数；低于阈值视为无数据。</summary>
+    /// <summary>展示样本数：个人链为"被展示次数"，社区链为"样本局数"；低于阈值视为无数据。</summary>
     public long Count { get; }
+
+    /// <summary>
+    /// **选择率**（0~1）：该选项被展示时被选中的比例（"遇到时我多选哪个"）。
+    /// 只有个人记录器能提供；社区链为 null（SkadaHelper 的事件条目没有选择率字段）。
+    /// </summary>
+    public double? ChosenRate { get; }
+
+    /// <summary>
+    /// 展示过该选项、但**整局没选它**的那批局的胜率（0~1）。
+    /// 只有个人链能提供；社区链为 null。注意：只有确实存在"没选"的局时才应回填（否则 0% 是假基准）。
+    /// </summary>
+    public double? WinRateSkipped { get; }
+
+    /// <summary>因果增益近似：选了它的胜率 − 没选它的胜率。任一缺失时为 null（视为无增益信号）。</summary>
+    public double? WinRateGain => WinRateSkipped.HasValue ? WinRate - WinRateSkipped.Value : (double?)null;
+
+    /// <summary>该信号是否带选择率（个人记录器链为 true，社区统计链为 false）。</summary>
+    public bool HasChosenRate => ChosenRate.HasValue;
 }
 
 /// <summary>
@@ -201,6 +232,61 @@ internal static class WakuuSignalPicking
         }
 
         return -1;
+    }
+
+    /// <summary>
+    /// 事件选项按**个人统计信号**选最优（改进-3，口径与卡牌 <see cref="PickBestCardIndex"/> 对齐）：
+    /// 主信号 = **选择率**（个人链有）否则退化为 **胜率**（社区链）；
+    /// 叠加因果增益（选了 vs 没选）作加权，并让**负面信号**（加权增益低于 <paramref name="minGain"/>）直接出局。
+    ///
+    /// 为什么负面信号要出局（r48 教训，事件同理）：候选里常常只有部分选项"有数据"，
+    /// 此时唯一有数据的那个会自动胜出——哪怕它"选了反而更容易输"，
+    /// 等于用一个确切的坏信号覆盖"第一个/最后一个"这类中性默认，比不查表更糟。
+    ///
+    /// 返回选中下标；全部候选无数据（null / 样本不足）或全部出局时返回 -1（调用方回退下一级）。
+    /// 同分保留更靠前的选项（与"最上"兜底方向一致）。
+    /// </summary>
+    /// <param name="signals">与候选一一对应的信号；null 项表示该候选无数据。</param>
+    /// <param name="minCount">样本量门槛；默认 0（个人链由 <c>WakuuPersonalQuery</c> 查询侧把关）。</param>
+    public static int PickBestEventOptionIndex(
+        IReadOnlyList<WakuuEventSignal?> signals,
+        long minCount = 0,
+        double gainWeight = DefaultGainWeight,
+        double minGain = DefaultMinGain)
+    {
+        if (signals == null || signals.Count == 0)
+        {
+            return -1;
+        }
+
+        int bestIndex = -1;
+        double bestScore = 0.0;
+        for (int i = 0; i < signals.Count; i++)
+        {
+            WakuuEventSignal? candidate = signals[i];
+            if (candidate == null || candidate.Value.Count < minCount)
+            {
+                continue;
+            }
+
+            WakuuEventSignal signal = candidate.Value;
+            double weightedGain = gainWeight * (signal.WinRateGain ?? 0.0);
+            if (weightedGain < minGain)
+            {
+                continue; // 负面信号：选了反而更容易输，出局不参与竞选
+            }
+
+            double primary = signal.ChosenRate ?? signal.WinRate;
+            double score = primary + weightedGain;
+            // 严格大于 → 同分时保留更靠前的选项
+            if (bestIndex < 0 || score > bestScore)
+            {
+                bestIndex = i;
+                bestScore = score;
+            }
+        }
+
+        return bestIndex;
     }
 
     /// <summary>

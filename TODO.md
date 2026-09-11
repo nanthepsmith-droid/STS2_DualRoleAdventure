@@ -376,7 +376,18 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
 > `FromChooseACardScreen`，漏了 `FromSimpleGrid`；已补同款前缀（顺带用同一判据跳过无意义切前台）。
 > ② 「仅关键节点」档位**实际无效**（被同一钩子里的「改进-1」开关再拦一次）→ 改为 **peek**
 > （回合开始跳过去看一眼、约 1.2s 后自动切回真人），并让改进-1 不再管辖瓦库形态角色。
-> +3 单测 → **372 全绿**，marker r108。
+> ⑬ **Phase 1 已实现（r113，2026-09-11，已部署待实机）**：**选择器按归属者分发**（方案 §4）。
+> 新增纯逻辑 `WakuuOwnerSelectorMap<TSelector>`（归属者→选择器登记表，支持同归属者嵌套、乱序释放、
+> 幂等释放）+ `WakuuSelectorDispatch.Decide(hasChooser, registryHit, chooserIsWakuu)`（路由真值表）；
+> 运行层 `WakuuSelectorRegistry.Open(ownerId, selector)` = `CardSelectCmd.PushSelector` + 登记，
+> **6 处选择器压栈点全部迁移**（战斗出牌 / 遗物效果 / 事件选项 / 火堆 / 药水 / 卡牌奖励）；
+> `CardSelectCmdSelectorGuardPatch` 改走路由（瓦库命中→用它自己的选择器；真人→摘掉走 UI；未知→保持栈顶）；
+> 新增 `CardSelectCmdResetRegistryPatch`（run cleanup 同步清表）；新增启动自检 `SELECTOR_ROUTE`
+> （反射枚举 `CardSelectCmd.From*` 全部入口并分类，出现未分类新入口即 WARN，便于游戏更新适配）。
+> **行为零变化**：三条老路（真人摘掉 / 瓦库放过 / 保持栈顶）逐条保留，只有「瓦库 + 登记表命中」这一种
+> 新组合走精确分发。+21 单测 → **420 全绿**（含「入口枚举_无未分类的新入口」这条游戏更新哨兵），
+> 构建 0 警告 0 错误、`clr_compat_check` PASS、marker r113 已部署且 `dll_check` 字节一致。
+> ⏭ Phase 1 的收益在于**铺好路由底座**（Phase 2' 准并行后两个瓦库作用域才能各归各），本轮单独交付无可见变化。
 > ⑨ **r109（新 bug 修复，2026-09-10，已部署 ✅ 2026-09-11 实机确认）**：瓦库打「手牌变换」类牌（YUI「数据链」、
 > 酒狐「不等价交换」）**中断**——`Couldn't get hand node for original card CARD.INJURY`，
 > 牌停在屏幕中间、效果没跑完、没消耗（本局 18 次）。根因：原版 `CardCmd.Transform` 视觉分支按
@@ -415,6 +426,76 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
   ② 视角策略可配置（不跟随 / 仅关键节点跟随）。
 - **风险**：与选牌串行化、前台绑定类 UI（结束回合按钮，见 BUG-2）强耦合，
   需先解决「前台归属」的单一事实来源，否则会把 BUG-2 放大。
+
+### 改进-3 瓦库事件选项：接上「我们自己」的选择率 + 胜率统计（2026-09-11 用户反馈；**r114 已实现，待实机**）
+
+> 🔧 **r114 实现（2026-09-11）**：
+> ① `WakuuEventSignal` 扩展出 **`ChosenRate`（选择率）** 与 `WinRateSkipped`（没选它的局胜率）、
+> 派生 `WinRateGain` / `HasChosenRate`（社区链无选择率 → 保持 `null`，**不用 0 冒充**）；
+> ② `WakuuPersonalQuery.TryGetEventDecisionSignal` **回填选择率**（原先整条丢弃），
+> 且 `SkippedRuns == 0` 时**不回填** skipped 胜率（避免用 0% 当假基准把选项算成强正增益）；
+> ③ 新增纯函数 `WakuuSignalPicking.PickBestEventOptionIndex`（**口径与卡牌 `PickBestCardIndex` 对齐**：
+> 主信号 = 选择率，无选择率时退化为胜率；叠加因果增益加权；**负面信号直接出局**；同分保留更靠前）；
+> ④ `LocalWakuuEventAutoChoice.SelectByPersonalStats` 改走该纯函数，日志补
+> `chosenRate / winRate / gain / offered / tier`；⑤ 设置页「个人统计决策辅助」文案写明
+> 「事件选项按你的选择率 + 胜率选，用稳定 loc key 查表、不受界面语言影响」。
+> 门禁：0 警告 0 错误、**432 单测全绿**（+12）、`clr_compat_check` PASS、marker **r114** 已部署且 `dll_check` 字节一致。
+>
+> **前置条件（重要）**：这条链受开关 **「个人统计决策辅助」（`personalAssist`）** 管辖，**默认关** ——
+> 想让它生效必须先在设置页打开；且样本门槛是 **≥3**（`WakuuPersonalQuery.DefaultMinPersonalCount`）、
+> **只统计已打完（胜/负）的局**，所以早期样本少时会回退到社区统计 → first/last/random。
+> **是否把 `personalAssist` 改成默认开，留给用户拍板**（会同时影响卡牌奖励的个人统计链）。
+>
+> **验证要点**：开开关后进事件 → 日志 `瓦库事件按个人统计选取: event=…, option=…, chosenRate=…, winRate=…, gain=…`；
+> 样本不足/全为负面时是 `瓦库事件个人统计未采用，回退社区/原策略: …`（属正常回退，不是 bug）。
+>
+> 🔧 **r115 诊断补强（2026-09-11，r114 实机日志暴露的盲点）**：r114 第一条实机日志里
+> `personalAssist=True`、`eventChoiceMode=random`、事件自动选择 2 次，但**两条统计链一行日志都没有** ——
+> 因为两条链在「本页只有 0/1 个可选项」「记录器还没有任何事件样本」「社区适配器未就绪」这些早退路径上
+> **全是静默 return**，导致"没生效"与"没数据"在日志里无法区分。r115 把这些路径全部留痕：
+> `瓦库事件{个人统计|社区统计}跳过（本页仅 N 个可选，无选择余地）` /
+> `瓦库事件个人统计无记录（记录器还没采到任何事件选项）` /
+> `瓦库事件个人统计无可用样本…各选项展示次数=[KEY:n, …]`（可直接看出"该事件从未被记录"还是"样本不够"）/
+> `瓦库事件社区统计无数据…, skadaReady=…`。marker **r115** 已部署。
+> （事件选项选择率/胜率逻辑本身**没有改动**，只补日志。）
+
+- **现象（用户 2026-09-11）**：瓦库的事件选项现在体感「只能随机 / 按 first-last 乱选」，
+  用户问「什么时候能按选择率或胜率选」，并指出**我们自己已经在 mod 里统计了事件选项的选择率与胜率**。
+- **现状核查（结论：数据我们早就采到了，是决策链漏用了选择率）**：
+  - **我们已经有的数据**：个人记录器 `personal_stats.json` → `eventChoices`（事件每页每选项一行，
+    带 `chosen` 标记），足以算出 —— ① **选择率** `PersonalEventSlice.ChosenRate = Chosen / Offered`
+    （`Scripts/Runtime/PureLogic/WakuuPersonalData.cs:179-192`）；② **胜率** `PersonalWinSlice.WinRateHeld`
+    （同文件 `CountEventWinSlice`）。查询入口 `WakuuPersonalQuery.CountEventOptionSlice`（L508-554）与
+    `TryGetEventDecisionSignal`（L471-505）。
+  - **但决策链只用了胜率**：`TryGetEventDecisionSignal`（L486-502）算出了 `PersonalEventSlice slice`
+    却**只拿 `slice.Offered` 当门槛**，返回的 `WakuuEventSignal(optionKey, win.WinRateHeld, slice.Offered)`
+    把 `Chosen` / `ChosenRate` **整条丢掉**；上层 `LocalWakuuEventAutoChoice.SelectByPersonalStats`
+    （L292-364）也只比较 `signal.Value.WinRate`。→ **选择率从未参与决策**。
+    与卡牌侧明显不对称：卡牌的 `WakuuCardSignal.PickRate` 在 `WakuuSignalPicking.PickBestCardIndex`
+    里是**主信号**（选择率 + 因果增益），事件侧没有对应物。
+  - **且事件统计这条链默认是关的**：`personalAssist`（设置页「个人统计决策辅助」）**默认关**、
+    `skadaAssist`（社区统计）也**默认关** → 默认落到 `SelectByStrategy` 的 first/last/random
+    （`WakuuConfigData.eventChoiceMode` 默认 `First`）。这才是「只能乱选」的**直接原因**。
+  - **个人数据链的优势（比社区链可靠）**：用**稳定 loc key**（`EventOption.TextKey`）查表，
+    **不受界面语言影响**、也不依赖第三方 mod；而社区链是 SkadaHelper **文本模糊匹配**，
+    中文界面下大概率整体 miss（r48 已记录、日志锚点 `瓦库事件社区统计匹配: … 命中=0`）。
+
+- **修法（小改动，纯逻辑为主，建议作为 r114 候选）**：
+  1. `WakuuEventSignal` 增加 `Chosen` / `ChosenRate`；**社区侧无此字段 → 置"无选择率"**
+     （不要用 0 冒充，否则会污染口径）；
+  2. `WakuuPersonalQuery.TryGetEventDecisionSignal` 把 `slice.Chosen` 一并回填（不再丢弃）；
+  3. 新增纯函数 `WakuuSignalPicking.PickBestEventOptionIndex`（口径与卡牌一致）：
+     有选择率时按「选择率优先 + 胜率不差」综合；无选择率时退回胜率；
+     胜率明显低于"未点该选项"的局（负面信号）直接出局；同值保留更靠前的选项（与"最上"兜底同向）；
+  4. `LocalWakuuEventAutoChoice.SelectByPersonalStats` 改走该纯函数，日志补
+     `chosenRate` / `offered` / `winRate` 便于核对；
+  5. 单测：`WakuuSignalPicking` 事件口径真值表 + `WakuuPersonalData` 回填断言。
+- **做的时候一并定的开放问题**：
+  - `personalAssist` 默认关是否合适？至少设置页文案要写明「事件选项想智能选必须打开这一项」；
+  - 事件侧的样本量门槛（现 `DefaultMinPersonalCount = 3`）在"同一事件不常重复遇到"的现实下偏严，
+    可能需要按事件统计覆盖率后再调整；
+  - 社区侧若 SkadaHelper 的事件条目其实带选择率字段（当前只读了 `Text/WinRate/Count`），
+    可一并接入 —— **待确认字段名，别猜**。
 
 ---
 
