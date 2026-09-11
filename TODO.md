@@ -288,6 +288,30 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
   而不是整表重建；③ 若确认只在切视角后短暂错位，可只补一条「切角色必重建手牌」的护栏。
 - **优先级**：不影响游玩（不阻塞、数据正确），下次一起处理。
 
+### BUG-8 瓦库自动出牌作用域被游戏侧 `OrbQueue is full` 打断（2026-09-11 实机日志发现；**暂不修，已记录**）
+
+- **日志（marker r110，L9954 / L9957）**：
+  ```
+  [WARN] 瓦库选择器作用域异常退出: player=…327, round=2, error=OrbQueue is full
+  [WARN] 瓦库看门狗重启失败:        player=…327, source=combat-watchdog, error=OrbQueue is full
+  ```
+- **根因：不是我们抛的，是游戏原生异常**。`sts2src/src/Core/Entities/Orbs/OrbQueue.cs:57-59`
+  → `if (Orbs.Count >= Capacity) throw new InvalidOperationException("OrbQueue is full");`
+  而 `OrbCmd.Channel`（`sts2src/src/Core/Commands/OrbCmd.cs:80-84`）的流程是「队列满了先 `await EvokeNext()`
+  挤出一个腾位置，再 `TryEnqueue`」——**第二步仍会抛**，这就是那个窗口。
+- **归因：由真人自己触发**。异常前约 20 行实锤：
+  `9886 Enqueueing …CARD.IGNITION (38153845) … from owner …326`（**真人**在打一张充能 orb 的牌）、
+  `9937 Asset not cached: res://scenes/orbs/orb_visuals/plasma_orb.tscn`
+  → 异常冒泡到瓦库的自动出牌作用域，被我们的 catch 记下。
+- **影响**：本次自动出牌 pass 中断；但 L9962 起看门狗已 `重新进入全量出牌模式 round=2` ——
+  **自愈、未软锁**，整局 3 个回合仅 1 次。
+- **决策（2026-09-11 用户拍板「先不管它」）**：**暂不改代码、也不降级日志**，避免掩盖真实的中场中断。
+- **将来若要处理，可选路线**：① 归类为「必定自愈的可恢复游戏侧异常」→ 降到 INFO + 干净重启，
+  但**保留计数**不丢信息；② 深挖上下文漂移：同局另有 **3 次**
+  `检测到手动出牌上下文漂移，已强制校正: 327 -> 326, source=card-enqueue-manual-play`，
+  怀疑 orb 归属可能受「上下文短暂钉在瓦库身上」影响 → 顺 `OrbCmd.Channel` 的 `player` 参数来源追。
+- **优先级**：低（偶发、自愈、不影响数据）。
+
 ### 改进-1 每回合开始必须逐个看完所有真人玩家的抽牌演出（2026-09-10 r105 已实现，✅ 已实机确认）
 
 > 🔧 **r105 实现**：设置页「其 它 设 置」新增开关 **「跳过他人回合开始抽牌演出」**（配置键
@@ -318,30 +342,40 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
 > 瓦库当前串行是自研 `SelectorScopeGate` + inline `AutoPlay` 的产物。推荐 **Phase 2'（方案 D）**：
 > 瓦库出牌改走 `PlayCardAction` 入自有队列，顺带**天然消除全局上下文并发风险**（全局单泵串行 ⇒ 无需 AsyncLocal 化）。
 > ⑥ 用户拍板：`never` 档**保留兜底切换**（防软锁）、接受 Phase 0 独立交付、**慢慢来不着急**。
-> ⑦ **Phase 0 已实现（r107，2026-09-10，已部署 ⏳ 待实机复测）**：新增「瓦库托管视角」三档
+> ⑦ **Phase 0 已实现（r107，2026-09-10，已部署 ✅ 2026-09-11 实机确认）**：新增「瓦库托管视角」三档
 > （`wakuuViewMode`，设置页「瓦库托管」区循环按钮，**默认不跟随**）+ 纯函数 `WakuuViewPolicy.ShouldSuppressSwitch`；
 > 5 处切前台点（回合开始/结束、Hook 入队、出牌前、选牌兜底）改走它；**两处防软锁兜底不受档位影响**
 > （作用域外真人交互选牌恒切、安全网救援恒切）。安全网候选甄别改用与档位无关的 `IsBackgroundHostedWakuu`。
 > +12 单测 → **369 全绿**，构建 0 警告 0 错误、`clr_compat_check` PASS、marker r107 已部署且 `dll_check` 字节一致。
-> ⑧ **r108（实机反馈修复，2026-09-10，已部署 ⏳ 待复测）**：① 用户实测「不跟随」下**仍要真人替瓦库选**
+> ⑧ **r108（实机反馈修复，2026-09-10，已部署 ✅ 2026-09-11 实机确认）**：① 用户实测「不跟随」下**仍要真人替瓦库选**
 > 战斗开始遗物给的无色牌三选一 —— 根因 `CardSelectWakuuTurnStartAutoAnswerPatch` 只覆盖
 > `FromChooseACardScreen`，漏了 `FromSimpleGrid`；已补同款前缀（顺带用同一判据跳过无意义切前台）。
 > ② 「仅关键节点」档位**实际无效**（被同一钩子里的「改进-1」开关再拦一次）→ 改为 **peek**
 > （回合开始跳过去看一眼、约 1.2s 后自动切回真人），并让改进-1 不再管辖瓦库形态角色。
 > +3 单测 → **372 全绿**，marker r108。
-> ⑨ **r109（新 bug 修复，2026-09-10，已部署 ⏳ 待复测）**：瓦库打「手牌变换」类牌（YUI「数据链」、
+> ⑨ **r109（新 bug 修复，2026-09-10，已部署 ✅ 2026-09-11 实机确认）**：瓦库打「手牌变换」类牌（YUI「数据链」、
 > 酒狐「不等价交换」）**中断**——`Couldn't get hand node for original card CARD.INJURY`，
 > 牌停在屏幕中间、效果没跑完、没消耗（本局 18 次）。根因：原版 `CardCmd.Transform` 视觉分支按
 > `LocalContext.IsMine` 决定是否到**前台手牌**找原卡节点，而瓦库自动出牌期间看门狗**已把 NetId 钉在瓦库身上**
 > → 判成"我的牌" → 找不到 → 抛穿异步链；r59 的守卫只覆盖「要不要钉」，漏了「NetId 已经是牌主人」。
 > 修法：纯函数 `CardTransformNetIdPolicy` + 新增 `ShiftAwayFromOwner`（后台变换时把 NetId 让到当前前台）。
 > +6 单测 → **378 全绿**，marker r109。
-> ⑩ **r110（历史小尾巴清理，2026-09-10，已部署 ⏳ 待复测）**：① **清理期异常降级** —— 退出这一局时
+> ⑩ **r110（历史小尾巴清理，2026-09-10，已部署 ✅ 2026-09-11 实机确认）**：① **清理期异常降级** —— 退出这一局时
 > 自动出牌作用域仍在飞而抛出的 `Nullable object must have a value.` 不再打 WARN、不再上抛
 > （纯函数 `WakuuTeardownPolicy.ShouldTreatAsExpectedAbort`，两条日志降级为 INFO）；
 > ② **磁盘历史脏值自愈** —— 加载配置时把非法的字符串策略字段（已见 `wakuuBrain=bottomRight`）
 > 归一后写回盘（`LocalWakuuAutopilotConfig.TryRepairHistoricalValues`），只改一次。
 > +10 单测 → **388 全绿**，marker r110。
+> ⑪ **2026-09-11 实机复核（marker r110 日志实证，✅ 全部闭环）**：
+> ① r110 脏值自愈 WARN **仅 1 次**，随后两个配置快照均为 `wakuuBrain=heuristic`（原 `bottomRight` 已消失），
+> 第二次加载不再告警 → 「只写一次」成立；② `Nullable` 全文仅剩 **2 处且均为 BaseLib 第三方**
+> （`SavedProperty…System.Nullable\`1[System.Int32]`），我们那条清理期异常**已彻底消失**；
+> ③ r108 作用域外自动作答命中 **3 次**（`FromChooseACardScreen`×1 + **`FromSimpleGrid`×2**）
+> → 「不再要真人替瓦库选」成立；④ r109 手牌变换 **3 次** `[手牌同步修复] … NetId …327 -> …326`，
+> 且**无** `Couldn't get hand node`；⑤ 视角档 `wakuuViewMode=never` 生效，多处
+> `瓦库形态后台模式，跳过自动切换视角`；⑥ `BUILD_IDENTITY commit=5c295c3 state=clean`
+> → 反证部署位二进制就是那份干净提交。
+> ⏳ **唯一未验证**：「仅关键节点 peek」本局未切到该档，仍未验证（下次切过去看一眼 + 约 1.2s 自动切回）。
 
 - **现象**：多个瓦库时只能「一个瓦库打完 → 切到下一个瓦库」串行进行，且真人视角会跟着切到
   瓦库正在操作的角色；瓦库多时同样很慢。

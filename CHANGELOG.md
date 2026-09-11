@@ -67,6 +67,22 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   盘上留下 `"wakuuBrain": "bottomRight"`（被 `Normalize` 兜成 heuristic，无功能影响但日志/排查误导）。
   加载配置时用 `LocalWakuuAutopilotConfig.TryRepairHistoricalValues` 把所有字符串型策略字段归一
   并写回，**只改一次**（已合法则不写盘）。+10 单测 → **388 全绿**，marker r110。
+- **✅ 2026-09-11 实机确认（marker r110 日志实证，r107~r110 全部闭环）**：
+  ① 脏值自愈 WARN **仅 1 次**，随后两个配置快照均为 `wakuuBrain=heuristic`（原 `bottomRight` 已消失），
+  第二次加载不再告警 → 「只写一次」成立；② 全文 `Nullable` 仅剩 2 处且**均为 BaseLib 第三方**
+  `SavedProperty…System.Nullable`1[System.Int32]`，我们那条清理期异常**已彻底消失**；
+  ③ **r108** 作用域外自动作答命中 3 次（`FromChooseACardScreen`×1 + **`FromSimpleGrid`×2**）
+  → 真人不再需要替瓦库选牌；④ **r109** 后台手牌变换 3 次 `[手牌同步修复] … NetId …327 -> …326`，
+  **再无** `Couldn't get hand node for original card`；⑤ **r107** 视角档 `never` 生效，出场各点
+  均按 `WakuuViewPolicy` 跳过切前台。启动日志
+  `BUILD_IDENTITY commit=5c295c3 state=clean` 反证部署位二进制就是那份干净提交。
+  ⏳ 唯一未验证：「仅关键节点 peek」本局未切到该档，待下次确认。
+- **已知项（暂不修，完整记录见 `TODO.md` § BUG-8）**：当局出现 **1 次**
+  `瓦库选择器作用域异常退出 / 瓦库看门狗重启失败 … error=OrbQueue is full`。追查确认这是
+  **游戏原生异常**（`Core/Entities/Orbs/OrbQueue.cs` 在 `Orbs.Count >= Capacity` 时抛
+  `InvalidOperationException`；`OrbCmd.Channel` 先 `EvokeNext` 腾位再 `TryEnqueue`，第二步仍可能抛），
+  由**真人自己**打出充能 orb 的牌（`CARD.IGNITION, owner=…326`）触发、冒泡到瓦库作用域。
+  本次出牌 pass 被中断，但看门狗随即 `重新进入全量出牌模式` → **自愈、未软锁**，整局 3 回合仅 1 次。
 
 ### Added
 - **期望补丁清单升级到完整类型名 + 签名级，并纳入单测门禁（r92，2026-09-08）**：
