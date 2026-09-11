@@ -107,6 +107,32 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   `-List` / 构建部署 / `-CheckOnly` 三种模式都会跑。
 
 ### Fixed
+- **手牌顺序与数据不同步（BUG-7，r111，2026-09-11）**：实机（marker r109）打出 YUI「数据链」/酒狐
+  「不等价交换」等**手牌变换**牌后，牌面内容都对但**手牌顺序**与数据不一致（数据链只换**相邻**的牌，
+  所以错位很明显），**切一次角色**（重建手牌 UI）才恢复。原有的机理假设（「数据层把替换牌加到
+  手牌堆尾部」）经源码核对**不成立**：`CardCmd.cs:438-448` 走 `pile2.AddInternal(replacement2, 原索引)`、
+  `CardPile.cs:90-97` 是 `_cards.Insert(index, card)` → **数据层保序**。真正脱节的是「屏幕上显示的手牌
+  属于**非前台**角色」的窗口（切人后延后重建窗口等）——此时后台角色变换**故意跳过视觉**（r109），
+  这份手牌 UI 就不跟随数据了。修法按一条不变量收口：*显示的手牌 UI 顺序必须等于前台角色手牌堆顺序*——
+  ① 纯函数 `HandUiOrderPolicy.Decide(pileOrder, uiOrder)`（多重集比较，同名重复牌按次数算）；
+  ② `LocalMultiControlRuntime.ReconcileDisplayedHandOrder`（250ms 节流，选牌/拖牌/出牌/有牌等待打出一律
+  不干预；顺序不同 → 按数据重排）；③ 调用点 = `CardTransformNetIdPinPatch` 变换异步收尾（下一帧）+
+  战斗逐帧兜底。+11 单测 → **399 全绿**，marker r111（⚠ 该版有回归，见下条）。
+- **手牌变换后出牌中断回归修复（r112，2026-09-11）**：r111 实机立刻出问题 ——
+  **打出「数据链」后会看到手牌重排一次，而打出的那张牌停在屏幕中间不消耗**。根因是 r111 判定过激：
+  原版 `NCardTransformShineVfx.PlayUntilCardUpdate` 的视觉更新**故意延迟约 0.9s**
+  （先等 `_overlayShowDuration(0.75) + _overlayIdleDuration(0.125)` 才 `UpdateCard`），
+  这段窗口里「数据已是新牌、UI 还是旧牌」是**正常动画态**，却被判成「UI 有多余 + 数据有缺失 → 整体不一致」，
+  于是排了一次**整表重建**，重建又在出牌流程刚解除时执行（`RefreshCombatUiForControlledPlayer` 会
+  `hand.CancelAllCardPlay()` + 全量重建手牌）→ 打断数据链的出牌链（该局触发 5 次）。
+  收口：`HandUiOrderPolicy` **只保留 `None` / `Reorder`**——只有「同一批牌、仅顺序不同」才重排
+  （只 `MoveChildSafely` 调次序 + `ForceRefreshCardIndices()`，**不建节点、不删节点、不触发任何重建**）；
+  「陈旧显示 / 多余 / 缺失」一律不处理，改为纯诊断：同一差异**持续 ≥1.5s**（远超 0.9s 动画窗口）才记一条 WARN，
+  差异消失即重置。+11 单测（含回归用例「变换动画窗口内不干预」）→ **399 全绿**，marker r112。
+  ✅ **2026-09-11 实机确认（BUG-7 关单）**：14 次「数据链」不再卡牌；`整表重建` / `战斗UI刷新顺延` **0 条**
+  （r111 那局为 5+5）；`手牌UI顺序已按数据自愈` 命中 **3 次**（均 `重排=1`），
+  前后对比实证「数据把新牌插在原位、UI 把它排在末尾」，重排后完全对齐；
+  `存在差异但未处理` / `显示归属与前台不一致` 均 0 条（无误报）。
 - **两个角色都带【工具箱】时，非前台那位被静默自动选卡（r106，2026-09-10）**：实机日志（marker r105）
   `工具箱自动接管已命中: player=…327, reason=background-player` → `工具箱已自动选择首张卡: card=RALLY`，
   即**后台那位真人的三选一被 mod 直接吞掉**，静默塞了首张无色牌；只有前台那位能看到选择界面。

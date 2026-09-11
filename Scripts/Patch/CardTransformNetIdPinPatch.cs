@@ -143,6 +143,11 @@ internal static class CardTransformNetIdPinPatch
         finally
         {
             LocalContext.NetId = previousNetId;
+            // r111（BUG-7）：后台角色手牌变换会**故意跳过**原版视觉（见上面 ShiftAwayFromOwner 注释），
+            // 若此刻屏幕上显示的正是该角色的手牌（切人后的延后重建窗口等），手牌 UI 的顺序/内容不会跟进，
+            // 表现为「牌都对但顺序不对，切一次角色才恢复」。变换结束后排一次顺序自愈（内部有严格守卫，
+            // 一致时零操作）。前台角色变换（PinToOwner）走原版视觉，这里同样是零操作。
+            LocalMultiControlRuntime.ScheduleReconcileDisplayedHandOrder("hand-transform");
         }
     }
 

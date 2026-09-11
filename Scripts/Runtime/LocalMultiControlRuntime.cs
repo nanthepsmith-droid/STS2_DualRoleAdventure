@@ -1855,6 +1855,10 @@ internal static class LocalMultiControlRuntime
     public static void ResetCombatUiDiagnostics(string source)
     {
         _combatEnergyDiagKeys.Clear();
+        // r111/r112（BUG-7）：手牌顺序诊断的跟踪状态也每场清一次，避免跨战斗被历史签名压掉。
+        _handOrderDiagSignature = string.Empty;
+        _handOrderDiagFirstSeenMs = 0L;
+        _handOrderDiagLoggedSignature = string.Empty;
         LocalMultiControlLogger.Info($"战斗UI归属诊断已重置: source={source}");
     }
 
@@ -2674,6 +2678,287 @@ internal static class LocalMultiControlRuntime
         {
             LocalMultiControlLogger.Warn($"结束回合按钮自愈失败: {exception.Message}");
         }
+    }
+
+    /// <summary>手牌 UI 顺序自愈的逐帧节流（r111）。</summary>
+    private const long HandOrderCheckIntervalMs = 250L;
+
+    /// <summary>
+    /// 诊断节流：同一处「我们**不处理**的差异」必须持续这么久才记一条 WARN。
+    /// 取 1500ms 是因为原版手牌变换的视觉更新**故意延迟约 0.9s**
+    /// （<c>NCardTransformShineVfx.PlayUntilCardUpdate</c>：先等 <c>0.75 + 0.125</c> 秒才 <c>UpdateCard</c>），
+    /// 那段窗口里「数据已是新牌、UI 还是旧牌」是完全正常的动画态。
+    /// </summary>
+    private const long HandOrderDiagnosticDelayMs = 1500L;
+
+    private static long _lastHandOrderCheckMs;
+    private static string _handOrderDiagSignature = string.Empty;
+    private static long _handOrderDiagFirstSeenMs;
+    private static string _handOrderDiagLoggedSignature = string.Empty;
+
+    /// <summary>
+    /// 手牌 UI 顺序自愈（r111，BUG-7）：把**当前显示的手牌**节点顺序拉回与「前台角色的手牌堆」一致。
+    ///
+    /// 背景：本地多控下「显示的手牌」只有一份（前台角色的那份），而每个角色各自有一份手牌堆数据。
+    /// 手牌变换（<c>CardCmd.Transform</c>）发生在**后台角色**身上时会**故意跳过视觉**（r109，否则原版会到
+    /// 前台手牌里找原卡节点并抛 <c>Couldn't get hand node for original card</c>）——若此刻屏幕上显示的正好是
+    /// 那个角色的手牌（切人后「延后重建」窗口、或显示层尚未跟上），节点顺序/内容就不会被更新，
+    /// 表现为「牌都对但顺序不对，切一次角色（重建手牌 UI）就恢复」。
+    ///
+    /// 收口为一条不变量：**显示的手牌 UI 顺序必须等于前台角色手牌堆顺序**。判定见
+    /// <see cref="HandUiOrderPolicy"/>（纯函数，可单测）；这里只负责安全地落到 Godot 节点：
+    /// ① 显示的手牌整个属于别的玩家 → **只记诊断**（重建由切人链路自己负责，这里不抢）；
+    /// ② 选牌 / 拖牌 / 出牌 / 有牌等待打出时顺序不可比 → 一律不干预；
+    /// ③ 牌是同一批、只是顺序不同 → 按数据顺序重排（**只动次序，不建节点、不删节点**）；
+    /// ④ 「多余 / 缺节点」这类差异 **一律不处理**，只在持续 ≥1.5s 时记一条 WARN 便于日后核对。
+    ///
+    /// ⚠ r112：④ 原本会「清多余节点 / 触发整表重建」，实机立刻回归（打出的「数据链」停在屏幕中间不消耗）——
+    /// 原版手牌变换的视觉更新是**故意延迟约 0.9s** 的，这段窗口天然「数据新、UI 旧」，
+    /// 据此重建会在出牌结算途中把出牌链打断。所以现在**只允许重排**这一种动作。
+    /// 逐帧调用点由 <see cref="HandOrderCheckIntervalMs"/> 节流，只在真动手时打 INFO。
+    /// </summary>
+    public static void ReconcileDisplayedHandOrder(string source)
+    {
+        if (!LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.UseSingleAdventureMode)
+        {
+            return;
+        }
+
+        if (!RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)
+        {
+            return;
+        }
+
+        NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+        CombatState? combatState = combatUi != null ? TryGetCombatState(combatUi) : null;
+        if (combatUi == null || combatState == null)
+        {
+            return;
+        }
+
+        ulong playerId = Session.CurrentControlledPlayerId ?? 0UL;
+        Player? player = playerId != 0UL ? combatState.GetPlayer(playerId) : null;
+        if (player?.PlayerCombatState == null)
+        {
+            return;
+        }
+
+        NPlayerHand hand = combatUi.Hand;
+        if (hand?.CardHolderContainer == null)
+        {
+            return;
+        }
+
+        long nowMs = (long)Time.GetTicksMsec();
+        if (nowMs - _lastHandOrderCheckMs < HandOrderCheckIntervalMs)
+        {
+            return;
+        }
+
+        _lastHandOrderCheckMs = nowMs;
+
+        try
+        {
+            List<NCardHolder> holders = new();
+            foreach (Node child in hand.CardHolderContainer.GetChildren())
+            {
+                if (child is NCardHolder holder && GodotObject.IsInstanceValid(holder) && holder.CardNode?.Model != null)
+                {
+                    holders.Add(holder);
+                }
+            }
+
+            // ① 显示的手牌整个属于别的玩家 → 只记诊断：这是切人后「延后重建」窗口的正常中间态，
+            //    重建由切人链路自己负责（ApplyControlContext → ScheduleDeferredCombatUiRefresh），
+            //    这里再排一次只会在出牌途中整表重建、把出牌链打断（r111 实机回归教训）。
+            ulong? displayedOwner = ResolveSingleHandOwner(holders);
+            if (displayedOwner.HasValue && displayedOwner.Value != playerId)
+            {
+                TrackHandOrderDiagnostic(
+                    $"stale|{playerId}|{displayedOwner.Value}",
+                    "手牌显示归属与前台不一致（仅记录，重建由切人链路负责）: "
+                    + $"foreground={playerId}, displayed={displayedOwner.Value}, source={source}");
+                return;
+            }
+
+            // ② 选牌 / 拖牌 / 出牌流程中 holder 会被搬去别的容器，顺序不可比 → 不干预
+            if (hand.InCardPlay || hand.IsInCardSelection || hand.CurrentMode != NPlayerHand.Mode.Play)
+            {
+                return;
+            }
+
+            CardPile handPile = PileType.Hand.GetPile(player);
+            List<CardModel> pileCards = handPile.Cards.ToList();
+
+            // ③ 有任何一张手牌堆里的牌，其 holder 不在手牌容器里（拖拽中 / 等待打出 / 已选中）→ 顺序不可比
+            foreach (CardModel card in pileCards)
+            {
+                NCardHolder? existing = hand.GetCardHolder(card);
+                if (existing != null && GodotObject.IsInstanceValid(existing)
+                    && !hand.CardHolderContainer.IsAncestorOf(existing))
+                {
+                    return;
+                }
+            }
+
+            List<string> pileKeys = new(pileCards.Count);
+            List<string> pileLabels = new(pileCards.Count);
+            foreach (CardModel card in pileCards)
+            {
+                pileKeys.Add(BuildHandCardKey(card));
+                pileLabels.Add(card.Id.Entry);
+            }
+
+            List<string> uiKeys = new(holders.Count);
+            List<string> uiLabels = new(holders.Count);
+            Dictionary<string, NCardHolder> holderByKey = new();
+            foreach (NCardHolder holder in holders)
+            {
+                CardModel model = holder.CardNode!.Model!;
+                string key = BuildHandCardKey(model);
+                uiKeys.Add(key);
+                uiLabels.Add(model.Id.Entry);
+                holderByKey[key] = holder;
+            }
+
+            HandUiOrderAction action = HandUiOrderPolicy.Decide(pileKeys, uiKeys);
+            if (action == HandUiOrderAction.None)
+            {
+                // 「多余 / 缺失」在变换动画窗口里天然存在，只在持续 ≥1.5s 时记一条诊断；一致时清空诊断状态。
+                List<string> extras = HandUiOrderPolicy.ListUiExtras(pileKeys, uiKeys);
+                List<string> missing = HandUiOrderPolicy.ListMissingInUi(pileKeys, uiKeys);
+                if (extras.Count == 0 && missing.Count == 0)
+                {
+                    TrackHandOrderDiagnostic(string.Empty, string.Empty);
+                }
+                else
+                {
+                    TrackHandOrderDiagnostic(
+                        $"gap|{playerId}|{string.Join(",", extras)}|{string.Join(",", missing)}",
+                        "手牌UI与数据存在差异但未处理（仅记录）: "
+                        + $"player={playerId}, 多余=[{string.Join(",", extras.Select(LabelOfKey))}], "
+                        + $"缺失=[{string.Join(",", missing.Select(LabelOfKey))}], "
+                        + $"数据={pileKeys.Count}张, UI={uiKeys.Count}张, source={source}");
+                }
+
+                return;
+            }
+
+            // 走到这里只可能是 Reorder：牌是同一批、仅顺序不同 → 只调整节点次序（零节点增删）。
+            TrackHandOrderDiagnostic(string.Empty, string.Empty);
+
+            string before = string.Join(",", uiLabels);
+            int moved = 0;
+            for (int i = 0; i < pileCards.Count; i++)
+            {
+                if (!holderByKey.TryGetValue(pileKeys[i], out NCardHolder? holder) || !GodotObject.IsInstanceValid(holder))
+                {
+                    continue;
+                }
+
+                if (holder.GetIndex() != i)
+                {
+                    hand.CardHolderContainer.MoveChildSafely(holder, i);
+                    moved++;
+                }
+            }
+
+            hand.ForceRefreshCardIndices();
+
+            LocalMultiControlLogger.Info(
+                $"手牌UI顺序已按数据自愈: player={playerId}, 重排={moved}, "
+                + $"前=[{before}], 后=[{string.Join(",", pileLabels)}], source={source}");
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"手牌UI顺序自愈失败: {exception.Message}");
+        }
+    }
+
+    /// <summary>手牌变换结束后排一次顺序自愈（下一帧执行，等原版视觉分支先落定）。</summary>
+    public static void ScheduleReconcileDisplayedHandOrder(string source)
+    {
+        try
+        {
+            Callable.From(() => ReconcileDisplayedHandOrder(source)).CallDeferred();
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"排程手牌UI顺序自愈失败: source={source}, error={exception.Message}");
+        }
+    }
+
+    /// <summary>手牌比较键：牌名 + 实例标识（同名重复牌如多张防御也能区分）。</summary>
+    private static string BuildHandCardKey(CardModel card)
+    {
+        return $"{card.Id.Entry}#{RuntimeHelpers.GetHashCode(card)}";
+    }
+
+    /// <summary>手牌区节点模型若**全部**属于同一个玩家，返回该玩家 id；信息不足（跨玩家/取不到）返回 null。</summary>
+    private static ulong? ResolveSingleHandOwner(List<NCardHolder> holders)
+    {
+        ulong? owner = null;
+        foreach (NCardHolder holder in holders)
+        {
+            ulong? netId = holder.CardNode?.Model?.Owner?.NetId;
+            if (netId == null)
+            {
+                return null;
+            }
+
+            if (owner == null)
+            {
+                owner = netId;
+            }
+            else if (owner.Value != netId.Value)
+            {
+                return null;
+            }
+        }
+
+        return owner;
+    }
+
+    /// <summary>把比较键（牌名#实例标识）还原成可读牌名。</summary>
+    private static string LabelOfKey(string key)
+    {
+        int index = key.IndexOf('#');
+        return index > 0 ? key.Substring(0, index) : key;
+    }
+
+    /// <summary>
+    /// 诊断节流（r111/r112）：对「我们**不处理**的差异」只在**同一个差异持续 ≥
+    /// <see cref="HandOrderDiagnosticDelayMs"/>** 时记一条 WARN；<paramref name="signature"/> 传空串表示
+    /// 当前已一致（重置跟踪状态）。
+    ///
+    /// 取 1.5s 是因为手牌变换的视觉更新故意延迟约 0.9s（`NCardTransformShineVfx.PlayUntilCardUpdate`），
+    /// 那个窗口里「数据是新牌、UI 还是旧牌」属正常，不该报。同一签名只报一次（若之后差异消失又重现，会重新计时）。
+    /// </summary>
+    private static void TrackHandOrderDiagnostic(string signature, string message)
+    {
+        if (signature.Length == 0)
+        {
+            _handOrderDiagSignature = string.Empty;
+            _handOrderDiagFirstSeenMs = 0L;
+            return;
+        }
+
+        long nowMs = (long)Time.GetTicksMsec();
+        if (!string.Equals(signature, _handOrderDiagSignature, StringComparison.Ordinal))
+        {
+            _handOrderDiagSignature = signature;
+            _handOrderDiagFirstSeenMs = nowMs;
+            return;
+        }
+
+        if (nowMs - _handOrderDiagFirstSeenMs < HandOrderDiagnosticDelayMs
+            || string.Equals(signature, _handOrderDiagLoggedSignature, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _handOrderDiagLoggedSignature = signature;
+        LocalMultiControlLogger.Warn(message);
     }
 
     /// <summary>

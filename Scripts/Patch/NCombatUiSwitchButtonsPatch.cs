@@ -238,5 +238,8 @@ internal sealed partial class LocalCombatSwitchTracker : Node
         // r104（BUG-2）：结束回合按钮状态机绑定前台角色，而自动切人/瓦库自动结束回合会绕开
         // 原版按钮事件，可能把按钮留在禁用/隐藏状态 → 点结束回合没反应。这里逐帧兜底自愈（内部节流）。
         LocalMultiControlRuntime.ReconcileEndTurnButtonForForeground("combat-tick");
+        // r111（BUG-7）：显示的手牌 UI 顺序必须等于前台角色手牌堆顺序（后台角色手牌变换跳过视觉后会脱节）。
+        // 同样逐帧兜底、内部 250ms 节流；只在真的不一致时动手并打日志。
+        LocalMultiControlRuntime.ReconcileDisplayedHandOrder("combat-tick");
     }
 }
