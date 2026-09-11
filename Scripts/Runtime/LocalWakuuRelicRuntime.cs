@@ -311,7 +311,7 @@ internal static class LocalWakuuRelicRuntime
             $"瓦库选择器闸门已进入: player={player.NetId}, round={combatState.RoundNumber}, waitMs={gateWaitMs}, inFlight={inFlight}, selectorStackCount={gateEnterSnapshot.Count}, selectorStackTop={gateEnterSnapshot.TopType}");
         try
         {
-            using (CardSelectCmd.PushSelector(new LocalWakuuStrategySelector()))
+            using (WakuuSelectorRegistry.Open(player.NetId, new LocalWakuuStrategySelector()))
             {
                 SelectorStackSnapshot pushSnapshot = SnapshotSelectorStack();
                 LocalMultiControlLogger.Info(

@@ -393,10 +393,10 @@ internal static class LocalWakuuRestAutoChoice
     {
         if (option is SmithRestSiteOption smith)
         {
-            return CardSelectCmd.PushSelector(new LocalWakuuSmithSelector(smith.SmithCount));
+            return WakuuSelectorRegistry.Open(player.NetId, new LocalWakuuSmithSelector(smith.SmithCount));
         }
 
-        return CardSelectCmd.PushSelector(new LocalWakuuStrategySelector());
+        return WakuuSelectorRegistry.Open(player.NetId, new LocalWakuuStrategySelector());
     }
 
     private static IReadOnlyList<RestSiteOption> GetOptions(ulong playerId)

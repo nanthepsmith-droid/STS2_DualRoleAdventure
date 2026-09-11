@@ -65,7 +65,7 @@ internal static class LocalWakuuRelicEffectAutoChoice
         // （多半是真人）把本次选择器摘掉。
         CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value = player.NetId;
 
-        PendingScope.Value = CardSelectCmd.PushSelector(
+        PendingScope.Value = WakuuSelectorRegistry.Open(player.NetId,
             new LocalWakuuStrategySelector(WakuuPickScenario.Transform)
             {
                 LogLabel = "遗物效果触发选牌",
