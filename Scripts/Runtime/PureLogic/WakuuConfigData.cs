@@ -152,6 +152,16 @@ internal sealed class WakuuConfigData
     public bool skipTurnStartDrawAnim { get; set; }
 
     /// <summary>
+    /// 瓦库出牌加速（改进-2 / r117，**默认开**）：瓦库自动出牌时给 <c>CardCmd.AutoPlay</c> 传
+    /// <c>skipCardPileVisuals: true</c>，跳过「牌飞向 Play 区 + 烟雾 VFX + 各牌堆补间」与两段固定等待
+    /// （`CustomScaledWait(0.25~0.35)` / `(0.15~0.3)`，见 `CardModel.OnPlayWrapper`）。
+    /// r116 埋点实测瓦库每张牌约 1.0~1.4s，多瓦库又是**串行**的（每张牌耗时直接相加成总时长），
+    /// 所以这是收益最大的加速点；该参数是游戏官方给自动出牌场景（Havoc / 复制药水）用的，不改数据语义。
+    /// 关闭 = 恢复完整出牌动画（观感与旧版一致）。
+    /// </summary>
+    public bool fastWakuuPlay { get; set; } = true;
+
+    /// <summary>
     /// 瓦库托管视角策略（改进-2 / Phase 0，默认 `never` **不跟随**，2026-09-10 用户拍板）：
     /// - `never`：瓦库全程不抢视角；只保留两处防软锁兜底（作用域外真人交互选牌、安全网超时救援）；
     /// - `keyNodes`：仅关键节点跟随 —— 瓦库**回合开始**时切过去一次（看到轮到谁、抽了什么），日常出牌不跟随；

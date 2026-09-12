@@ -42,6 +42,7 @@ internal sealed class LocalWakuuFormRelic : RelicModel
 
     public override Task AfterAutoPrePlayPhaseEnteredLate(PlayerChoiceContext choiceContext, Player player)
     {
-        return LocalWakuuRelicRuntime.ExecuteBeforePlayPhaseStartAsync(this, choiceContext, player);
+        // 改进-2 / B1：hook 只登记出牌意图（+ 回合开始用药），出牌交给看门狗在 PlayPhase 内执行。
+        return LocalWakuuRelicRuntime.HandleTurnStartHookAsync(this, choiceContext, player);
     }
 }

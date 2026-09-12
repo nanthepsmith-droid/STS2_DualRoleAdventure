@@ -338,6 +338,11 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.SkipTurnStartDrawAnim,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("skipTurnStartDrawAnim", value));
         AddToggleRow(column,
+            "瓦库出牌加速（跳过卡牌堆动画）",
+            "默认开。瓦库自动出牌时跳过「牌飞向出牌区 + 烟雾特效 + 各牌堆补间」与打出/收尾的两段固定等待（约 0.4~0.65 秒/张）。多瓦库是串行出牌的，每张牌的耗时会直接相加成整回合时长（实测约 1.0~1.4 秒/张），所以这是提速最明显的一项。关闭后恢复完整的出牌动画（与旧版观感一致）。",
+            () => LocalWakuuAutopilotConfig.FastWakuuPlay,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("fastWakuuPlay", value));
+        AddToggleRow(column,
             "自有统计角标",
             "默认关。开启后在「奖励选牌卡/商店卡/事件选项按钮」的角标位置（见下方「自有统计角标位置」）显示你自己记录的总抓取率/总选择率（XX%），鼠标悬停弹出分幕首抓/重复抓取率、胜率的详情。只显示本地个人统计，与皮皮军师（SkadaHelper）社区统计 UI 分开、互不覆盖。",
             () => LocalWakuuAutopilotConfig.StatBadge,

@@ -46,6 +46,13 @@ internal static class LocalWakuuRelicRuntime
         typeof(CardSelectCmd).GetField("_selectorStack", BindingFlags.NonPublic | BindingFlags.Static);
     private static int _selectorScopeInFlight;
 
+    /// <summary>
+    /// 改进-2 / B1：回合开始 hook 登记「该瓦库本回合要出牌」的时间戳（key = `round:netId`）。
+    /// 出牌实际由 tick 驱动的看门狗在 PlayPhase 内完成，这里用于量化
+    /// 「回合开始 → 出牌启动」的交接延迟；同时在重置托管状态时清空。
+    /// </summary>
+    private static readonly Dictionary<string, ulong> _turnStartIntentAtMs = new();
+
     public readonly struct SelectorStackSnapshot
     {
         public SelectorStackSnapshot(int count, string topType, bool allVakuuSelectors)
@@ -244,8 +251,97 @@ internal static class LocalWakuuRelicRuntime
     {
         _takeoverRelicMissingWarned.Clear();
         _takeoverRelicRestoreScheduled.Clear();
+        _turnStartIntentAtMs.Clear();
     }
 
+    /// <summary>
+    /// 回合开始触发（改进-2 / B1 修正版）：**只做回合开始相位该做的事**——用药、视角、遗物闪光、
+    /// 登记"该瓦库本回合要出牌"的意图，然后立即返回；**出牌一律交给看门狗**
+    /// （tick 驱动，经 <see cref="TryScheduleWatchdog"/> → <see cref="RunWatchdogAsync"/> →
+    /// <see cref="ExecuteBeforePlayPhaseStartAsync"/>）。
+    ///
+    /// **为什么把出牌从 hook 里摘掉（实测前提修正）**：原实现在
+    /// <c>RelicModel.AfterAutoPrePlayPhaseEnteredLate</c> 里直接 await 整串出牌，但该 hook 触发时
+    /// <c>ActionQueueSynchronizer.CombatState</c> **还不是 PlayPhase** —— 原版要等**所有玩家**的
+    /// AutoPrePlay 都跑完才 `SetCombatState(PlayPhase)`（sts2src `CombatManager.cs:814-835`），
+    /// 而 <see cref="TryGetAutoplayUnsafeReason"/> 第一项就要求 PlayPhase。
+    /// 所以那段出牌循环**必然在第一次判断就熔断**（`reason=sync-NotPlayPhase`、`played=0`）：
+    /// 一张牌都出不了，却每回合每瓦库白占一次选择器闸门、压/弹一次选择器作用域、
+    /// 并刷出「瓦库自动出牌已熔断跳过本次执行」的 WARN 噪声（历史日志里被当成"设计内噪声"）。
+    /// 摘掉后出牌只剩一条路径（看门狗），日志干净、少一次闸门与反射探针往返，**行为不变**。
+    /// </summary>
+    public static async Task HandleTurnStartHookAsync(
+        RelicModel relic,
+        PlayerChoiceContext choiceContext,
+        Player player)
+    {
+        if (!LocalSelfCoopContext.IsEnabled || player != relic.Owner)
+        {
+            return;
+        }
+
+        ICombatState? combatState = player.Creature.CombatState;
+        if (combatState == null || CombatManager.Instance.IsOverOrEnding)
+        {
+            return;
+        }
+
+        ulong hookStartTick = Time.GetTicksMsec();
+
+        // Phase 2.5：战斗内自动用药水（独立开关默认关；果汁另有"到手即喝"链路，见 PotionProcuredAutoDrinkPatch）。
+        // 保持原相位与顺序（回合开始 → 出牌前），只把它留在 hook 里（本方法唯一的 await 点）。
+        if (LocalWakuuAutopilotConfig.AutoUsePotions && IsVakuuFormMode(player))
+        {
+            await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(
+                relic, player, choiceContext, combatState, WakuuPotionPhase.StartOfTurn);
+        }
+
+        CardModel? firstPlayableCard = PileType.Hand.GetPile(relic.Owner).Cards.FirstOrDefault((candidate) => candidate.CanPlay());
+        if (firstPlayableCard == null)
+        {
+            // 没牌可出：回合结束判定也要做（格挡/免伤等防御类药水的时机）。
+            // 此时不会有看门狗（它要求"手上有可出牌"），所以这里是这类药水的唯一时机。
+            if (LocalWakuuAutopilotConfig.AutoUsePotions && IsVakuuFormMode(player))
+            {
+                await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(
+                    relic, player, choiceContext, combatState, WakuuPotionPhase.EndOfTurn);
+            }
+
+            return;
+        }
+
+        EnsureWakuuPerspective(player, "turn-start-hook");
+        relic.Flash();
+
+        string intentKey = $"{combatState.RoundNumber}:{player.NetId}";
+        PruneTurnStartIntents(combatState.RoundNumber);
+        _turnStartIntentAtMs[intentKey] = Time.GetTicksMsec();
+
+        LocalMultiControlLogger.Info(
+            $"瓦库回合开始已登记出牌意图（B1，出牌交由看门狗）: player={player.NetId}, "
+            + $"round={combatState.RoundNumber}, hookMs={Time.GetTicksMsec() - hookStartTick}");
+    }
+
+    /// <summary>只保留当前回合的意图记录，避免跨回合残留。</summary>
+    private static void PruneTurnStartIntents(int currentRound)
+    {
+        if (_turnStartIntentAtMs.Count == 0)
+        {
+            return;
+        }
+
+        string prefix = $"{currentRound}:";
+        List<string> stale = _turnStartIntentAtMs.Keys.Where((key) => !key.StartsWith(prefix, StringComparison.Ordinal)).ToList();
+        foreach (string key in stale)
+        {
+            _turnStartIntentAtMs.Remove(key);
+        }
+    }
+
+    /// <summary>
+    /// 改进-2 / Phase 2 的**唯一出牌实现**（B1 起只由看门狗在 PlayPhase 内调用；
+    /// 回合开始 hook 不再调用它，原因见 <see cref="HandleTurnStartHookAsync"/>）。
+    /// </summary>
     public static async Task ExecuteBeforePlayPhaseStartAsync(
         RelicModel relic,
         PlayerChoiceContext choiceContext,
@@ -358,7 +454,18 @@ internal static class LocalWakuuRelicRuntime
                     }
 
                     await next.Card.SpendResources();
-                    await CardCmd.AutoPlay(choiceContext, next.Card, next.Target, AutoPlayType.Default, skipXCapture: true);
+                    // 改进-2 / r117：瓦库出牌加速 —— 跳过「牌飞向 Play 区 + 烟雾 VFX + 各牌堆补间」与两段固定等待
+                    // （CardModel.OnPlayWrapper 内 CustomScaledWait 0.25~0.35s / 0.15~0.3s）。
+                    // 多瓦库是串行的，单张牌的耗时会直接相加成整回合时长；实测每张牌 ~1.0~1.4s，跳过可省一大半。
+                    // 判定见纯函数 WakuuPlaySpeedPolicy；关掉开关即恢复完整演出（观感与旧版一致）。
+                    bool skipCardPileVisuals = WakuuPlaySpeedPolicy.ShouldSkipCardPileVisuals(
+                        LocalWakuuAutopilotConfig.FastWakuuPlay,
+                        LocalSelfCoopContext.IsEnabled,
+                        IsVakuuFormMode(player));
+                    await CardCmd.AutoPlay(
+                        choiceContext, next.Card, next.Target, AutoPlayType.Default,
+                        skipXCapture: true,
+                        skipCardPileVisuals: skipCardPileVisuals);
                 }
 
                 reachedPlayLimit = cardsPlayed >= maxCardsThisTurn;
@@ -539,14 +646,28 @@ internal static class LocalWakuuRelicRuntime
             LocalContext.NetId = player.NetId;
             LocalSelfCoopContext.NetService?.SetCurrentSenderId(player.NetId);
 
+            // 改进-2 / B1：量化「回合开始 hook → 出牌启动」的交接延迟（即 tick 调度延迟）。
+            string intentKey = $"{combatState.RoundNumber}:{player.NetId}";
+            if (_turnStartIntentAtMs.TryGetValue(intentKey, out ulong intentAtMs))
+            {
+                _turnStartIntentAtMs.Remove(intentKey);
+                LocalMultiControlLogger.Info(
+                    $"瓦库回合开始→出牌启动延迟: player={player.NetId}, round={combatState.RoundNumber}, "
+                    + $"delayMs={Time.GetTicksMsec() - intentAtMs}, source={source}");
+            }
+
             HookPlayerChoiceContext choiceContext = new HookPlayerChoiceContext(
                 relic,
                 player.NetId,
                 combatState,
                 GameActionType.CombatPlayPhaseOnly);
+            ulong playStartTick = Time.GetTicksMsec();
             Task action = ExecuteBeforePlayPhaseStartAsync(relic, choiceContext, player);
             await choiceContext.AssignTaskAndWaitForPauseOrCompletion(action);
             await action;
+            LocalMultiControlLogger.Info(
+                $"瓦库出牌耗时: player={player.NetId}, round={combatState.RoundNumber}, "
+                + $"ms={Time.GetTicksMsec() - playStartTick}, source={source}");
             LocalMultiControlLogger.Info($"瓦库看门狗已重启自动出牌: player={player.NetId}, source={source}");
         }
         catch (Exception exception)
