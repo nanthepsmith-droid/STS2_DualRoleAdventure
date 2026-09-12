@@ -336,6 +336,68 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
   怀疑 orb 归属可能受「上下文短暂钉在瓦库身上」影响 → 顺 `OrbCmd.Channel` 的 `player` 参数来源追。
 - **优先级**：低（偶发、自愈、不影响数据）。
 
+### BUG-9 SL（读档）后个人记录的抉择未回滚 → 选择率被污染（2026-09-11 用户反馈；**r118 已修，待实机**）
+
+- **现象（用户 2026-09-11）**：「本地事件选项选择率记录好像有点问题？比如说我 **SL** 了它还是会记录我
+  **SL 前的选项**」。
+- **根因（代码级，成立）**：记录**不随游戏存档回滚** —— 真人一点事件选项就立即
+  `_store.eventChoices.Add(...)` + `Save()` **落盘**（`LocalPersonalRecorder.RecordHumanEventPage`），
+  而 `runKey = 种子 + 玩家数` 是**跨存档稳定**的（注释里就写着"跨存档稳定"）。
+  只有 `RecordRunEnded(isAbandoned: true)` 才按 runKey 删数据，**SL 不触发**。于是：
+  ① 同一事件页被**重复记多行** → `Offered`/`Chosen` 被放大（`CountEventOptionSlice` 是逐行累加）；
+  ② SL 前点过、SL 后**改选**的选项仍残留 `chosen=true` → 继续参与选择率统计（用户看到的就是这条）。
+  （注：`CountEventWinSlice` 按 runKey 去重，所以**胜率**没被放大，只有**选择率**被污染。）
+- **修法（r118）**：**按存档点回滚**。
+  1. 纯逻辑 `Scripts/Runtime/PureLogic/WakuuPersonalRollback.cs`：`RollbackAfter(store, runKey, cutoffUnixMs)`
+     —— 丢弃该 runKey 中 `ts >` 存档点的行（四张表同一口径；边界取严格大于 = 存档当刻的视为已固化），
+     返回各表丢弃数（+6 单测 `WakuuPersonalRollbackTests`）。
+  2. 运行层 `LocalPersonalRecorder.RollbackToLastSavePoint(source)`：从
+     `current_run_mp.save` 的**最后修改时间**取"上一次存档点"（`GodotFileIo.GetLastModifiedTime`，
+     游戏自己也是这么读存档时间的），调上面那个纯函数；**取不到存档点就保守不删**（只 WARN）。
+  3. 时机：`LocalMultiControlRuntime.OnRunLaunched`（进局/读档的公共入口）→ 日志
+     `个人记录-读档回滚: source=run-launched, run=…, 存档点=…, 丢弃 events=N, …`（只在真丢弃时打）。
+  4. 语义：**晚于存档点 = 会被重玩的那一段 → 丢弃；早于等于存档点 = 已随存档固化 → 保留**，
+     所以「隔天继续游戏」不会误删真实记录；新开局时 runKey 不同（或存档已被清）→ 天然删 0 条。
+- **已知边界**：若 SL 是**手工复制/覆盖存档文件**（而不是游戏内"退到主菜单→继续游戏"），
+  存档文件 mtime 会变成复制时刻 → 我们的判据会偏晚、可能删不到东西。这种情况需要另加机制，
+  **待用户确认 SL 方式**（见验证步骤第 3 条）。
+- **历史污染**：已经写进 `personal_stats.json` 的重复行**无法自动区分**（与合法重复不可辨），
+  如需干净重来可备份后删除该文件。
+- **门禁**：0 警告 0 错误、444 单测全绿（+6）、`clr_compat_check` PASS、marker **r118** 已部署且 `dll_check` 字节一致。
+- ⚠ **r118 实机发现回滚根本没执行（r119 修）**：r118 日志里 `source=run-launched` 出现过 2 次
+  （第 2 次就是 SL 读档），但 `个人记录-读档回滚` **一条都没有** —— 回滚在 `runKey == null` 处**静默返回**了：
+  原实现用 `RunManager.Instance.DebugOnlyGetState()` 取 runKey，而 `OnRunLaunched` 那一刻全局 state **还没就绪**。
+  **r119 修法**：改为直接用调用方传入的 `RunState` 构造 runKey（新增 `BuildRunKey(RunState)` 供复用，
+  `CurrentRunKeyOrNull` 一并改走它），并且**无论是否丢弃都打一条**
+  `个人记录-读档回滚检查: source=…, run=…, 存档点=…, 丢弃 events=N, cards=N, shop=N, removals=N, total=N`
+  （避免"没生效"与"没东西可删"再次无法区分）。marker **r119** 已部署（sha256 `c5aa4b27...`）。
+- **抓牌（卡牌 offer）同样被 SL 污染，且已被同一机制覆盖**：`cardOffers` 与 `eventChoices` 一样是
+  真人点选时**立即落盘**、`runKey` 跨存档稳定 → 抓取率 `PickRate = Picked / Offered` 会被放大。
+  r118 的回滚本就是**四张表同一口径**（`eventChoices`/`cardOffers`/`shopPurchases`/`cardRemovals`），
+  所以 r119 修好取 runKey 之后**事件与抓牌一起生效**，无需另做。
+- ✅ **r120：思路修正（用户判断正确）—— 放弃"按存档点回滚"，改为"写时幂等"**。
+  r119 实机日志显示回滚**跑起来了但 `total=0`**（一次都没删）：两次进局的存档点只差 13 秒，
+  且恰等于**读档那一刻** → **读档/进局动作本身会重写存档文件**，存档文件 mtime 永远 ≥
+  最近一次抉择的时间，`ts > mtime` 恒为假。**根因是"从外部猜出游戏回滚到了哪个状态"这件事本身不可靠。**
+  **新思路（r120 已实现）**：不猜、改成**幂等** —— 每次写入前先删掉"同一抉择标识"的旧行，只保留最后一次。
+  标识：事件页 `(runKey, eventId)`；卡牌批次 `(runKey, batchKey)`（batchKey = 该批卡 id 去重排序拼接，
+  新增 `PersonalCardOfferRecord.batch` 字段；重 roll 出不同牌 = 新批次，不误合并）；
+  商店 `(runKey, act, kind, item)`；删牌 `(runKey, card)`。
+  纯逻辑 `WakuuPersonalDedupe`（+10 单测，含"SL 前选 A、SL 后改选 B → 旧页整页替换、A 不再残留 chosen"）。
+  r118/r119 的 `WakuuPersonalRollback` + 回滚调用**已整体删除**（基于错误前提，`dll_check` 已确认产物里没有）。
+  日志可验证：`个人记录-事件选择: …, 覆盖旧页=N` / `个人记录-卡牌奖励批次: …, 覆盖旧批次=N`。
+  代价（刻意接受）：同一局内**合法地**重复遇到同一事件会被合并为一次（事件一局基本不重复；卡牌按卡集合区分，
+  误合并概率很低，且"最终选了啥"比"重复计数"更符合直觉）。
+  门禁：0 警告 0 错误、**448 单测全绿**、`clr_compat_check` PASS、marker **r120**（sha256 `9a4a1baf...`）。
+- ⚠ **r120 残留不一致（已记录，本轮未改）**：四张表的去重键粒度分别是 —— 事件页 `(runKey,eventId)`、
+  卡牌批次 `(runKey,batchKey)`、商店 `(runKey,act,kind,item)`、**删牌 `(runKey,card)`（唯一没带 `act` 的）**。
+  而 `PersonalCardRemovalRecord` 本身有 `act` 字段、商店那版也带了 `act`，所以
+  「同一局在不同幕（或同一幕）**合法地**删两张同名牌」会被合并成一行 → 删牌偏好被少算。
+  加上 `act` 既修得掉它，又**不影响 SL 覆盖语义**（SL 不会跨幕）。属低风险小修，**另开一轮做**。
+- **r120 验证方法**：进事件 → 点一个选项 → 退到主菜单 → 继续游戏 → 重新点（可改选）→
+  期望 `个人记录-事件选择: … 覆盖旧页=1`（**改选也应为 1**，且 SL 前那一项的 `chosen` 行不再残留）；
+  卡牌奖励同理看 `个人记录-卡牌奖励批次: … 覆盖旧批次=1`。
+
 ### 改进-1 每回合开始必须逐个看完所有真人玩家的抽牌演出（2026-09-10 r105 已实现，✅ 已实机确认）
 
 > 🔧 **r105 实现**：设置页「其 它 设 置」新增开关 **「跳过他人回合开始抽牌演出」**（配置键
@@ -427,7 +489,7 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
 - **风险**：与选牌串行化、前台绑定类 UI（结束回合按钮，见 BUG-2）强耦合，
   需先解决「前台归属」的单一事实来源，否则会把 BUG-2 放大。
 
-### 改进-3 瓦库事件选项：接上「我们自己」的选择率 + 胜率统计（2026-09-11 用户反馈；**r114 已实现，待实机**）
+### 改进-3 瓦库事件选项：接上「我们自己」的选择率 + 胜率统计（2026-09-11 用户反馈；**r114 / r115 ✅ 2026-09-11 实机核对通过**）
 
 > 🔧 **r114 实现（2026-09-11）**：
 > ① `WakuuEventSignal` 扩展出 **`ChosenRate`（选择率）** 与 `WinRateSkipped`（没选它的局胜率）、
@@ -458,6 +520,18 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
 > `瓦库事件个人统计无可用样本…各选项展示次数=[KEY:n, …]`（可直接看出"该事件从未被记录"还是"样本不够"）/
 > `瓦库事件社区统计无数据…, skadaReady=…`。marker **r115** 已部署。
 > （事件选项选择率/胜率逻辑本身**没有改动**，只补日志。）
+>
+> ✅ **2026-09-11 实机核对通过（marker r119 会话日志）**：该局「个人统计决策辅助」为**开**，
+> 两位瓦库各自动选一次（两局共 6 次）**全部命中个人统计链**，且数值合规：
+> `瓦库事件按个人统计选取: event=…INTEGRATED_STRATEGY_EVENTS_EVENT_SECRET_ROOM_EVENT, char=IRONCLAD,
+> index=0/2, option=…TAKE_SCULPTURE, chosenRate=1.000, winRate=0.000, gain=无, offered=3, withData=2,
+> tier=characterFirst`
+> —— ① `chosenRate` 有值 ⇒ `TryGetEventDecisionSignal` 的**选择率回填生效**（原先整条丢弃）；
+> ② `offered=3, withData=2` 与 `tier=characterFirst` 正是 r115 补的回退诊断字段 ⇒ **诊断链同样生效**；
+> ③ 结论：r114（选择率参与决策）+ r115（"没生效"与"没数据"可区分）**均已在实机跑通**，
+> 只剩"玩法观感是否满意"这一主观项（用户未提异议）。
+> 注：`winRate=0.000` 是真实切片结果（点过它的局都输了），**不是**占位 0 ——
+> 「`SkippedRuns == 0` 不回填假基准」的设计未受影响。
 
 - **现象（用户 2026-09-11）**：瓦库的事件选项现在体感「只能随机 / 按 first-last 乱选」，
   用户问「什么时候能按选择率或胜率选」，并指出**我们自己已经在 mod 里统计了事件选项的选择率与胜率**。
