@@ -141,6 +141,10 @@ internal static class LocalPersonalRecorder
         lock (_lock)
         {
             long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            // 写时幂等（r120）：同一批牌（batchKey 相同）只保留**最后一次** —— SL 后重选同一批牌会覆盖，
+            // 避免抓取率（Picked / Offered）被重复计数。批次按"卡集合"区分，重 roll 出不同的牌 → 新批次。
+            string batchKey = WakuuPersonalDedupe.BuildBatchKey(offers.Select((o) => o.CardId));
+            int replaced = WakuuPersonalDedupe.RemoveCardBatch(_store, runKey, batchKey);
             foreach ((string cardId, bool isRepeat) in offers)
             {
                 if (string.IsNullOrEmpty(cardId))
@@ -157,13 +161,14 @@ internal static class LocalPersonalRecorder
                     card = cardId.ToUpperInvariant(),
                     isRepeat = isRepeat,
                     picked = picked.Contains(cardId),
+                    batch = batchKey,
                     ts = now,
                 });
             }
 
             LocalMultiControlLogger.Info(
                 $"个人记录-{logLabel}: char={character}, run={runKey}, act={act}, "
-                + $"offers={offers.Count}, picked={picked.Count}");
+                + $"offers={offers.Count}, picked={picked.Count}, 覆盖旧批次={replaced}");
         }
 
         Save();
@@ -187,6 +192,8 @@ internal static class LocalPersonalRecorder
 
         lock (_lock)
         {
+            // 写时幂等（r120）：同一局同一张牌只保留最后一次。
+            int replaced = WakuuPersonalDedupe.RemoveCardRemoval(_store, runKey, cardId.ToUpperInvariant());
             _store.cardRemovals.Add(new PersonalCardRemovalRecord
             {
                 runKey = runKey,
@@ -198,7 +205,8 @@ internal static class LocalPersonalRecorder
             });
 
             LocalMultiControlLogger.Info(
-                $"个人记录-删牌: char={character}, run={runKey}, act={act}, card={cardId.ToUpperInvariant()}");
+                $"个人记录-删牌: char={character}, run={runKey}, act={act}, "
+                + $"card={cardId.ToUpperInvariant()}, 覆盖旧行={replaced}");
         }
 
         Save();
@@ -222,6 +230,9 @@ internal static class LocalPersonalRecorder
 
         lock (_lock)
         {
+            // 写时幂等（r120）：同一局同幕同类别同一件只保留最后一次（SL 后重买会覆盖）。
+            int replaced = WakuuPersonalDedupe.RemoveShopPurchase(
+                _store, runKey, act, kind, itemId.ToUpperInvariant());
             _store.shopPurchases.Add(new PersonalShopPurchaseRecord
             {
                 runKey = runKey,
@@ -236,7 +247,7 @@ internal static class LocalPersonalRecorder
 
             LocalMultiControlLogger.Info(
                 $"个人记录-商店购买: char={character}, run={runKey}, act={act}, "
-                + $"kind={kind}, item={itemId.ToUpperInvariant()}, gold={Math.Max(0, goldSpent)}");
+                + $"kind={kind}, item={itemId.ToUpperInvariant()}, gold={Math.Max(0, goldSpent)}, 覆盖旧行={replaced}");
         }
 
         Save();
@@ -266,6 +277,9 @@ internal static class LocalPersonalRecorder
         {
             long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             string eventId = eventModel.Id.Entry.ToUpperInvariant();
+            // 写时幂等（r120）：同一事件只保留**最后一次**抉择 —— SL 后重选会覆盖旧页，
+            // 既不会重复累加选择率分母，也不会残留"SL 前选过的那一项 chosen=true"。
+            int replaced = WakuuPersonalDedupe.RemoveEventPage(_store, runKey, eventId);
             foreach (EventOption option in pageOptions)
             {
                 if (option == null || string.IsNullOrEmpty(option.TextKey))
@@ -289,7 +303,7 @@ internal static class LocalPersonalRecorder
 
             LocalMultiControlLogger.Info(
                 $"个人记录-事件选择: event={eventId}, char={character}, run={runKey}, act={act}, "
-                + $"page={pageOptions.Count}, chosen={chosen.TextKey}");
+                + $"page={pageOptions.Count}, chosen={chosen.TextKey}, 覆盖旧页={replaced}");
         }
 
         Save();
@@ -375,6 +389,23 @@ internal static class LocalPersonalRecorder
         }
     }
 
+    /// <summary>
+    /// 由 RunState 构造 runKey（种子 + 玩家数）；与 <see cref="TryGetRunContext"/> 同一口径。
+    /// 种子缺失返回空串（调用方按"取不到"处理）。
+    /// **凡是手边已有 RunState 的调用方都应该直接用这个**，不要绕 `RunManager.DebugOnlyGetState()`
+    /// （进局早期它还没就绪，r118 的回滚就是因此静默失效的）。
+    /// </summary>
+    private static string BuildRunKey(RunState? state)
+    {
+        if (state == null)
+        {
+            return string.Empty;
+        }
+
+        string seed = state.Rng?.StringSeed ?? string.Empty;
+        return string.IsNullOrEmpty(seed) ? string.Empty : $"{seed}:{state.Players.Count}";
+    }
+
     private static string? CurrentRunKeyOrNull()
     {
         try
@@ -385,8 +416,8 @@ internal static class LocalPersonalRecorder
                 return null;
             }
 
-            string seed = state.Rng?.StringSeed ?? string.Empty;
-            return string.IsNullOrEmpty(seed) ? null : $"{seed}:{state.Players.Count}";
+            string key = BuildRunKey(state);
+            return string.IsNullOrEmpty(key) ? null : key;
         }
         catch (Exception exception)
         {

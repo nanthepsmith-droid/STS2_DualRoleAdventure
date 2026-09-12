@@ -67,6 +67,13 @@ internal sealed class PersonalCardOfferRecord
     /// <summary>本批是否点中了这张卡。</summary>
     public bool picked { get; set; }
 
+    /// <summary>
+    /// 批次标识（r120，"写时幂等"用）：本批 offer 的卡 id 去重排序拼接（见
+    /// <see cref="WakuuPersonalDedupe.BuildBatchKey"/>）。同一次卡牌奖励被 SL 重选时用它覆盖旧批次，
+    /// 避免抓取率被重复计数。旧数据无此字段（空串）→ 不参与去重。
+    /// </summary>
+    public string batch { get; set; } = string.Empty;
+
     public long ts { get; set; }
 }
 

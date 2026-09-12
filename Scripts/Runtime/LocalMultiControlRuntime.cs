@@ -85,6 +85,9 @@ internal static class LocalMultiControlRuntime
             LocalMultiControlLogger.Warn($"瓦库托管配置加载异常(已忽略): {exception.Message}");
         }
 
+        // SL（读档重玩）造成的重复记录由「写时幂等」消除（r120，见 WakuuPersonalDedupe）——
+        // 原来在进局时按"存档点 mtime"回滚的思路已废弃（读档动作本身会刷新 mtime，判据恒失效）。
+
         try
         {
             LocalWakuuSafetyNet.EnsureTicker();
