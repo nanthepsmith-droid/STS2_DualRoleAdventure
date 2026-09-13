@@ -2,7 +2,11 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
-## [Unreleased]
+## [1.41.0] - 2026-09-13
+
+> v1.41 = r105~r130（2026-09-10 起）：本地多控体验优化（回合开始演出跳过 / 瓦库托管视角三档 /
+> 多瓦库出牌队列与并发出牌 / 真人插队 / 瓦库出牌加速）+ 瓦库事件选项接入个人统计 + 
+> 个人记录器四张表的写时幂等与删牌/商店统计修复（BUG-9/10/11/12）。
 
 ### Added
 - **「跳过他人回合开始抽牌演出」开关（改进-1，r105，2026-09-10，默认关）**：本地多控下回合开始会

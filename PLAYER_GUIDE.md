@@ -79,6 +79,32 @@ shopping can optionally be handed to Vakuu via "Auto-buy cards" (below).
 - **Other settings**: features not tied to Vakuu autopilot (cross-character card rewards, stat badges) live at the
   end of the settings page under their own "Other settings" section and work even when Vakuu autopilot is off.
 
+### New in v1.41 (same settings submenus, saved instantly)
+
+- **Skip other players' turn-start draw animations** (`Other settings`, off by default): with many players,
+  turn start no longer switches the camera to each human player one by one — only the character you are
+  viewing plays its draw animation, the rest resolve instantly (data is unaffected).
+- **Vakuu camera policy** (`Vakuu autopilot`, three modes, default "never follow"): Vakuu no longer steals
+  your camera while autopiloting. "Key moments only" peeks at Vakuu's turn start for about a second and
+  returns; "always follow" restores the old feel. The safety nets that hand control back to you are
+  unaffected by this setting.
+- **Faster Vakuu card plays** (`Vakuu autopilot`, on by default): skips the card-pile animations during
+  Vakuu's automatic plays — measured roughly 3x faster per card, data unchanged.
+- **【Experimental】Vakuu plays through the action queue** (off by default): Vakuu's plays enter the
+  game's multiplayer action queue instead of the legacy in-place autoplay, so with multiple Vakuus their
+  plays interleave instead of running strictly one-by-one. While this is on it overrides the "faster card
+  plays" toggle (by design; pick one).
+- **【Experimental】Concurrent Vakuu plays** (off by default, requires queue mode): multiple Vakuus no
+  longer wait for each other, and when you play a card or end your turn your action jumps the queue
+  immediately (yielded Vakuu plays are simply replayed next round — nothing is lost).
+- **Event choices use your own stats**: with "Personal-stats decision assist" enabled, Vakuu picks event
+  options by your own option pick-rate + win-rate (same policy as card picks) instead of first/last/random.
+- **Recorder fixes**: save/load no longer duplicates or keeps stale choices in `personal_stats.json`;
+  shop purchases and card removals are recorded correctly now (they were silently dropped before).
+- **Fixes**: Vakuu stops playing after a card (e.g. Void Form) force-ends its turn; no more null-ref spam
+  from the action-queue UI; hand order self-heals after card transforms; reward/shop/event ownership
+  fixes for local multiplayer.
+
 ## During a run
 
 - **Switch characters:** `Tab` (next) / `Shift+Tab` (previous). Legacy keys `]` `R` `/` (next) and `[` `T` (previous) still work.
