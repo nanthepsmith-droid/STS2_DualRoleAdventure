@@ -294,6 +294,44 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   部署后门禁 7 直接报「未能解析 marker，拒绝视为部署成功」。改为与 `dll_check.py` 一致扫两种对齐，
   并补 `marker=YYYY-MM-DD-rNN` 兜底正则。
 
+### Fixed
+- **真人删牌统计从未记录（BUG-12；r129 定位 → r130 修正，2026-09-13）**：`个人记录-删牌` 一条都没有，
+  落盘 `personal_stats.json` 的 `cardRemovals` **全历史 0 行**。实机证据（marker r128）：
+  商店删牌走了 3 次、选牌链路完整结束（`Player …326 chose cards [WATCHER-DEFEND_WATCHER]`），
+  同局卡牌奖励 / 事件点选记录都正常 ⇒ 不是记录器开关。
+  **真正根因（r130 定位）= 守卫拿 AsyncLocal 字段当值比较**：原守卫写的是
+  `… && LocalWakuuMerchantAuto.PurchaseOwnerId == null`，而 `PurchaseOwnerId` 当时是
+  **`AsyncLocal<ulong?>` 字段本身**（恒非 null）⇒ 该条件恒 false ⇒ **整块守卫恒不成立、永远不记录**。
+  处理：
+  ① 该字段收私有、改经值属性 `PurchaseOwnerId` 暴露（与 `AutoClaimCardOwnerId` 同一套写法），
+     调用方不可能再把字段当值比；
+  ② 记录锚点从入口 `CardSelectCmd.FromDeckForRemoval` 移到 `CardSelectCmd.FromDeckGeneric` ——
+     前者只有 4 行、是纯包装方法，**有被 JIT 内联的风险**（「启动审计显示补丁挂上了 `[P2Po1T0F0]`」
+     只证明挂上了、不证明会被调用；后者是 async、函数体大，r129 实机已确认会触发）。
+     代价：该入口同时被 DollysMirror（复制）/ WoodCarvings（变化）复用 ⇒ 新增纯逻辑
+     `WakuuRecordScopePolicy.IsDeckRemovalPrompt` 按 prefs 提示键只认 `TO_REMOVE`
+     （`TO_EXHAUST`/`TO_DISCARD` 是手牌语义，同样判否）；
+  ③ 自动化作用域（事件自动选择 / 奖励自动领取 / 商店自动采购）**一律按归属者比较**
+     （`WakuuRecordScopePolicy.IsAutoScopeOwnedBy`）—— 只看"作用域非空"会把真人自己的操作一起吞掉
+     （r129 实机：那个**别的角色**的自动采购残留值，把真人连删的 2 张同名牌整条吞掉）；
+  ④ 原实现是整块 `if (五个条件) { 记录 }`、任一不满足就**无声返回**（r118 老毛病）⇒ 改成先算
+     `RemovalRecordBlockReason`，每次命中都打一条
+     `个人记录-删牌钩子命中: owner=…, prompt=…, 选中=N, 瓦库形态=…, 记录｜跳过: <原因>`；
+  ⑤ 同一类"只看作用域非空"的判据一并收紧：卡牌奖励快照 / 事件网格入卡组 / 商店购买
+     （商店购买记录长期只有 2 行也是同一个原因）。
+  **+8 单测**（`WakuuRecordScopePolicyTests`，含「别人的自动化作用域不算本人」回归用例与
+  「锚点不许挪回 `FromDeckForRemoval`」反射哨兵）。marker **r129 → r130**。
+  ✅ **2026-09-13 用户实机确认（marker r130，日志 + 落盘双向验证）**：连删 2 张同名防御 →
+  两次都是 `删牌钩子命中 … 记录` + `个人记录-删牌 … 覆盖旧行=0` / `=1`（同幕同名只留最后一行）；
+  商店购买首次正常入账（2 张卡，`覆盖旧行=0`）；查盘 `cardRemovals` 0 → 1 行、
+  `shopPurchases` 2 → 4 行。
+- **默认档「手动出牌上下文漂移」WARN 噪音（r129）**：未开「【实验】瓦库并发出牌」时瓦库是内联出牌，
+  出牌循环会把 `LocalContext.NetId` 钉在瓦库身上；真人此时按牌 / 点结束回合，
+  `AlignContextForActionOwner` 每局刷十几条 `[WARN] 检测到手动出牌上下文漂移，已强制校正`
+  （2026-09-13 实机默认档一局 **12 条**，并发档会话 0 条）。行为本就正确（上下文该让给真人），
+  只改日志判据：**上一任是瓦库形态角色时记 INFO**
+  （`后台瓦库出牌钉住的上下文已让给真人（默认档预期路径）`），其余情况仍保留 WARN。
+
 ## [1.40.0] - 2026-09-08
 
 > v1.40 = r56~r84 全量（2026-09-02 起），自 v1.39（r55）以来最大的一版：

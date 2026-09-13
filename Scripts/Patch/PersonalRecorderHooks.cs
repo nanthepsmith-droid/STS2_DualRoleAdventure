@@ -215,14 +215,23 @@ internal static class PersonalCardRewardPickPatch
 
         try
         {
-            // 瓦库自动领取（Selector 自动作答、不弹屏）不是真人决策，不计入个人偏好样本
-            if (LocalWakuuRewardAutoClaim.AutoClaimCardOwnerId != null)
+            Player? rewardOwner = __instance.Player;
+            if (rewardOwner == null)
+            {
+                return;
+            }
+
+            // 瓦库自动领取（Selector 自动作答、不弹屏）不是真人决策 —— **按归属者比较**（r130）：
+            // 只看"作用域非空"会把真人自己的奖励一起漏记（AsyncLocal 会沿异步链残留，
+            // 详见 WakuuRecordScopePolicy）。
+            if (WakuuRecordScopePolicy.IsAutoScopeOwnedBy(
+                    LocalWakuuRewardAutoClaim.AutoClaimCardOwnerId, rewardOwner.NetId))
             {
                 return;
             }
 
             __state = PersonalCardBatchTracker.TakeSnapshot(
-                __instance.Player,
+                rewardOwner,
                 __instance.Cards.Select((c) => c?.Id?.Entry));
         }
         catch (Exception exception)
@@ -310,8 +319,8 @@ internal static class PersonalGridCardPickPatch
 
         try
         {
-            // 瓦库事件自动选择作用域内（直调 Chosen）不是真人决策
-            if (LocalWakuuEventAutoChoice.InEventAutoChoiceScope.Value)
+            // 瓦库事件自动选择作用域内（直调 Chosen）不是真人决策 —— 按归属者比较（r130）
+            if (LocalWakuuEventAutoChoice.IsAutoChoosingFor(__instance.Owner))
             {
                 return;
             }
@@ -414,14 +423,17 @@ internal static class PersonalShopPurchasePatch
 
         try
         {
-            // 瓦库商店自动采购（shopAssist）不是真人决策，不记
-            if (LocalWakuuMerchantAuto.PurchaseOwnerId != null)
+            Player? owner = EntryPlayerField?.GetValue(__instance) as Player;
+            if (owner == null)
             {
                 return;
             }
 
-            Player? owner = EntryPlayerField?.GetValue(__instance) as Player;
-            if (owner == null)
+            // 瓦库商店自动采购（shopAssist）不是真人决策 —— **按归属者比较**（r130）：
+            // 只看"作用域非空"会把真人自己的购买一起吞掉（AsyncLocal 会沿异步链残留，
+            // 这正是商店购买记录长期只有 2 行的原因；详见 WakuuRecordScopePolicy）。
+            if (WakuuRecordScopePolicy.IsAutoScopeOwnedBy(
+                    LocalWakuuMerchantAuto.PurchaseOwnerId, owner.NetId))
             {
                 return;
             }
@@ -511,29 +523,62 @@ internal static class PersonalShopPurchasePatch
 }
 
 /// <summary>
-/// 个人偏好记录器的「真人删牌」钩子（删牌统计，Phase 4）：
-/// 挂 CardSelectCmd.FromDeckForRemoval——事件删牌 / 营地删牌 / 商店删牌服务都走它，
-/// 返回的正是真人挑出来要删的牌（调用方随后 CardPileCmd.RemoveFromDeck）。
-/// 一次选择可能删多张（按入参各记一行）；没选（取消）返回空 → 不记。
-/// 排除：瓦库事件自动选择 / 奖励自动领取 / 商店自动采购作用域内不记（自动删牌不是真人决策）。
+/// 个人偏好记录器的「真人删牌」钩子（删牌统计，Phase 4）：事件删牌 / 营地删牌 / 商店删牌服务 / 删牌遗物
+/// 最终都会走到 <c>CardSelectCmd.FromDeckGeneric</c>，返回的正是真人挑出来要删的牌
+/// （调用方随后 <c>CardPileCmd.RemoveFromDeck</c>）。
+/// 一次选择可能删多张（各记一行）；取消返回空 → 不记。
+///
+/// r128 → r129 → r130 两次实机定位（都在 2026-09-13）：
+/// ① **现象**：商店删牌走完、选牌链路正常结束（`Player …326 chose cards [WATCHER-DEFEND_WATCHER]`），
+///    但 `个人记录-删牌` 一条没有、落盘 `personal_stats.json` 的 **cardRemovals 全历史 0 行**，
+///    而同局卡牌奖励 / 事件点选记录都正常。
+/// ② **真正根因（r130 定位）= 守卫写错了**：原守卫里
+///    `… && LocalWakuuMerchantAuto.PurchaseOwnerId == null` 的 `PurchaseOwnerId` 当时是
+///    **AsyncLocal 字段本身**（恒非 null）⇒ 该条件恒 false ⇒ **整块守卫恒不成立、永远不记录**。
+///    已把该字段收私有、改经值属性 `PurchaseOwnerId` 暴露（与 `AutoClaimCardOwnerId` 同套写法），
+///    调用方不再可能把字段当值来比较。⚠ r129 那次我把 `== null` 误翻成 `!= null`（同样的字段/值混淆，
+///    方向相反 ⇒ 恒真 ⇒ 每次都跳过），实机日志里的 `跳过: 瓦库商店自动采购作用域内` 就是这么来的。
+/// ③ **顺带加固**（不是根因）：
+///    - 锚点从入口 `CardSelectCmd.FromDeckForRemoval` 移到 <c>FromDeckGeneric</c>：前者只有 4 行、
+///      直接转调后者，属于有被 JIT 内联风险的纯包装方法——「补丁在启动审计里显示挂上了 `[P2Po1T0F0]`」
+///      只说明挂上了，不代表会被调用。后者是 async、函数体大，r129 实机已证明它会触发。
+///      代价：它同时被 DollysMirror（复制）/ WoodCarvings（变化）复用 ⇒ 必须按 prefs 提示键过滤出
+///      「删除」语义（<see cref="WakuuRecordScopePolicy.IsDeckRemovalPrompt"/>）。
+///    - 自动化作用域一律**按归属者比较**，不能只判"非空"（AsyncLocal 会沿异步链残留）——
+///      见 <see cref="WakuuRecordScopePolicy"/>。
+///
+/// 排除：瓦库自己的事件自动选择 / 奖励自动领取 / 商店自动采购 / 瓦库形态角色的托管选牌。
+/// 每次命中都打一条 INFO（含逐条跳过原因）——避免再出现「没生效」与「没数据」分不清（r118 教训）。
 /// </summary>
-[HarmonyPatch(typeof(CardSelectCmd), "FromDeckForRemoval")]
+[HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromDeckGeneric), new[]
+{
+    typeof(Player),
+    typeof(CardSelectorPrefs),
+    typeof(Func<CardModel, bool>),
+    typeof(Func<CardModel, int>),
+})]
 internal static class PersonalDeckRemovalPatch
 {
     [HarmonyPostfix]
-    private static void Postfix(Player player, ref Task<IEnumerable<CardModel>> __result)
+    private static void Postfix(Player player, CardSelectorPrefs prefs, ref Task<IEnumerable<CardModel>> __result)
     {
         if (__result == null || player == null)
         {
             return;
         }
 
+        // 通用入口：只认「删除」语义（复制 / 变化共用同一条路，不能误记）
+        if (!WakuuRecordScopePolicy.IsDeckRemovalPrompt(prefs.Prompt?.LocEntryKey))
+        {
+            return;
+        }
+
         Task<IEnumerable<CardModel>> original = __result;
-        __result = RecordAfterRemovalAsync(original, player);
+        __result = RecordAfterRemovalAsync(original, player, prefs);
     }
 
     private static async Task<IEnumerable<CardModel>> RecordAfterRemovalAsync(
-        Task<IEnumerable<CardModel>> original, Player player)
+        Task<IEnumerable<CardModel>> original, Player player, CardSelectorPrefs prefs)
     {
         IEnumerable<CardModel> selected = Array.Empty<CardModel>();
         try
@@ -550,16 +595,19 @@ internal static class PersonalDeckRemovalPatch
             return Array.Empty<CardModel>();
         }
 
-        // 仅在真人决策作用域内记录
-        if (LocalPersonalRecorder.IsEnabled
-            && !TestMode.IsOn
-            && !LocalWakuuEventAutoChoice.InEventAutoChoiceScope.Value
-            && LocalWakuuRewardAutoClaim.AutoClaimCardOwnerId == null
-            && LocalWakuuMerchantAuto.PurchaseOwnerId == null)
+        List<CardModel> cards = selected.Where((card) => card?.Id != null).ToList();
+        string? blockReason = RemovalRecordBlockReason(player);
+        LocalMultiControlLogger.Info(
+            $"个人记录-删牌钩子命中: owner={player.NetId}, prompt={prefs.Prompt?.LocEntryKey ?? "?"}, "
+            + $"min={prefs.MinSelect}, max={prefs.MaxSelect}, 选中={cards.Count}, "
+            + $"瓦库形态={LocalWakuuRelicRuntime.IsVakuuFormMode(player)}, "
+            + $"{(blockReason == null ? "记录" : "跳过: " + blockReason)}");
+
+        if (blockReason == null)
         {
             try
             {
-                foreach (CardModel card in selected)
+                foreach (CardModel card in cards)
                 {
                     if (card?.Id == null)
                     {
@@ -576,6 +624,54 @@ internal static class PersonalDeckRemovalPatch
         }
 
         return selected;
+    }
+
+    /// <summary>
+    /// 不该记录的原因（null = 应记录）。逐条写进日志，跳过时也能一眼看出卡在哪一步
+    /// —— 原实现是整块 `if (...) { 记录 }`，任一条件不满足就静默返回，这是"没生效"与"没数据"分不清的根源。
+    ///
+    /// ⚠ r130（r129 实机反馈修复）：**自动化作用域一律按归属者比较**，不能只判"非空"。
+    /// 这些作用域是 AsyncLocal、会沿异步链残留；2026-09-13 实机（marker r129）里真人自己的
+    /// 商店删牌连续两次都被 `跳过: 瓦库商店自动采购作用域内` 吞掉（`PurchaseOwnerId` 是那个**别的角色**
+    /// 的自动采购残留值），于是"连删 2 张同名牌"一条都没记上。
+    /// </summary>
+    private static string? RemovalRecordBlockReason(Player player)
+    {
+        if (!LocalPersonalRecorder.IsEnabled)
+        {
+            return "记录器关闭(personalRecorder=off)";
+        }
+
+        if (TestMode.IsOn)
+        {
+            return "TestMode 开启";
+        }
+
+        if (LocalWakuuEventAutoChoice.IsAutoChoosingFor(player))
+        {
+            return "瓦库事件自动选择作用域内（归属者=本人）";
+        }
+
+        if (WakuuRecordScopePolicy.IsAutoScopeOwnedBy(
+                LocalWakuuRewardAutoClaim.AutoClaimCardOwnerId, player.NetId))
+        {
+            return "瓦库奖励自动领取作用域内（归属者=本人）";
+        }
+
+        if (WakuuRecordScopePolicy.IsAutoScopeOwnedBy(
+                LocalWakuuMerchantAuto.PurchaseOwnerId, player.NetId))
+        {
+            return "瓦库商店自动采购作用域内（归属者=本人）";
+        }
+
+        // 瓦库形态角色的一切选牌都是托管产生的（含「获得遗物时删一张」这类**没有作用域标记**的路径），
+        // 不可能是真人决策。判据与 WakuuEventEnchantAutoAnswerPatch 同一套。
+        if (LocalWakuuRelicRuntime.IsVakuuFormMode(player))
+        {
+            return "瓦库形态角色（托管决策，不是真人）";
+        }
+
+        return null;
     }
 }
 

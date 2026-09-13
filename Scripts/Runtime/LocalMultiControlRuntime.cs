@@ -680,6 +680,18 @@ internal static class LocalMultiControlRuntime
         LocalContext.NetId = playerId;
         LocalSelfCoopContext.NetService?.SetCurrentSenderId(playerId);
         SyncRunSynchronizerLocalPlayerId(playerId);
+
+        // 默认档（未开「【实验】瓦库并发出牌」）下瓦库是内联出牌，出牌循环会把 LocalContext.NetId
+        // 钉在瓦库自己身上；此时真人中途按牌 / 点结束回合，上下文"漂移"是**预期**的——本来就该让给真人。
+        // 记 INFO 即可，别每局刷十几条 WARN 把真问题淹掉（2026-09-13 实机：默认档一局 12 条全是这种）。
+        if (previousNetId.HasValue && LocalWakuuRelicRuntime.IsVakuuFormModeById(previousNetId.Value))
+        {
+            LocalMultiControlLogger.Info(
+                $"后台瓦库出牌钉住的上下文已让给真人（默认档预期路径）: "
+                + $"{previousNetId.Value} -> {playerId}, source={source}");
+            return;
+        }
+
         LocalMultiControlLogger.Warn(
             $"检测到手动出牌上下文漂移，已强制校正: {previousNetId?.ToString() ?? "null"} -> {playerId}, source={source}");
     }

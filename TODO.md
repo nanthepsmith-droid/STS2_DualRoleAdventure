@@ -406,8 +406,10 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
     ⇒ 用户原报的「SL 前点过的选项残留 `chosen=true`」**已彻底消失**（这是外部看不出、只能查盘的一条）。
   - 前后两次 `瓦库事件按个人统计选取` 的 `offered=3, withData=2` **完全一致**
     ⇒ 统计口径跨 SL **稳定、不再被放大**。
-  - ⏳ 同口径的**卡牌批次去重（`覆盖旧批次=`）本轮未复现** —— 这局没走卡牌奖励；逻辑与事件同源、
-    单测已覆盖（"SL 前选 A、SL 后改选 B → 旧页整页替换"），**下次走到卡牌奖励顺带看一眼即可**。
+  - ✅ **同口径的卡牌批次去重（`覆盖旧批次=`）已于 2026-09-13（marker r128）复现并通过**：
+    一局内 3 条 `个人记录-卡牌奖励批次` 的 `覆盖旧批次` = 0 / 0 / **3**；落盘 `personal_stats.json`
+    交叉核对：本局 6 个不同批次各 3 行、互不重复，最后一条把 SL 前那 3 行**整体替换**
+    ⇒ 选牌一次 SL 只留最后一页，抓取率不被放大。**本节可关单**。
   - 本轮复测会话**无战斗**，故 r116/r117 的战斗路径未参与（r117 早前已单独实机确认）。
 
 ### BUG-10 瓦库在「回合被强行结束」后仍继续出牌（虚空形态，2026-09-13 用户实机发现；**r122 初修（✅ 实机确认已修）→ r123 收敛为"按结束来源归因"，待实机**）
@@ -482,6 +484,65 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
   原 Finalizer 保留作最后一道网。已在 `PatchDomainMap` 登记（否则 `PatchDomainMapTests` 直接红）。
 - 门禁：0 警告 0 错误、467 单测全绿（含补丁域登记哨兵）、`clr_compat_check` PASS、marker **2026-09-13-r124**、`dll_check` 字节一致。
 - **验证方法**：开实验档打一局战斗 → 日志里**不应再出现** `动作队列UI入队触发空引用`。
+
+### BUG-12 真人删牌统计从未记录（2026-09-13 实机发现；**r129 定位 → r130 修正 → ✅ r130 实机确认，关单**）
+
+- **现象**：`个人记录-删牌` 一条都没有；落盘 `personal_stats.json` 的 `cardRemovals` **全历史 0 行**
+  （425 KB / 8 局的累计数据），而同局 `cardOffers` / `eventChoices` 记录正常。
+- **实机证据（marker r128）**：商店删牌走了 3 次（`商店-删牌归属玩家: context=…326` ×3），
+  其中一次选牌链路完整结束 —— `NDeckCardSelectScreen` → `Player …326 chose cards [WATCHER-DEFEND_WATCHER]`，
+  金币与删牌都生效，但**没有**任何删牌记录。
+- **真正根因（r130，代码级）**：记录守卫拿 **AsyncLocal 字段当值**比较。原守卫是
+  `if (IsEnabled && !TestMode.IsOn && !InEventAutoChoiceScope.Value
+  && AutoClaimCardOwnerId == null && LocalWakuuMerchantAuto.PurchaseOwnerId == null) { 记录 }`，
+  而 `PurchaseOwnerId` 当时是 **`internal static readonly AsyncLocal<ulong?>` 字段本身** —— 恒非 null
+  ⇒ `== null` 恒 false ⇒ **整块守卫恒不成立、永远不记录**（`AutoClaimCardOwnerId` 是属性，
+  所以只有这一条错，也只需要这一条错就能让记录全丢）。
+  ⚠ r129 我先怀疑的是「锚点挂在 4 行包装方法 `FromDeckForRemoval` 上、被 JIT 内联」，并把守卫从
+  `== null` 误翻成 `!= null` —— 同样是字段/值混淆、方向相反（恒真 ⇒ 每次必跳过），
+  于是 r129 实机日志里出现两条 `跳过: 瓦库商店自动采购作用域内`。**"补丁挂上了"从不等于"补丁会跑"，
+  但这次真正的原因是判据写错**，教训一并记下。
+- **修法（r129 + r130）**：
+  ① `LocalWakuuMerchantAuto` 的 AsyncLocal 收私有，改经**值属性** `PurchaseOwnerId` 暴露
+     （与 `AutoClaimCardOwnerId` 同套写法）⇒ 调用方不可能再把字段当值比；
+  ② 新增纯逻辑 `WakuuRecordScopePolicy`：
+     - `IsDeckRemovalPrompt`：只认 prefs 提示键 `TO_REMOVE`（`FromDeckGeneric` 还被
+       `DollysMirror` 复制 / `WoodCarvings` 变化复用，必须过滤；`TO_EXHAUST` / `TO_DISCARD`
+       是**手牌**语义，同样判否）；
+     - `IsAutoScopeOwnedBy`：自动化作用域**按归属者比较**（AsyncLocal 会沿异步链残留，
+       只看"非空"会把真人自己的操作一起吞掉 —— r129 实机就是这样连丢 2 张删牌的）；
+  ③ 锚点从 `CardSelectCmd.FromDeckForRemoval`（4 行包装方法，有被内联的风险）移到
+     `CardSelectCmd.FromDeckGeneric`（async、函数体大，r129 实机确认会触发）；同一类判据一并收紧：
+     卡牌奖励快照 / 事件网格入卡组 / 商店购买；
+  ④ **不再静默**：原实现任一条件不满足就无声返回（r118 老毛病）。改成先算 `RemovalRecordBlockReason`，
+     每次命中都打一条
+     `个人记录-删牌钩子命中: owner=…, prompt=…, min/max=…, 选中=N, 瓦库形态=…, 记录｜跳过: <原因>`；
+  ⑤ `+8 单测`（`WakuuRecordScopePolicyTests`），含「别人的自动化作用域不算本人」回归用例与
+     「锚点不许挪回 `FromDeckForRemoval`」的反射哨兵。
+- 门禁：构建 0 警告 0 错误、**487 单测全绿**、`clr_compat_check` PASS、marker **2026-09-13-r130**、
+  `dll_check` 字节一致（`WakuuRecordScopePolicy`/`IsAutoScopeOwnedBy`/`FromDeckGeneric` 在、
+  `__runOriginal` 不在）。
+- **验证方法（请实机；r129 那次的结果已用作定位，本次是修正版）**：
+  ① 商店删牌服务删 2 张**同名**牌 → 期望两条 `个人记录-删牌钩子命中: … prompt=TO_REMOVE, 选中=1,
+     瓦库形态=False, 记录`，紧跟着两条 `个人记录-删牌: … card=<牌名>, 覆盖旧行=…`
+     （同一幕第 2 张同名应 `覆盖旧行=1`）；
+  ② 查盘：`personal_stats.json` 的 `cardRemovals` 应新增行，且同一 `(runKey, act, card)` 只留最后一行；
+  ③ 反向核对**不该记**的：变化 / 复制类选牌（`prompt=TO_TRANSFORM` 等）**不应**出现"钩子命中"行；
+     瓦库自己的事件删牌应出现 `跳过: 瓦库事件自动选择作用域内（归属者=本人）`；
+  ④ 顺带看：商店**买**东西（卡/遗物/药水）应出现 `个人记录-商店购买: … 覆盖旧行=…`（同一修法）。
+- ✅ **2026-09-13 实机确认（marker r130，日志 + 落盘双向验证）**：用户连删 **2 张同名防御**（`WATCHER-DEFEND_WATCHER`）、
+  商店买 2 张卡 ——
+  - 两次删牌都是 `个人记录-删牌钩子命中: owner=…326, prompt=TO_REMOVE, min=1, max=1, 选中=1,
+    瓦库形态=False, **记录**`（不再是被 `跳过:` 吞掉），紧跟着
+    `个人记录-删牌: … card=WATCHER-DEFEND_WATCHER, 覆盖旧行=0` 与 **`覆盖旧行=1`**
+    ⇒ 同一幕删两张同名牌，落盘按 `(runKey, act, card)` 只留最后一行（r120 写时幂等的预期行为）；
+  - 商店购买首次正常入账：`个人记录-商店购买: … kind=card, item=WATCHER-RUSHDOWN, gold=77,
+    覆盖旧行=0` 与 `item=WATCHER-SHARED_WISDOM, gold=157, 覆盖旧行=0`；
+  - 查盘：`cardRemovals` 由 **0 → 1 行**、`shopPurchases` 由 **2 → 4 行**（本局新增 2 行）；
+  - 本会话我们的 WARN 只有既有启动项（本我牌守卫/解放补挂、第三方补丁 owner 审计），
+    5 条 `[ERROR]` 全部是第三方/游戏侧（mod 分支 min/max、BetterModMenu 超时、本地化格式串）。
+  - 本会话无战斗（只进商店），战斗路径回归与上下文漂移降噪已在 r129 会话确认
+    （4 条 INFO / 0 条 WARN）。**BUG-12 关单。**
 
 ### 改进-1 每回合开始必须逐个看完所有真人玩家的抽牌演出（2026-09-10 r105 已实现，✅ 已实机确认）
 
