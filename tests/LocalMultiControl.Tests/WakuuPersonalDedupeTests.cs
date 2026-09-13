@@ -137,14 +137,29 @@ public class WakuuPersonalDedupeTests
     }
 
     [Test]
-    public void 删牌_同局同一张牌覆盖()
+    public void 删牌_同局同幕同一张牌覆盖()
     {
         PersonalStore store = new();
-        store.cardRemovals.Add(new PersonalCardRemovalRecord { runKey = Run, card = "CLASH" });
-        store.cardRemovals.Add(new PersonalCardRemovalRecord { runKey = "$其他", card = "CLASH" });
+        store.cardRemovals.Add(new PersonalCardRemovalRecord { runKey = Run, act = 1, card = "CLASH" });
+        store.cardRemovals.Add(new PersonalCardRemovalRecord { runKey = "$其他", act = 1, card = "CLASH" });
 
-        Assert.That(WakuuPersonalDedupe.RemoveCardRemoval(store, Run, "CLASH"), Is.EqualTo(1));
+        Assert.That(WakuuPersonalDedupe.RemoveCardRemoval(store, Run, act: 1, card: "CLASH"), Is.EqualTo(1));
         Assert.That(store.cardRemovals, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void 删牌_跨幕同名删牌不合并()
+    {
+        PersonalStore store = new();
+        store.cardRemovals.Add(new PersonalCardRemovalRecord { runKey = Run, act = 1, card = "STRIKE" });
+        store.cardRemovals.Add(new PersonalCardRemovalRecord { runKey = Run, act = 2, card = "STRIKE" });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(WakuuPersonalDedupe.RemoveCardRemoval(store, Run, act: 2, card: "STRIKE"), Is.EqualTo(1));
+            Assert.That(store.cardRemovals, Has.Count.EqualTo(1), "只覆盖第二幕那条");
+            Assert.That(store.cardRemovals[0].act, Is.EqualTo(1), "第一幕的合法删牌保留");
+        });
     }
 
     [Test]
@@ -156,7 +171,8 @@ public class WakuuPersonalDedupeTests
             Assert.That(WakuuPersonalDedupe.RemoveEventPage(new PersonalStore(), string.Empty, "E1"), Is.EqualTo(0));
             Assert.That(WakuuPersonalDedupe.RemoveCardBatch(new PersonalStore(), Run, string.Empty), Is.EqualTo(0));
             Assert.That(WakuuPersonalDedupe.RemoveShopPurchase(new PersonalStore(), Run, 1, string.Empty, "X"), Is.EqualTo(0));
-            Assert.That(WakuuPersonalDedupe.RemoveCardRemoval(null!, Run, "X"), Is.EqualTo(0));
+            Assert.That(WakuuPersonalDedupe.RemoveCardRemoval(null!, Run, 1, "X"), Is.EqualTo(0));
+            Assert.That(WakuuPersonalDedupe.RemoveCardRemoval(new PersonalStore(), Run, 1, string.Empty), Is.EqualTo(0));
         });
     }
 }

@@ -162,6 +162,20 @@ internal sealed class WakuuConfigData
     public bool fastWakuuPlay { get; set; } = true;
 
     /// <summary>
+    /// 【实验档】瓦库出牌走原生动作队列（改进-2 / 方案 D，**默认关**）：
+    /// 开启后瓦库出牌不再用 inline 的 <c>CardCmd.AutoPlay</c>，而是像真人/远端玩家一样
+    /// <c>new PlayCardAction(card, target)</c> 入**该瓦库自己的**动作队列
+    /// （<c>ActionQueueSynchronizer.RequestEnqueue</c> —— 原版 <c>CardModel.EnqueueManualPlay</c> 就是这一行）。
+    /// 换来的是多人模式的真实语义（"某人等自己的选择时，别人照常出牌"）；代价是三条刻意的语义迁移
+    /// （见 <see cref="WakuuPlayQueuePolicy"/> 与方案 §12.2）：
+    /// ① <c>isAutoPlay</c> 由 true 变 false（`VoidFormPower` / `PaelsEye` / `UnceasingTop` 等牌对瓦库出牌的统计与触发会变）；
+    /// ② `Any` 类目标必须由调用方**构造前**解析好，解析不到则牌留在手牌（比 AutoPlay 的"进堆"更严格）；
+    /// ③ <c>SpendResources</c> 由动作自己调用，外层**绝不能再花一次**（否则双重扣费）。
+    /// 默认关 = 与既有行为完全一致。
+    /// </summary>
+    public bool wakuuPlayQueue { get; set; }
+
+    /// <summary>
     /// 瓦库托管视角策略（改进-2 / Phase 0，默认 `never` **不跟随**，2026-09-10 用户拍板）：
     /// - `never`：瓦库全程不抢视角；只保留两处防软锁兜底（作用域外真人交互选牌、安全网超时救援）；
     /// - `keyNodes`：仅关键节点跟随 —— 瓦库**回合开始**时切过去一次（看到轮到谁、抽了什么），日常出牌不跟随；

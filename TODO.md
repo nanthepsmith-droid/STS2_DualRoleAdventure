@@ -410,6 +410,79 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
     单测已覆盖（"SL 前选 A、SL 后改选 B → 旧页整页替换"），**下次走到卡牌奖励顺带看一眼即可**。
   - 本轮复测会话**无战斗**，故 r116/r117 的战斗路径未参与（r117 早前已单独实机确认）。
 
+### BUG-10 瓦库在「回合被强行结束」后仍继续出牌（虚空形态，2026-09-13 用户实机发现；**r122 初修（✅ 实机确认已修）→ r123 收敛为"按结束来源归因"，待实机**）
+
+- **现象（用户原话）**：瓦库打出**虚空形态**后，"本来虚空形态打出后强行结束回合无法出牌，
+  但是瓦库结束回合了也能出牌"。**与两个新开关（出牌队列实验档 / 出牌加速）无关** —— 四种组合都能复现。
+- **根因（代码级）**：`VoidForm.OnPlay` → `PlayerCmd.EndTurn(owner, canBackOut: false)`
+  → `CombatManager.SetReadyToEndTurn` → 该玩家进入 `PlayersReadyToEndTurn`。
+  原版拦人的手段是 **UI 层**：`PlayerCmd.EndTurn` 里 `if (LocalContext.IsMe(player)) OnEndedTurnLocally()`
+  → `CombatManager.PlayerActionsDisabled = true` → `NPlayerHand.AreCardActionsAllowed()` 返回 false。
+  而**我们的自动出牌链路完全绕开 UI**：`TryGetAutoplayUnsafeReason` 只看全局战斗状态
+  （PlayPhase / `CurrentSide` / 弹层 / 拖牌 / 瞄准），**从未检查"这一位自己的回合是否已结束"**；
+  `TryScheduleWatchdog` 也只按"手上还有可出牌"就调度 → 瓦库继续出牌。
+  （同一根因也覆盖更隐蔽的一条：瓦库自动结束回合后，本回合内又因别人的效果拿到可出牌 → 继续打。）
+- **为什么不能用 `PlayerActionsDisabled` 当判据**：它是**全局单值**，而且 mod 自己在
+  `LocalMultiControlRuntime.ReevaluateEndTurnButtonState`（L2457）里按**前台玩家**反复重算并写回它
+  （r104 的按钮自愈）—— 它只代表"当前前台那位"，代表不了别的瓦库。
+- **修法（r122 初版 → r123 收敛）**：拦截位置不变（出牌循环 + 看门狗调度两处），
+  但判据从"只要 ready 就停手"改为**按结束来源归因**（r122 那一刀切宽了，把用户想保留的行为一起否掉了）：
+  ① **位置**：出牌循环 `TryGetAutoplayUnsafeReason` 熔断收手（**真正的拦截点**，覆盖"循环中途打出虚空形态、
+     回合当场结束"的同帧情况）；`TryScheduleWatchdog` 同一条 → 干脆不调度，省掉每 300ms 空转与重复 WARN。
+  ② **判据**（纯函数 `WakuuTurnEndOrigin.ShouldStopAutoplay`，+9 单测）：
+     - 被**卡牌效果/原版强行结束**（`VoidForm.OnPlay` → `PlayerCmd.EndTurn`）**或来源不明** → **停手**；
+     - 被**模组自己收口**（`TryEndAllPlayersWhenNoCards`）且 `!AllPlayersReadyToEndTurn()` → **放行**
+       （即用户要求保留的"模组收口后，本回合内又因别人的效果拿到可出牌 → 继续打"）；
+     - 一旦 `AllPlayersReadyToEndTurn()`（回合马上推进）→ 一律停手，不许打进攻城窗口。
+  ③ **归因来源**：`CombatManager.SetReadyToEndTurn` 的前缀补丁（`CombatManagerPatch`，本就在）登记
+     "这一位的 ready 是谁造成的"；模组自己发起时用 `WakuuTurnEndOrigin.BeginModIssuedEnd()` 包裹那一次
+     `PlayerCmd.EndTurn`。**外部结束优先于模组收口**（同一回合先被模组收口、后又被打出虚空形态 → 仍停手）。
+- **验证方法**：① 瓦库打出虚空形态 → 期望 `… reason=player-ready-to-end-turn`，之后该瓦库不再出牌；
+  ② **模组收口后拿到新牌**：瓦库无牌 → 自动收口 →（别人给牌/给能量后）→ 期望它**继续出牌**
+  （日志里**没有** `player-ready-to-end-turn` 熔断行）。
+- **关于"加个瓦库不自动结束回合 / 等真人结束再结束"的开关（用户 2026-09-13 提议，本轮未做）**：
+  排查后的结论是**当前架构下"瓦库不自动结束"会挂死** —— 推进到敌方回合要求**所有玩家都 ready**，
+  而 mod 关闭瓦库的唯一时机就是 `TryEndAllPlayersWhenNoCards`（逐帧 tick 只切视角、**不**结束回合），
+  且触发源只有"真人点结束回合"与"真人结束后的兜底"两条。瓦库自己不结束 → 没人再触发 → 敌方回合永不开始。
+  "等真人全部结束再收口"同理需要**新增逐帧收口**（否则最后一个真人结束那一刻若瓦库还有牌就会漏收口）。
+  鉴于 r123 已用归因把用户要的行为保住，**先不加开关**；要做的话应连带补"逐帧收口"，等用户拍板。
+- 门禁：0 警告 0 错误、**467 单测全绿**（+9）、`clr_compat_check` PASS、marker **2026-09-13-r123**、
+  `dll_check` 字节一致（`WakuuTurnEndOrigin` 在）。**r122 已由用户实机确认虚空形态已修**。
+- ✅ **2026-09-13 实机确认（r123，日志实证）**：瓦库 `…329` 在 round 1 出 3 张牌
+  （`STRIKE_REGENT` / `FALLING_STAR` / **`VOID_FORM`（actionId=15，栈里有 `VoidForm+<OnPlay>`）**）后
+  立刻 `瓦库自动出牌已熔断跳过本次执行: player=…329, round=1, reason=player-ready-to-end-turn, played=3`，
+  该回合再无出牌 ⇒ **虚空形态这条完全符合预期**；同局 43 张牌全走动作队列（实验档）且全部完成。
+- ✅ **2026-09-13 用户在 r124 上做了"对照实验"（两条都通过）**：分别给**被自动结束回合**的瓦库和
+  **被虚空形态结束回合**的瓦库塞牌 —— **前者依旧能打牌**、**后者不打牌**。
+  与设计完全一致：r123 的归因判据（模组收口 → 放行 / 外部强行结束 → 停手）行为正确。
+  同局 `动作队列UI入队触发空引用` **0 条** ⇒ BUG-11（r124）修复也实测生效。
+- ⚠ **r124 首版的观察日志判据写错了（r125 修正）**：那条 `瓦库在模组收口后继续出牌（…）` 原先只看
+  `IsPlayerReadyToEndTurn`，既不校验归因、又放在闸门**之前** ⇒ 实机日志出现误报：
+  `8925 走动作队列完成 … VOID_FORM` → `8926 瓦库在模组收口后继续出牌`（**误报**，其实是虚空形态造成的结束）
+  → `8927 熔断跳过 … reason=player-ready-to-end-turn`。
+  **r125** 把它改为：判据用新增纯函数 `WakuuTurnEndOrigin.IsModIssuedExemption`（= 闸门放行的同一条件），
+  并且挪到**闸门之后**调用 —— 即"闸门已放行、下一次迭代真的要去打牌"才记录。
+  **行为零变化（只动日志）**，+2 单测（豁免状态真值表）。
+
+### BUG-11 `NCardPlayQueue.OnActionEnqueued` 对「本地非前台玩家出牌」必然空引用（2026-09-13 实机日志发现；**r124 已修，待实机**）
+
+- **现象（日志）**：`动作队列UI入队触发空引用，已拦截避免阻塞: action=PlayCardAction card: CARD.DEFEND_IRONCLAD index: 25 …,
+  context=76561198422527326` ×6（既有 fail-safe 的 WARN，600ms 限流）。
+  **出牌本身不受影响**（同局 43 张瓦库出牌全部完成），用户观感也正常。
+- **根因（代码级，是我们自己的软肋被放大）**：原版 `NCardPlayQueue.OnActionEnqueued` 要把"别人打出的牌"
+  画进出牌队列；非本地分支取 `creatureNode.PlayerIntentHandler.CardIntent` 当飞牌起点 —— 而
+  **本 mod 主动关掉了远端意图 UI**（`NMultiplayerPlayerIntentHandlerPatch` 让
+  `NMultiplayerPlayerIntentHandler.Create` 返回 null）⇒ `PlayerIntentHandler` 为 null ⇒ **必然空引用**。
+- **为什么现在才明显**：以前只有"本地非前台玩家手动出牌"这种偶发情况会撞；方案 D 实验档（`wakuuPlayQueue`）
+  让**瓦库的出牌也走 `PlayCardAction` 入队** ⇒ 变成"每次瓦库出牌都可能撞"。
+- **修法（r124）**：新增前缀守卫 `NCardPlayQueueActionEnqueuedGuardPatch` —— **先判后跳**：
+  本地分支要求 `NPlayerHand.Instance != null`、远端分支要求 `creatureNode.PlayerIntentHandler != null`，
+  否则 `return false`（等价于"这张牌不进 UI 出牌队列"，与原本被 Finalizer 吞掉后的可见结果一致，
+  但**没有异常、没有 WARN、也没有 `AlignContextForActionOwner` 那次无谓的上下文校正**）。
+  原 Finalizer 保留作最后一道网。已在 `PatchDomainMap` 登记（否则 `PatchDomainMapTests` 直接红）。
+- 门禁：0 警告 0 错误、467 单测全绿（含补丁域登记哨兵）、`clr_compat_check` PASS、marker **2026-09-13-r124**、`dll_check` 字节一致。
+- **验证方法**：开实验档打一局战斗 → 日志里**不应再出现** `动作队列UI入队触发空引用`。
+
 ### 改进-1 每回合开始必须逐个看完所有真人玩家的抽牌演出（2026-09-10 r105 已实现，✅ 已实机确认）
 
 > 🔧 **r105 实现**：设置页「其 它 设 置」新增开关 **「跳过他人回合开始抽牌演出」**（配置键
@@ -493,6 +566,44 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
 > 即「跳过去看一眼再自动切回」与观察一致，符合设计预期（用户原话：跳过去看一眼然后自动切回）。
 > **附带确认**：该会话**没有**再次出现脏值自愈 WARN（`wakuuBrain=heuristic` 保持）→
 > 证明 r110 的「每刀只改一次」在**跨会话**同样成立。
+> ⑭ **方案 D 可开关实验档已落地（r121，2026-09-12，已部署待实机）**：新增开关
+> **「【实验】瓦库出牌走动作队列」（配置键 `wakuuPlayQueue`，默认关）** —— 开启后瓦库出牌不再用
+> inline 的 `CardCmd.AutoPlay`，而是 `new PlayCardAction(card, target)` 经
+> `ActionQueueSynchronizer.RequestEnqueue` 入**该瓦库自己的**动作队列（原版 `CardModel.EnqueueManualPlay`
+> 就是这一行），并**逐张 `await action.CompletionTask`**（`GameAction` 公开的"等这个动作彻底跑完"）——
+> 每张牌执行完（含扣费）才做下一次决策，能量读数准确，也不会堆出一串注定被 Cancel 的动作。
+> 三条语义迁移（方案 §12.2）逐条处理：
+> ① `isAutoPlay` true→false —— 实验档要观察的核心差异（`VoidFormPower` / `PaelsEye` / `UnceasingTop` 等）；
+> ② 目标按**原版真人出牌口径**归一：**只有 `AnyEnemy` / `AnyAlly` 传大脑解析出的目标，其余一律 null**
+>   —— `PlayCardAction` 用 `CardModel.IsValidTarget` 校验，而它对"非 Any 的牌 + 非空目标"返回 false ⇒
+>   沿用 AutoPlay 口径（`AnyPlayer` 会被解析成自己）会让动作被 `Cancel()` 打不出牌；
+>   目标解析不到时**不构造动作**，牌留在手牌；
+> ③ **删掉外层 `await SpendResources()`**（动作自己会扣，否则双重扣能量）。
+> 判定收敛为纯函数 `WakuuPlayQueuePolicy`（`DecidePath` / `NeedsExternalSpendResources` /
+> `ShouldUseResolvedTarget`，+9 单测）。设置页「瓦库托管」区新增该项，文案写明三条语义变化。
+> **阶梯式落地**：本步只换"出牌路径"，`SelectorScopeGate` 与选择器作用域**原样保留**（回滚面最小）；
+> "去掉全局闸门、让多瓦库真正重叠"留作下一步，等本步实机数据（方案 §12.7「尚未做」）。
+> 门禁：0 警告 0 错误、**458 单测全绿**（+10）、`clr_compat_check` PASS、marker **2026-09-12-r121**、
+> `dll_check` 字节一致（`WakuuPlayQueuePolicy` 在、`__runOriginal`/`WakuuPersonalRollback` 不在）。
+> **验证方法**：开开关进战斗 → 应出现 `瓦库出牌走动作队列完成（方案 D 实验档）: …, actionId=…, ms=…`
+> 与游戏自带的 `Player <netId> playing card <卡>`；关掉开关应回到既有路径（**不再出现** `走动作队列` 行）。
+> **观察点**：① 虚无形态 / 佩尔之眼 / 不歇之巅等牌对瓦库出牌的统计与触发是否变化；
+> ② `AnyEnemy`/`AnyAlly` 牌是否照常打得出、解析不到时是否留在手牌；③ 能量有没有被扣两次（不应）；
+> ④ `AnyPlayer` 类牌（按原版口径传 null）表现是否与旧路径一致；⑤ 与「瓦库出牌加速」叠加时的观感。
+> **同一轮的顺手小修**：`WakuuPersonalDedupe.RemoveCardRemoval` 的去重键补上 `act`
+> （原先四张表里唯一少一层 `act` 的，会把跨幕的两次合法同名删牌合并成一行；+1 单测「跨幕同名删牌不合并」）。
+> ⑮ **r122（2026-09-13，用户实机反馈后收口）**：
+> ① **修 BUG-10**（虚空形态强行结束回合后瓦库仍继续出牌，见该条目）—— 判据改用**逐玩家**的
+> `IsPlayerReadyToEndTurn`，加在**出牌循环**与**看门狗调度**两处；
+> ② **用户实测（r121）通过项**：**开实验档、不开加速**＝正常（**不会**错误触发佩尔之眼、
+> **不会**无视限制打出华丽收场 —— 说明队列路径的 `CanPlay`/目标校验是有效的）；**都不开**＝正常；
+> ③ **两个都开会"加速失效" —— 属设计使然**：队列路径走 `PlayCardAction`（`isAutoPlay: false`），
+> 它没有 `skipCardPileVisuals` 参数，补间与两段固定等待都走「真人出牌」分支，因此**会盖过**
+> 「瓦库出牌加速」，单张回到约 1 秒。设置页文案原先误写成"与加速同向"，r122 已改正为
+> 「本项会盖过加速、二者取一」，并写明想两者兼得需再给 `CardModel.OnPlayWrapper` 打前缀补丁
+> （且**只能**省两段固定等待，"牌从手牌飞出"仍走 `AddDuringManualCardPlay` 真人分支，收益有限）。
+> 门禁：0 警告 0 错误、**458 单测全绿**、`clr_compat_check` PASS、marker **2026-09-13-r122**、
+> `dll_check` 字节一致。
 
 - **现象**：多个瓦库时只能「一个瓦库打完 → 切到下一个瓦库」串行进行，且真人视角会跟着切到
   瓦库正在操作的角色；瓦库多时同样很慢。

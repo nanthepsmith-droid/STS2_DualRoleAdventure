@@ -127,6 +127,7 @@ internal static class PatchDomainMap
             // ============ Combat：战斗流程 ============
             ["CardManualPlayContextPatch"] = PatchDomain.Combat,
             ["NCardPlayQueueOnActionEnqueuedFailSafePatch"] = PatchDomain.Combat,
+            ["NCardPlayQueueActionEnqueuedGuardPatch"] = PatchDomain.Combat,
             ["CombatManagerPatch"] = PatchDomain.Combat,
             ["CombatManagerReadyEnemyTurnPatch"] = PatchDomain.Combat,
             ["CombatManagerSetupPlayerTurnForegroundPatch"] = PatchDomain.Combat,

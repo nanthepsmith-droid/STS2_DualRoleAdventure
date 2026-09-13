@@ -192,8 +192,8 @@ internal static class LocalPersonalRecorder
 
         lock (_lock)
         {
-            // 写时幂等（r120）：同一局同一张牌只保留最后一次。
-            int replaced = WakuuPersonalDedupe.RemoveCardRemoval(_store, runKey, cardId.ToUpperInvariant());
+            // 写时幂等（r120）：同一局**同一幕**同一张牌只保留最后一次（带 act —— 跨幕的两次合法删牌不该合并）。
+            int replaced = WakuuPersonalDedupe.RemoveCardRemoval(_store, runKey, act, cardId.ToUpperInvariant());
             _store.cardRemovals.Add(new PersonalCardRemovalRecord
             {
                 runKey = runKey,

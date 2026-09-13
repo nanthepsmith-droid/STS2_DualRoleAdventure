@@ -127,6 +127,7 @@ internal static class LocalMultiControlRuntime
         _wakuuAutoEndIssued.Clear();
         _allPlayersAutoEndedRounds.Clear();
         _wakuuToNonWakuuSwitchedRounds.Clear();
+        WakuuTurnEndOrigin.ResetForCombat();
         _lastAutoEndCombatIdentity = -1;
         _pendingWakuuAutoSwitchRoundKey = null;
         _pendingWakuuAutoSwitchSource = null;
@@ -449,7 +450,19 @@ internal static class LocalMultiControlRuntime
                 continue;
             }
 
-            MegaCrit.Sts2.Core.Commands.PlayerCmd.EndTurn(player, canBackOut: false);
+            // 标记"这一次结束是模组自己发起的"：`WakuuTurnEndOrigin` 借此把「模组收口」与
+            // 「卡牌效果强行结束」（如虚空形态）区分开 —— 前者允许本回合内拿到新牌继续打，
+            // 后者必须停手（BUG-10）。见 WakuuTurnEndOrigin 的注释。
+            WakuuTurnEndOrigin.BeginModIssuedEnd();
+            try
+            {
+                MegaCrit.Sts2.Core.Commands.PlayerCmd.EndTurn(player, canBackOut: false);
+            }
+            finally
+            {
+                WakuuTurnEndOrigin.EndModIssuedEnd();
+            }
+
             endedAnyPlayer = true;
         }
 
@@ -474,6 +487,8 @@ internal static class LocalMultiControlRuntime
         _wakuuAutoEndIssued.Clear();
         _allPlayersAutoEndedRounds.Clear();
         _wakuuToNonWakuuSwitchedRounds.Clear();
+        // 回合号只在战斗内有意义 → 换战斗时清空"谁结束了这一位"的归因表。
+        WakuuTurnEndOrigin.ResetForCombat();
         _pendingWakuuAutoSwitchRoundKey = null;
         _pendingWakuuAutoSwitchSource = null;
         _pendingManualEndTurnPlayerId = null;

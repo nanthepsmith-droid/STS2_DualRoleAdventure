@@ -76,8 +76,16 @@ internal static class WakuuPersonalDedupe
             && Same(r.item, item));
     }
 
-    /// <summary>写入删牌之前调用：删掉该局同一张牌的旧行。</summary>
-    public static int RemoveCardRemoval(PersonalStore store, string runKey, string card)
+    /// <summary>
+    /// 写入删牌之前调用：删掉该局**同一幕**同一张牌的旧行。
+    ///
+    /// **为什么要带 <paramref name="act"/>**：删牌是「一次删牌机会 = 一个抉择」，而同一张牌
+    /// （如两张 `STRIKE`）在同一局的不同幕被合法地各删一次是很常见的 —— 键里少了 `act` 就会把
+    /// 跨幕的两次合法删牌合并成一行，删牌偏好被少算。带上 `act` 后既保留了 SL 覆盖语义
+    /// （SL 不会跨幕，同幕重删同一张牌仍会被覆盖），又不再误合并。
+    /// 这与商店购买 `(runKey, act, kind, item)` 的口径一致。
+    /// </summary>
+    public static int RemoveCardRemoval(PersonalStore store, string runKey, int act, string card)
     {
         if (store == null || string.IsNullOrEmpty(runKey) || string.IsNullOrEmpty(card))
         {
@@ -86,6 +94,7 @@ internal static class WakuuPersonalDedupe
 
         return store.cardRemovals.RemoveAll(r => r != null
             && Same(r.runKey, runKey)
+            && r.act == act
             && Same(r.card, card));
     }
 

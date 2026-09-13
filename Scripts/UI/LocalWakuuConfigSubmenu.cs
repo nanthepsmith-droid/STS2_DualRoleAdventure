@@ -343,6 +343,11 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.FastWakuuPlay,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("fastWakuuPlay", value));
         AddToggleRow(column,
+            "【实验】瓦库出牌走动作队列",
+            "默认关。**实验档**：开启后瓦库出牌不再用模组内联的自动出牌，而是像真人/远端玩家那样「把出牌动作排进自己的动作队列」（原版多人模式的同一条路径），换来多人模式的真实语义——某个瓦库在等自己的选牌时不挡住其他瓦库与真人。代价是三条刻意接受的语义变化：① 瓦库的出牌不再按「自动出牌」处理（虚无形态、佩尔之眼、不歇之巅等对自动出牌有特判的牌会开始把瓦库出牌算进去）；② 需要指定目标的牌若当刻解析不到目标，牌会留在手里（旧行为是打出去进弃牌堆）；③ **本项会盖过上面的「瓦库出牌加速」**：队列路径走的是原版「真人出牌」的演出分支（PlayCardAction 没有跳过动画的参数，连「牌从手牌飞出」也走真人分支），所以两个都开时瓦库出牌会回到较慢的完整演出（约 1 秒/张）。想要速度就只开「瓦库出牌加速」；想要多人语义就开本项、接受较慢的演出。关闭即恢复既有行为；遇到任何异常请关掉本项并保留 godot.log。",
+            () => LocalWakuuAutopilotConfig.WakuuPlayQueue,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("wakuuPlayQueue", value));
+        AddToggleRow(column,
             "自有统计角标",
             "默认关。开启后在「奖励选牌卡/商店卡/事件选项按钮」的角标位置（见下方「自有统计角标位置」）显示你自己记录的总抓取率/总选择率（XX%），鼠标悬停弹出分幕首抓/重复抓取率、胜率的详情。只显示本地个人统计，与皮皮军师（SkadaHelper）社区统计 UI 分开、互不覆盖。",
             () => LocalWakuuAutopilotConfig.StatBadge,
