@@ -294,7 +294,60 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   部署后门禁 7 直接报「未能解析 marker，拒绝视为部署成功」。改为与 `dll_check.py` 一致扫两种对齐，
   并补 `marker=YYYY-MM-DD-rNN` 兜底正则。
 
+### Added
+- **「选牌选择器按归属者分发」（改进-2 Phase 1，r113，2026-09-11）**：多瓦库托管时，选牌请求
+  按「谁的选牌」路由到归属者自己的选择器，不再全靠"栈顶是谁"。新增纯逻辑
+  `WakuuOwnerSelectorMap`（归属者登记表）+ `WakuuSelectorDispatch.Decide`（路由真值表，+21 单测）；
+  运行层 `WakuuSelectorRegistry.Open(ownerId, selector)` 统一「压栈 + 登记」，6 处压栈点全部迁移
+  （战斗出牌 / 遗物效果 / 事件选项 / 火堆 / 药水 / 卡牌奖励）；新增启动自检
+  `SELECTOR_ROUTE`（反射枚举 `CardSelectCmd.From*` 全部入口并分类，未分类新入口即 WARN，
+  兼作游戏更新哨兵）。行为零变化（三条老路逐条保留），为后续并发出牌铺路由底座。
+- **瓦库事件选项接入「我们自己的」选择率 + 胜率（改进-3，r114/r115，2026-09-11）**：
+  `WakuuEventSignal` 扩展 `ChosenRate` / `WinRateSkipped`（社区链无选择率保持 null），
+  `WakuuSignalPicking.PickBestEventOptionIndex` 与卡牌同口径（选择率为主、增益加权、负面出局、
+  同分保留更靠前）；r115 把统计链的全部早退路径留痕，让「没生效」与「没数据」在日志里可区分。
+  前置：手动打开「个人统计决策辅助」（默认关）、样本门槛 ≥3、只计已打完的局。
+- **多瓦库耗时埋点 + B1 修正版（r116，2026-09-11）**：回合开始 hook 只做「用药 / 视角 / 闪光 /
+  登记出牌意图」，出牌唯一实现交由 tick 驱动的看门狗；顺带消除每回合每瓦库 5 条 INFO 与一条
+  误报 WARN 噪声，并加耗时埋点（hookMs / 回合开始→出牌启动延迟 delayMs / 出牌耗时）——
+  实证多瓦库是串行（第 2/3 个瓦库的 delay ≈ 前序瓦库出牌耗时之和）。
+- **「瓦库出牌加速」开关（`fastWakuuPlay`，r117，默认开）**：给 `CardCmd.AutoPlay` 传
+  `skipCardPileVisuals`（官方给自动出牌场景的参数，跳过两段固定等待与牌堆补间/烟雾 VFX），
+  每张牌 1.0~1.4s → 0.2~0.58s（约 3 倍），不改数据语义。
+- **【实验】瓦库出牌走动作队列（`wakuuPlayQueue`，方案 D 第一步，r121~r125，默认关）**：
+  开启后瓦库出牌不再用 inline 的 `CardCmd.AutoPlay`，而是 `PlayCardAction` 入**该瓦库自己的**
+  动作队列并逐张 `await`（能量读数准确、不堆注定被取消的动作）；目标按真人出牌口径归一
+  （只有 `AnyEnemy` / `AnyAlly` 传大脑解析的目标，其余传 null）、删掉外层 `SpendResources()`
+  防双重扣费。同轮顺手修：删牌去重键补 `act`（跨幕的两次合法同名删牌不再被合并）。
+  已知取舍（写进设置页文案）：队列路径会盖过「瓦库出牌加速」。
+- **【实验】瓦库并发出牌（`wakuuPlayOverlap`，方案 D 第二步，r126，默认关、需先开队列档）**：
+  出牌循环不再抢全局 `SelectorScopeGate`、看门狗不再把 `LocalContext.NetId` 钉在瓦库身上
+  （出牌交给游戏全局单泵，归属走 r113 的选择器注册表）⇒ 多个瓦库的出牌时间窗真正重叠
+  （实测 5 瓦库的出牌启动延迟 32~83ms，串行时代是 0.5~9.7s）。顺带堵掉一个实测才能发现的真坑：
+  原版 `StackedSelectorScope.Dispose` 只在"自己是栈顶"时弹栈 ⇒ 作用域交错时先释放的选择器
+  会**永久残留**在全局栈里；新增 `WakuuSelectorStackSurgery.RemoveByReference`（按引用摘除，+7 单测）
+  无条件挂在作用域释放处兜底。已知代价：瓦库出牌的前台视觉演出更少；「全程跟随」视角档会来回抢视角。
+- **真人插队（r127/r128）**：并发档下真人**按牌**或**点结束回合**的那一刻，把瓦库"已入队、
+  尚未开始执行"的动作撤掉，让真人的动作成为队列里 ID 最小的一个（原版多人执行本就是
+  全局单泵、按全局 action ID 一次跑一个）。被撤的动作从未执行 ⇒ 不扣能量、不结算、牌仍在手牌，
+  由看门狗下一轮重新决策；正在执行 / 正在等选择的动作一律不撤。
+  补丁点：`CardModel.EnqueueManualPlay`（出牌）+ `NEndTurnButton.CallReleaseLogic`（结束回合）。
+
 ### Fixed
+- **SL（读档）后个人记录的抉择未回滚 → 选择率被污染（BUG-9，r120，2026-09-12 实机确认）**：
+  真人一点选项就立即落盘，而 `runKey` 跨存档稳定 ⇒ 被回滚的那段抉择累积成重复行、
+  SL 前点过的选项残留 `chosen=true`。改为**「写时幂等」**：写入前先删掉同一抉择标识的旧行
+  （事件页 `(runKey,eventId)`、卡牌批次 `(runKey,batchKey)`、商店 `(runKey,act,kind,item)`、
+  删牌 `(runKey,card)`），SL 多少次统计都稳定；r118/r119 的「按存档点 mtime 回滚」方案
+  已整体删除（实测判据恒失效：读档动作本身会重写存档文件）。
+- **瓦库在「回合被强行结束」后仍继续出牌（BUG-10，r122/r123，2026-09-13 实机确认）**：
+  打出虚空形态后被强行结束回合，瓦库仍继续出牌。按**结束来源归因**：被卡牌效果 / 原版强行结束
+  （来源不明也一律停手）→ 停手；被模组自己收口且未全员 ready → 放行（保留"收口后又因别人的
+  效果拿到牌继续打"）。判定收敛为纯函数 `WakuuTurnEndOrigin.ShouldStopAutoplay`（+9 单测）。
+- **`NCardPlayQueue.OnActionEnqueued` 对「本地非前台玩家出牌」必然空引用（BUG-11，r124，
+  2026-09-13 实机确认）**：本 mod 主动关闭了远端意图 UI ⇒ `PlayerIntentHandler` 为 null，
+  原版取飞牌起点必然抛异常（方案 D 让瓦库出牌也走动作队列后被放大）。新增前缀守卫
+  先判后跳（等价于"这张牌不进 UI 出牌队列"，但没有异常、没有 WARN）；原 Finalizer 保留兜底。
 - **真人删牌统计从未记录（BUG-12；r129 定位 → r130 修正，2026-09-13）**：`个人记录-删牌` 一条都没有，
   落盘 `personal_stats.json` 的 `cardRemovals` **全历史 0 行**。实机证据（marker r128）：
   商店删牌走了 3 次、选牌链路完整结束（`Player …326 chose cards [WATCHER-DEFEND_WATCHER]`），
