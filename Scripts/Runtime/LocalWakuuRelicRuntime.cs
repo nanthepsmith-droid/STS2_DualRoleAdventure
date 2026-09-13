@@ -10,6 +10,7 @@ using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.GameActions;
+using MegaCrit.Sts2.Core.Entities.Actions;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
@@ -50,6 +51,15 @@ internal static class LocalWakuuRelicRuntime
     private static readonly HashSet<ulong> _takeoverRelicMissingWarned = new();
     private static readonly HashSet<ulong> _takeoverRelicRestoreScheduled = new();
     private static readonly SemaphoreSlim SelectorScopeGate = new(1, 1);
+
+    /// <summary>
+    /// 已入队、还没跑完的瓦库出牌动作（key = 玩家 NetId；每个瓦库同一时刻最多一个，逐张 await）。
+    ///
+    /// 并发出牌档（方案 D 第二步）下，真人点出的牌按全局 action ID 必然排在**所有已入队的瓦库动作之后**，
+    /// 于是真人要白等两三张瓦库牌。这里把在排队的动作登记下来，供
+    /// <see cref="YieldPendingQueuePlaysToHuman"/> 在真人出牌瞬间撤掉它们（让真人插队）。
+    /// </summary>
+    private static readonly Dictionary<ulong, PlayCardAction> _pendingQueuePlays = new();
     private static readonly FieldInfo? SelectorStackField =
         typeof(CardSelectCmd).GetField("_selectorStack", BindingFlags.NonPublic | BindingFlags.Static);
     private static int _selectorScopeInFlight;
@@ -260,6 +270,8 @@ internal static class LocalWakuuRelicRuntime
         _takeoverRelicMissingWarned.Clear();
         _takeoverRelicRestoreScheduled.Clear();
         _turnStartIntentAtMs.Clear();
+        // 并发出牌档的在飞动作登记表：跨局不留残（正常路径每个动作的 finally 都会摘掉自己）。
+        _pendingQueuePlays.Clear();
     }
 
     /// <summary>
@@ -407,18 +419,40 @@ internal static class LocalWakuuRelicRuntime
 
         bool reachedPlayLimit;
         int cardsPlayed;
-        bool gateEntered = false;
+        bool gateHeld = false;
+        // 改进-2 / 方案 D：路径在整轮里是常量（只由开关/场景决定），所以在进作用域之前就定下来。
+        // 第二步（并发出牌档）正是靠它决定「要不要抢全局闸门」，见 WakuuPlayQueuePolicy。
+        WakuuPlayPath playPath = WakuuPlayQueuePolicy.DecidePath(
+            LocalWakuuAutopilotConfig.WakuuPlayQueue,
+            LocalSelfCoopContext.IsEnabled,
+            IsVakuuFormMode(player));
+        bool overlapping = WakuuPlayQueuePolicy.IsOverlappingQueuePlay(
+            playPath, LocalWakuuAutopilotConfig.WakuuPlayOverlap);
         ulong enterTick = Time.GetTicksMsec();
         ulong gateWaitStartTick = Time.GetTicksMsec();
-        LocalMultiControlLogger.Info(
-            $"瓦库选择器闸门等待: player={player.NetId}, round={combatState.RoundNumber}, source={choiceContext.GetType().Name}, inFlight={Volatile.Read(ref _selectorScopeInFlight)}");
-        await SelectorScopeGate.WaitAsync();
-        gateEntered = true;
+        if (overlapping)
+        {
+            // 方案 D 第二步：出牌已入该瓦库自己的动作队列，等选择时该队列会被 `GetReadyAction` 跳过，
+            // 其他瓦库与真人照常出牌（多人模式的真实语义）。此时再抢全局 1 槽闸门反而把这份语义挡回去。
+            LocalMultiControlLogger.Info(
+                $"瓦库并发出牌：跳过全局选择器闸门（方案 D 第二步）: player={player.NetId}, round={combatState.RoundNumber}, source={choiceContext.GetType().Name}, inFlight={Volatile.Read(ref _selectorScopeInFlight)}");
+        }
+        else
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库选择器闸门等待: player={player.NetId}, round={combatState.RoundNumber}, source={choiceContext.GetType().Name}, inFlight={Volatile.Read(ref _selectorScopeInFlight)}");
+            await SelectorScopeGate.WaitAsync();
+            gateHeld = true;
+        }
+
         int inFlight = Interlocked.Increment(ref _selectorScopeInFlight);
         ulong gateWaitMs = Time.GetTicksMsec() - gateWaitStartTick;
         SelectorStackSnapshot gateEnterSnapshot = SnapshotSelectorStack();
         LocalMultiControlLogger.Info(
-            $"瓦库选择器闸门已进入: player={player.NetId}, round={combatState.RoundNumber}, waitMs={gateWaitMs}, inFlight={inFlight}, selectorStackCount={gateEnterSnapshot.Count}, selectorStackTop={gateEnterSnapshot.TopType}");
+            (overlapping
+                ? "瓦库出牌作用域已进入（并发档，未占全局闸门）: "
+                : "瓦库选择器闸门已进入: ")
+            + $"player={player.NetId}, round={combatState.RoundNumber}, waitMs={gateWaitMs}, inFlight={inFlight}, selectorStackCount={gateEnterSnapshot.Count}, selectorStackTop={gateEnterSnapshot.TopType}");
         try
         {
             using (WakuuSelectorRegistry.Open(player.NetId, new LocalWakuuStrategySelector()))
@@ -469,12 +503,6 @@ internal static class LocalWakuuRelicRuntime
                         // 无牌可出（EndTurn）或大脑拒绝决策 → 结束出牌
                         break;
                     }
-
-                    // 改进-2 / 方案 D 实验档（默认关）：路径判定走纯函数（见 WakuuPlayQueuePolicy）。
-                    WakuuPlayPath playPath = WakuuPlayQueuePolicy.DecidePath(
-                        LocalWakuuAutopilotConfig.WakuuPlayQueue,
-                        LocalSelfCoopContext.IsEnabled,
-                        IsVakuuFormMode(player));
 
                     // 扣费归属：只有 inline AutoPlay 需要"外层先花"（它随后跳过 X 捕获）；
                     // 队列路径由 PlayCardAction 自己扣 —— 外层再花一次就是双重扣能量（方案 §12.2 ③）。
@@ -539,16 +567,20 @@ internal static class LocalWakuuRelicRuntime
         }
         finally
         {
-            if (gateEntered)
+            // inFlight 是「有出牌作用域在飞」的唯一来源（探针靠它避免误清栈），所以并发档同样要递减；
+            // 只有真的抢到闸门才释放它（并发档从头到尾没占）。
+            int remainInFlight = Interlocked.Decrement(ref _selectorScopeInFlight);
+            if (gateHeld)
             {
-                int remainInFlight = Interlocked.Decrement(ref _selectorScopeInFlight);
                 SelectorScopeGate.Release();
-                ulong elapsedMs = Time.GetTicksMsec() - enterTick;
-                SelectorStackSnapshot releaseSnapshot = SnapshotSelectorStack();
-                LocalMultiControlLogger.Info(
-                    $"瓦库选择器闸门已释放: player={player.NetId}, round={combatState.RoundNumber}, elapsedMs={elapsedMs}, inFlight={remainInFlight}, selectorStackCount={releaseSnapshot.Count}, selectorStackTop={releaseSnapshot.TopType}");
-                ProbeAndRecoverSelectorStack($"wakuu-selector-finally-{player.NetId}-{combatState.RoundNumber}", allowRecover: true);
             }
+
+            ulong elapsedMs = Time.GetTicksMsec() - enterTick;
+            SelectorStackSnapshot releaseSnapshot = SnapshotSelectorStack();
+            LocalMultiControlLogger.Info(
+                (overlapping ? "瓦库出牌作用域已退出（并发档）: " : "瓦库选择器闸门已释放: ")
+                + $"player={player.NetId}, round={combatState.RoundNumber}, elapsedMs={elapsedMs}, inFlight={remainInFlight}, selectorStackCount={releaseSnapshot.Count}, selectorStackTop={releaseSnapshot.TopType}");
+            ProbeAndRecoverSelectorStack($"wakuu-selector-finally-{player.NetId}-{combatState.RoundNumber}", allowRecover: true);
         }
 
         // 出牌结束后跑药水的"回合结束前"相位：覆盖出牌过程中获得的药水（炼药 Alchemize、
@@ -608,6 +640,7 @@ internal static class LocalWakuuRelicRuntime
 
         ulong startTick = Time.GetTicksMsec();
         PlayCardAction action = new(card, target);
+        _pendingQueuePlays[player.NetId] = action;
         try
         {
             RunManager.Instance.ActionQueueSynchronizer.RequestEnqueue(action);
@@ -628,11 +661,77 @@ internal static class LocalWakuuRelicRuntime
                 + $"card={card.Id.Entry}, error={exception.Message}");
             return false;
         }
+        finally
+        {
+            // 只摘自己登记的那一条（正常结束 / 被取消 / 异常 / 被真人插队撤掉都走这里）。
+            if (_pendingQueuePlays.TryGetValue(player.NetId, out PlayCardAction? tracked)
+                && ReferenceEquals(tracked, action))
+            {
+                _pendingQueuePlays.Remove(player.NetId);
+            }
+        }
 
         LocalMultiControlLogger.Info(
             $"瓦库出牌走动作队列完成（方案 D 实验档）: player={player.NetId}, round={round}, "
             + $"card={card.Id.Entry}, actionId={action.Id?.ToString() ?? "none"}, ms={Time.GetTicksMsec() - startTick}");
         return true;
+    }
+
+    /// <summary>
+    /// **真人**做出一个"要排队"的操作时让瓦库让路：把瓦库那些**还在排队、尚未开始执行**的入队动作撤掉，
+    /// 让真人的那个动作成为队列里 ID 最小的那个，下一个就轮到它。
+    ///
+    /// 目前两个调用点（都是真人主动、UI 触发）：
+    /// <list type="bullet">
+    ///   <item>真人出牌 —— <c>CardModel.EnqueueManualPlay</c> 前缀（r127）；</item>
+    ///   <item>真人点结束回合 / 撤销 —— <c>NEndTurnButton.CallReleaseLogic</c> 前缀（r128）。</item>
+    /// </list>
+    ///
+    /// **为什么需要**：原版动作泵按**全局递增 action ID** 取下一个动作执行
+    /// （`ActionQueueSet.GetReadyAction`），而并发出牌档下每个瓦库都持有一个"已入队、在排队"的动作
+    /// （逐张 `await` 是 r121 为能量读数准确刻意做的）⇒ 真人点的东西**必然排在它们全部之后**。
+    /// 实机日志（r126/r127，5 个瓦库）：
+    /// 真人出牌要等 2~3 张瓦库牌结算（行 8784 入队 → 行 9019 生效）；
+    /// 点结束回合同理（行 8184 入队 `EndPlayerTurnAction` id 24 → 行 8413 才执行，其间 id 25/26/27 三张瓦库牌）。
+    ///
+    /// **安全性**：被撤的动作**从未开始执行**（只撤 `GameActionState.WaitingForExecution`）⇒ 不扣能量、
+    /// 不结算效果、牌仍在手牌，只是回到看门狗下一轮重新决策；`GameAction.Cancel()` 是原版自己的取消
+    /// 通道（`NCardPlayQueue.RemoveCardFromQueueForCancellation` 会把它从出牌队列 UI 里撤掉，
+    /// 非本地玩家只做移除动画、不动手牌）。**正在执行 / 正在等选择**的动作一律不撤（见纯函数注释）。
+    ///
+    /// 只在并发出牌档生效（`wakuuPlayOverlap` 开）；单瓦库串行路径本就最多 1 张在排队，行为不变。
+    /// </summary>
+    /// <param name="actorPlayerId">真人这次操作所针对的玩家（出牌是牌主人；结束回合是前台/点击目标角色）。</param>
+    /// <param name="source">调用来源（日志用）。</param>
+    public static void YieldPendingQueuePlaysToHuman(ulong actorPlayerId, string source)
+    {
+        if (!LocalWakuuAutopilotConfig.WakuuPlayOverlap || _pendingQueuePlays.Count == 0)
+        {
+            return;
+        }
+
+        List<string> cancelled = new();
+        foreach (KeyValuePair<ulong, PlayCardAction> pair in _pendingQueuePlays.ToList())
+        {
+            PlayCardAction action = pair.Value;
+            if (!WakuuPlayQueuePolicy.ShouldCancelPendingPlayForHumanPlay(
+                    overlapEnabled: true,
+                    isWaitingForExecution: action.State == GameActionState.WaitingForExecution))
+            {
+                continue;
+            }
+
+            string cardName = action.NetCombatCard.ToCardModelOrNull()?.Id.Entry ?? "unknown";
+            action.Cancel();
+            cancelled.Add($"{pair.Key}:{cardName}(id={action.Id?.ToString() ?? "none"})");
+        }
+
+        if (cancelled.Count > 0)
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库并发出牌：真人操作优先，撤掉尚未执行的瓦库入队动作让真人插队: actor={actorPlayerId}, "
+                + $"count={cancelled.Count}, 详情=[{string.Join(", ", cancelled)}], source={source}");
+        }
     }
 
     public static bool TryScheduleWatchdog(Player player, string source)
@@ -645,8 +744,17 @@ internal static class LocalWakuuRelicRuntime
         reason = "unknown";
         if (Volatile.Read(ref _selectorScopeInFlight) > 0)
         {
-            reason = "selector-scope-busy";
-            return false;
+            // 并发出牌档（方案 D 第二步）：多瓦库就是要重叠，不能再因为「有作用域在飞」把别人挡回去。
+            // 同一玩家的重复调度仍由下面的 `_watchdogInFlight` / 冷却时间兜住。
+            WakuuPlayPath path = WakuuPlayQueuePolicy.DecidePath(
+                LocalWakuuAutopilotConfig.WakuuPlayQueue,
+                LocalSelfCoopContext.IsEnabled,
+                IsVakuuFormMode(player));
+            if (!WakuuPlayQueuePolicy.IsOverlappingQueuePlay(path, LocalWakuuAutopilotConfig.WakuuPlayOverlap))
+            {
+                reason = "selector-scope-busy";
+                return false;
+            }
         }
 
         if (LocalManualPlayGuard.IsActive)
@@ -728,6 +836,8 @@ internal static class LocalWakuuRelicRuntime
         ulong? previousNetId = LocalContext.NetId;
         ulong previousSenderId = LocalSelfCoopContext.NetService?.NetId ?? 0UL;
         bool hasNetService = LocalSelfCoopContext.NetService != null;
+        // 只有真的钉过上下文才还原（并发出牌档不钉，见下方说明）—— 避免并发下把别人刚设好的值"还原"掉。
+        bool contextPinned = false;
         try
         {
             if (LocalManualPlayGuard.IsActive)
@@ -760,8 +870,26 @@ internal static class LocalWakuuRelicRuntime
             }
 
             EnsureWakuuPerspective(player, source);
-            LocalContext.NetId = player.NetId;
-            LocalSelfCoopContext.NetService?.SetCurrentSenderId(player.NetId);
+
+            // 全局上下文钉法：inline 路径（就地执行、选牌链在同一异步链上）必须钉，否则归位判定全错；
+            // 并发出牌档（方案 D 第二步）**绝不能钉** —— 出牌已交给游戏全局单泵执行、归属由
+            // WakuuSelectorRegistry 按归属者分发，而两个瓦库的看门狗会互相覆盖这个全局单值，
+            // 还会让原版把别人的出牌当成"我的牌"去做前台视觉（r109 那类 hand node 异常的来源）。
+            WakuuPlayPath watchdogPath = WakuuPlayQueuePolicy.DecidePath(
+                LocalWakuuAutopilotConfig.WakuuPlayQueue,
+                LocalSelfCoopContext.IsEnabled,
+                IsVakuuFormMode(player));
+            if (WakuuPlayQueuePolicy.IsOverlappingQueuePlay(watchdogPath, LocalWakuuAutopilotConfig.WakuuPlayOverlap))
+            {
+                LocalMultiControlLogger.Info(
+                    $"瓦库并发出牌：本次不钉全局上下文（出牌由游戏动作泵执行，归属走选择器注册表）: player={player.NetId}, source={source}");
+            }
+            else
+            {
+                LocalContext.NetId = player.NetId;
+                LocalSelfCoopContext.NetService?.SetCurrentSenderId(player.NetId);
+                contextPinned = true;
+            }
 
             // 改进-2 / B1：量化「回合开始 hook → 出牌启动」的交接延迟（即 tick 调度延迟）。
             string intentKey = $"{combatState.RoundNumber}:{player.NetId}";
@@ -802,10 +930,13 @@ internal static class LocalWakuuRelicRuntime
         finally
         {
             _watchdogInFlight.Remove(key);
-            LocalContext.NetId = previousNetId;
-            if (hasNetService)
+            if (contextPinned)
             {
-                LocalSelfCoopContext.NetService?.SetCurrentSenderId(previousSenderId);
+                LocalContext.NetId = previousNetId;
+                if (hasNetService)
+                {
+                    LocalSelfCoopContext.NetService?.SetCurrentSenderId(previousSenderId);
+                }
             }
 
             Callable.From(delegate
@@ -882,6 +1013,60 @@ internal static class LocalWakuuRelicRuntime
         }
 
         return new SelectorStackSnapshot(count, topType, allVakuuSelectors);
+    }
+
+    /// <summary>
+    /// 把某个选择器按**引用**从全局选择器栈里摘掉（并发出牌档的安全网，判定见
+    /// <see cref="WakuuSelectorStackSurgery"/>）。
+    ///
+    /// 用于「作用域释放时它已不在栈顶」的交错情况：原版 <c>StackedSelectorScope</c> 只在
+    /// 「自己仍是栈顶」时弹栈，否则它会被**永久留在栈里**，让所有「栈上无选择器」的判定失效。
+    /// 不在栈里 = 空操作（正常单作用域路径就是这一条），返回是否真的摘掉了。
+    /// </summary>
+    internal static bool RemoveSelectorFromStackIfPresent(object selector)
+    {
+        object? rawStack = SelectorStackField?.GetValue(null);
+        if (rawStack == null)
+        {
+            return false;
+        }
+
+        Type stackType = rawStack.GetType();
+        int count = (int?)stackType.GetProperty("Count")?.GetValue(rawStack) ?? 0;
+        if (count <= 0 || rawStack is not IEnumerable enumerable)
+        {
+            return false;
+        }
+
+        List<object> topToBottom = new(count);
+        foreach (object? item in enumerable)
+        {
+            if (item != null)
+            {
+                topToBottom.Add(item);
+            }
+        }
+
+        // Stack<T> 的枚举顺序就是「栈顶 → 栈底」，与 WakuuSelectorStackSurgery 的入参约定一致
+        List<object> remaining = WakuuSelectorStackSurgery.RemoveByReference(topToBottom, selector);
+        if (remaining.Count == topToBottom.Count)
+        {
+            return false;
+        }
+
+        MethodInfo? push = stackType.GetMethod("Push");
+        if (push == null)
+        {
+            return false;
+        }
+
+        stackType.GetMethod("Clear")?.Invoke(rawStack, null);
+        for (int i = remaining.Count - 1; i >= 0; i--)
+        {
+            push.Invoke(rawStack, new object[] { remaining[i] });
+        }
+
+        return true;
     }
 
     private static bool TryClearSelectorStack(out int clearedCount)

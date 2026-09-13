@@ -348,6 +348,11 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.WakuuPlayQueue,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("wakuuPlayQueue", value));
         AddToggleRow(column,
+            "【实验】瓦库并发出牌（不互相等）",
+            "默认关，**必须先开上面那项「瓦库出牌走动作队列」才生效**。这是上一项实验档的第二步（最终目标）：开启后多个瓦库不再排队等「全局出牌闸门」，一个瓦库在等自己的选牌时，其他瓦库与真人照常出牌（原版多人模式的真实语义）。代价：① 瓦库出牌期间不再把「当前玩家」钉在瓦库身上（出牌改由游戏动作泵执行、归属按角色分发），所以瓦库出牌的**前台视觉演出会更少**（更接近后台托管，伤害与效果照常）；② 视角档位设成「全程跟随」时，多个瓦库可能来回抢视角（建议配合默认的「不跟随」使用）。只想稳就先别开；遇到任何异常请关掉本项并保留 godot.log。",
+            () => LocalWakuuAutopilotConfig.WakuuPlayOverlap,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("wakuuPlayOverlap", value));
+        AddToggleRow(column,
             "自有统计角标",
             "默认关。开启后在「奖励选牌卡/商店卡/事件选项按钮」的角标位置（见下方「自有统计角标位置」）显示你自己记录的总抓取率/总选择率（XX%），鼠标悬停弹出分幕首抓/重复抓取率、胜率的详情。只显示本地个人统计，与皮皮军师（SkadaHelper）社区统计 UI 分开、互不覆盖。",
             () => LocalWakuuAutopilotConfig.StatBadge,

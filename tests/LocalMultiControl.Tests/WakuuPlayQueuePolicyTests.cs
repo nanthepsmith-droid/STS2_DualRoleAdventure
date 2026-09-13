@@ -102,4 +102,56 @@ public class WakuuPlayQueuePolicyTests
             Assert.That(WakuuPlayQueuePolicy.ShouldUseResolvedTarget(isAnyTargetCard: false), Is.False);
         });
     }
+
+    [Test]
+    public void 配置默认关闭并发出牌档()
+    {
+        // 第二步（去掉全局闸门）风险集中在"真重叠"，默认关 = 与 r121~r125 已实机确认的行为完全一致。
+        Assert.That(new WakuuConfigData().wakuuPlayOverlap, Is.False);
+    }
+
+    [Test]
+    public void 真人插队_只撤尚未开始执行的瓦库动作()
+    {
+        Assert.Multiple(() =>
+        {
+            // 并发出牌档 + 还在排队（WaitingForExecution）→ 撤。
+            // 这是 r126 实机"真人点牌要白等 2~3 张瓦库牌"的修法（r127）。
+            Assert.That(
+                WakuuPlayQueuePolicy.ShouldCancelPendingPlayForHumanPlay(overlapEnabled: true, isWaitingForExecution: true),
+                Is.True);
+            // 正在执行 / 正在等选择 → 绝不能撤：前者异步链已在跑（撤了会让 Execute 以非法状态收尾并报 ERROR），
+            // 后者会把选牌流程打断。
+            Assert.That(
+                WakuuPlayQueuePolicy.ShouldCancelPendingPlayForHumanPlay(overlapEnabled: true, isWaitingForExecution: false),
+                Is.False);
+            // 非并发档（r121~r125）→ 不做插队，保持既有行为（本来就最多 1 张在排队）。
+            Assert.That(
+                WakuuPlayQueuePolicy.ShouldCancelPendingPlayForHumanPlay(overlapEnabled: false, isWaitingForExecution: true),
+                Is.False);
+        });
+    }
+
+    [Test]
+    public void 并发出牌档只在队列路径生效()
+    {
+        Assert.Multiple(() =>
+        {
+            // 只有「队列路径 + 开关开」才是并发档（这是"多瓦库真正重叠"的唯一来源）。
+            Assert.That(
+                WakuuPlayQueuePolicy.IsOverlappingQueuePlay(WakuuPlayPath.ActionQueue, overlapEnabled: true),
+                Is.True);
+            // 开关关 → 与升级前一致（照旧抢全局闸门）。
+            Assert.That(
+                WakuuPlayQueuePolicy.IsOverlappingQueuePlay(WakuuPlayPath.ActionQueue, overlapEnabled: false),
+                Is.False);
+            // inline 路径**永不**并发：它是就地执行、会同步触发选牌链，没有闸门保护会真抢答全局选择器栈。
+            Assert.That(
+                WakuuPlayQueuePolicy.IsOverlappingQueuePlay(WakuuPlayPath.InlineAutoPlay, overlapEnabled: true),
+                Is.False);
+            Assert.That(
+                WakuuPlayQueuePolicy.IsOverlappingQueuePlay(WakuuPlayPath.InlineAutoPlay, overlapEnabled: false),
+                Is.False);
+        });
+    }
 }

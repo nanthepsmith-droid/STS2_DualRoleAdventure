@@ -176,6 +176,22 @@ internal sealed class WakuuConfigData
     public bool wakuuPlayQueue { get; set; }
 
     /// <summary>
+    /// 【实验档 · 第二步】瓦库并发出牌（改进-2 / 方案 D 的最终目标，**默认关**，仅在
+    /// <see cref="wakuuPlayQueue"/> 开启时生效）。
+    ///
+    /// 开启后，出牌循环**不再抢占全局 1 槽的 `SelectorScopeGate`**，看门狗调度也不再因
+    /// 「已有作用域在飞」被挡 —— 多个瓦库真正重叠："某个瓦库在等自己的选牌时，其他瓦库与真人照常出牌"
+    /// （原版 `ActionQueueSet.GetReadyAction` 会跳过等选择的队列，这是多人模式的真实语义）。
+    /// 两种选择各归各的路由由 Phase 1（r113）的 `WakuuSelectorRegistry` 承担。
+    ///
+    /// 代价与前提（详见方案 §12.11）：必须走队列路径（`wakuuPlayQueue` 开），否则闸门照旧；
+    /// 并发时不再把 `LocalContext.NetId` 钉在瓦库身上（出牌由游戏全局单泵执行、归属走注册表分发），
+    /// 因此瓦库出牌的**前台视觉**会更接近"后台托管"的观感。
+    /// 默认关 = 与既有行为完全一致。
+    /// </summary>
+    public bool wakuuPlayOverlap { get; set; }
+
+    /// <summary>
     /// 瓦库托管视角策略（改进-2 / Phase 0，默认 `never` **不跟随**，2026-09-10 用户拍板）：
     /// - `never`：瓦库全程不抢视角；只保留两处防软锁兜底（作用域外真人交互选牌、安全网超时救援）；
     /// - `keyNodes`：仅关键节点跟随 —— 瓦库**回合开始**时切过去一次（看到轮到谁、抽了什么），日常出牌不跟随；

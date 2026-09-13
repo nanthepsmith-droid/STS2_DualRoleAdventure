@@ -55,7 +55,7 @@ internal static class WakuuSelectorRegistry
             throw;
         }
 
-        return new OpenScope(registration, stackScope);
+        return new OpenScope(registration, stackScope, selector);
     }
 
     /// <summary>按归属者取其当前生效的托管选择器（最内层）。未登记返回 false。</summary>
@@ -88,11 +88,13 @@ internal static class WakuuSelectorRegistry
     {
         private IDisposable? _registration;
         private IDisposable? _stackScope;
+        private readonly ICardSelector _selector;
 
-        internal OpenScope(IDisposable registration, IDisposable stackScope)
+        internal OpenScope(IDisposable registration, IDisposable stackScope, ICardSelector selector)
         {
             _registration = registration;
             _stackScope = stackScope;
+            _selector = selector;
         }
 
         public void Dispose()
@@ -110,6 +112,18 @@ internal static class WakuuSelectorRegistry
             IDisposable? stackScope = _stackScope;
             _stackScope = null;
             stackScope?.Dispose();
+
+            // 并发出牌档（方案 D 第二步）的安全网：两个作用域交错时，先压入的那个释放时已不在栈顶，
+            // 原版 scope 不会弹栈 → 会永久残留在全局选择器栈里（之后"栈上无选择器"的判定全部失效）。
+            // 按引用补摘一刀；不在栈里 = 空操作，因此单作用域的正常路径行为零变化。
+            if (LocalWakuuRelicRuntime.RemoveSelectorFromStackIfPresent(_selector))
+            {
+                // 并发出牌档下这是**预期路径**（两个瓦库的作用域交错，先释放的那个已不在栈顶），
+                // 所以只记 INFO：安全网命中 = 正常重叠，不是异常。
+                LocalMultiControlLogger.Info(
+                    $"并发出牌作用域释放时选择器仍在全局栈中，已按引用摘除防残留（并发出牌下的预期路径）: "
+                    + $"selector={_selector.GetType().Name}, 栈快照={LocalWakuuRelicRuntime.SnapshotSelectorStack().Count} 项");
+            }
         }
     }
 }

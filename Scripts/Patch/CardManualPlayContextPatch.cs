@@ -38,6 +38,14 @@ internal static class CardManualPlayContextPatch
             return;
         }
 
+        // 并发出牌档（方案 D 第二步 / r127）：真人一按出牌，就把瓦库"已入队、还在排队"的动作撤掉，
+        // 让真人这张牌插到队首（原版按全局 action ID 取下一个执行，否则真人要白等好几张瓦库牌）。
+        // 瓦库自己走的是 RequestEnqueue，不经 EnqueueManualPlay；这里再兜一层防御，别把自己的动作撤了。
+        if (!LocalWakuuRelicRuntime.IsVakuuFormModeById(owner.NetId))
+        {
+            LocalWakuuRelicRuntime.YieldPendingQueuePlaysToHuman(owner.NetId, "card-enqueue-manual-play");
+        }
+
         LocalMultiControlRuntime.AlignContextForActionOwner(owner.NetId, "card-enqueue-manual-play");
     }
 

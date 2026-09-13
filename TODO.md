@@ -604,6 +604,87 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
 > （且**只能**省两段固定等待，"牌从手牌飞出"仍走 `AddDuringManualCardPlay` 真人分支，收益有限）。
 > 门禁：0 警告 0 错误、**458 单测全绿**、`clr_compat_check` PASS、marker **2026-09-13-r122**、
 > `dll_check` 字节一致。
+> ⑯ **r126（2026-09-13，方案 D 第二步：队列路径下去掉全局闸门）**：新增第二层实验开关
+> **「【实验】瓦库并发出牌（不互相等）」（配置键 `wakuuPlayOverlap`，默认关，仅 `wakuuPlayQueue` 开时生效）**。
+> 三个调用点共用同一真值 `WakuuPlayQueuePolicy.IsOverlappingQueuePlay(path, overlap)`：
+> ① 出牌循环不再 `await SelectorScopeGate.WaitAsync()`（**这才是"一个打完才轮到下一个"的来源**）；
+> ② `TryScheduleWatchdog` 不再因 `_selectorScopeInFlight > 0` 返回 `selector-scope-busy`；
+> ③ `RunWatchdogAsync` 不再把 `LocalContext.NetId`/sender 钉在瓦库身上（出牌已交给游戏全局单泵
+> `ActionExecutor.ExecuteActions`，归属走 r113 的 `WakuuSelectorRegistry` 按归属者分发；全局单值被两个
+> 看门狗互相覆盖无意义，且会让原版把别人的出牌当"我的牌"走前台视觉 —— r109 那类异常的来源）。
+> **顺带堵掉一个真坑**：原版 `StackedSelectorScope.Dispose` 只在"自己仍是栈顶"时弹栈 ⇒ 并发档下
+> 先压入先释放的那个选择器会**永久残留在全局栈**（"栈上无选择器"的判定全部失效）。
+> 新增纯逻辑 `WakuuSelectorStackSurgery.RemoveByReference`（按引用、只摘一份、未命中原样返回，+7 单测）
+> + 运行层 `RemoveSelectorFromStackIfPresent`（反射读 `_selectorStack`，命中则 Clear + 逆序 Push 复原），
+> 无条件挂在 `WakuuSelectorRegistry.OpenScope.Dispose`（正常路径未命中 = 空操作）。
+> **明确不做**：`Selector` getter 守卫与登记表不动（Phase 1 底座已够用）；`NPlayerHandSelectCardsSerializationPatch`
+> 保留（§12.3 判定不能退休）；inline 路径**永不**并发（就地执行会同步触发选牌链，没闸门保护会真抢答）。
+> **代价（已写进设置页文案）**：瓦库出牌的前台视觉演出更少（更接近后台托管）；视角档位「全程跟随」下
+> 多瓦库会来回抢视角（建议配默认「不跟随」）。
+> 门禁：0 警告 0 错误、**478 单测全绿**（+11）、`clr_compat_check` PASS、marker **2026-09-13-r126**、
+> `dll_check` 字节一致（`WakuuSelectorStackSurgery`/`IsOverlappingQueuePlay`/`wakuuPlayOverlap`/
+> `RemoveSelectorFromStackIfPresent` 在，`__runOriginal` 不在）。详见方案 **§12.11**。
+> **验证方法**：两个以上瓦库打一回合 → 开局应出现 `wakuuPlayOverlap=True` 与
+> `瓦库并发出牌：跳过全局选择器闸门（方案 D 第二步）`/`本次不钉全局上下文`；各瓦库的
+> `瓦库出牌耗时` 时间窗应**互相重叠**（不再是一个的 `delayMs` ≈ 前面所有瓦库耗时之和）；
+> 某个瓦库等选牌时其他瓦库/真人应能继续出牌；**不应**出现
+> `并发出牌作用域释放时选择器仍在全局栈中`（出现 = 安全网在救场，请发日志）、
+> `Couldn't get hand node`、`瓦库选择器作用域异常退出`、选牌被抢答。
+> 关掉本项 ⇒ 与 r121~r125 完全一致（`瓦库选择器闸门等待/已进入/已释放` 照旧）。
+> ⑰ **r127（2026-09-13，r126 实机反馈的收口：「真人被瓦库插队」）**：用户实测 r126 后反馈
+> 「瓦库之间不再必须打完一整轮才轮到下一个（✅ 并发出牌生效），但**我打了牌要等前面出牌的瓦库的牌
+> 全部生效完**才轮到我的牌」。
+> **日志定性（5 瓦库局，marker r126）**：并发出牌**完全生效** —— round 1 五个瓦库的
+> `瓦库回合开始→出牌启动延迟` = **32/79/81/83/83 ms**（r116 串行时代 494/6297/9724）；
+> `瓦库选择器闸门` **0 条**、`选牌选择器按归属分发` 2 条、`检测到真人选牌请求` 0 条、
+> `Couldn't get hand node` / `瓦库选择器作用域异常退出` / `瓦库看门狗重启失败` 全 **0 条**。
+> **真问题**：`GetReadyAction` 按**全局递增 action ID** 取下一个动作（多人模式原生语义），而并发档下
+> 每个瓦库都用"逐张 `await`"占着一个**已入队、在排队**的动作 ⇒ 5 个瓦库 = 队列里常驻 5 张瓦库牌，
+> 真人点出的牌必然排在它们全部之后（实测：行 8784 真人入队 → **行 9019** 才生效，其间 2 张瓦库牌；
+> 另一张等了 3 张）。每张瓦库牌管线耗时 ~3.2~4.0s（5 瓦库平分单泵）。
+> **修法（真人插队）**：`CardModel.EnqueueManualPlay` 前缀（真人**按下**出牌那一刻）调
+> `LocalWakuuRelicRuntime.YieldPendingQueuePlaysToHuman()` → 把瓦库**还在排队、尚未开始执行**
+> （`GameActionState.WaitingForExecution`）的入队动作 `GameAction.Cancel()` 撤掉，真人的牌随即成为
+> 队列里 ID 最小的那个。判定抽为纯函数 `WakuuPlayQueuePolicy.ShouldCancelPendingPlayForHumanPlay`
+> （+1 单测）；登记表 `_pendingQueuePlays` 在动作的 `finally` 里自我摘除，`ResetTakeoverFallbackState` 整体清空。
+> **安全性**：被撤的动作**从未执行过** ⇒ 不扣能量、不结算、牌仍在手牌，只是回看门狗下一轮重新决策
+> （`瓦库出牌入队后被取消（牌留在手牌，交看门狗下一轮）` 会变多，属预期）；`Cancel()` 走原版自己的取消通道，
+> 并发档 `LocalContext.IsMe=false` ⇒ **不会动真人的手牌**。正在执行/正在等选择的动作一律不撤。
+> **顺带修正一条判据**：`并发出牌作用域释放时选择器仍在全局栈中`（r126 一局 21 条）复核确认是**预期路径**
+> （两个作用域交错、先释放的已不在栈顶），**r127 已从 WARN 降级为 INFO** —— 不是异常，不必再报。
+> 门禁：0 警告 0 错误、**479 单测全绿**（+1）、`clr_compat_check` PASS、marker **2026-09-13-r127**、
+> `dll_check` 字节一致（`ShouldCancelPendingPlayForHumanPlay`/`YieldPendingQueuePlaysToHuman`/
+> `_pendingQueuePlays` 在、`__runOriginal` 不在）。详见方案 **§12.12**。
+> **验证方法**：并发档下打一场 2+ 瓦库的战斗，真人点牌 → 期望日志
+> `瓦库并发出牌：真人操作优先，撤掉尚未执行的瓦库入队动作让真人插队: actor=…, count=N, 详情=[…]`，
+> 且**紧接着一两张之内**就出现 `Player …326 playing card <真人那张牌>`；瓦库的牌不应丢失。
+> ⑱ **r128（2026-09-13，r127 实机反馈的收口：结束回合也得插队 + "能不能一次跑多个动作"的澄清）**：
+> 用户实测 r127 后反馈「**这个大概没什么问题了**」（出牌插队 ✅），但
+> 「**点结束回合按钮也必须等瓦库结束才看起来生效**」。
+> **日志实证（同一局）**：行 8184 真人入队 `EndPlayerTurnAction`（id 24）→ 行 8197~8406 一直是 ready action
+> 但被 id 更小的瓦库动作挡着（行 8409~8411 三张 `PlayCardAction` id 25/26/27 排在后面）→
+> **行 8413 才 `Executing action`**。与出牌**完全同源**：`NEndTurnButton.CallReleaseLogic`
+> （`sts2src/src/Core/Nodes/Combat/NEndTurnButton.cs:329-349`）同样是 `RequestEnqueue(new EndPlayerTurnAction(...))`。
+> **修法**：`NEndTurnButtonPatch.Prefix`（r104 前台校正之后）调同一条
+> `LocalWakuuRelicRuntime.YieldPendingQueuePlaysToHuman(me.NetId, "end-turn-button")`；
+> 同时把 r127 里那条「瓦库形态直接跳过」的防御**移到出牌调用点**（瓦库走 `RequestEnqueue`，不经
+> `EnqueueManualPlay`）—— 结束回合这条**必须**对瓦库形态也生效（真人把视角停在瓦库上点结束，
+> 点击目标就是那个瓦库，正是要让它立刻停下）。日志统一为
+> `瓦库并发出牌：真人操作优先，撤掉尚未执行的瓦库入队动作让真人插队: actor=…, count=N, 详情=[…], source=…`。
+> **答用户问「不能做成原版多人游戏那样一次跑多个动作吗？」—— 不能，原版本身也不是**：
+> `ActionExecutor.ExecuteActions()`（`ActionExecutor.cs:123-197`）是**全局单泵**（`await readyAction.Execute()`
+> 等它彻底跑完再取下一个）；`ActionQueueSet.GetReadyAction()`（`:172-251`）跨**所有玩家**取 action ID 最小的那个，
+> 仅对"正在等玩家选择"的队列**跳过**；设计注释（`:13-19`）说的就是「某人等自己选择时**其他人照样出牌**」，
+> 而非"多个动作同时执行"。⇒ 原版多人**执行仍是一次一个**，"不互相卡"只体现在等选择时队列被跳过。
+> 真并行要同时踩 `LocalContext`/`CurrentlyRunningAction`/`CheckWinCondition` 时机/动画节点/确定性校验和，
+> 等于重写动作执行器，**不做**。现实里能做的是 ① 真人永远不排在瓦库后面（r127+r128 ✅）
+> ② 缩短单个动作耗时（队列路径每张约 1s；`CardModel.OnPlayWrapper` 前缀强制 `skipCardPileVisuals`
+> 可省 0.4~0.65s/张 ⇒ 预计 ~0.35~0.5s/张，**待用户拍板**）。
+> 门禁：0 警告 0 错误、**479 单测全绿**、`clr_compat_check` PASS、marker **2026-09-13-r128**、
+> `dll_check` 字节一致。详见方案 **§12.13**。
+> **验证方法**：并发档下点结束回合 → 期望日志里同一次点击出现
+> `…让真人插队: actor=…, source=end-turn-button`，且**紧接着**就 `Executing action: EndPlayerTurnAction`；
+> 结束回合/撤销、瓦库照常自动收口都要正常。
 
 - **现象**：多个瓦库时只能「一个瓦库打完 → 切到下一个瓦库」串行进行，且真人视角会跟着切到
   瓦库正在操作的角色；瓦库多时同样很慢。
