@@ -85,6 +85,9 @@ internal static class LocalMultiControlRuntime
             LocalMultiControlLogger.Warn($"瓦库托管配置加载异常(已忽略): {exception.Message}");
         }
 
+        // SL（读档重玩）造成的重复记录由「写时幂等」消除（r120，见 WakuuPersonalDedupe）——
+        // 原来在进局时按"存档点 mtime"回滚的思路已废弃（读档动作本身会刷新 mtime，判据恒失效）。
+
         try
         {
             LocalWakuuSafetyNet.EnsureTicker();
@@ -124,6 +127,7 @@ internal static class LocalMultiControlRuntime
         _wakuuAutoEndIssued.Clear();
         _allPlayersAutoEndedRounds.Clear();
         _wakuuToNonWakuuSwitchedRounds.Clear();
+        WakuuTurnEndOrigin.ResetForCombat();
         _lastAutoEndCombatIdentity = -1;
         _pendingWakuuAutoSwitchRoundKey = null;
         _pendingWakuuAutoSwitchSource = null;
@@ -446,7 +450,19 @@ internal static class LocalMultiControlRuntime
                 continue;
             }
 
-            MegaCrit.Sts2.Core.Commands.PlayerCmd.EndTurn(player, canBackOut: false);
+            // 标记"这一次结束是模组自己发起的"：`WakuuTurnEndOrigin` 借此把「模组收口」与
+            // 「卡牌效果强行结束」（如虚空形态）区分开 —— 前者允许本回合内拿到新牌继续打，
+            // 后者必须停手（BUG-10）。见 WakuuTurnEndOrigin 的注释。
+            WakuuTurnEndOrigin.BeginModIssuedEnd();
+            try
+            {
+                MegaCrit.Sts2.Core.Commands.PlayerCmd.EndTurn(player, canBackOut: false);
+            }
+            finally
+            {
+                WakuuTurnEndOrigin.EndModIssuedEnd();
+            }
+
             endedAnyPlayer = true;
         }
 
@@ -471,6 +487,8 @@ internal static class LocalMultiControlRuntime
         _wakuuAutoEndIssued.Clear();
         _allPlayersAutoEndedRounds.Clear();
         _wakuuToNonWakuuSwitchedRounds.Clear();
+        // 回合号只在战斗内有意义 → 换战斗时清空"谁结束了这一位"的归因表。
+        WakuuTurnEndOrigin.ResetForCombat();
         _pendingWakuuAutoSwitchRoundKey = null;
         _pendingWakuuAutoSwitchSource = null;
         _pendingManualEndTurnPlayerId = null;
@@ -662,6 +680,18 @@ internal static class LocalMultiControlRuntime
         LocalContext.NetId = playerId;
         LocalSelfCoopContext.NetService?.SetCurrentSenderId(playerId);
         SyncRunSynchronizerLocalPlayerId(playerId);
+
+        // 默认档（未开「【实验】瓦库并发出牌」）下瓦库是内联出牌，出牌循环会把 LocalContext.NetId
+        // 钉在瓦库自己身上；此时真人中途按牌 / 点结束回合，上下文"漂移"是**预期**的——本来就该让给真人。
+        // 记 INFO 即可，别每局刷十几条 WARN 把真问题淹掉（2026-09-13 实机：默认档一局 12 条全是这种）。
+        if (previousNetId.HasValue && LocalWakuuRelicRuntime.IsVakuuFormModeById(previousNetId.Value))
+        {
+            LocalMultiControlLogger.Info(
+                $"后台瓦库出牌钉住的上下文已让给真人（默认档预期路径）: "
+                + $"{previousNetId.Value} -> {playerId}, source={source}");
+            return;
+        }
+
         LocalMultiControlLogger.Warn(
             $"检测到手动出牌上下文漂移，已强制校正: {previousNetId?.ToString() ?? "null"} -> {playerId}, source={source}");
     }

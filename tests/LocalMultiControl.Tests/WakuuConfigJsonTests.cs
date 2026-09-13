@@ -27,12 +27,15 @@ public class WakuuConfigJsonTests
             Assert.That(data.shopAssistBuyNoData, Is.False);
             Assert.That(data.statBadge, Is.False);
             Assert.That(data.skipTurnStartDrawAnim, Is.False);
+            Assert.That(data.wakuuPlayQueue, Is.False); // 方案 D 实验档默认关
+            Assert.That(data.wakuuPlayOverlap, Is.False); // 方案 D 第二步（并发出牌）默认关
             // 默认开
             Assert.That(data.playAllCards, Is.True);
             Assert.That(data.backgroundMode, Is.True);
             Assert.That(data.suppressVanillaEarring, Is.True);
             Assert.That(data.autoClaimCards, Is.True);
             Assert.That(data.autoClaimGoldRelics, Is.True);
+            Assert.That(data.fastWakuuPlay, Is.True);
             Assert.That(data.autoClaimPotions, Is.True);
             Assert.That(data.autoChooseEvents, Is.True);
             Assert.That(data.autoRestChoice, Is.True);
@@ -218,6 +221,9 @@ public class WakuuConfigJsonTests
             Assert.That(json, Does.Contain("\"shopAssistBuyNoData\""));
             Assert.That(json, Does.Contain("\"statBadge\""));
             Assert.That(json, Does.Contain("\"skipTurnStartDrawAnim\""));
+            Assert.That(json, Does.Contain("\"fastWakuuPlay\""));
+            Assert.That(json, Does.Contain("\"wakuuPlayQueue\""));
+            Assert.That(json, Does.Contain("\"wakuuPlayOverlap\""));
             Assert.That(json, Does.Contain("\"wakuuViewMode\""));
             Assert.That(json, Does.Contain("\"eventChoiceMode\""));
             Assert.That(json, Does.Contain("\"cardPickMode\""));

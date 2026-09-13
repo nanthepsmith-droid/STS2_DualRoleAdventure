@@ -41,8 +41,15 @@ internal static class LocalWakuuMerchantAuto
 
     /// <summary>
     /// 当前正在瓦库商店自动采购的归属者（沿异步链流动）。个人记录器据此跳过自动购买。
+    /// ⚠ 私有 + 经 <see cref="PurchaseOwnerId"/> 属性暴露：**绝不要把 AsyncLocal 字段本身拿去比较**
+    /// —— 2026-09-13 的 BUG-12 就是调用方写成 `PurchaseOwnerId == null`（字段恒非 null ⇒ 恒 false），
+    /// 于是删牌记录被整块守卫吞掉、全历史 0 行。与
+    /// <see cref="LocalWakuuRewardAutoClaim.AutoClaimCardOwnerId"/> 保持同一套「属性给值」的写法。
     /// </summary>
-    internal static readonly AsyncLocal<ulong?> PurchaseOwnerId = new();
+    private static readonly AsyncLocal<ulong?> _purchaseOwnerId = new();
+
+    /// <summary>当前正在自动采购的归属者 NetId（null = 没有在采购）。个人记录器只据此值比较判断。</summary>
+    internal static ulong? PurchaseOwnerId => _purchaseOwnerId.Value;
 
     /// <summary>由 NMerchantInventoryPatch（库存绑定到当前角色后）调用。</summary>
     public static void OnMerchantInventoryShown(Player? player)
@@ -95,14 +102,14 @@ internal static class LocalWakuuMerchantAuto
             LocalMerchantInventoryRuntime.BindInventoryToRoom(room, player, inventory);
 
             AlignContext(player.NetId);
-            PurchaseOwnerId.Value = player.NetId;
+            _purchaseOwnerId.Value = player.NetId;
             try
             {
                 await TryAutoBuyCardsAsync(player, inventory);
             }
             finally
             {
-                PurchaseOwnerId.Value = null;
+                _purchaseOwnerId.Value = null;
             }
         }
         catch (Exception exception)

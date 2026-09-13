@@ -139,7 +139,7 @@ internal static class LocalWakuuRewardAutoClaim
                 case CardReward:
                     // 用本 mod 的托管选择器（带奖励归属者，供社区统计按瓦库角色查表）；
                     // 关闭 skadaAssist 时其取牌结果与游戏原生 VakuuCardSelector 完全一致（最左）。
-                    using (CardSelectCmd.PushSelector(new LocalWakuuStrategySelector(owner)))
+                    using (WakuuSelectorRegistry.Open(owner.NetId, new LocalWakuuStrategySelector(owner)))
                     {
                         _suppressCardRewardScreen = true;
                         _autoClaimCardOwner.Value = owner.NetId;

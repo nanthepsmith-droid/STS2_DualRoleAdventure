@@ -122,10 +122,16 @@ internal static class CardSelectForegroundSwitchPatch
 }
 
 /// <summary>
-/// 全局选择器抢答守卫：CardSelectCmd.Selector 返回栈顶选择器时，若当前异步链上的选牌
-/// 归属者不是瓦库形态角色（即真人正在选牌），则临时返回 null 让其走正常选牌 UI。
-/// 场景：瓦库自动出牌循环进行中（托管选择器在栈上），真人同时打出需要选牌的卡
-/// （如酒狐合成），若不做此守卫，真人的选牌会被选择器瞬间抢答为第一张。
+/// 全局选择器**按归属者分发**守卫（改进-2 / Phase 1）：CardSelectCmd.Selector 返回栈顶选择器时，
+/// 按本次异步链的选牌归属者（<c>CurrentChoicePlayerId</c>）决定处置：
+/// <list type="bullet">
+/// <item>归属者是**瓦库形态**且已在 <see cref="WakuuSelectorRegistry"/> 登记 → 改用**它自己**的选择器
+///   （多瓦库作用域同时存在时不再被栈顶抢答）；</item>
+/// <item>归属者是**真人** → 临时返回 null，让其走正常选牌 UI
+///   （场景：瓦库自动出牌循环进行中，真人同时打出需要选牌的卡，如酒狐合成）；</item>
+/// <item>归属者未知 / 瓦库但未登记 → 保持栈顶（与升级前的三条老路严格一致）。</item>
+/// </list>
+/// 判定口径收敛在纯函数 <see cref="WakuuSelectorDispatch.Decide"/>（可单测）。
 /// CurrentChoicePlayerId 由上方各 From* 前缀在方法体读取 Selector 之前写入，时序可靠。
 /// 注意：作用域外（栈上无选择器）的选择一律不在此兜底作答——酒狐初始遗物开局二选一
 /// 依赖"自动切前台由真人处理"的原有链路，实测改为即时作答会导致进战斗黑屏。
@@ -136,30 +142,70 @@ internal static class CardSelectCmdSelectorGuardPatch
     [HarmonyPostfix]
     private static void Postfix(ref ICardSelector? __result)
     {
-        if (__result == null)
+        ICardSelector? top = __result;
+        if (top == null)
         {
             return;
         }
 
         // 只认托管选择器（游戏原生 VakuuCardSelector / 本 mod 策略选择器）；其余（如测试用）不动
-        if (__result is not VakuuCardSelector and not LocalWakuuStrategySelector)
+        if (top is not VakuuCardSelector and not LocalWakuuStrategySelector)
         {
             return;
         }
 
         ulong? chooserPlayerId = CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value;
-        if (!chooserPlayerId.HasValue)
+        bool chooserIsWakuu = chooserPlayerId.HasValue
+            && LocalWakuuRelicRuntime.IsVakuuFormModeById(chooserPlayerId.Value);
+
+        ICardSelector? owned = null;
+        bool registryHit = false;
+        if (chooserIsWakuu && chooserPlayerId.HasValue)
         {
-            return;
+            registryHit = WakuuSelectorRegistry.TryGet(chooserPlayerId.Value, out owned) && owned != null;
         }
 
-        if (LocalWakuuRelicRuntime.IsVakuuFormModeById(chooserPlayerId.Value))
+        switch (WakuuSelectorDispatch.Decide(chooserPlayerId.HasValue, registryHit, chooserIsWakuu))
         {
-            return;
-        }
+            case SelectorDispatchDecision.UseOwned:
+                // 只在**真的换了一个选择器**时打日志（命中同一实例是常态，不能刷屏）
+                if (!ReferenceEquals(owned, top))
+                {
+                    LocalMultiControlLogger.Info(
+                        $"选牌选择器按归属分发: chooser={chooserPlayerId!.Value}, "
+                        + $"stackTop={top.GetType().Name}, owned={owned!.GetType().Name}, registryCount={WakuuSelectorRegistry.Count}");
+                }
 
-        LocalMultiControlLogger.Info(
-            $"检测到真人选牌请求，本次跳过瓦库选择器改走正常UI: chooser={chooserPlayerId.Value}");
-        __result = null;
+                __result = owned;
+                return;
+
+            case SelectorDispatchDecision.ReturnNull:
+                LocalMultiControlLogger.Info(
+                    $"检测到真人选牌请求，本次跳过瓦库选择器改走正常UI: chooser={chooserPlayerId!.Value}");
+                __result = null;
+                return;
+
+            default:
+                return;
+        }
+    }
+}
+
+/// <summary>
+/// 运行清理时同步清空归属者注册表（改进-2 / Phase 1）。
+/// 原版 <c>CardSelectCmd.Reset()</c> 只在 run cleanup 调用、且只清游戏自己的选择器栈；
+/// 若不同步清我们的登记表，被卡住的异步链泄漏的条目会跨局残留（指向已失效的选择器实例）。
+/// </summary>
+[HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.Reset))]
+internal static class CardSelectCmdResetRegistryPatch
+{
+    [HarmonyPostfix]
+    private static void Postfix()
+    {
+        int cleared = WakuuSelectorRegistry.Reset();
+        if (cleared > 0)
+        {
+            LocalMultiControlLogger.Info($"运行清理：已清空瓦库选择器归属注册表（{cleared} 条）");
+        }
     }
 }

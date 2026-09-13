@@ -9,6 +9,8 @@ using LocalMultiControl.Scripts.Models.Relics;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Context;
+using MegaCrit.Sts2.Core.GameActions;
+using MegaCrit.Sts2.Core.Entities.Actions;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
@@ -34,6 +36,13 @@ internal static class LocalWakuuRelicRuntime
     // 瓦库形态"打光所有手牌"模式的硬护栏上限：正常牌组远达不到，只为防御异常效果导致的死循环。
     private const int MaxCardsToPlayForm = 60;
 
+    /// <summary>
+    /// 「模组自己收口后被放行」的日志去重（r124）：键 = `{回合}:{玩家}`。
+    /// 这条行为是用户 2026-09-13 明确要求保留的（BUG-10 的 r123 收敛），且**很难自然复现**，
+    /// 所以留一条 INFO 便于实机确认它真的放行了。
+    /// </summary>
+    private static readonly HashSet<string> _modEndExemptionLogged = new();
+
     private const long WatchdogRestartCooldownMs = 300L;
 
     private static readonly Dictionary<string, long> _watchdogLastRunAt = new();
@@ -42,9 +51,25 @@ internal static class LocalWakuuRelicRuntime
     private static readonly HashSet<ulong> _takeoverRelicMissingWarned = new();
     private static readonly HashSet<ulong> _takeoverRelicRestoreScheduled = new();
     private static readonly SemaphoreSlim SelectorScopeGate = new(1, 1);
+
+    /// <summary>
+    /// 已入队、还没跑完的瓦库出牌动作（key = 玩家 NetId；每个瓦库同一时刻最多一个，逐张 await）。
+    ///
+    /// 并发出牌档（方案 D 第二步）下，真人点出的牌按全局 action ID 必然排在**所有已入队的瓦库动作之后**，
+    /// 于是真人要白等两三张瓦库牌。这里把在排队的动作登记下来，供
+    /// <see cref="YieldPendingQueuePlaysToHuman"/> 在真人出牌瞬间撤掉它们（让真人插队）。
+    /// </summary>
+    private static readonly Dictionary<ulong, PlayCardAction> _pendingQueuePlays = new();
     private static readonly FieldInfo? SelectorStackField =
         typeof(CardSelectCmd).GetField("_selectorStack", BindingFlags.NonPublic | BindingFlags.Static);
     private static int _selectorScopeInFlight;
+
+    /// <summary>
+    /// 改进-2 / B1：回合开始 hook 登记「该瓦库本回合要出牌」的时间戳（key = `round:netId`）。
+    /// 出牌实际由 tick 驱动的看门狗在 PlayPhase 内完成，这里用于量化
+    /// 「回合开始 → 出牌启动」的交接延迟；同时在重置托管状态时清空。
+    /// </summary>
+    private static readonly Dictionary<string, ulong> _turnStartIntentAtMs = new();
 
     public readonly struct SelectorStackSnapshot
     {
@@ -244,8 +269,105 @@ internal static class LocalWakuuRelicRuntime
     {
         _takeoverRelicMissingWarned.Clear();
         _takeoverRelicRestoreScheduled.Clear();
+        _turnStartIntentAtMs.Clear();
+        // 并发出牌档的在飞动作登记表：跨局不留残（正常路径每个动作的 finally 都会摘掉自己）。
+        _pendingQueuePlays.Clear();
     }
 
+    /// <summary>
+    /// 回合开始触发（改进-2 / B1 修正版）：**只做回合开始相位该做的事**——用药、视角、遗物闪光、
+    /// 登记"该瓦库本回合要出牌"的意图，然后立即返回；**出牌一律交给看门狗**
+    /// （tick 驱动，经 <see cref="TryScheduleWatchdog"/> → <see cref="RunWatchdogAsync"/> →
+    /// <see cref="ExecuteBeforePlayPhaseStartAsync"/>）。
+    ///
+    /// **为什么把出牌从 hook 里摘掉（实测前提修正）**：原实现在
+    /// <c>RelicModel.AfterAutoPrePlayPhaseEnteredLate</c> 里直接 await 整串出牌，但该 hook 触发时
+    /// <c>ActionQueueSynchronizer.CombatState</c> **还不是 PlayPhase** —— 原版要等**所有玩家**的
+    /// AutoPrePlay 都跑完才 `SetCombatState(PlayPhase)`（sts2src `CombatManager.cs:814-835`），
+    /// 而 <see cref="TryGetAutoplayUnsafeReason"/> 第一项就要求 PlayPhase。
+    /// 所以那段出牌循环**必然在第一次判断就熔断**（`reason=sync-NotPlayPhase`、`played=0`）：
+    /// 一张牌都出不了，却每回合每瓦库白占一次选择器闸门、压/弹一次选择器作用域、
+    /// 并刷出「瓦库自动出牌已熔断跳过本次执行」的 WARN 噪声（历史日志里被当成"设计内噪声"）。
+    /// 摘掉后出牌只剩一条路径（看门狗），日志干净、少一次闸门与反射探针往返，**行为不变**。
+    /// </summary>
+    public static async Task HandleTurnStartHookAsync(
+        RelicModel relic,
+        PlayerChoiceContext choiceContext,
+        Player player)
+    {
+        if (!LocalSelfCoopContext.IsEnabled || player != relic.Owner)
+        {
+            return;
+        }
+
+        ICombatState? combatState = player.Creature.CombatState;
+        if (combatState == null || CombatManager.Instance.IsOverOrEnding)
+        {
+            return;
+        }
+
+        ulong hookStartTick = Time.GetTicksMsec();
+
+        // Phase 2.5：战斗内自动用药水（独立开关默认关；果汁另有"到手即喝"链路，见 PotionProcuredAutoDrinkPatch）。
+        // 保持原相位与顺序（回合开始 → 出牌前），只把它留在 hook 里（本方法唯一的 await 点）。
+        if (LocalWakuuAutopilotConfig.AutoUsePotions && IsVakuuFormMode(player))
+        {
+            await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(
+                relic, player, choiceContext, combatState, WakuuPotionPhase.StartOfTurn);
+        }
+
+        CardModel? firstPlayableCard = PileType.Hand.GetPile(relic.Owner).Cards.FirstOrDefault((candidate) => candidate.CanPlay());
+        if (firstPlayableCard == null)
+        {
+            // 没牌可出：回合结束判定也要做（格挡/免伤等防御类药水的时机）。
+            // 此时不会有看门狗（它要求"手上有可出牌"），所以这里是这类药水的唯一时机。
+            if (LocalWakuuAutopilotConfig.AutoUsePotions && IsVakuuFormMode(player))
+            {
+                await LocalWakuuPotionAutoUse.UseEligiblePotionsInCombatAsync(
+                    relic, player, choiceContext, combatState, WakuuPotionPhase.EndOfTurn);
+            }
+
+            return;
+        }
+
+        EnsureWakuuPerspective(player, "turn-start-hook");
+        relic.Flash();
+
+        string intentKey = $"{combatState.RoundNumber}:{player.NetId}";
+        PruneTurnStartIntents(combatState.RoundNumber);
+        _turnStartIntentAtMs[intentKey] = Time.GetTicksMsec();
+
+        LocalMultiControlLogger.Info(
+            $"瓦库回合开始已登记出牌意图（B1，出牌交由看门狗）: player={player.NetId}, "
+            + $"round={combatState.RoundNumber}, hookMs={Time.GetTicksMsec() - hookStartTick}");
+    }
+
+    /// <summary>只保留当前回合的意图记录，避免跨回合残留。</summary>
+    private static void PruneTurnStartIntents(int currentRound)
+    {
+        if (_turnStartIntentAtMs.Count == 0)
+        {
+            return;
+        }
+
+        string prefix = $"{currentRound}:";
+        List<string> stale = _turnStartIntentAtMs.Keys.Where((key) => !key.StartsWith(prefix, StringComparison.Ordinal)).ToList();
+        foreach (string key in stale)
+        {
+            _turnStartIntentAtMs.Remove(key);
+        }
+
+        // 同口径清理放行日志的去重键，避免跨回合/跨战斗残留。
+        foreach (string key in _modEndExemptionLogged.Where((key) => !key.StartsWith(prefix, StringComparison.Ordinal)).ToList())
+        {
+            _modEndExemptionLogged.Remove(key);
+        }
+    }
+
+    /// <summary>
+    /// 改进-2 / Phase 2 的**唯一出牌实现**（B1 起只由看门狗在 PlayPhase 内调用；
+    /// 回合开始 hook 不再调用它，原因见 <see cref="HandleTurnStartHookAsync"/>）。
+    /// </summary>
     public static async Task ExecuteBeforePlayPhaseStartAsync(
         RelicModel relic,
         PlayerChoiceContext choiceContext,
@@ -297,21 +419,43 @@ internal static class LocalWakuuRelicRuntime
 
         bool reachedPlayLimit;
         int cardsPlayed;
-        bool gateEntered = false;
+        bool gateHeld = false;
+        // 改进-2 / 方案 D：路径在整轮里是常量（只由开关/场景决定），所以在进作用域之前就定下来。
+        // 第二步（并发出牌档）正是靠它决定「要不要抢全局闸门」，见 WakuuPlayQueuePolicy。
+        WakuuPlayPath playPath = WakuuPlayQueuePolicy.DecidePath(
+            LocalWakuuAutopilotConfig.WakuuPlayQueue,
+            LocalSelfCoopContext.IsEnabled,
+            IsVakuuFormMode(player));
+        bool overlapping = WakuuPlayQueuePolicy.IsOverlappingQueuePlay(
+            playPath, LocalWakuuAutopilotConfig.WakuuPlayOverlap);
         ulong enterTick = Time.GetTicksMsec();
         ulong gateWaitStartTick = Time.GetTicksMsec();
-        LocalMultiControlLogger.Info(
-            $"瓦库选择器闸门等待: player={player.NetId}, round={combatState.RoundNumber}, source={choiceContext.GetType().Name}, inFlight={Volatile.Read(ref _selectorScopeInFlight)}");
-        await SelectorScopeGate.WaitAsync();
-        gateEntered = true;
+        if (overlapping)
+        {
+            // 方案 D 第二步：出牌已入该瓦库自己的动作队列，等选择时该队列会被 `GetReadyAction` 跳过，
+            // 其他瓦库与真人照常出牌（多人模式的真实语义）。此时再抢全局 1 槽闸门反而把这份语义挡回去。
+            LocalMultiControlLogger.Info(
+                $"瓦库并发出牌：跳过全局选择器闸门（方案 D 第二步）: player={player.NetId}, round={combatState.RoundNumber}, source={choiceContext.GetType().Name}, inFlight={Volatile.Read(ref _selectorScopeInFlight)}");
+        }
+        else
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库选择器闸门等待: player={player.NetId}, round={combatState.RoundNumber}, source={choiceContext.GetType().Name}, inFlight={Volatile.Read(ref _selectorScopeInFlight)}");
+            await SelectorScopeGate.WaitAsync();
+            gateHeld = true;
+        }
+
         int inFlight = Interlocked.Increment(ref _selectorScopeInFlight);
         ulong gateWaitMs = Time.GetTicksMsec() - gateWaitStartTick;
         SelectorStackSnapshot gateEnterSnapshot = SnapshotSelectorStack();
         LocalMultiControlLogger.Info(
-            $"瓦库选择器闸门已进入: player={player.NetId}, round={combatState.RoundNumber}, waitMs={gateWaitMs}, inFlight={inFlight}, selectorStackCount={gateEnterSnapshot.Count}, selectorStackTop={gateEnterSnapshot.TopType}");
+            (overlapping
+                ? "瓦库出牌作用域已进入（并发档，未占全局闸门）: "
+                : "瓦库选择器闸门已进入: ")
+            + $"player={player.NetId}, round={combatState.RoundNumber}, waitMs={gateWaitMs}, inFlight={inFlight}, selectorStackCount={gateEnterSnapshot.Count}, selectorStackTop={gateEnterSnapshot.TopType}");
         try
         {
-            using (CardSelectCmd.PushSelector(new LocalWakuuStrategySelector()))
+            using (WakuuSelectorRegistry.Open(player.NetId, new LocalWakuuStrategySelector()))
             {
                 SelectorStackSnapshot pushSnapshot = SnapshotSelectorStack();
                 LocalMultiControlLogger.Info(
@@ -321,7 +465,7 @@ internal static class LocalWakuuRelicRuntime
                 IWakuuCombatBrain brain = WakuuBrainFactory.Create();
                 for (cardsPlayed = 0; cardsPlayed < maxCardsThisTurn; cardsPlayed++)
                 {
-                    if (TryGetAutoplayUnsafeReason(combatState, out string unsafeReason))
+                    if (TryGetAutoplayUnsafeReason(combatState, player, out string unsafeReason))
                     {
                         LocalMultiControlRuntime.RecordFlowBlockSignal(
                             "autoplay_skipped_due_to_phase",
@@ -334,6 +478,9 @@ internal static class LocalWakuuRelicRuntime
                             $"瓦库自动出牌已熔断跳过本次执行: player={player.NetId}, round={combatState.RoundNumber}, reason={unsafeReason}, played={cardsPlayed}");
                         break;
                     }
+
+                    // 闸门已放行 —— 此时若仍处于"模组收口被放行"状态，才真的算"收口后又拿到可出牌继续打"。
+                    LogModIssuedEndExemptionOnce(player, combatState.RoundNumber);
 
                     if (CombatManager.Instance.IsOverOrEnding)
                     {
@@ -357,8 +504,36 @@ internal static class LocalWakuuRelicRuntime
                         break;
                     }
 
-                    await next.Card.SpendResources();
-                    await CardCmd.AutoPlay(choiceContext, next.Card, next.Target, AutoPlayType.Default, skipXCapture: true);
+                    // 扣费归属：只有 inline AutoPlay 需要"外层先花"（它随后跳过 X 捕获）；
+                    // 队列路径由 PlayCardAction 自己扣 —— 外层再花一次就是双重扣能量（方案 §12.2 ③）。
+                    if (WakuuPlayQueuePolicy.NeedsExternalSpendResources(playPath))
+                    {
+                        await next.Card.SpendResources();
+                    }
+
+                    if (playPath == WakuuPlayPath.ActionQueue)
+                    {
+                        if (!await TryPlayCardViaActionQueueAsync(player, next, combatState.RoundNumber))
+                        {
+                            // 没能出牌（目标解析不到 / 入队后被取消）：牌留在手牌，收手交看门狗下一轮再判。
+                            break;
+                        }
+
+                        continue;
+                    }
+
+                    // 改进-2 / r117：瓦库出牌加速 —— 跳过「牌飞向 Play 区 + 烟雾 VFX + 各牌堆补间」与两段固定等待
+                    // （CardModel.OnPlayWrapper 内 CustomScaledWait 0.25~0.35s / 0.15~0.3s）。
+                    // 多瓦库是串行的，单张牌的耗时会直接相加成整回合时长；实测每张牌 ~1.0~1.4s，跳过可省一大半。
+                    // 判定见纯函数 WakuuPlaySpeedPolicy；关掉开关即恢复完整演出（观感与旧版一致）。
+                    bool skipCardPileVisuals = WakuuPlaySpeedPolicy.ShouldSkipCardPileVisuals(
+                        LocalWakuuAutopilotConfig.FastWakuuPlay,
+                        LocalSelfCoopContext.IsEnabled,
+                        IsVakuuFormMode(player));
+                    await CardCmd.AutoPlay(
+                        choiceContext, next.Card, next.Target, AutoPlayType.Default,
+                        skipXCapture: true,
+                        skipCardPileVisuals: skipCardPileVisuals);
                 }
 
                 reachedPlayLimit = cardsPlayed >= maxCardsThisTurn;
@@ -392,16 +567,20 @@ internal static class LocalWakuuRelicRuntime
         }
         finally
         {
-            if (gateEntered)
+            // inFlight 是「有出牌作用域在飞」的唯一来源（探针靠它避免误清栈），所以并发档同样要递减；
+            // 只有真的抢到闸门才释放它（并发档从头到尾没占）。
+            int remainInFlight = Interlocked.Decrement(ref _selectorScopeInFlight);
+            if (gateHeld)
             {
-                int remainInFlight = Interlocked.Decrement(ref _selectorScopeInFlight);
                 SelectorScopeGate.Release();
-                ulong elapsedMs = Time.GetTicksMsec() - enterTick;
-                SelectorStackSnapshot releaseSnapshot = SnapshotSelectorStack();
-                LocalMultiControlLogger.Info(
-                    $"瓦库选择器闸门已释放: player={player.NetId}, round={combatState.RoundNumber}, elapsedMs={elapsedMs}, inFlight={remainInFlight}, selectorStackCount={releaseSnapshot.Count}, selectorStackTop={releaseSnapshot.TopType}");
-                ProbeAndRecoverSelectorStack($"wakuu-selector-finally-{player.NetId}-{combatState.RoundNumber}", allowRecover: true);
             }
+
+            ulong elapsedMs = Time.GetTicksMsec() - enterTick;
+            SelectorStackSnapshot releaseSnapshot = SnapshotSelectorStack();
+            LocalMultiControlLogger.Info(
+                (overlapping ? "瓦库出牌作用域已退出（并发档）: " : "瓦库选择器闸门已释放: ")
+                + $"player={player.NetId}, round={combatState.RoundNumber}, elapsedMs={elapsedMs}, inFlight={remainInFlight}, selectorStackCount={releaseSnapshot.Count}, selectorStackTop={releaseSnapshot.TopType}");
+            ProbeAndRecoverSelectorStack($"wakuu-selector-finally-{player.NetId}-{combatState.RoundNumber}", allowRecover: true);
         }
 
         // 出牌结束后跑药水的"回合结束前"相位：覆盖出牌过程中获得的药水（炼药 Alchemize、
@@ -424,6 +603,137 @@ internal static class LocalWakuuRelicRuntime
         TalkCmd.Play(line, relic.Owner.Creature, VfxColor.Purple);
     }
 
+    /// <summary>
+    /// 改进-2 / 方案 D 实验档：把这张牌作为 <c>PlayCardAction</c> 入**该瓦库自己的**动作队列。
+    ///
+    /// 用的就是原版「代理玩家出牌」那条路 —— <c>CardModel.EnqueueManualPlay</c> 全文只有一行：
+    /// <c>RunManager.Instance.ActionQueueSynchronizer.RequestEnqueue(new PlayCardAction(this, target))</c>。
+    /// <c>RequestEnqueue</c> 在本 mod 的场景（主机）会直接 `EnqueueWithoutSynchronizing` 并分配**全局递增
+    /// action ID**，跨玩家顺序由 ID 决定（与真多人一致）；动作类型是 `CombatPlayPhaseOnly`，
+    /// 非 PlayPhase 时会被它自己顺延（调用点已在看门狗里确认过 PlayPhase）。
+    ///
+    /// **逐张 await <c>action.CompletionTask</c>**（`GameAction` 公开的"等这个动作彻底跑完"），而不是
+    /// "发一串再等"：每张牌执行完（含 `SpendResources` 与 `OnPlayWrapper`）才做下一次决策，
+    /// 能量/手牌读数始终准确，也不会堆出一串注定被逐个 `Cancel` 的动作。
+    ///
+    /// 目标按**原版真人出牌口径**归一（见 <see cref="WakuuPlayQueuePolicy.ShouldUseResolvedTarget"/>）：
+    /// 仅 `AnyEnemy` / `AnyAlly` 用大脑解析出来的目标，其余一律传 null —— `PlayCardAction` 会用
+    /// <c>CardModel.IsValidTarget</c> 校验，"非 Any 的牌 + 非空目标"会被判非法而 `Cancel()`。
+    /// 目标解析不到时**不构造动作**（避免必然被取消的入队），返回 false 让出牌循环收手。
+    ///
+    /// 返回 false = 本次没能出牌（牌仍在手牌），调用方应停止本轮出牌，交给看门狗下一轮重新判定。
+    /// </summary>
+    private static async Task<bool> TryPlayCardViaActionQueueAsync(
+        Player player, WakuuPlannedAction next, int round)
+    {
+        CardModel card = next.Card!;
+        bool isAnyTarget = card.TargetType is TargetType.AnyEnemy or TargetType.AnyAlly;
+        Creature? target = WakuuPlayQueuePolicy.ShouldUseResolvedTarget(isAnyTarget) ? next.Target : null;
+
+        if (!card.CanPlayTargeting(target))
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库出牌入队前检查未通过（牌留在手牌，交看门狗下一轮）: player={player.NetId}, round={round}, "
+                + $"card={card.Id.Entry}, targetType={card.TargetType}, target={target?.LogName ?? "无"}");
+            return false;
+        }
+
+        ulong startTick = Time.GetTicksMsec();
+        PlayCardAction action = new(card, target);
+        _pendingQueuePlays[player.NetId] = action;
+        try
+        {
+            RunManager.Instance.ActionQueueSynchronizer.RequestEnqueue(action);
+            await action.CompletionTask;
+        }
+        catch (OperationCanceledException)
+        {
+            // 动作被 Cancel（牌已不在手牌 / 费用不够 / 目标失效 / 战斗收尾）→ 属正常收手，不上抛。
+            LocalMultiControlLogger.Info(
+                $"瓦库出牌入队后被取消（牌留在手牌，交看门狗下一轮）: player={player.NetId}, "
+                + $"round={round}, card={card.Id.Entry}");
+            return false;
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn(
+                $"瓦库出牌入队执行异常: player={player.NetId}, round={round}, "
+                + $"card={card.Id.Entry}, error={exception.Message}");
+            return false;
+        }
+        finally
+        {
+            // 只摘自己登记的那一条（正常结束 / 被取消 / 异常 / 被真人插队撤掉都走这里）。
+            if (_pendingQueuePlays.TryGetValue(player.NetId, out PlayCardAction? tracked)
+                && ReferenceEquals(tracked, action))
+            {
+                _pendingQueuePlays.Remove(player.NetId);
+            }
+        }
+
+        LocalMultiControlLogger.Info(
+            $"瓦库出牌走动作队列完成（方案 D 实验档）: player={player.NetId}, round={round}, "
+            + $"card={card.Id.Entry}, actionId={action.Id?.ToString() ?? "none"}, ms={Time.GetTicksMsec() - startTick}");
+        return true;
+    }
+
+    /// <summary>
+    /// **真人**做出一个"要排队"的操作时让瓦库让路：把瓦库那些**还在排队、尚未开始执行**的入队动作撤掉，
+    /// 让真人的那个动作成为队列里 ID 最小的那个，下一个就轮到它。
+    ///
+    /// 目前两个调用点（都是真人主动、UI 触发）：
+    /// <list type="bullet">
+    ///   <item>真人出牌 —— <c>CardModel.EnqueueManualPlay</c> 前缀（r127）；</item>
+    ///   <item>真人点结束回合 / 撤销 —— <c>NEndTurnButton.CallReleaseLogic</c> 前缀（r128）。</item>
+    /// </list>
+    ///
+    /// **为什么需要**：原版动作泵按**全局递增 action ID** 取下一个动作执行
+    /// （`ActionQueueSet.GetReadyAction`），而并发出牌档下每个瓦库都持有一个"已入队、在排队"的动作
+    /// （逐张 `await` 是 r121 为能量读数准确刻意做的）⇒ 真人点的东西**必然排在它们全部之后**。
+    /// 实机日志（r126/r127，5 个瓦库）：
+    /// 真人出牌要等 2~3 张瓦库牌结算（行 8784 入队 → 行 9019 生效）；
+    /// 点结束回合同理（行 8184 入队 `EndPlayerTurnAction` id 24 → 行 8413 才执行，其间 id 25/26/27 三张瓦库牌）。
+    ///
+    /// **安全性**：被撤的动作**从未开始执行**（只撤 `GameActionState.WaitingForExecution`）⇒ 不扣能量、
+    /// 不结算效果、牌仍在手牌，只是回到看门狗下一轮重新决策；`GameAction.Cancel()` 是原版自己的取消
+    /// 通道（`NCardPlayQueue.RemoveCardFromQueueForCancellation` 会把它从出牌队列 UI 里撤掉，
+    /// 非本地玩家只做移除动画、不动手牌）。**正在执行 / 正在等选择**的动作一律不撤（见纯函数注释）。
+    ///
+    /// 只在并发出牌档生效（`wakuuPlayOverlap` 开）；单瓦库串行路径本就最多 1 张在排队，行为不变。
+    /// </summary>
+    /// <param name="actorPlayerId">真人这次操作所针对的玩家（出牌是牌主人；结束回合是前台/点击目标角色）。</param>
+    /// <param name="source">调用来源（日志用）。</param>
+    public static void YieldPendingQueuePlaysToHuman(ulong actorPlayerId, string source)
+    {
+        if (!LocalWakuuAutopilotConfig.WakuuPlayOverlap || _pendingQueuePlays.Count == 0)
+        {
+            return;
+        }
+
+        List<string> cancelled = new();
+        foreach (KeyValuePair<ulong, PlayCardAction> pair in _pendingQueuePlays.ToList())
+        {
+            PlayCardAction action = pair.Value;
+            if (!WakuuPlayQueuePolicy.ShouldCancelPendingPlayForHumanPlay(
+                    overlapEnabled: true,
+                    isWaitingForExecution: action.State == GameActionState.WaitingForExecution))
+            {
+                continue;
+            }
+
+            string cardName = action.NetCombatCard.ToCardModelOrNull()?.Id.Entry ?? "unknown";
+            action.Cancel();
+            cancelled.Add($"{pair.Key}:{cardName}(id={action.Id?.ToString() ?? "none"})");
+        }
+
+        if (cancelled.Count > 0)
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库并发出牌：真人操作优先，撤掉尚未执行的瓦库入队动作让真人插队: actor={actorPlayerId}, "
+                + $"count={cancelled.Count}, 详情=[{string.Join(", ", cancelled)}], source={source}");
+        }
+    }
+
     public static bool TryScheduleWatchdog(Player player, string source)
     {
         return TryScheduleWatchdog(player, source, out _);
@@ -434,8 +744,17 @@ internal static class LocalWakuuRelicRuntime
         reason = "unknown";
         if (Volatile.Read(ref _selectorScopeInFlight) > 0)
         {
-            reason = "selector-scope-busy";
-            return false;
+            // 并发出牌档（方案 D 第二步）：多瓦库就是要重叠，不能再因为「有作用域在飞」把别人挡回去。
+            // 同一玩家的重复调度仍由下面的 `_watchdogInFlight` / 冷却时间兜住。
+            WakuuPlayPath path = WakuuPlayQueuePolicy.DecidePath(
+                LocalWakuuAutopilotConfig.WakuuPlayQueue,
+                LocalSelfCoopContext.IsEnabled,
+                IsVakuuFormMode(player));
+            if (!WakuuPlayQueuePolicy.IsOverlappingQueuePlay(path, LocalWakuuAutopilotConfig.WakuuPlayOverlap))
+            {
+                reason = "selector-scope-busy";
+                return false;
+            }
         }
 
         if (LocalManualPlayGuard.IsActive)
@@ -448,6 +767,19 @@ internal static class LocalWakuuRelicRuntime
         if (combatState == null || combatState.CurrentSide != CombatSide.Player || CombatManager.Instance.IsOverOrEnding)
         {
             reason = "invalid-combat-state";
+            return false;
+        }
+
+        // 该玩家自己的回合状态不适合再出牌 → 根本不调度看门狗（判定与出牌循环同一来源，见 WakuuTurnEndOrigin）：
+        // 真正拦截在出牌循环里（`player-ready-to-end-turn`），这里只是避免每 300ms 空转一次
+        // 并反复刷「瓦库自动出牌已熔断跳过本次执行」WARN。
+        if (WakuuTurnEndOrigin.ShouldStopAutoplay(
+                CombatManager.Instance.IsPlayerReadyToEndTurn(player),
+                WakuuTurnEndOrigin.EndedExternally(player.NetId, combatState.RoundNumber),
+                WakuuTurnEndOrigin.EndedByMod(player.NetId, combatState.RoundNumber),
+                CombatManager.Instance.AllPlayersReadyToEndTurn()))
+        {
+            reason = "player-ready-to-end-turn";
             return false;
         }
 
@@ -504,6 +836,8 @@ internal static class LocalWakuuRelicRuntime
         ulong? previousNetId = LocalContext.NetId;
         ulong previousSenderId = LocalSelfCoopContext.NetService?.NetId ?? 0UL;
         bool hasNetService = LocalSelfCoopContext.NetService != null;
+        // 只有真的钉过上下文才还原（并发出牌档不钉，见下方说明）—— 避免并发下把别人刚设好的值"还原"掉。
+        bool contextPinned = false;
         try
         {
             if (LocalManualPlayGuard.IsActive)
@@ -536,17 +870,49 @@ internal static class LocalWakuuRelicRuntime
             }
 
             EnsureWakuuPerspective(player, source);
-            LocalContext.NetId = player.NetId;
-            LocalSelfCoopContext.NetService?.SetCurrentSenderId(player.NetId);
+
+            // 全局上下文钉法：inline 路径（就地执行、选牌链在同一异步链上）必须钉，否则归位判定全错；
+            // 并发出牌档（方案 D 第二步）**绝不能钉** —— 出牌已交给游戏全局单泵执行、归属由
+            // WakuuSelectorRegistry 按归属者分发，而两个瓦库的看门狗会互相覆盖这个全局单值，
+            // 还会让原版把别人的出牌当成"我的牌"去做前台视觉（r109 那类 hand node 异常的来源）。
+            WakuuPlayPath watchdogPath = WakuuPlayQueuePolicy.DecidePath(
+                LocalWakuuAutopilotConfig.WakuuPlayQueue,
+                LocalSelfCoopContext.IsEnabled,
+                IsVakuuFormMode(player));
+            if (WakuuPlayQueuePolicy.IsOverlappingQueuePlay(watchdogPath, LocalWakuuAutopilotConfig.WakuuPlayOverlap))
+            {
+                LocalMultiControlLogger.Info(
+                    $"瓦库并发出牌：本次不钉全局上下文（出牌由游戏动作泵执行，归属走选择器注册表）: player={player.NetId}, source={source}");
+            }
+            else
+            {
+                LocalContext.NetId = player.NetId;
+                LocalSelfCoopContext.NetService?.SetCurrentSenderId(player.NetId);
+                contextPinned = true;
+            }
+
+            // 改进-2 / B1：量化「回合开始 hook → 出牌启动」的交接延迟（即 tick 调度延迟）。
+            string intentKey = $"{combatState.RoundNumber}:{player.NetId}";
+            if (_turnStartIntentAtMs.TryGetValue(intentKey, out ulong intentAtMs))
+            {
+                _turnStartIntentAtMs.Remove(intentKey);
+                LocalMultiControlLogger.Info(
+                    $"瓦库回合开始→出牌启动延迟: player={player.NetId}, round={combatState.RoundNumber}, "
+                    + $"delayMs={Time.GetTicksMsec() - intentAtMs}, source={source}");
+            }
 
             HookPlayerChoiceContext choiceContext = new HookPlayerChoiceContext(
                 relic,
                 player.NetId,
                 combatState,
                 GameActionType.CombatPlayPhaseOnly);
+            ulong playStartTick = Time.GetTicksMsec();
             Task action = ExecuteBeforePlayPhaseStartAsync(relic, choiceContext, player);
             await choiceContext.AssignTaskAndWaitForPauseOrCompletion(action);
             await action;
+            LocalMultiControlLogger.Info(
+                $"瓦库出牌耗时: player={player.NetId}, round={combatState.RoundNumber}, "
+                + $"ms={Time.GetTicksMsec() - playStartTick}, source={source}");
             LocalMultiControlLogger.Info($"瓦库看门狗已重启自动出牌: player={player.NetId}, source={source}");
         }
         catch (Exception exception)
@@ -564,10 +930,13 @@ internal static class LocalWakuuRelicRuntime
         finally
         {
             _watchdogInFlight.Remove(key);
-            LocalContext.NetId = previousNetId;
-            if (hasNetService)
+            if (contextPinned)
             {
-                LocalSelfCoopContext.NetService?.SetCurrentSenderId(previousSenderId);
+                LocalContext.NetId = previousNetId;
+                if (hasNetService)
+                {
+                    LocalSelfCoopContext.NetService?.SetCurrentSenderId(previousSenderId);
+                }
             }
 
             Callable.From(delegate
@@ -646,6 +1015,60 @@ internal static class LocalWakuuRelicRuntime
         return new SelectorStackSnapshot(count, topType, allVakuuSelectors);
     }
 
+    /// <summary>
+    /// 把某个选择器按**引用**从全局选择器栈里摘掉（并发出牌档的安全网，判定见
+    /// <see cref="WakuuSelectorStackSurgery"/>）。
+    ///
+    /// 用于「作用域释放时它已不在栈顶」的交错情况：原版 <c>StackedSelectorScope</c> 只在
+    /// 「自己仍是栈顶」时弹栈，否则它会被**永久留在栈里**，让所有「栈上无选择器」的判定失效。
+    /// 不在栈里 = 空操作（正常单作用域路径就是这一条），返回是否真的摘掉了。
+    /// </summary>
+    internal static bool RemoveSelectorFromStackIfPresent(object selector)
+    {
+        object? rawStack = SelectorStackField?.GetValue(null);
+        if (rawStack == null)
+        {
+            return false;
+        }
+
+        Type stackType = rawStack.GetType();
+        int count = (int?)stackType.GetProperty("Count")?.GetValue(rawStack) ?? 0;
+        if (count <= 0 || rawStack is not IEnumerable enumerable)
+        {
+            return false;
+        }
+
+        List<object> topToBottom = new(count);
+        foreach (object? item in enumerable)
+        {
+            if (item != null)
+            {
+                topToBottom.Add(item);
+            }
+        }
+
+        // Stack<T> 的枚举顺序就是「栈顶 → 栈底」，与 WakuuSelectorStackSurgery 的入参约定一致
+        List<object> remaining = WakuuSelectorStackSurgery.RemoveByReference(topToBottom, selector);
+        if (remaining.Count == topToBottom.Count)
+        {
+            return false;
+        }
+
+        MethodInfo? push = stackType.GetMethod("Push");
+        if (push == null)
+        {
+            return false;
+        }
+
+        stackType.GetMethod("Clear")?.Invoke(rawStack, null);
+        for (int i = remaining.Count - 1; i >= 0; i--)
+        {
+            push.Invoke(rawStack, new object[] { remaining[i] });
+        }
+
+        return true;
+    }
+
     private static bool TryClearSelectorStack(out int clearedCount)
     {
         clearedCount = 0;
@@ -689,7 +1112,35 @@ internal static class LocalWakuuRelicRuntime
         LocalMultiControlRuntime.SwitchControlledPlayerTo(player.NetId, $"wakuu-{source}");
     }
 
-    private static bool TryGetAutoplayUnsafeReason(ICombatState combatState, out string reason)
+    /// <summary>
+    /// 「模组自己收口后被放行」留痕（r124 首版有误 → r125 修正）：这一条是用户 2026-09-13 明确要求
+    /// **保留**的行为（BUG-10 的 r123 收敛），但它依赖"收口后又拿到可出牌"这个不易自然出现的时序，
+    /// 所以放行时打一条 INFO（每次「回合+玩家」只打一条），便于实机确认它真的生效了。
+    ///
+    /// **判据必须与闸门一致**：r124 首版只看 `IsPlayerReadyToEndTurn`，结果把**虚空形态**那种
+    /// 外部强行结束也误报成"模组收口后继续出牌"（实机日志 8926 误报 / 8927 紧接着熔断）。
+    /// 现在要求 `WakuuTurnEndOrigin.IsModIssuedExemption` 成立，并且**放在闸门之后调用** ——
+    /// 即"闸门已经放行、这一次迭代会真的去打牌"才记录。
+    /// </summary>
+    private static void LogModIssuedEndExemptionOnce(Player player, int round)
+    {
+        if (!WakuuTurnEndOrigin.IsModIssuedExemption(
+                CombatManager.Instance.IsPlayerReadyToEndTurn(player),
+                WakuuTurnEndOrigin.EndedExternally(player.NetId, round),
+                WakuuTurnEndOrigin.EndedByMod(player.NetId, round),
+                CombatManager.Instance.AllPlayersReadyToEndTurn()))
+        {
+            return;
+        }
+
+        if (_modEndExemptionLogged.Add($"{round}:{player.NetId}"))
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库在模组收口后继续出牌（本回合内又拿到可出牌，用户要求保留）: player={player.NetId}, round={round}");
+        }
+    }
+
+    private static bool TryGetAutoplayUnsafeReason(ICombatState combatState, Player player, out string reason)
     {
         reason = string.Empty;
         if (!RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress || CombatManager.Instance.IsOverOrEnding)
@@ -707,6 +1158,24 @@ internal static class LocalWakuuRelicRuntime
         if (combatState.CurrentSide != CombatSide.Player)
         {
             reason = $"side-{combatState.CurrentSide}";
+            return true;
+        }
+
+        // 该玩家**自己**的回合状态（逐玩家判定，不是全局），判据与理由见 WakuuTurnEndOrigin：
+        //   ① 被**卡牌效果/原版强行结束**（虚空形态 `VoidForm.OnPlay` → `PlayerCmd.EndTurn(owner, false)`）
+        //      或来源不明 → 停手（BUG-10；用户 2026-09-13 实机确认已修）；
+        //   ② 被**模组自己收口**（无牌可出时 `TryEndAllPlayersWhenNoCards`）→ 只要还没"全员 ready"就放行，
+        //      让它在**本回合内又因别人的效果拿到可出牌**时继续打（用户明确要求保留这条行为）；
+        //   ③ 一旦 `AllPlayersReadyToEndTurn`（回合马上推进）→ 一律停手，不许打进攻城窗口。
+        // 用**逐玩家**的 `IsPlayerReadyToEndTurn` 而不是全局 `PlayerActionsDisabled`：后者是单个布尔，
+        // 且 mod 自己按**前台玩家**反复重算它（LocalMultiControlRuntime.cs:2457），代表不了每一个瓦库。
+        if (WakuuTurnEndOrigin.ShouldStopAutoplay(
+                CombatManager.Instance.IsPlayerReadyToEndTurn(player),
+                WakuuTurnEndOrigin.EndedExternally(player.NetId, combatState.RoundNumber),
+                WakuuTurnEndOrigin.EndedByMod(player.NetId, combatState.RoundNumber),
+                CombatManager.Instance.AllPlayersReadyToEndTurn()))
+        {
+            reason = "player-ready-to-end-turn";
             return true;
         }
 

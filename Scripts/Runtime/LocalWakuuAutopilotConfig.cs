@@ -146,6 +146,27 @@ internal static class LocalWakuuAutopilotConfig
     public static bool SkipTurnStartDrawAnim { get; private set; }
 
     /// <summary>
+    /// 瓦库出牌加速（改进-2 / r117，默认开）：瓦库自动出牌时跳过卡牌堆动画与两段固定等待
+    /// （<c>CardCmd.AutoPlay(skipCardPileVisuals: true)</c>）。判定见 <see cref="WakuuPlaySpeedPolicy"/>。
+    /// </summary>
+    public static bool FastWakuuPlay { get; private set; } = true;
+
+    /// <summary>
+    /// 【实验档】瓦库出牌走原生动作队列（改进-2 / 方案 D，默认关）：
+    /// 开启后瓦库出牌改用 <c>PlayCardAction</c> 入自己的动作队列（原版"代理玩家出牌"路径），
+    /// 语义迁移（isAutoPlay / 目标预解析 / 扣费）与风险见 <see cref="WakuuPlayQueuePolicy"/> 与方案 §12.2。
+    /// 路径判定走纯函数 <see cref="WakuuPlayQueuePolicy.DecidePath"/>。
+    /// </summary>
+    public static bool WakuuPlayQueue { get; private set; }
+
+    /// <summary>
+    /// 【实验档 · 第二步】瓦库并发出牌（改进-2 / 方案 D，默认关，仅 <see cref="WakuuPlayQueue"/> 开时生效）：
+    /// 出牌循环不再抢占全局 <c>SelectorScopeGate</c>，多瓦库真正重叠（等选择时不挡别人）。
+    /// 判定与前提见 <see cref="WakuuPlayQueuePolicy.IsOverlappingQueuePlay"/> 与方案 §12.11。
+    /// </summary>
+    public static bool WakuuPlayOverlap { get; private set; }
+
+    /// <summary>
     /// 瓦库托管视角策略（改进-2 / Phase 0，默认 <see cref="WakuuViewModes.Never"/> 不跟随）：
     /// never=不跟随 / keyNodes=仅关键节点（瓦库回合开始）跟随 / always=全程跟随。
     /// 仅当 <see cref="BackgroundMode"/> 开启时生效；后台托管关闭时一律按 always（向后兼容）。
@@ -230,6 +251,9 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.statBadge): data.statBadge = value; break;
                     case nameof(WakuuConfigData.petHpBadge): data.petHpBadge = value; break;
                     case nameof(WakuuConfigData.skipTurnStartDrawAnim): data.skipTurnStartDrawAnim = value; break;
+                    case nameof(WakuuConfigData.fastWakuuPlay): data.fastWakuuPlay = value; break;
+                    case nameof(WakuuConfigData.wakuuPlayQueue): data.wakuuPlayQueue = value; break;
+                    case nameof(WakuuConfigData.wakuuPlayOverlap): data.wakuuPlayOverlap = value; break;
                     default:
                         LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：未知开关名 {key}");
                         return false;
@@ -524,7 +548,7 @@ internal static class LocalWakuuAutopilotConfig
                 + $"smartPick={data.smartPick}, smartEnchant={data.smartEnchant}, "
                 + $"extraCrossCharacterCardReward={data.extraCrossCharacterCardReward}, "
                 + $"personalRecorder={data.personalRecorder}, personalAssist={data.personalAssist}, "
-                + $"shopAssist={data.shopAssist}, shopAssistBuyNoData={data.shopAssistBuyNoData}, statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, wakuuViewMode={WakuuViewModes.Normalize(data.wakuuViewMode)}, "
+                + $"shopAssist={data.shopAssist}, shopAssistBuyNoData={data.shopAssistBuyNoData}, statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, fastWakuuPlay={data.fastWakuuPlay}, wakuuPlayQueue={data.wakuuPlayQueue}, wakuuPlayOverlap={data.wakuuPlayOverlap}, wakuuViewMode={WakuuViewModes.Normalize(data.wakuuViewMode)}, "
                 + $"personalTier={NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier}, "
                 + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}, "
                 + $"wakuuBrain={data.wakuuBrain}");
@@ -555,6 +579,9 @@ internal static class LocalWakuuAutopilotConfig
         StatBadgeSource = WakuuStatBadgeSource.Normalize(data.statBadgeSource);
         PetHpBadge = data.petHpBadge;
         SkipTurnStartDrawAnim = data.skipTurnStartDrawAnim;
+        FastWakuuPlay = data.fastWakuuPlay;
+        WakuuPlayQueue = data.wakuuPlayQueue;
+        WakuuPlayOverlap = data.wakuuPlayOverlap;
         ViewMode = WakuuViewModes.Normalize(data.wakuuViewMode);
         PersonalTier = NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier;
         EventChoiceMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;

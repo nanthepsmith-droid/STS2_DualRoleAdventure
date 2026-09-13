@@ -14,7 +14,7 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    private const string BuildMarker = "Revival v1.40.0 (game v0.111.0, marker=2026-09-11-r112)";
+    private const string BuildMarker = "Revival v1.40.0 (game v0.111.0, marker=2026-09-13-r130)";
 
     private static Harmony? _harmony;
 
@@ -115,6 +115,8 @@ public partial class Entry
         "MegaCrit.Sts2.Core.Entities.Merchant.MerchantEntry.OnTryPurchaseWrapper",
         // 个人记录器：真人删牌统计
         "MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromDeckForRemoval",
+        // 改进-2 / Phase 1：运行清理时同步清空选择器归属者注册表（缺了只会导致条目跨局残留）
+        "MegaCrit.Sts2.Core.Commands.CardSelectCmd.Reset",
     };
 
     /// <summary>
@@ -179,6 +181,9 @@ public partial class Entry
 
         // 阶段 5：补丁自检（Critical 缺失 → 致命）
         RunStage(fatalFailures, "PATCH_SELF_TEST", () => ValidatePatches(fatalFailures));
+
+        // 阶段 6：选牌入口归属路由自检（改进-2 / Phase 1；只记录/告警，不致命）
+        RunStage(fatalFailures, "SELECTOR_ROUTE_AUDIT", WakuuSelectorRouteAudit.Run);
 
         // 终态：INIT_OK / INIT_FAILED 二选一，互斥
         FinishInitialization(fatalFailures);

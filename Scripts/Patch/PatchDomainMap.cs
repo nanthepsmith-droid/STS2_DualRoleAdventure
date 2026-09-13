@@ -58,6 +58,8 @@ internal static class PatchDomainMap
             ["CardSelectCmdPatch"] = PatchDomain.Core,
             ["CardSelectForegroundSwitchPatch"] = PatchDomain.Core,
             ["CardSelectCmdSelectorGuardPatch"] = PatchDomain.Core,
+            // 改进-2 / Phase 1：运行清理时同步清空「选择器归属者注册表」
+            ["CardSelectCmdResetRegistryPatch"] = PatchDomain.Core,
             ["CardSelectManualConfirmationPatch"] = PatchDomain.Core,
             ["CardSelectDeckScenarioPatch"] = PatchDomain.Core,
             ["CardPileAddForegroundContextPinPatch"] = PatchDomain.Core,
@@ -125,6 +127,7 @@ internal static class PatchDomainMap
             // ============ Combat：战斗流程 ============
             ["CardManualPlayContextPatch"] = PatchDomain.Combat,
             ["NCardPlayQueueOnActionEnqueuedFailSafePatch"] = PatchDomain.Combat,
+            ["NCardPlayQueueActionEnqueuedGuardPatch"] = PatchDomain.Combat,
             ["CombatManagerPatch"] = PatchDomain.Combat,
             ["CombatManagerReadyEnemyTurnPatch"] = PatchDomain.Combat,
             ["CombatManagerSetupPlayerTurnForegroundPatch"] = PatchDomain.Combat,

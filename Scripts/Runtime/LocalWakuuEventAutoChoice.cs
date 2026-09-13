@@ -203,8 +203,14 @@ internal static class LocalWakuuEventAutoChoice
     /// </summary>
     private static EventOption? SelectByCommunityStats(EventModel eventModel, IReadOnlyList<EventOption> candidates)
     {
-        if (!LocalWakuuAutopilotConfig.SkadaAssist || eventModel.Owner == null || candidates.Count < 2)
+        if (!LocalWakuuAutopilotConfig.SkadaAssist || eventModel.Owner == null)
         {
+            return null;
+        }
+
+        if (candidates.Count < 2)
+        {
+            LogNoChoice(eventModel, candidates, "社区统计");
             return null;
         }
 
@@ -215,13 +221,10 @@ internal static class LocalWakuuEventAutoChoice
             List<WakuuEventSignal>? stats = WakuuSkadaAdapter.TryGetEventSignals(characterId, eventId);
             if (stats == null || stats.Count == 0)
             {
-                if (WakuuSkadaAdapter.IsReady())
-                {
-                    LocalMultiControlLogger.Info(
-                        $"瓦库事件社区统计无数据（该事件未收录，多为 mod 事件），回退原策略: "
-                        + $"event={eventId}, char={characterId}");
-                }
-
+                // 改进-3 诊断：原先只在适配器就绪时打日志，未就绪时静默 → "链没生效"与"没数据"分不清
+                LocalMultiControlLogger.Info(
+                    $"瓦库事件社区统计无数据（该事件未收录，多为 mod 事件），回退原策略: "
+                    + $"event={eventId}, char={characterId}, skadaReady={WakuuSkadaAdapter.IsReady()}");
                 return null;
             }
 
@@ -285,14 +288,23 @@ internal static class LocalWakuuEventAutoChoice
 
     /// <summary>
     /// 个人偏好统计选事件（三级决策链第①级，开关 personalAssist）：
-    /// 按选项的稳定 loc key（TextKey）查本机个人记录，选个人胜率最高的可用选项；
-    /// 任一选项个人样本不足（无倾向）即忽略该选项，全部忽略返回 null → 回退社区统计/既有策略。
+    /// 按选项的稳定 loc key（TextKey）查本机个人记录，口径与卡牌侧一致（改进-3）——
+    /// **主信号 = 选择率**（"我遇到这个事件时多选哪个"）+ 因果增益加权，**负面信号出局**；
+    /// 无选择率时才退化为按胜率比较。
+    /// 任一选项个人样本不足（无倾向）即忽略该选项；全部忽略/全部为负面返回 null → 回退社区统计/既有策略。
     /// 多人局优先参考多人切片（WakuuPersonalQuery.TryGetEventDecisionSignal 内部处理）。
+    /// 本链用稳定 loc key 查表，**不受界面语言影响**（社区链是文本模糊匹配）。
     /// </summary>
     private static EventOption? SelectByPersonalStats(EventModel eventModel, IReadOnlyList<EventOption> candidates)
     {
-        if (!LocalWakuuAutopilotConfig.PersonalAssist || eventModel.Owner == null || candidates.Count < 2)
+        if (!LocalWakuuAutopilotConfig.PersonalAssist || eventModel.Owner == null)
         {
+            return null;
+        }
+
+        if (candidates.Count < 2)
+        {
+            LogNoChoice(eventModel, candidates, "个人统计");
             return null;
         }
 
@@ -301,6 +313,9 @@ internal static class LocalWakuuEventAutoChoice
             PersonalStore store = LocalPersonalRecorder.Snapshot();
             if (store.eventChoices.Count == 0)
             {
+                LocalMultiControlLogger.Info(
+                    $"瓦库事件个人统计无记录（记录器还没采到任何事件选项），回退社区/原策略: "
+                    + $"event={eventModel.Id.Entry}");
                 return null;
             }
 
@@ -308,9 +323,7 @@ internal static class LocalWakuuEventAutoChoice
             string eventId = eventModel.Id.Entry.ToUpperInvariant();
             bool isMulti = eventModel.Owner.RunState?.Players.Count > 1;
 
-            int bestIndex = -1;
-            double bestWinRate = 0.0;
-            long bestCount = 0;
+            WakuuEventSignal?[] signals = new WakuuEventSignal?[candidates.Count];
             int withData = 0;
             for (int i = 0; i < candidates.Count; i++)
             {
@@ -320,30 +333,29 @@ internal static class LocalWakuuEventAutoChoice
                     continue;
                 }
 
-                WakuuEventSignal? signal = WakuuPersonalQuery.TryGetEventDecisionSignal(
+                signals[i] = WakuuPersonalQuery.TryGetEventDecisionSignal(
                     store, eventId, optionKey, isMulti, characterId,
                     tierPreference: LocalWakuuAutopilotConfig.PersonalTier);
-                if (signal == null)
+                if (signals[i] != null)
                 {
-                    continue;
-                }
-
-                withData++;
-                // 严格大于 → 同胜率保留更靠前的选项
-                if (signal.Value.WinRate > bestWinRate)
-                {
-                    bestIndex = i;
-                    bestWinRate = signal.Value.WinRate;
-                    bestCount = signal.Value.Count;
+                    withData++;
                 }
             }
 
+            // 改进-3：口径与卡牌 PickBestCardIndex 对齐 —— 选择率为主信号、胜率/因果增益加权、负面信号出局；
+            // 决定逻辑抽在纯函数里（WakuuSignalPicking.PickBestEventOptionIndex，可单测）。
+            int bestIndex = WakuuSignalPicking.PickBestEventOptionIndex(
+                signals, minCount: WakuuPersonalQuery.DefaultMinPersonalCount);
             if (bestIndex >= 0)
             {
+                WakuuEventSignal best = signals[bestIndex]!.Value;
+                double chosenRate = best.ChosenRate ?? 0.0;
+                string gainText = best.WinRateGain.HasValue ? best.WinRateGain.Value.ToString("F3") : "无";
                 LocalMultiControlLogger.Info(
                     $"瓦库事件按个人统计选取: event={eventId}, char={characterId}, "
-                    + $"index={bestIndex}/{candidates.Count}, winRate={bestWinRate:F3}, offered={bestCount}, "
-                    + $"withData={withData}");
+                    + $"index={bestIndex}/{candidates.Count}, option={candidates[bestIndex].TextKey}, "
+                    + $"chosenRate={chosenRate:F3}, winRate={best.WinRate:F3}, gain={gainText}, "
+                    + $"offered={best.Count}, withData={withData}, tier={LocalWakuuAutopilotConfig.PersonalTier}");
                 return candidates[bestIndex];
             }
 
@@ -351,7 +363,16 @@ internal static class LocalWakuuEventAutoChoice
             {
                 LocalMultiControlLogger.Info(
                     $"瓦库事件个人统计未采用，回退社区/原策略: event={eventId}, 选项={candidates.Count}, "
-                    + $"查到个人数据={withData}（样本低于 {WakuuPersonalQuery.DefaultMinPersonalCount}）");
+                    + $"查到个人数据={withData}（样本低于 {WakuuPersonalQuery.DefaultMinPersonalCount} 或全部为负面信号）");
+            }
+            else
+            {
+                // 改进-3 诊断：一条日志把「该事件从未被记录」与「记录到了但样本不够」讲清楚。
+                // 2026-09-11 实机就是因为这里静默，导致"没生效"与"没数据"无法区分。
+                LocalMultiControlLogger.Info(
+                    $"瓦库事件个人统计无可用样本，回退社区/原策略: event={eventId}, char={characterId}, "
+                    + $"选项={candidates.Count}, 各选项展示次数=[{DescribeOptionSampleCounts(store, eventId, candidates, isMulti, characterId)}], "
+                    + $"门槛={WakuuPersonalQuery.DefaultMinPersonalCount}（只计已打完的局）");
             }
 
             return null;
@@ -361,6 +382,51 @@ internal static class LocalWakuuEventAutoChoice
             LocalMultiControlLogger.Warn($"瓦库事件个人统计选取失败，回退原策略: {exception.Message}");
             return null;
         }
+    }
+
+    /// <summary>
+    /// 改进-3 诊断：本页没有「选择余地」（0/1 个可选）——两条统计链都无从下手。
+    /// 单独留痕，避免把这种情况误判成「统计链没生效」。
+    /// </summary>
+    private static void LogNoChoice(EventModel eventModel, IReadOnlyList<EventOption> candidates, string chain)
+    {
+        LocalMultiControlLogger.Info(
+            $"瓦库事件{chain}跳过（本页仅 {candidates.Count} 个可选，无选择余地），回退原策略: "
+            + $"event={eventModel.Id.Entry}");
+    }
+
+    /// <summary>
+    /// 改进-3 诊断：按首档切片（模式 + 角色）列出各候选的**展示次数**，
+    /// 用于区分「该事件从未被记录」与「记录到了但样本低于门槛」。诊断失败不影响决策。
+    /// </summary>
+    private static string DescribeOptionSampleCounts(
+        PersonalStore store,
+        string eventId,
+        IReadOnlyList<EventOption> candidates,
+        bool isMulti,
+        string characterId)
+    {
+        List<string> parts = new(candidates.Count);
+        foreach (EventOption candidate in candidates)
+        {
+            long offered = 0;
+            try
+            {
+                offered = WakuuPersonalQuery
+                    .CountEventOptionSlice(
+                        store, eventId, candidate.TextKey, isMulti: isMulti, character: characterId)
+                    .Offered;
+            }
+            catch
+            {
+                // 诊断仅作参考，失败按 0 展示
+            }
+
+            string key = string.IsNullOrEmpty(candidate.TextKey) ? "?" : candidate.TextKey;
+            parts.Add($"{key}:{offered}");
+        }
+
+        return string.Join(", ", parts);
     }
 
     private static async Task RunAsync(EventModel eventModel, ulong ownerId)
@@ -436,7 +502,7 @@ internal static class LocalWakuuEventAutoChoice
                     // 人类选牌（另一条异步链）时该守卫会把选择器临时摘掉，照常弹 UI 给真人。
                     ulong? savedChoicePlayerId = CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value;
                     ulong? savedAutoChoiceOwnerId = AutoChoiceOwnerId.Value;
-                    using (CardSelectCmd.PushSelector(selector))
+                    using (WakuuSelectorRegistry.Open(ownerId, selector))
                     {
                         CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value = ownerId;
                         AutoChoiceOwnerId.Value = ownerId;

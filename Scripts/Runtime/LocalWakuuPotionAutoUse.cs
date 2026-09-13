@@ -689,11 +689,11 @@ internal static class LocalWakuuPotionAutoUse
         if (rule?.CardPicker != null)
         {
             Func<PotionRuleContext, IReadOnlyList<CardModel>, int, int, List<CardModel>> picker = rule.CardPicker;
-            return CardSelectCmd.PushSelector(new LocalWakuuTargetedCardSelector(
+            return WakuuSelectorRegistry.Open(ctx.Owner.NetId, new LocalWakuuTargetedCardSelector(
                 (options, minSelect, maxSelect) => picker(ctx, options, minSelect, maxSelect)));
         }
 
-        return CardSelectCmd.PushSelector(new LocalWakuuStrategySelector());
+        return WakuuSelectorRegistry.Open(ctx.Owner.NetId, new LocalWakuuStrategySelector());
     }
 
     private static bool ShouldUseModPotion(PotionModel potion, PotionRuleContext ctx)

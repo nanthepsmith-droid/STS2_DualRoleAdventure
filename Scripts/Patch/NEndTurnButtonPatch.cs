@@ -33,6 +33,16 @@ internal static class NEndTurnButtonPatch
             ? combatState.GetPlayer(clickTargetId.Value)
             : LocalContext.GetMe(combatState);
 
+        // r128：真人点结束回合 / 撤销也必须**立刻**看起来生效。原版 `CallReleaseLogic` 会把
+        // `EndPlayerTurnAction` 入队（按全局 action ID 排序），而并发出牌档下瓦库常年在队列前排占着位置 ⇒
+        // 真人的点击要排在它们后面（实机 r127 日志：行 8184 入队 id 24 → 行 8413 才执行，
+        // 其间还夹着 id 25/26/27 三张瓦库牌，用户观感就是"点了没反应、要等瓦库打完"）。
+        // 与真人出牌同一条"让真人插队"通道：撤掉瓦库尚未开始执行的入队动作。
+        if (me != null)
+        {
+            LocalWakuuRelicRuntime.YieldPendingQueuePlaysToHuman(me.NetId, "end-turn-button");
+        }
+
         bool handled = LocalMultiControlRuntime.TryManualEndTurnAutoCloseAllPlayers();
         if (handled)
         {

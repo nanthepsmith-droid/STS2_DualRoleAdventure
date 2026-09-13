@@ -67,6 +67,13 @@ internal sealed class PersonalCardOfferRecord
     /// <summary>本批是否点中了这张卡。</summary>
     public bool picked { get; set; }
 
+    /// <summary>
+    /// 批次标识（r120，"写时幂等"用）：本批 offer 的卡 id 去重排序拼接（见
+    /// <see cref="WakuuPersonalDedupe.BuildBatchKey"/>）。同一次卡牌奖励被 SL 重选时用它覆盖旧批次，
+    /// 避免抓取率被重复计数。旧数据无此字段（空串）→ 不参与去重。
+    /// </summary>
+    public string batch { get; set; } = string.Empty;
+
     public long ts { get; set; }
 }
 
@@ -498,7 +505,17 @@ internal static class WakuuPersonalQuery
                 store, eventId, optionKey,
                 isMulti: useMode ? isMultiPreference : (bool?)null,
                 character: useChar ? characterPreference : null);
-            return new WakuuEventSignal(optionKey, win.WinRateHeld, slice.Offered);
+
+            // 改进-3：选择率（slice.ChosenRate）原先被整条丢弃，导致事件侧只剩胜率单信号。
+            // 「没选它的局」胜率只在**确实存在没选的局**时回填——SkippedRuns=0 时其值为 0.0，
+            // 直接当基准会把该选项算成强正增益（假信号）。
+            double? winRateSkipped = win.SkippedRuns > 0 ? win.WinRateSkipped : null;
+            return new WakuuEventSignal(
+                optionKey,
+                win.WinRateHeld,
+                slice.Offered,
+                chosenRate: slice.ChosenRate,
+                winRateSkipped: winRateSkipped);
         }
 
         return null;

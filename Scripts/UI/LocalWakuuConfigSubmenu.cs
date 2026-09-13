@@ -240,7 +240,7 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             value => LocalWakuuAutopilotConfig.TrySetAndSave("personalRecorder", value));
         AddToggleRow(column,
             "个人统计决策辅助",
-            "默认关。开启后瓦库选牌/选事件优先参考你自己打出的个人统计（多人局优先参考多人局数据）；个人样本不足或无倾向时回退社区统计与默认策略。样本越多越贴合你的打法（含 mod 卡）。",
+            "默认关。开启后瓦库选牌/选事件优先参考你自己打出的个人统计（多人局优先参考多人局数据）：事件选项按你的「选择率」（遇到这个事件时你多选哪个）+ 胜率综合选取，用稳定 loc key 查表、不受界面语言影响；选牌按抓取率 + 拿了之后的胜率增益。个人样本不足或无倾向时回退社区统计与默认策略。样本越多越贴合你的打法（含 mod 卡）。",
             () => LocalWakuuAutopilotConfig.PersonalAssist,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("personalAssist", value));
         column.AddChild(CreatePersonalTierRow(
@@ -337,6 +337,21 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             "默认关。本地多控下每回合开始会依次把前台切到每个真人玩家、逐个播完自动抽牌动画才轮到下一个，10 人以上时要等很久。开启后回合开始只保留「当前正在看的那位」的抽牌演出，其他人的回合开始不再切前台——原版对非本地玩家的抽牌本来就不做动画（只走数据），所以他们的抽牌瞬时生效，之后切到该角色时会立刻看到完整手牌。",
             () => LocalWakuuAutopilotConfig.SkipTurnStartDrawAnim,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("skipTurnStartDrawAnim", value));
+        AddToggleRow(column,
+            "瓦库出牌加速（跳过卡牌堆动画）",
+            "默认开。瓦库自动出牌时跳过「牌飞向出牌区 + 烟雾特效 + 各牌堆补间」与打出/收尾的两段固定等待（约 0.4~0.65 秒/张）。多瓦库是串行出牌的，每张牌的耗时会直接相加成整回合时长（实测约 1.0~1.4 秒/张），所以这是提速最明显的一项。关闭后恢复完整的出牌动画（与旧版观感一致）。",
+            () => LocalWakuuAutopilotConfig.FastWakuuPlay,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("fastWakuuPlay", value));
+        AddToggleRow(column,
+            "【实验】瓦库出牌走动作队列",
+            "默认关。**实验档**：开启后瓦库出牌不再用模组内联的自动出牌，而是像真人/远端玩家那样「把出牌动作排进自己的动作队列」（原版多人模式的同一条路径），换来多人模式的真实语义——某个瓦库在等自己的选牌时不挡住其他瓦库与真人。代价是三条刻意接受的语义变化：① 瓦库的出牌不再按「自动出牌」处理（虚无形态、佩尔之眼、不歇之巅等对自动出牌有特判的牌会开始把瓦库出牌算进去）；② 需要指定目标的牌若当刻解析不到目标，牌会留在手里（旧行为是打出去进弃牌堆）；③ **本项会盖过上面的「瓦库出牌加速」**：队列路径走的是原版「真人出牌」的演出分支（PlayCardAction 没有跳过动画的参数，连「牌从手牌飞出」也走真人分支），所以两个都开时瓦库出牌会回到较慢的完整演出（约 1 秒/张）。想要速度就只开「瓦库出牌加速」；想要多人语义就开本项、接受较慢的演出。关闭即恢复既有行为；遇到任何异常请关掉本项并保留 godot.log。",
+            () => LocalWakuuAutopilotConfig.WakuuPlayQueue,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("wakuuPlayQueue", value));
+        AddToggleRow(column,
+            "【实验】瓦库并发出牌（不互相等）",
+            "默认关，**必须先开上面那项「瓦库出牌走动作队列」才生效**。这是上一项实验档的第二步（最终目标）：开启后多个瓦库不再排队等「全局出牌闸门」，一个瓦库在等自己的选牌时，其他瓦库与真人照常出牌（原版多人模式的真实语义）。代价：① 瓦库出牌期间不再把「当前玩家」钉在瓦库身上（出牌改由游戏动作泵执行、归属按角色分发），所以瓦库出牌的**前台视觉演出会更少**（更接近后台托管，伤害与效果照常）；② 视角档位设成「全程跟随」时，多个瓦库可能来回抢视角（建议配合默认的「不跟随」使用）。只想稳就先别开；遇到任何异常请关掉本项并保留 godot.log。",
+            () => LocalWakuuAutopilotConfig.WakuuPlayOverlap,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("wakuuPlayOverlap", value));
         AddToggleRow(column,
             "自有统计角标",
             "默认关。开启后在「奖励选牌卡/商店卡/事件选项按钮」的角标位置（见下方「自有统计角标位置」）显示你自己记录的总抓取率/总选择率（XX%），鼠标悬停弹出分幕首抓/重复抓取率、胜率的详情。只显示本地个人统计，与皮皮军师（SkadaHelper）社区统计 UI 分开、互不覆盖。",
