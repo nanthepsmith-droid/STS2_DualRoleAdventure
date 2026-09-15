@@ -36,4 +36,34 @@ internal static class WakuuPlaySpeedPolicy
     {
         return toggleEnabled && localMultiControlEnabled && isVakuuFormPlayer;
     }
+
+    /// <summary>
+    /// **队列路径**（方案 D）的那张瓦库牌要不要强制跳过卡牌堆演出（改进-2 / 第三步）。
+    ///
+    /// **为什么需要单独一条**：队列路径由 `PlayCardAction.ExecuteAction` 以
+    /// <c>isAutoPlay: false</c> 调 `CardModel.OnPlayWrapper`，**没有** `skipCardPileVisuals` 形参可传
+    /// （那条调用是 `PlayCardAction` 自己写的，不走 `CardCmd.AutoPlay`）⇒ r117 的「传参式加速」
+    /// 对它完全无效（实机实测「两个开关都开＝加速失效」，见 TODO r122 ③）。只能靠
+    /// `CardModel.OnPlayWrapper` 前缀补丁把参数改成 true。
+    ///
+    /// **与 r117 的两点差异**：
+    /// 1. 多一条 <paramref name="isWakuuQueuedPlay"/> —— 只在**我们替瓦库入队**的那次出牌上生效。
+    ///    真人手动替瓦库出牌同样是 `isAutoPlay: false`，那种"真人点的牌"不该被加速（观感倒退）。
+    /// 2. 收益比 r117 小：`isAutoPlay: false` 分支本来就不走 `CustomScaledWait(0.25f, 0.35f)`
+    ///    与前段牌堆补间，能跳过的只有**收尾固定等待** `CustomScaledWait(0.15f - num, 0.3f - num)`
+    ///    与**结算堆**（弃牌堆 / 消耗 / 移出战斗）的补间，实测约 0.15~0.3s/张。
+    /// </summary>
+    /// <param name="toggleEnabled">配置开关（<c>fastWakuuPlay</c>）是否开启。</param>
+    /// <param name="localMultiControlEnabled">本地多控是否生效。</param>
+    /// <param name="isVakuuFormPlayer">出牌者是否处于【瓦库形态】托管。</param>
+    /// <param name="isWakuuQueuedPlay">这次出牌是否是"我们替该瓦库入队"的队列路径出牌。</param>
+    public static bool ShouldSkipCardPileVisualsForQueuedPlay(
+        bool toggleEnabled,
+        bool localMultiControlEnabled,
+        bool isVakuuFormPlayer,
+        bool isWakuuQueuedPlay)
+    {
+        return ShouldSkipCardPileVisuals(toggleEnabled, localMultiControlEnabled, isVakuuFormPlayer)
+               && isWakuuQueuedPlay;
+    }
 }

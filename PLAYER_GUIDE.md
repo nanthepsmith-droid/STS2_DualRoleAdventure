@@ -89,11 +89,13 @@ shopping can optionally be handed to Vakuu via "Auto-buy cards" (below).
   returns; "always follow" restores the old feel. The safety nets that hand control back to you are
   unaffected by this setting.
 - **Faster Vakuu card plays** (`Vakuu autopilot`, on by default): skips the card-pile animations during
-  Vakuu's automatic plays — measured roughly 3x faster per card, data unchanged.
+  Vakuu's automatic plays — measured roughly 3x faster per card, data unchanged. The two experimental
+  modes below also benefit from it (queue-mode plays skip the card's travel animation into its pile).
 - **【Experimental】Vakuu plays through the action queue** (off by default): Vakuu's plays enter the
   game's multiplayer action queue instead of the legacy in-place autoplay, so with multiple Vakuus their
-  plays interleave instead of running strictly one-by-one. While this is on it overrides the "faster card
-  plays" toggle (by design; pick one).
+  plays interleave instead of running strictly one-by-one. Queue plays still skip the trailing wait and
+  the result-pile tweens (the "card flies out of hand" animation cannot be skipped), so they remain a
+  little slower per card than the in-place path.
 - **【Experimental】Concurrent Vakuu plays** (off by default, requires queue mode): multiple Vakuus no
   longer wait for each other, and when you play a card or end your turn your action jumps the queue
   immediately (yielded Vakuu plays are simply replayed next round — nothing is lost).

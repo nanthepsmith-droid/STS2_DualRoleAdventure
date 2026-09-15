@@ -143,6 +143,30 @@ internal static class LocalWakuuRewardAutoClaim
                     {
                         _suppressCardRewardScreen = true;
                         _autoClaimCardOwner.Value = owner.NetId;
+
+                        // r134：**同步写入选牌归属者**（与 LocalWakuuEventAutoChoice / LocalWakuuRelicEffectAutoChoice 同一套做法）。
+                        //
+                        // 为什么这条链必须自己写：`CardReward.OnSelect` 读的是 `CardSelectCmd.Selector`，
+                        // 而它**不经过** `CardSelectCmd.From*` 入口 —— 那些入口才会由
+                        // CardSelectForegroundSwitchPatch 写入 `CurrentChoicePlayerId`。没人写，该 AsyncLocal
+                        // 就保留**沿异步链残留的旧值**（多半是真人）⇒ `CardSelectCmdSelectorGuardPatch` 判成
+                        // "真人选牌请求" → 把我们的选择器改成 null ⇒ `CardReward.OnSelect` 抛
+                        // `Card selector unset during test!` ⇒ **卡牌奖励自动领取失败**。
+                        // 金币/药水奖励不读 Selector，所以照常领到 —— 实机表现正是"只有卡牌奖励漏领"。
+                        // 日志实证（2026-09-14）：同一局的 5 个瓦库全是
+                        // `检测到真人选牌请求，本次跳过瓦库选择器改走正常UI: chooser=…326`
+                        // + `瓦库奖励自动领取失败，保留为人工领取: reward=CardReward, error=Card selector unset during test!`。
+                        ulong? savedChoicePlayerId = CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value;
+                        if (savedChoicePlayerId.HasValue
+                            && !LocalWakuuRelicRuntime.IsVakuuFormModeById(savedChoicePlayerId.Value))
+                        {
+                            // 只在**确实命中了这个坑**时记一条（正常路径不刷屏）：便于日后一眼确认修复生效。
+                            LocalMultiControlLogger.Info(
+                                $"卡牌奖励自动领取：选牌归属者在异步链上残留为其他角色，已改写为奖励归属者: "
+                                + $"stale={savedChoicePlayerId.Value}, owner={owner.NetId}");
+                        }
+
+                        CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value = owner.NetId;
                         try
                         {
                             await reward.SelectUnsynchronized();
@@ -152,6 +176,7 @@ internal static class LocalWakuuRewardAutoClaim
                         }
                         finally
                         {
+                            CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value = savedChoicePlayerId;
                             _suppressCardRewardScreen = false;
                             _autoClaimCardOwner.Value = null;
                         }

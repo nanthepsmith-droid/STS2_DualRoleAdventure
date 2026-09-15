@@ -126,6 +126,8 @@ internal static class PatchDomainMap
 
             // ============ Combat：战斗流程 ============
             ["CardManualPlayContextPatch"] = PatchDomain.Combat,
+            // 改进-2 / 方案 D 队列路径出牌加速：瓦库自己的队列出牌强制跳过卡牌堆演出与收尾固定等待
+            ["CardPlayVisualsSkipPatch"] = PatchDomain.Combat,
             ["NCardPlayQueueOnActionEnqueuedFailSafePatch"] = PatchDomain.Combat,
             ["NCardPlayQueueActionEnqueuedGuardPatch"] = PatchDomain.Combat,
             ["CombatManagerPatch"] = PatchDomain.Combat,

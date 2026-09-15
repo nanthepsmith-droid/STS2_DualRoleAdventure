@@ -68,4 +68,76 @@ public class WakuuPlaySpeedPolicyTests
         // 关掉即恢复完整演出，行为与旧版一致。
         Assert.That(new WakuuConfigData().fastWakuuPlay, Is.True);
     }
+
+    // ===== 队列路径（方案 D 第三步）：多一条"这次出牌是我们替瓦库入队的" =====
+
+    private static bool SkipQueued(bool toggle, bool localMulti, bool isWakuu, bool isQueuedPlay)
+        => WakuuPlaySpeedPolicy.ShouldSkipCardPileVisualsForQueuedPlay(toggle, localMulti, isWakuu, isQueuedPlay);
+
+    [Test]
+    public void 队列路径_四条件全满足才跳过()
+    {
+        Assert.That(SkipQueued(toggle: true, localMulti: true, isWakuu: true, isQueuedPlay: true), Is.True);
+    }
+
+    [Test]
+    public void 队列路径_不是我们入队的牌_不跳过()
+    {
+        // 真人手动替瓦库出牌同样走 isAutoPlay=false，那种"人点的牌"不该被加速（观感倒退）。
+        Assert.That(SkipQueued(toggle: true, localMulti: true, isWakuu: true, isQueuedPlay: false), Is.False);
+    }
+
+    [Test]
+    public void 队列路径_其余任一条件不满足都不跳过()
+    {
+        Assert.That(SkipQueued(toggle: false, localMulti: true, isWakuu: true, isQueuedPlay: true), Is.False);
+        Assert.That(SkipQueued(toggle: true, localMulti: false, isWakuu: true, isQueuedPlay: true), Is.False);
+        Assert.That(SkipQueued(toggle: true, localMulti: true, isWakuu: false, isQueuedPlay: true), Is.False);
+    }
+
+    [Test]
+    public void 队列路径_真值表_只有一组为真()
+    {
+        int skipped = 0;
+        foreach (bool toggle in new[] { false, true })
+        {
+            foreach (bool localMulti in new[] { false, true })
+            {
+                foreach (bool isWakuu in new[] { false, true })
+                {
+                    foreach (bool isQueued in new[] { false, true })
+                    {
+                        if (!SkipQueued(toggle, localMulti, isWakuu, isQueued))
+                        {
+                            continue;
+                        }
+
+                        skipped++;
+                        Assert.That(toggle && localMulti && isWakuu && isQueued, Is.True);
+                    }
+                }
+            }
+        }
+
+        Assert.That(skipped, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void 队列路径_与r117口径一致_非队列牌不因新判定而改变()
+    {
+        // 新判定只在 isQueuedPlay=true 时可能为真：即凡是 r117 判定为 false 的，队列判定也必为 false。
+        foreach (bool toggle in new[] { false, true })
+        {
+            foreach (bool localMulti in new[] { false, true })
+            {
+                foreach (bool isWakuu in new[] { false, true })
+                {
+                    if (!Skip(toggle, localMulti, isWakuu))
+                    {
+                        Assert.That(SkipQueued(toggle, localMulti, isWakuu, isQueuedPlay: true), Is.False);
+                    }
+                }
+            }
+        }
+    }
 }

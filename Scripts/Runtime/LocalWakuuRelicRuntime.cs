@@ -20,6 +20,7 @@ using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Relics;
+using MegaCrit.Sts2.Core.Nodes.Cards;
 using MegaCrit.Sts2.Core.Nodes.Combat;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
 using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
@@ -674,7 +675,97 @@ internal static class LocalWakuuRelicRuntime
         LocalMultiControlLogger.Info(
             $"瓦库出牌走动作队列完成（方案 D 实验档）: player={player.NetId}, round={round}, "
             + $"card={card.Id.Entry}, actionId={action.Id?.ToString() ?? "none"}, ms={Time.GetTicksMsec() - startTick}");
+
+        // r133 收尾补偿：出牌加速把"玩家手动出牌"分支里那段"把卡牌节点从出牌区收走"的换堆补间
+        // 一起跳过了，而原版正是靠那条补间 QueueFree 掉节点 ⇒ 不补偿的话卡面会滞留在出牌区。
+        if (LocalWakuuAutopilotConfig.FastWakuuPlay)
+        {
+            ReleaseLeftoverPlayedCardNode(card);
+        }
+
         return true;
+    }
+
+    /// <summary>
+    /// 队列路径出牌加速的**收尾补偿**（r133）。
+    ///
+    /// **为什么需要**：`CardPlayVisualsSkipPatch` 强制 `skipCardPileVisuals: true` 后，
+    /// `CardModel.OnPlayWrapper` 结尾的"移到结算堆"会走 `CardPileCmd.Add/Exhaust/RemoveFromCombat(...,
+    /// skipVisuals: true)` —— 而这三个方法**只在这段被跳过的补间里** `QueueFreeSafely` 卡牌节点
+    /// （`CardPileCmd.GetTweenForCardsChangingPiles`：`MoveCardNodeToNewPileBeforeTween` → 补间结束
+    /// `QueueFreeSafely` / 消耗 VFX）。手动出牌分支的节点是 `AddDuringManualCardPlay` 建的（它**没有**
+    /// 跳过形参），所以节点建了却没人收 ⇒ **卡面滞留在出牌区**（实机反馈）。
+    /// 停下来补回"那条补间的最终效果"（只是没有动画）。
+    ///
+    /// **不做的事**：
+    /// <list type="bullet">
+    ///   <item>`CardType.Power` 一律不动 —— 原版 `RemoveFromCombat` 自己就刻意排除"出牌区里的 Power"
+    ///         （改由 `PlayPowerCardFlyVfx` 收尾），跟着它走才不会打断能量牌的特效。</item>
+    ///   <item>牌仍在出牌区（`Play`）或抽牌堆（`Draw`）时不动 —— 节点还该留着。</item>
+    ///   <item>牌去手牌（`Hand`）时**交还手牌容器**而不是销毁 —— 与那条被跳过的补间一致。</item>
+    /// </list>
+    ///
+    /// 归属判断用 `NCombatRoom.Instance.Ui.GetCardFromPlayContainer(card)`（只在"出牌区"里按模型找），
+    /// 找不到就什么都不做 ⇒ 对没被加速 / 已被原版收走的牌是完全的空操作，**可以无条件调用**。
+    /// </summary>
+    private static void ReleaseLeftoverPlayedCardNode(CardModel card)
+    {
+        try
+        {
+            if (card.Type == CardType.Power)
+            {
+                return;
+            }
+
+            NCombatUi? ui = NCombatRoom.Instance?.Ui;
+            if (ui == null)
+            {
+                return;
+            }
+
+            NCard? node = ui.GetCardFromPlayContainer(card);
+            if (node == null)
+            {
+                return;
+            }
+
+            PileType? destination = card.Pile?.Type;
+            if (destination == PileType.Play || destination == PileType.Draw)
+            {
+                return;
+            }
+
+            if (destination == PileType.Hand)
+            {
+                ui.Hand.Add(node);
+                return;
+            }
+
+            // Discard / Exhaust / Deck / null（已移出战斗）：原版那条补间最后也是 QueueFree。
+            node.QueueFreeSafely();
+            LocalMultiControlLogger.Info(
+                $"瓦库出牌加速（队列路径）：收回滞留在出牌区的卡牌节点: card={card.Id.Entry}, "
+                + $"dest={destination?.ToString() ?? "none"}");
+        }
+        catch (Exception exception)
+        {
+            // 纯表现层补偿，绝不能反过来影响出牌。
+            LocalMultiControlLogger.Warn($"收回滞留卡牌节点失败（不影响出牌）: {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 该玩家此刻是否有"**我们替他入队的**出牌动作"没跑完（方案 D 队列路径）。
+    ///
+    /// 用途：`CardPlayVisualsSkipPatch`（队列路径出牌加速）要精确区分
+    /// 「瓦库自动化出牌」（该加速）与「真人手动替瓦库出牌」（不该加速，观感倒退）。
+    /// 登记表在 <see cref="TryPlayCardViaActionQueueAsync"/> 里"入队前写入、动作彻底跑完后摘除"，
+    /// 而 `CardModel.OnPlayWrapper` 正是在这个窗口内被调用的 ⇒ 命中即为瓦库自动化出牌。
+    /// inline 路径（`CardCmd.AutoPlay`）从不登记，天然返回 false（那条路径 r117 已单独传参加速）。
+    /// </summary>
+    public static bool HasPendingQueuePlay(ulong playerNetId)
+    {
+        return _pendingQueuePlays.ContainsKey(playerNetId);
     }
 
     /// <summary>

@@ -14,7 +14,7 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    private const string BuildMarker = "Revival v1.41.0 (game v0.111.0, marker=2026-09-13-r131)";
+    private const string BuildMarker = "Revival v1.41.0 (game v0.111.0, marker=2026-09-14-r134)";
 
     private static Harmony? _harmony;
 
@@ -117,6 +117,8 @@ public partial class Entry
         "MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromDeckForRemoval",
         // 改进-2 / Phase 1：运行清理时同步清空选择器归属者注册表（缺了只会导致条目跨局残留）
         "MegaCrit.Sts2.Core.Commands.CardSelectCmd.Reset",
+        // 改进-2 / 方案 D 队列路径出牌加速：瓦库队列出牌强制跳过卡牌堆演出（缺了只是少一份提速）
+        "MegaCrit.Sts2.Core.Models.CardModel.OnPlayWrapper",
     };
 
     /// <summary>

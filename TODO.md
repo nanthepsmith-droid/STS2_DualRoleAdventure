@@ -544,6 +544,87 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
   - 本会话无战斗（只进商店），战斗路径回归与上下文漂移降噪已在 r129 会话确认
     （4 条 INFO / 0 条 WARN）。**BUG-12 关单。**
 
+### BUG-13 战后卡牌奖励不被瓦库自动领取（2026-09-14 实机发现；**r134 已修，待实机**）
+
+- **现象（用户）**：「战斗结束后瓦库不会自动领取**卡牌**奖励（其它奖励依旧领取）；我退出重进后瓦库就正常自动领取了。」
+- **实机证据（marker r133，`godot.log` 行 13128~13189）**：同一场战斗的 5 个瓦库，金币/药水全部领取成功，
+  卡牌奖励**全部失败**，两条日志成对出现：
+  - `检测到真人选牌请求，本次跳过瓦库选择器改走正常UI: chooser=76561198422527326`（chooser = 真人）
+  - `瓦库奖励自动领取失败，保留为人工领取: reward=CardReward, error=Card selector unset during test!`
+  - 紧邻的探针 `瓦库选择器栈探针: source=apply-control-before-merged-rewards-offer-room-end, selectorStackCount=0`
+    说明那一刻**全局选择器栈是空的**；本局奖励走的是 `读档重放路径检测到战后奖励，转为后台弹出`（`isPreFinished=True`，
+    fire-and-forget）。
+- **根因（代码层）**：`CardReward.OnSelect` 读的是 `CardSelectCmd.Selector`
+  （`sts2src/src/Core/Rewards/CardReward.cs:207`，读不到就抛 `Card selector unset during test!`）；
+  而 r113 的 `CardSelectCmdSelectorGuardPatch` 会按 AsyncLocal
+  `CardSelectForegroundSwitchPatch.CurrentChoicePlayerId` 决定处置 —— **归属者是真人时把 `Selector` 改成 null**
+  （这是"瓦库出牌循环进行中，真人同时打出需要选牌的卡"的正常设计）。
+  问题在于：`CurrentChoicePlayerId` 是**沿异步链残留**的 AsyncLocal（守卫自己的注释就写了），
+  而 `CardReward.OnSelect` **不经过任何 `CardSelectCmd.From*` 入口** ——
+  只有那些入口才会由 `CardSelectForegroundSwitchPatch` 写入该值。
+  于是没人写 → 保留旧值（本局是真人 …326）→ 守卫判成"真人选牌" → 抛异常 → 自动领取失败。
+  金币/药水奖励**不读 `Selector`**，所以照常领到 —— 完全对应"只有卡牌奖励漏领"。
+- **为什么"退出重进就好了"**：新进程/新局重建了 AsyncLocal 上下文，残留值消失（实机同文件里后一场奖励 5/5 全成功）。
+- **修法（r134）**：`LocalWakuuRewardAutoClaim.TrySettleAsync` 的 `CardReward` 分支在
+  `reward.SelectUnsynchronized()` 之前**写入选牌归属者**（保存/恢复旧值），
+  与 `LocalWakuuEventAutoChoice`（`CurrentChoicePlayerId` + `AutoChoiceOwnerId`）和
+  `LocalWakuuRelicEffectAutoChoice.Enter` 同一套既有做法（r94 就是为同一个坑加的）。
+  另加一条**只在命中该坑时**才打的 INFO：
+  `卡牌奖励自动领取：选牌归属者在异步链上残留为其他角色，已改写为奖励归属者: stale=…, owner=…`。
+- **不是 r132/r133 引入的**：跨会话比对（本机 5 份日志）—— 09-13 的两份日志各有 10 / 14 条
+  `检测到真人选牌请求` 且 `读档重放路径` 也出现过（4 / 2 次），但**从没触发过奖励领取失败**
+  （`自动领取失败` 计数 0）；本次是**同一条残留 AsyncLocal 撞上"该链没有任何入口写它"**才暴露。
+  r132/r133 改的是出牌演出，与该 AsyncLocal 无关。
+- **门禁**：0 警告 0 错误、**499 单测全绿**（无新增：修复是 AsyncLocal 作用域写入，靠实机回归）、
+  `clr_compat_check` PASS、marker **2026-09-14-r134**、`dll_check --deployed` 全绿
+  （`--u16 选牌归属者在异步链上残留为其他角色` 在、`__runOriginal` 不在），
+  部署位与仓库根字节一致（sha256 `398168504912...`）。
+- **验证方法**：两个实验档开关随意（本 bug 与之无关），打一场多瓦库战斗/读档重放进入战后奖励 →
+  ① 期望 `瓦库卡牌奖励已自动领取` 条数 = 瓦库数量（不再有 `保留为人工领取: reward=CardReward`）；
+  ② 若命中过那个坑，会顺带出现 `…已改写为奖励归属者: stale=…, owner=…`（正是本次修复生效的判据）；
+  ③ 真人自己的卡牌奖励**不受影响**（仍然弹屏给真人点）。
+- **同类风险点（已记录，本轮未改）**：同样"压了托管选择器但没写 `CurrentChoicePlayerId`"的还有
+  `LocalWakuuRestAutoChoice.PushSelectorFor`（火堆）与 `LocalWakuuPotionAutoUse.PushSelectorFor`（战斗内药水）。
+  两者的选牌入口分别是 `FromDeckFor*` / `FromCombatPile`：前者**不在** `CardSelectForegroundSwitchPatch`
+  的 6 个 From* 前缀清单里（所以理论上同样会吃到残留值），后者在。
+  ⚠ 火堆那条还牵涉既有「火堆卡退」未定位问题，**等实机证据再动**，不要顺手改。
+- ✅ **2026-09-14 r134 实机确认通过（战斗奖励专项）**：marker `2026-09-14-r134`、`INIT_OK`、
+  本会话 2 场战斗 × 5 瓦库 ⇒ `瓦库卡牌奖励已自动领取` **10 条**、
+  `保留为人工领取` **0 条**（也就是 `reward=CardReward` 的失败一条都没有）；
+  `检测到真人选牌请求` **0 条**；`选牌归属者在异步链上残留为其他角色` **0 条**
+  （说明本局没再出现残留值，修复属防御性生效）。
+  同样确认无回归：`收回滞留在出牌区的卡牌节点` 39 条（dest 全为 `Discard`，画面正常）、
+  `瓦库选择器作用域异常退出` / `瓦库看门狗重启失败` / `Couldn't get hand node` /
+  `动作队列UI入队触发空引用` 全 **0**。**BUG-13 关单。**
+- ✅ **火堆同类风险实测无问题（2026-09-14，marker r134）**：5 个瓦库
+  `瓦库火堆已自动选择 … success=True` 全部成功（MEND/HEAL/SMITH 都覆盖到），
+  说明 `LocalWakuuRestAutoChoice` 不写 `CurrentChoicePlayerId` 在当前时序下没有踩到残留值。
+  **维持不改**（等真出现"火堆选项选错/不选"的证据再说）。
+
+### BUG-14 火堆最多只显示 4 个玩家的角色气泡（5 号及以后不显示）—— 已知、**按用户意愿先不修**
+
+- **现象（用户 2026-09-14）**：「老 bug：火堆最多显示 4 个玩家，多的不显示（除了不知道 5~12 号瓦库
+  玩家选什么选项以外无影响，可以先不修）」。
+- **根因（代码层，已核对反编译源码）**：原版休息区场景**硬编码了 4 个角色容器** ——
+  `NRestSiteRoom._Ready`（`sts2src/src/Core/Nodes/Rooms/NRestSiteRoom.cs:124-151`）只
+  `GetNode("BgContainer/Character_1..4")` 四次，然后对**全部玩家**循环
+  `_characterContainers[i].AddChildSafely(...)` ⇒ 第 5 个玩家起**必然 `ArgumentOutOfRangeException`**。
+  模组的 `NRestSiteRoomReadyGuardPatch`（`Scripts/Patch/RoomFocusGuardPatch.cs`，Finalizer）把它接住
+  （日志 `休息区初始化出现越界，已拦截并继续流程: …`）+ 延迟恢复（`rest-site-finalizer-recover-N`，
+  日志 `休息区选项可见性已恢复: … options=4`），所以**流程不受影响**；
+  但 5 号及以后的玩家**根本没有气泡节点** ⇒ 看不到他们选的选项，也看不到他们的角色立绘。
+- **数据层无影响（实机核对）**：5 个瓦库的选项**都真的生效**（`瓦库火堆已自动选择: player=…, option=…,
+  success=True`，见 2026-09-14 r134 会话）；没显示的只是"谁选了什么"这一层表现。
+- **附带一条 WARN**：`驱动瓦库火堆气泡失败: option=MEND, error=Object reference not set to an instance of an object.`
+  （`LocalWakuuRestAutoChoice.ShowCharacterBubble` 里驱动 MEND 的确认图标时空引用）——同样只是表现层，
+  已被自身 try-catch 兜住，选择本身 `success=True`。
+- **修法备选（未做，留档）**：① 运行时给休息区**补建** `Character_5..N` 容器并加进
+  `_characterContainers`（要克隆场景节点/摆位，风险在布局）；② 只补"选项气泡"层（不做立绘），
+  把 5+ 玩家的选择渲染到固定位置的一排文字/图标上；③ 干脆接受（当前选择）。用户拍板：**先不修**。
+- **历史**：该问题自 v1.05 前就存在（`docs/archive/player-update-history.zh.md` 里
+  「休息区5+越界改为Finalizer恢复链路」「[待修复] 休息区5人以上首帧可能不显示选项」等条目），
+  属于**游戏侧 4 人上限**与模组"本地 12 人"叠加的固有限制。
+
 ### 改进-1 每回合开始必须逐个看完所有真人玩家的抽牌演出（2026-09-10 r105 已实现，✅ 已实机确认）
 
 > 🔧 **r105 实现**：设置页「其 它 设 置」新增开关 **「跳过他人回合开始抽牌演出」**（配置键
@@ -746,6 +827,66 @@ ERROR: System.InvalidOperationException: Attempted to pick relic while relic pic
 > **验证方法**：并发档下点结束回合 → 期望日志里同一次点击出现
 > `…让真人插队: actor=…, source=end-turn-button`，且**紧接着**就 `Executing action: EndPlayerTurnAction`；
 > 结束回合/撤销、瓦库照常自动收口都要正常。
+> ⑲ **r132（2026-09-14，方案 D 第三步：队列路径出牌加速）**：用户拍板做「缩短单个动作耗时」——
+> **r122 ③ 那条"两个开关都开会加速失效"的取舍已被本步推翻**。
+> **根因（代码层）**：r117 的加速靠给 `CardCmd.AutoPlay` 传 `skipCardPileVisuals: true`，
+> **只有 inline 路径有那个形参**；队列路径由 `PlayCardAction.ExecuteAction`
+> （`sts2src/…/GameActions/PlayCardAction.cs:103`）自己以 `isAutoPlay: false` 调
+> `CardModel.OnPlayWrapper`，**没有**这个参数可传 ⇒ 队列出牌必然走完整演出。
+> **修法**：新增补丁 **`CardPlayVisualsSkipPatch`**（前缀挂在 `CardModel.OnPlayWrapper`，
+> 把形参 `skipCardPileVisuals` 改成 `true`），判定走新纯函数
+> `WakuuPlaySpeedPolicy.ShouldSkipCardPileVisualsForQueuedPlay(开关, 本地多控, 瓦库形态, 是否我们入队的牌)`
+> —— 第 4 条来自 `LocalWakuuRelicRuntime.HasPendingQueuePlay(owner.NetId)`
+> （登记表 `_pendingQueuePlays` 在 `TryPlayCardViaActionQueueAsync` 里"入队前写、动作跑完摘"，
+> 而 `OnPlayWrapper` 恰好在这个窗口内被调用）⇒ **真人手动替瓦库出的牌不加速**，观感不倒退。
+> 该形参只影响演出、不参与任何数据语义（游戏官方给自动出牌场景留的开关）。
+> **实际收益比 r117 小（已按源码核实修正原估）**：`isAutoPlay: false` 分支本来就不走
+> `CustomScaledWait(0.25f, 0.35f)` 与前段牌堆补间，能跳过的只有**收尾固定等待**
+> `CustomScaledWait(0.15f - num, 0.3f - num)` 与**结算堆**（弃牌堆 / 消耗 / 移出战斗）的补间
+> ⇒ 约 **0.15~0.3s/张**（原估 0.4~0.65s/张；"牌从手牌飞出"的 `AddDuringManualCardPlay` 那段省不掉）。
+> **安全**：前缀整体包 try-catch（`Owner` getter 会走 `AbstractModel.AssertMutable()`，
+> 补丁**绝不允许**自己抛异常打断出牌）；返回 void、**不用** `__runOriginal`（本项目坑 2）。
+> 门禁：0 警告 0 错误（仅 NU1900 离线还原告警）、**499 单测全绿**（487 → +12：
+> `WakuuPlaySpeedPolicyTests` 队列口径 +5、新 `CardPlayVisualsSkipPatchTests` 锚点哨兵 +7）、
+> `clr_compat_check` PASS、marker **2026-09-14-r132**、`dll_check --deployed` 全绿
+> （`CardPlayVisualsSkipPatch` / `ShouldSkipCardPileVisualsForQueuedPlay` / `HasPendingQueuePlay` /
+> `--u16 瓦库出牌加速（队列路径）：强制跳过卡牌堆演出` 在、`__runOriginal` 不在），
+> 部署位与仓库根字节一致（sha256 `93ba60c8...`）。
+> 设置页文案同步改正：r122 那句「本项会盖过加速、二者取一」已改写，
+> `fastWakuuPlay` 文案补一句「两个实验档的出牌同样吃本项」。
+> **验证方法**：两个实验档都开（`wakuuPlayQueue` + `wakuuPlayOverlap`）且 `fastWakuuPlay` 开 →
+> ① 期望每张队列出牌出现 `瓦库出牌加速（队列路径）：强制跳过卡牌堆演出: owner=…, card=…`；
+> ② 与之配对的 `瓦库出牌走动作队列完成 … ms=` 应比 r126/r128 那局（单张执行约 0.7~1.0s）明显下降；
+> ③ 关掉 `fastWakuuPlay` ⇒ 该行消失、演出恢复完整；关掉队列档 ⇒ 与 r131 完全一致；
+> ④ 回归：瓦库牌不丢不白打、真人出牌/结束回合照旧插队。
+> ⑳ **r133（2026-09-14，r132 实机反馈修复：卡面滞留在出牌区）**：用户实测 r132「瓦库出牌确实快了很多，
+> 但**有些牌会停在出牌区不消失**」。
+> **根因（代码层）**：`skipCardPileVisuals` 在 `CardModel.OnPlayWrapper` 结尾是**一票两用** ——
+> 既跳过收尾 `CustomScaledWait`，也跳过**"把卡牌节点从出牌区收走"的换堆补间**
+> （`CardPileCmd.Add/Exhaust/RemoveFromCombat(..., skipVisuals: true)` ⇒
+> `CardPileCmd.GetTweenForCardsChangingPiles` 整段不跑）。而**正是那条补间**在结束时
+> `MoveCardNodeToNewPileBeforeTween` + `QueueFreeSafely`（消耗牌则播 `NCardExhaustVfx`）。
+> inline 路径（r117）不会出这个问题，是因为它的节点**从没建过**（`isAutoPlay: true` 分支用
+> `CardPileCmd.Add(..., skip)`，全程不建节点）；队列路径走 `isAutoPlay: false` 分支，
+> 节点由 `CardPileCmd.AddDuringManualCardPlay` 建（**它没有跳过形参**）⇒ 建了却没人收。
+> **修法**：`TryPlayCardViaActionQueueAsync` 在 `await action.CompletionTask`（动作真正跑完）之后
+> 调新方法 `LocalWakuuRelicRuntime.ReleaseLeftoverPlayedCardNode(card)`，把滞留在出牌区的节点按
+> 「那条被跳过的补间的最终效果」收掉：`Power` 不动（原版自己也排除，走 `PlayPowerCardFlyVfx`）、
+> 仍在 `Play`/`Draw` 堆不动、去 `Hand` 则交还手牌容器、其余（`Discard`/`Exhaust`/`Deck`/已移出战斗）
+> `QueueFreeSafely`；找不到节点即空操作，所以无条件调用安全。**只在 `fastWakuuPlay` 开时调用。**
+> ⚠ 用 Harmony **后缀**做这件事不可行：`OnPlayWrapper` 是 async，后缀在**首个 await 之前**就跑完了
+> （那时牌还没进结算堆），所以必须挂在"动作真的跑完"的那个 await 之后。
+> 门禁：0 警告 0 错误、**499 单测全绿**（无新增：补偿是纯 UI 路径，无法单测，靠实机回归）、
+> `clr_compat_check` PASS、marker **2026-09-14-r133**、
+> `dll_check --deployed` 全绿（`ReleaseLeftoverPlayedCardNode` / `--u16 收回滞留在出牌区的卡牌节点` 在、
+> `__runOriginal` 不在），部署位与仓库根字节一致（sha256 `fba50973...`）。
+> **验证方法**：两个实验档都开 + `fastWakuuPlay` 开 → ① 出牌区**不再滞留**卡面；
+> ② 每次收回都会打一条 `瓦库出牌加速（队列路径）：收回滞留在出牌区的卡牌节点: card=…, dest=…`；
+> ③ 速度应与 r132 持平（补偿只做一次 `QueueFree`，不含等待）；④ 关掉 `fastWakuuPlay` ⇒ 该行消失。
+> **⚠ 附：⑲ 里"实际收益比 r117 小、约 0.15~0.3s/张"的估算偏低**。实机体感"快了很多"说明大头不是
+> 收尾 `CustomScaledWait`（它本来就常接近 0），而是被一并跳过的**换堆补间**
+> （`CardPileCmd.Add(..., skipVisuals: false)` 结尾 `await tween.AwaitFinished(...)` = "卡牌飞向弃牌堆"那段）。
+> 也就是说"加速"与"节点滞留"是**同一段补间**的两面 —— 这正是 r133 必须做补偿的原因。详见方案 §12.14.1。
 
 - **现象**：多个瓦库时只能「一个瓦库打完 → 切到下一个瓦库」串行进行，且真人视角会跟着切到
   瓦库正在操作的角色；瓦库多时同样很慢。
