@@ -24,6 +24,10 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     保留 `id`/`author`/`version`/`min_game_version`/`has_pck`/`has_dll`/`dependencies`/
     `affects_gameplay` 与飞书链接字段。`BuildRelease.ps1` / `release_build.ps1` 的
     「不可 ConvertFrom-Json 解析」过时注释同步修正（仍保持正则替换以稳定字段排版与 BOM）。
+  - **设置入口按钮本地化**：`NSettingsScreenConfigMenuPatch` 注入到「设置 → 常规」页的两处文案
+    「瓦库托管 / 打开设置面板」同步走 `LocalModText.Select`（英文界面显示 Vakuu Autopilot /
+    Open Settings Panel）。✅ 2026-09-15 实机确认（英文界面）：设置页全英文、出牌 3 项已就位、
+    档位按钮循环正确，玩家已验收后合并分支。
 - **队列路径出牌加速（r132，2026-09-14）**：给 `CardModel.OnPlayWrapper` 打前缀补丁
   （`CardPlayVisualsSkipPatch`），瓦库**走动作队列**（`wakuuPlayQueue`）的那张牌也强制
   `skipCardPileVisuals: true`。此前「瓦库出牌加速」只对 inline `CardCmd.AutoPlay` 生效 ——
