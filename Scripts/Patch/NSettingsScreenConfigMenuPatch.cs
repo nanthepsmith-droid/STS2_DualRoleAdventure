@@ -92,13 +92,13 @@ public static class NSettingsScreenConfigMenuPatch
         RichTextLabel? rowLabel = vakuuRow.GetNodeOrNull<RichTextLabel>("Label");
         if (rowLabel != null)
         {
-            rowLabel.Text = "瓦库托管";
+            rowLabel.Text = LocalModText.Select("瓦库托管", "Vakuu Autopilot");
         }
 
         Label? buttonLabel = button.GetNodeOrNull<Label>("Label");
         if (buttonLabel != null)
         {
-            buttonLabel.Text = "打开设置面板";
+            buttonLabel.Text = LocalModText.Select("打开设置面板", "Open Settings Panel");
         }
 
         button.Connect(NClickableControl.SignalName.Released, Callable.From<NClickableControl>(_ => OpenConfigSubmenu(settingsScreen)));

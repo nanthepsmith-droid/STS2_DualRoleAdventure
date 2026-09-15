@@ -12,9 +12,9 @@ $ErrorActionPreference = "Stop"
     version 字段必须是 semver x.y.z（如 1.38.0）——游戏对非 semver 会告警，且历史发布包里装的
     一直是 semver。两者分离，不要互相覆盖。
 
-    注意：DualRoleAdventure.json 的中文是历史遗留的双重编码乱码，其中含**未转义的引号**，
-    导致该文件用 ConvertFrom-Json 解析会直接抛异常。因此本脚本**不解析、不重写**该 JSON，
-    只用正则取 version 值来决定发布名，打包时按字节原样复制，避免破坏既有字节。
+    注意：DualRoleAdventure.json 现已是干净的双语 UTF-8（中英混排一行，可正常
+    ConvertFrom-Json 解析）。本脚本仍**不解析、不重写**该 JSON：只用正则取 version 值
+    来决定发布名，打包时按字节原样复制，避免破坏字段排版与 BOM。
 #>
 function Get-ReleaseNameFromSemver {
     param(

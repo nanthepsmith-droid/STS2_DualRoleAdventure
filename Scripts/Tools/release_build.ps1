@@ -11,8 +11,8 @@
 # 行为:
 #   1. 校验 semver（x.y.z）
 #   2. 三处版本同步（根 / workshop\content / mod_manifest 的 json；
-#      UTF-8 带 BOM 正则替换 version 字段，字节保真——json 中文是历史双重编码乱码，
-#      不可 ConvertFrom-Json 解析重写，见 BuildRelease.ps1 注释）
+#      UTF-8 带 BOM 正则替换 version 字段，字节保真——json 已是干净的双语 UTF-8（可正常
+#      ConvertFrom-Json 解析），但仍是正则替换以保持字段排版与 BOM 稳定，见 BuildRelease.ps1 注释）
 #   3. 生成 marker 建议串（Revival vX.Y.Z (game vX.Y.Z, marker=YYYY-MM-DD-rN)），
 #      可从 Entry.cs 当前 marker 自动取下一 rN
 #   4. dotnet build -c Release -warnaserror（0 警告 0 错误门禁）

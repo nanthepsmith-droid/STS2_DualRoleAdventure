@@ -2,6 +2,59 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
+## [Unreleased]
+
+### Changed
+- **设置页全面中英文双语 + 瓦库出牌设置归位（r135，2026-09-15）**：
+  - `LocalWakuuConfigSubmenu` 全量本地化：标题、三节页眉、所有开关/策略/档位行的标题与描述、
+    底部提示均改为 `LocalModText.Select(中文, English)`，英文界面（`eng`）下显示英文，
+    中文与其他语言照旧显示中文。档位按钮显示文本（第一个/最后/随机/稀有度最高、角色优先/总量优先/
+    只看角色、不跟随/仅关键节点/全程跟随、仅个人/个人+社区兜底/融合、左下/右下/右上/左上）同步本地化。
+  - **修复 `NextChoiceMode` 按显示文本循环的隐藏 bug**：原先按按钮的中文显示文本取「下一个」档位，
+    英文界面下会落到错误分支（永远回到「第一个」等）；改为按语言无关的配置常量取值循环，
+    中文/英文行为一致。其余 Next* 切换器本就按取值切换，未受影响。
+  - **瓦库出牌 3 项设置移入「瓦库托管」区**：`fastWakuuPlay`（瓦库出牌加速）、`wakuuPlayQueue`
+    （实验·走动作队列）、`wakuuPlayOverlap`（实验·并发出牌）从「其它设置」移动到「瓦库托管」页，
+    紧随「打光所有手牌」之后；这三个开关只在开启托管时有意义，归位后用「其它设置」区不再混入托管相关项，
+    页眉说明同步调整为「以下功能与总管开关无关」。配置键与存储位置不变。
+  - **mod 元数据 JSON 修复双重编码乱码并补英文**：根目录 `DualRoleAdventure.json`、
+    `workshop\content\DualRoleAdventure.json`、`mod_manifest.json` 从「UTF-8 双重编码乱码 +
+    未转义引号」重写为干净的双语 UTF-8（游戏侧 `ModManifest` 无 per-language 字段，中英混排一行），
+    `name`/`description`/`tag`/`detail`/`remark`/`social_url` 等字段均有英文；
+    保留 `id`/`author`/`version`/`min_game_version`/`has_pck`/`has_dll`/`dependencies`/
+    `affects_gameplay` 与飞书链接字段。`BuildRelease.ps1` / `release_build.ps1` 的
+    「不可 ConvertFrom-Json 解析」过时注释同步修正（仍保持正则替换以稳定字段排版与 BOM）。
+- **队列路径出牌加速（r132，2026-09-14）**：给 `CardModel.OnPlayWrapper` 打前缀补丁
+  （`CardPlayVisualsSkipPatch`），瓦库**走动作队列**（`wakuuPlayQueue`）的那张牌也强制
+  `skipCardPileVisuals: true`。此前「瓦库出牌加速」只对 inline `CardCmd.AutoPlay` 生效 ——
+  队列路径由 `PlayCardAction` 自己以 `isAutoPlay: false` 调 `OnPlayWrapper`，**没有**这个形参可传
+  ⇒ 实机上「两个实验档 + 加速都开」会表现为加速失效（队列出牌单张回到约 1 秒）。
+  现在队列出牌同样跳过**收尾固定等待**与**结算堆**（弃牌/消耗/移出战斗）的移动补间 ——
+  后者才是大头：原版 `CardPileCmd.Add` 结尾是 `await tween.AwaitFinished(...)`，即"卡牌飞向弃牌堆"
+  那段是要等的（实机体感"快了很多"即来自这里）；"牌从手牌飞出"那段真人分支动画仍省不掉。
+  判定只认「**我们替瓦库入队**的那张牌」（`LocalWakuuRelicRuntime.HasPendingQueuePlay`）——
+  真人手动替瓦库出牌不加速；关掉 `fastWakuuPlay` 或队列档即行为与上一版完全一致。
+  设置页文案同步改正（原先写的「本项会盖过加速、二者取一」已不成立）。
+
+### Fixed
+- **队列路径出牌加速导致卡面滞留在出牌区（r133，2026-09-14）**：`skipCardPileVisuals` 是一票两用 ——
+  它既跳过收尾的固定等待，也跳过**"把卡牌节点从出牌区收走"的换堆补间**，而原版正是靠那条补间
+  `QueueFree` 节点。inline 路径（r117）没这个问题（它的节点从没建过）；队列路径的节点由
+  `CardPileCmd.AddDuringManualCardPlay` 建（没有跳过形参），于是建了却没人收 ⇒ 卡面留在出牌区。
+  修法：动作真正跑完后（`await action.CompletionTask`）由
+  `LocalWakuuRelicRuntime.ReleaseLeftoverPlayedCardNode` 收回滞留节点（能量牌不动、仍在出牌区/抽牌堆不动、
+  去手牌则交还手牌容器、其余直接释放），找不到节点即空操作。**不影响加速本身**。
+- **战后「卡牌奖励」不再漏领（BUG-13，r134，2026-09-14）**：瓦库的金币/药水奖励照常自动领取，
+  但卡牌奖励会失败并留在奖励界面（日志 `瓦库奖励自动领取失败，保留为人工领取: reward=CardReward,
+  error=Card selector unset during test!`）。
+  根因：`CardReward.OnSelect` 读 `CardSelectCmd.Selector`，而该选择器会被归属守卫按 AsyncLocal
+  `CurrentChoicePlayerId` 决定是否"摘成 null"（真人选牌时跳过我们压的托管选择器）；该 AsyncLocal 会沿异步链
+  残留，而**卡牌奖励这条链不经过任何 `CardSelectCmd.From*` 入口**、没人写它 ⇒ 残留的旧值（多半是真人）
+  让守卫判成"真人选牌" ⇒ 选择器为 null ⇒ 抛异常 ⇒ 自动领取失败（金币/药水不读它，所以没事）。
+  修法：领取前写入选牌归属者（保存/恢复），与事件自动选择 / 遗物效果自动作答同一套既有做法；
+  命中该坑时会多一条 `卡牌奖励自动领取：选牌归属者在异步链上残留为其他角色，已改写为奖励归属者` 便于确认。
+  ✅ 2026-09-14 实机确认（marker r134，2 场战斗 × 5 瓦库）：卡牌奖励自动领取 10/10、失败 0。
+
 ## [1.41.0] - 2026-09-13
 
 > v1.41 = r105~r130（2026-09-10 起）：本地多控体验优化（回合开始演出跳过 / 瓦库托管视角三档 /
