@@ -199,8 +199,12 @@ Notes:
 - **离线静态层（唯一能在托管 CI 上跑的门禁）**：`python Scripts/Tools/static_checks.py --repo .`
   —— 产物/反编译源码入库、`.ps1` 编码（含中文必须 UTF-8 BOM）、三处元数据 `version` 一致、
   补丁类级 `[HarmonyPatch]`（`patch_coverage` 口径，方法级-only 必须为 0）、csproj 源码隔离、
-  `Entry.cs` `BuildMarker`。由 `.github/workflows/static-checks.yml` 在 push / PR 上执行。
+  `Entry.cs` `BuildMarker`、**运行期目标基线比对**。由 `.github/workflows/static-checks.yml` 在 push / PR 上执行。
   **门禁 1~5/7/10 需要本机游戏安装，不要指望 CI 跑它们。**
+- **改动过运行期目标（补丁类 / 字符串与反射目标）后**：静态层会打 WARN 并列出"新增/消失"明细 ——
+  人审确认无误再 `python Scripts/Tools/static_checks.py --repo . --update-baseline` 刷新基线
+  （`Scripts/Tools/baselines/targets.baseline.txt`）并随改动一起提交；**基线缺失 = FAIL**。
+  这条是"游戏更新把某目标改没了 / 不小心改了目标字符串"在**没有游戏安装的 CI 上**唯一的暴露点。
 
 ## 10. Fix verification contract
 

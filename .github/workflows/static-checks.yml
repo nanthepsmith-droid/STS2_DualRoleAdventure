@@ -10,6 +10,9 @@
 #   S1 产物/反编译源码未入库      S2 含中文的 .ps1 必须带 UTF-8 BOM
 #   S3 三处元数据 version 一致    S4 补丁类级 [HarmonyPatch]（PatchAll 静默跳过，方法级-only 必须为 0）
 #   S5 csproj 源码隔离            S6 Entry.cs BuildMarker 身份
+#   S7 运行期目标基线比对（与 Scripts/Tools/baselines/targets.baseline.txt 比"语义标识"集合，
+#      新增/消失都打 WARN 并列出明细 —— CI 日志里就能看到"这个改动动了哪些运行期目标"；
+#      基线缺失 = FAIL。默认**不**把 S7 的 WARN 判失败（开发中新增目标是常态），要更严可加 --strict）
 #
 # 本地等价命令（Windows PowerShell 也行）：
 #   python Scripts/Tools/static_checks.py --repo .

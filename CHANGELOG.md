@@ -17,6 +17,12 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   默认只跑静态层（G1 离线静态自检、G2 字符串/反射目标核对），`-Build` 加 G4 全仓库构建 + 主 mod 单测门槛，
   `-Deploy` 加 G5 构建 + 部署 + 槽位身份 + 字节校验，`-WithLogs` 加 G6 初始化终态 / G7 健康度计数，
   `-Lint` 加 G3 diff 预审；输出**单一 PASS/FAIL 表 + 退出码**（不再是"一堆日志"）。
+- **运行期目标基线（static_checks S7，2026-09-16）**：新增 `Scripts/Tools/baselines/targets.baseline.txt`
+  （**336 个语义标识** = 197 补丁目标行 + 183 字符串/反射目标去重）与 `--update-baseline` / `--strict` 两个开关。
+  静态层把当前目标集合与基线比对，**新增/消失都打 WARN 并列出明细**（`-P…` / `+P…`），
+  这是"游戏更新把某目标改没了 / 误改目标字符串"在**没有游戏安装的 CI 上**唯一的暴露点；
+  基线缺失 = FAIL（不允许跳过即绿），`--strict` 时 WARN 也判失败。
+  基线只记**语义标识**（补丁类 / 目标类型 / 成员 / 种类），不含文件与行号 ⇒ 换文件、挪行号无噪声。
 
 ### Removed
 - **删除 `copy_pck_to_game.ps1`**：它把仓库根的 `DualRoleAdventure.dll` **连同 `DualRoleAdventure.json`**

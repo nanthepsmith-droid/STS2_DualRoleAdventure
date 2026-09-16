@@ -16,11 +16,17 @@
      （本 mod 坑 1：只写在方法上的 [HarmonyPatch] 会被 PatchAll **静默跳过**，编译期毫无提示）
   S5 csproj 源码隔离：`<Compile Remove="src/**">` 与 `sts2src/**` 必须同时存在（门禁 2 的静态版）
   S6 BuildMarker 身份：`Scripts/Entry.cs` 必须有一个 marker 格式的 `BuildMarker` 常量（门禁 7 的静态版）
+  S7 运行期目标基线：把当前「补丁目标 + 字符串/反射目标」的**语义标识集合**与仓库内基线快照比对，
+     新增 / 消失都报 WARN 并列出明细 —— 这样**在不需要游戏安装的 CI 上**也能看到
+     "这个改动动了哪些运行期目标"（游戏更新断档 / 静默改名最容易从这里暴露）。
+     基线文件 `Scripts/Tools/baselines/targets.baseline.txt`；**缺失 = FAIL**（不允许跳过即绿）。
 
 用法:
   python Scripts/Tools/static_checks.py --repo .
   python Scripts/Tools/static_checks.py --repo . --json
-退出码: 0 = 全过；1 = 有 FAIL；2 = 用法 / 环境错误
+  python Scripts/Tools/static_checks.py --repo . --update-baseline   # 人审后刷新 S7 基线
+  python Scripts/Tools/static_checks.py --repo . --strict            # WARN 也判失败（可选门禁）
+退出码: 0 = 全过（`--strict` 时含 WARN）；1 = 有 FAIL（或 `--strict` 下的 WARN）；2 = 用法 / 环境错误
 
 注意：本脚本**只读**，不改任何文件；`--json` 供 CI / 其它工具复用。
 """
@@ -46,6 +52,8 @@ RE_ARTIFACT = re.compile(
 SKIP_DIRS = {"obj", "bin", ".godot", ".import", ".git", "__pycache__"}
 # S3：版本三处来源
 VERSION_JSONS = ("DualRoleAdventure.json", "workshop/content/DualRoleAdventure.json", "mod_manifest.json")
+# S7：运行期目标基线快照（只存「语义标识」，不含文件与行号 ⇒ 换文件/挪行号不会造成 diff 噪声）
+BASELINE_REL = "Scripts/Tools/baselines/targets.baseline.txt"
 RE_VERSION = re.compile(r'"version"\s*:\s*"([^"]+)"')
 RE_BUILD_MARKER = re.compile(r'BuildMarker\s*=\s*"([^"]*marker=[^"]*)"')
 RE_COMPILE_REMOVE = re.compile(r'<Compile\s+Remove\s*=\s*"(src|sts2src)/\*\*"\s*/>')
@@ -184,6 +192,97 @@ def check_build_marker(repo: Path) -> Check:
     return Check("S6", name, PASS, m.group(1))
 
 
+# ------------------------------------------------------------------ S7
+def collect_descriptors(repo: Path):
+    """当前「运行期目标」的语义标识集合（离线可算：不需要游戏安装，也不需要反编译源码）。
+
+    标识刻意**只含语义字段**（补丁类 / 目标类型 / 成员 / 种类），不含文件与行号 ——
+    这样重构换文件、上下挪行号都不会产生噪声，只有真正新增/删除/改名目标才会变。
+    返回 (排序后的 list, 统计 dict)。
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import check_string_targets as cst
+    import patch_coverage as pc
+
+    patch = pc.analyze(repo, None)
+    desc = set()
+    for r in patch["rows"]:
+        kind = "string" if r.is_string else ("nameof" if r.method else "no-target")
+        desc.add("\t".join(["P", r.patch_class.name, r.type_simple or "-", r.method or "-", kind]))
+
+    targets, _files, patch_classes, _src_n = cst.collect_targets(repo, None)
+    for t in targets:
+        desc.add("\t".join(["S", t.kind, t.fqn or t.type_simple or "-", t.member or "-", t.member_kind or "-"]))
+
+    stats = {
+        "patch_classes": patch_classes,
+        "patch_rows": len(patch["rows"]),
+        "string_targets": len(targets),
+        "descriptors": len(desc),
+    }
+    return sorted(desc), stats
+
+
+def write_baseline(repo: Path, desc, stats) -> Path:
+    """写入 S7 基线快照（`--update-baseline`）。"""
+    try:
+        proc = subprocess.run(["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
+                              capture_output=True, text=True, encoding="utf-8", errors="replace")
+        commit = proc.stdout.strip() or "no-git"
+    except (FileNotFoundError, OSError):
+        commit = "no-git"
+    now = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")
+    lines = [
+        "# 运行期目标基线（S7）—— 由 `static_checks.py --update-baseline` 生成，勿手改。",
+        "# 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：",
+        "#   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。",
+        "# 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类",
+        f"# 生成时间={now}  HEAD={commit}",
+        f"# 统计: patch_classes={stats['patch_classes']} patch_rows={stats['patch_rows']} "
+        f"string_targets={stats['string_targets']} descriptors={stats['descriptors']}",
+    ] + desc
+    p = repo / BASELINE_REL
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return p
+
+
+def _read_baseline(repo: Path):
+    p = repo / BASELINE_REL
+    if not p.is_file():
+        return None
+    out = set()
+    for ln in p.read_text(encoding="utf-8-sig", errors="replace").splitlines():
+        ln = ln.rstrip()
+        if ln and not ln.startswith("#"):
+            out.add(ln)
+    return out
+
+
+def check_target_baseline(repo: Path) -> Check:
+    name = "运行期目标基线（新增/消失可见）"
+    base = _read_baseline(repo)
+    if base is None:
+        return Check("S7", name, FAIL,
+                     f"缺少基线文件 {BASELINE_REL}（先跑 --update-baseline 生成；缺基线 = 无法发现目标突变）")
+    current, stats = collect_descriptors(repo)
+    cur = set(current)
+    added, removed = sorted(cur - base), sorted(base - cur)
+    info = {
+        "added": len(added),
+        "removed": len(removed),
+        "descriptors": stats["descriptors"],
+        "files": ["+" + d for d in added[:8]] + ["-" + d for d in removed[:8]],
+    }
+    summary = (f"（patch_classes={stats['patch_classes']} / patch_rows={stats['patch_rows']} / "
+               f"string_targets={stats['string_targets']} / 语义标识={stats['descriptors']}）")
+    if not added and not removed:
+        return Check("S7", name, PASS, "目标集合与基线一致 " + summary, info)
+    return Check("S7", name, WARN,
+                 f"目标集合有变化：新增 {len(added)} / 消失 {len(removed)} "
+                 f"（人审确认无误后跑 --update-baseline 刷新基线）" + summary, info)
+
+
 # ------------------------------------------------------------------ main
 CHECKS = (
     ("S1", "产物/反编译源码入库", check_artifacts_tracked),
@@ -192,6 +291,7 @@ CHECKS = (
     ("S4", "补丁类级 [HarmonyPatch]", check_patch_class_level),
     ("S5", "csproj 源码隔离", check_source_isolation),
     ("S6", "BuildMarker 身份", check_build_marker),
+    ("S7", "运行期目标基线（新增/消失可见）", check_target_baseline),
 )
 
 
@@ -199,12 +299,22 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="离线静态自检（不需要游戏安装）")
     ap.add_argument("--repo", required=True, help="仓库根目录")
     ap.add_argument("--json", action="store_true", help="输出结构化 JSON")
+    ap.add_argument("--update-baseline", action="store_true", help="刷新 S7 目标基线快照（人审后执行）")
+    ap.add_argument("--strict", action="store_true", help="WARN 也算失败（退出码 1）")
     args = ap.parse_args()
 
     repo = Path(args.repo).resolve()
     if not repo.is_dir():
         print(f"仓库目录不存在: {repo}", file=sys.stderr)
         return 2
+
+    if args.update_baseline:
+        desc, stats = collect_descriptors(repo)
+        p = write_baseline(repo, desc, stats)
+        print(f"已写入基线: {p}")
+        print(f"  patch_classes={stats['patch_classes']} patch_rows={stats['patch_rows']} "
+              f"string_targets={stats['string_targets']} descriptors={stats['descriptors']}")
+        return 0
 
     results = []
     for cid, label, fn in CHECKS:
@@ -238,10 +348,16 @@ def main() -> int:
             for f in (r.extra.get("files") or [])[:10]:
                 print(f"         - {f}")
         print("-" * 96)
-        print(f"汇总: {len(results) - len(fails) - len(warns)} PASS / {len(warns)} WARN / {len(fails)} FAIL")
+        print(f"汇总: {len(results) - len(fails) - len(warns)} PASS / {len(warns)} WARN / {len(fails)} FAIL"
+              + ("（--strict：WARN 也判失败）" if args.strict else ""))
         print("")
 
-    return 1 if fails else 0
+    if fails:
+        return 1
+    if args.strict and warns:
+        print("--strict: 存在 WARN 项，判失败", file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
