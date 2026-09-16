@@ -4,7 +4,39 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+### Added
+- **离线静态自检 + 静态层 CI（2026-09-16）**：新增 `Scripts/Tools/static_checks.py` —— **不需要游戏安装**的
+  6 项检查：① 产物/反编译源码未入库（`git ls-files`）；② 含非 ASCII 的 `.ps1` 必须带 UTF-8 BOM；
+  ③ 根 json / `workshop\content` json / `mod_manifest.json` 三处 `version` 一致；④ 补丁类级
+  `[HarmonyPatch]`（复用 `patch_coverage` 口径，方法级-only 必须为 0 —— 本 mod 坑 1 的静默跳过）；
+  ⑤ csproj 的 `src/**`、`sts2src/**` 源码隔离；⑥ `Entry.cs` 的 `BuildMarker` 身份。
+  同时新增 `.github/workflows/static-checks.yml`（push / PR / 手动触发）。
+  ⚠ 构建、单测、CLR/ABI、部署校验**仍必须本机跑**（要游戏安装里的 `sts2.dll` / `GodotSharp.dll` 等），
+  不在 CI 范围内。
+- **本机一键门禁 `Scripts/Tools/preflight.ps1`（2026-09-16）**：把 AGENTS.md §9 全链串成一条命令 ——
+  默认只跑静态层（G1 离线静态自检、G2 字符串/反射目标核对），`-Build` 加 G4 全仓库构建 + 主 mod 单测门槛，
+  `-Deploy` 加 G5 构建 + 部署 + 槽位身份 + 字节校验，`-WithLogs` 加 G6 初始化终态 / G7 健康度计数，
+  `-Lint` 加 G3 diff 预审；输出**单一 PASS/FAIL 表 + 退出码**（不再是"一堆日志"）。
+
+### Removed
+- **删除 `copy_pck_to_game.ps1`**：它把仓库根的 `DualRoleAdventure.dll` **连同 `DualRoleAdventure.json`**
+  一起拷进槽位，而本机槽位用的是改名后的 `DualRoleAdventurefixed.json`（id 同名契约）⇒ 同一目录会出现
+  两个不同 id 的 json，游戏会把同一个 mod 加载两遍。部署请**只拷 dll**，或用
+  `Scripts/Tools/build_all_mods.ps1`（含全部门禁）/ `..\tools\deploy_dll.ps1`（只部署）。
+- **删除 `Scripts/Tools/BuildRelease.ps1`**：能力已并入 `release_build.ps1`（新增 `-PublishGitHub` / `-PushGit` /
+  `-ReleaseNotes`：提交三处版本 json → 打 tag `v{major}.{minor}` → 可选推 `origin` → `gh release`），
+  发布由此仍是**一条命令**（AGENTS §7 第 5 步已同步）。
+
 ### Changed
+- **维护工具与文档路径纠正（2026-09-16）**：`patch_coverage.py` docstring 里的示例路径从仓库外的
+  `tools\` 改回 `Scripts/Tools/`（该脚本一直只存在于 `Scripts/Tools/`，历史文档里的旧路径会误导）；
+  `AGENTS.md` §2 与 `README.md` / `README.zh-CN.md` 的部署说明改为"只拷 dll、不要往已有槽位塞第二个 json"。
+- **门禁脚本随仓库（2026-09-16）**：`dll_check.py`（门禁 6）与 `log_parser.py`（门禁 9）从仓库外的
+  `..\tools\` 迁入 `Scripts/Tools/`，AGENTS §2/§9、`build_all_mods.ps1`、`tools/README`、references 与 skill 同步；
+  同一改动里把 `build_all_mods.ps1` 两处「脚本缺失就跳过」改为 **FAIL**（AGENTS §9：
+  「缺文件 = FAIL，不允许跳过即绿」——原先缺 `clr_compat_check.py` / `dll_check.py` 会静默变绿）。
+  另：原 `BuildRelease.ps1` 含中文注释却缺 UTF-8 BOM（PowerShell 5.1 下会按 GBK 解析报语法错），
+  该文件已随本次合并删除。
 - **设置页全面中英文双语 + 瓦库出牌设置归位（r135，2026-09-15）**：
   - `LocalWakuuConfigSubmenu` 全量本地化：标题、三节页眉、所有开关/策略/档位行的标题与描述、
     底部提示均改为 `LocalModText.Select(中文, English)`，英文界面（`eng`）下显示英文，

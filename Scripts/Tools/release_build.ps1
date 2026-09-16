@@ -7,18 +7,22 @@
 #   .\Scripts\Tools\release_build.ps1 -Version 1.39.0
 #   .\Scripts\Tools\release_build.ps1 -Version 1.39.0 -UpdateMarker   # 自动更新 Entry.cs 的 BuildMarker 并重新构建
 #   .\Scripts\Tools\release_build.ps1 -Version 1.39.0 -DryRun          # 只打印计划，不改任何文件、不构建
+#   .\Scripts\Tools\release_build.ps1 -Version 1.41.0 -PublishGitHub -PushGit -ReleaseNotes "..."
+#                                                                       # 额外提交版本改动 + 打 tag + 推 origin + 发 GitHub Release
 #
 # 行为:
 #   1. 校验 semver（x.y.z）
 #   2. 三处版本同步（根 / workshop\content / mod_manifest 的 json；
 #      UTF-8 带 BOM 正则替换 version 字段，字节保真——json 已是干净的双语 UTF-8（可正常
-#      ConvertFrom-Json 解析），但仍是正则替换以保持字段排版与 BOM 稳定，见 BuildRelease.ps1 注释）
+#      ConvertFrom-Json 解析），但仍是正则替换以保持字段排版与 BOM 稳定）
 #   3. 生成 marker 建议串（Revival vX.Y.Z (game vX.Y.Z, marker=YYYY-MM-DD-rN)），
 #      可从 Entry.cs 当前 marker 自动取下一 rN
 #   4. dotnet build -c Release -warnaserror（0 警告 0 错误门禁）
 #   5. 拷贝 dll + json 到 workshop\content\
 #   6. 打 zip 到 release\DualRoleAdventure-v{major}.{minor}.zip
 #   7. 打印 SHA256（源 dll / zip / zip 内 dll）供发布时核对
+#   8. -PublishGitHub：提交版本改动 → 打 tag `v{major}.{minor}` →（-PushGit 时）推 origin
+#      → gh release create/upload（原 BuildRelease.ps1 已并入本脚本，2026-09-16；AGENTS.md §7 第 5 步）
 
 param(
     [Parameter(Mandatory = $true)]
@@ -26,6 +30,9 @@ param(
     [string]$MarkerSuffix = "",     # 可选 rN；缺省自动从 Entry.cs 当前 marker rN + 1
     [switch]$UpdateMarker,          # 自动把 Entry.cs 的 BuildMarker 更新为新 marker 串
     [switch]$DryRun,                # 只打印计划，不改文件、不构建
+    [switch]$PublishGitHub,         # 提交版本改动 + 打 tag + gh release（原 BuildRelease.ps1 的能力，2026-09-16 并入）
+    [switch]$PushGit,               # 仅与 -PublishGitHub 同用：git push origin master --follow-tags
+    [string]$ReleaseNotes = "",     # GitHub Release 正文；缺省 "Automated release <tag>"
     [string]$GameDir = "D:\SteamLibrary\steamapps\common\Slay the Spire 2"
 )
 
@@ -198,6 +205,67 @@ if (-not $DryRun) {
     Write-Host "  [DRY] 打印 dll / zip / zip 内 dll 的 SHA256"
 }
 
+# ---------------------------------------------------------------- 8. GitHub 发布（可选，原 BuildRelease.ps1 能力）
+if ($PublishGitHub) {
+    Write-Step "GitHub 发布：提交版本改动 → tag $zipTag → gh release"
+    $pushNote = if ($PushGit) { " + git push origin master --follow-tags" } else { "" }
+    if ($DryRun) {
+        Write-Host "  [DRY] git add 三处 json → git commit '发布 $zipTag' → git tag $zipTag$pushNote"
+        Write-Host "  [DRY] gh release create/upload $zipTag $zipPath"
+    } else {
+        git --version 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Err "PublishGitHub 需要 git。" }
+        gh --version 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Err "PublishGitHub 需要 gh CLI（GitHub CLI）。" }
+
+        Push-Location $projectRoot
+        try {
+            # 与本脚本第 2 步同步过的三处 json 一起提交（原 BuildRelease.ps1 只 add 根 json）。
+            # ⚠ 中文提交信息**不能走命令行 argv**（本机 GBK 控制台会损坏，见 tools\powershell-pitfalls.md）：
+            #    写 UTF-8 无 BOM 临时文件（放 .git 内，不入提交）+ `git commit -F`，完成后删除。
+            git add "DualRoleAdventure.json" "mod_manifest.json" "workshop/content/DualRoleAdventure.json" | Out-Null
+            $msgFile = Join-Path $projectRoot (".git\release_commit_msg.{0}.tmp" -f (Get-Date -Format "yyyyMMddHHmmss"))
+            [System.IO.File]::WriteAllText($msgFile, "发布 $zipTag", (New-Object System.Text.UTF8Encoding($false)))
+            try {
+                git commit -F $msgFile 2>$null | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Host "  （没有可提交的版本改动，跳过 commit）" -ForegroundColor Yellow
+                }
+            } finally {
+                Remove-Item -LiteralPath $msgFile -Force -ErrorAction SilentlyContinue
+            }
+
+            $existingTag = (git tag --list $zipTag)
+            if ([string]::IsNullOrWhiteSpace($existingTag)) {
+                git tag -a $zipTag -m "Release $zipTag"
+                Write-Ok "  已打 tag: $zipTag"
+            } else {
+                Write-Host "  tag $zipTag 已存在，跳过（不覆盖历史 tag）" -ForegroundColor Yellow
+            }
+
+            if ($PushGit) {
+                git push origin master --follow-tags
+                if ($LASTEXITCODE -ne 0) { Write-Err "git push 失败（exit=$LASTEXITCODE）。" }
+                Write-Ok "  已推送 origin master + tags"
+            }
+        } finally {
+            Pop-Location
+        }
+
+        $releaseBody = $ReleaseNotes
+        if ([string]::IsNullOrWhiteSpace($releaseBody)) { $releaseBody = "Automated release $zipTag" }
+
+        cmd /c "gh release view $zipTag >nul 2>nul"
+        if ($LASTEXITCODE -eq 0) {
+            gh release upload $zipTag $zipPath --clobber
+            Write-Ok "  GitHub Release $zipTag 的资产已更新"
+        } else {
+            gh release create $zipTag $zipPath --title $zipTag --notes $releaseBody
+            Write-Ok "  已创建 GitHub Release $zipTag"
+        }
+    }
+}
+
 Write-Host ""
 Write-Ok "全部完成。发布包: $zipPath"
-Write-Host "接下来（人工）：1) 检查/补充 CHANGELOG；2) 提交 json 版本与构建产物改动；3) 如发 GitHub Release 可复用 BuildRelease.ps1 -PublishGitHub。"
+Write-Host "接下来（人工）：1) 检查/补充 CHANGELOG；2) 需要时补 PLAYER_GUIDE；3) 未加 -PublishGitHub 时自行提交版本改动与打 tag。"

@@ -46,7 +46,9 @@ dotnet build LocalMultiControl.csproj -c Release
 dotnet format LocalMultiControl.csproj --verify-no-changes   # 风格门禁
 ```
 
-3. 构建会把 `DualRoleAdventure.dll` 复制到仓库根目录。把它和 `DualRoleAdventure.json` 一起部署到游戏的 `mods/DualRoleAdventure/` 目录（`copy_pck_to_game.ps1` 可代劳，按需改目标路径）。
+3. 构建会把 `DualRoleAdventure.dll` 复制到仓库根目录。**只把这个 dll** 拷进游戏的 `mods/` 下的槽位目录，
+  且 dll 文件名必须与槽位 json 的 `id` 同名。新槽位直接用 `DualRoleAdventure.json` 即可；
+  已有槽位里**不要再塞一个 id 不同的 json**（游戏会重复加载同一个 mod）。
 
 开发时如需游戏 API 参考，把 `sts2.dll` 反编译到 `src/`（已 gitignore，只读参考）：
 

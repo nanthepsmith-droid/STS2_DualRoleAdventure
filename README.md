@@ -46,7 +46,10 @@ dotnet build LocalMultiControl.csproj -c Release
 dotnet format LocalMultiControl.csproj --verify-no-changes   # style gate
 ```
 
-3. The build copies `DualRoleAdventure.dll` to the repo root. Deploy it plus `DualRoleAdventure.json` to the game's `mods/DualRoleAdventure/` folder (`copy_pck_to_game.ps1` does this — adjust its target path to your install).
+3. The build copies `DualRoleAdventure.dll` to the repo root. Copy **only that dll** into your mod slot under the
+game's `mods/` folder; the dll filename must match the slot json `id`. For a fresh slot, `DualRoleAdventure.json`
+works as-is; **never drop a second json with a different id into a slot that already has one** (the game would
+load the mod twice).
 
 For game-API reference during development, decompile `sts2.dll` into `src/` (gitignored, read-only):
 

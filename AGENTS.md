@@ -37,11 +37,18 @@ dotnet format LocalMultiControl.csproj --verify-no-changes
 Then the gates that must pass before any deploy (see §9 for the full list):
 
 ```bash
+python Scripts/Tools/static_checks.py --repo .                             # 离线静态 6 项（不需要游戏安装）
 python Scripts/Tools/clr_compat_check.py --mod-dll DualRoleAdventure.dll   # PE/CLR/ABI 结构校验
 dotnet test tests/LocalMultiControl.Tests/LocalMultiControl.Tests.csproj   # 纯逻辑 + 程序集 ABI
 ```
 
+**所有门禁脚本都随仓库走**（`Scripts/Tools/`）：2026-09-16 把 `dll_check.py`（门禁 6）与
+`log_parser.py`（门禁 9）从仓库外的 `..\tools\` 迁入，因此 `git clone` 后门禁链是自包含的。
+只有「不随仓库」的交互式/LLM 工具才留在仓库外的 `..\tools\`（见 §9 Notes）。
+
 `Scripts/Tools/build_all_mods.ps1` runs build → tests → clr_compat_check → deploy → SHA256 in one shot.
+**One command for the whole gate chain**: `.\Scripts\Tools\preflight.ps1 [-Build] [-Deploy] [-WithLogs] [-Lint]`
+（静态层默认秒级；`-Deploy` 才碰游戏槽位）。
 **Deployment scripts must never bypass the gates** — do not hand-roll a copy step to "save time".
 
 The mod set is **dynamic** — never hand-maintain a repo list in the script:
@@ -55,7 +62,12 @@ The mod set is **dynamic** — never hand-maintain a repo list in the script:
   新 mod 槽位缺 `*.json` 也会 WARN（游戏不会把它识别为 mod）。
 
 - The build copies the DLL to the repo root: `DualRoleAdventure.dll`. **Always deploy/ship the root artifact**, not `.godot/mono/temp/...`.
-- Deploy = copy `DualRoleAdventure.dll` + `DualRoleAdventure.json` to `<game>\mods\DualRoleAdventure\` (`copy_pck_to_game.ps1`, or plain copy). No pck export — this is a dll-only mod.
+- Deploy = copy **only** `DualRoleAdventure.dll` into the slot folder (`<game>\mods\<slot>\`); the dll filename
+  must equal the slot's json `id`（见 §9 门禁 10）。**不要把仓库根的 `DualRoleAdventure.json` 一起拷进已有槽位** ——
+  本机槽位用的是改名后的 `DualRoleAdventurefixed.json`（id `DualRoleAdventurefixed`），拷进去会让同一目录出现
+  两个不同 id 的 json ⇒ 游戏重复加载同一个 mod。维护者一键路径：`Scripts/Tools/build_all_mods.ps1`
+  （构建 → 单测 → CLR 兼容 → 部署 → 字节校验）；只部署用 `..\tools\deploy_dll.ps1`。
+  No pck export — this is a dll-only mod.（旧的 `copy_pck_to_game.ps1` 已删除，它会连带拷 json，见上。）
 - If the copy fails with *permission denied*, the game is running and holds the DLL lock; retry after it closes.
 
 ## 3. Runtime verification
@@ -76,12 +88,15 @@ The mod set is **dynamic** — never hand-maintain a repo list in the script:
   ```
 
   **Never grep `Mod 初始化完成` to decide health**: on failure that line is *not* printed.
-  `INIT_OK` 与 `INIT_FAILED` 互斥，是唯一终态判据（`log_parser.py --init-status` 会直接给出）。
+  `INIT_OK` 与 `INIT_FAILED` 互斥，是唯一终态判据（`Scripts/Tools/log_parser.py --init-status` 会直接给出）。
 - Harmony 异常只会被 catch 并计入致命清单，不会中断流程；真正决定是否失败的是上面的终态行。
 - Automated unit tests exist for pure logic & metadata: `tests/LocalMultiControl.Tests/` (NUnit,
   net9.0; covers the PureLogic layer, picking strategies, potion rule tables, patch-domain grouping).
   Run them with `dotnet test tests/LocalMultiControl.Tests/LocalMultiControl.Tests.csproj`
-  (also enforced as a deploy gate by `build_all_mods.ps1`; there is no CI, tests run locally).
+  (also enforced as a deploy gate by `build_all_mods.ps1`). **Build / test / CLR-ABI / deploy cannot run in
+  hosted CI** — they need the game's `sts2.dll`, `0Harmony.dll`, `Steamworks.NET.dll`, `GodotSharp.dll`
+  from the local install (proprietary, never uploaded). The only CI is the offline static tier
+  (`Scripts/Tools/static_checks.py` via `.github/workflows/static-checks.yml`); everything else stays local.
   They reference the game assemblies but do **not** exercise live Godot/Harmony behavior.
 - Everything tests cannot cover (Harmony patches in the running game: combat UI, reward attribution,
   event flows, foreground switching) is still verified by the maintainer playtesting. Provide focused,
@@ -140,7 +155,9 @@ When the game updates and the mod breaks:
 2. Update `CHANGELOG.md` (cut a dated release section) and `PLAYER_GUIDE.md` if player-facing behavior changed.
 3. `dotnet build -c Release`; copy `DualRoleAdventure.dll` + `DualRoleAdventure.json` into `workshop/content/`.
 4. Update `workshop/steamcmd_item_fork.vdf` (`changenote`; `publishedfileid` stays once assigned). The **maintainer** runs the SteamCMD upload — it needs their Steam login.
-5. Commit, push to `origin`, optionally create a GitHub release (zip via `Scripts/Tools/BuildRelease.ps1`).
+5. Commit, push to `origin`, optionally create a GitHub release —— 一条命令搞定（版本三处同步 + marker +
+   构建门禁 + zip + SHA + tag + gh release）：`.\Scripts\Tools\release_build.ps1 -Version x.y.z -PublishGitHub -PushGit`
+   （原 `BuildRelease.ps1` 已于 2026-09-16 并入本脚本，不再单独存在）。
 6. Never touch the original author's Workshop item (3747538947).
 
 ## 8. Documentation map
@@ -161,10 +178,10 @@ WARN is tolerated only where marked.
 | 3 | 单元测试 | `dotnet test tests/.../LocalMultiControl.Tests.csproj` | 禁止部署（由 `build_all_mods.ps1` 强制） |
 | 4 | CLR/PE 结构 | `python Scripts/Tools/clr_compat_check.py --mod-dll DualRoleAdventure.dll` | 禁止部署（截断 DLL / 非托管 DLL / 架构不符 / 运行时版本不符） |
 | 5 | Assembly ABI | 同上（对比 mod 引用的 sts2 与游戏目录实际 sts2 的名称+版本+PublicKeyToken） | 禁止部署（版本漂移） |
-| 6 | 部署字节校验 | `python ..\tools\dll_check.py --deployed --marker <marker> --expect-deployed` | 退出码非 0 即失败；**缺文件 = FAIL，不允许“跳过即绿”** |
+| 6 | 部署字节校验 | `python Scripts/Tools/dll_check.py --deployed --marker <marker> --expect-deployed` | 退出码非 0 即失败；**缺文件 = FAIL，不允许“跳过即绿”** |
 | 7 | marker 身份 | `deploy_dll.ps1` 解析 marker，缺失/畸形 = FAIL | 无法证明产物身份 |
 | 8 | Critical 补丁 | 运行期 `PATCH_RESULT`：Critical 缺失 → `INIT_FAILED` + 抛异常 | mod 在主菜单报红 |
-| 9 | 初始化终态 | `python ..\tools\log_parser.py <log> --init-status` → `INIT_STATUS=OK` | `FAILED` 即为不可用构建 |
+| 9 | 初始化终态 | `python Scripts/Tools/log_parser.py <log> --init-status` → `INIT_STATUS=OK` | `FAILED` 即为不可用构建 |
 | 10 | 部署槽位身份 | `build_all_mods.ps1`（`-List` / 部署 / `-CheckOnly` 都会跑 `Test-SlotIdentity`） | 禁止部署（槽位 json id 与部署 dll 不同名 = 加载不到/加载错 dll） |
 
 Notes:
@@ -179,6 +196,11 @@ Notes:
 - 从 dll 里抠字符串（marker 等）的脚本必须扫 **UTF-16 的两种字节对齐**（#US 堆起始偏移可能为奇数），
   否则会假阴性；`dll_check.py` 与 `deploy_dll.ps1` 都已按此实现（r92 修复）。
 - 可选第三方依赖（Koishi / SkadaHelper 等）加载失败**永远只是 WARN**，不得判为致命。
+- **离线静态层（唯一能在托管 CI 上跑的门禁）**：`python Scripts/Tools/static_checks.py --repo .`
+  —— 产物/反编译源码入库、`.ps1` 编码（含中文必须 UTF-8 BOM）、三处元数据 `version` 一致、
+  补丁类级 `[HarmonyPatch]`（`patch_coverage` 口径，方法级-only 必须为 0）、csproj 源码隔离、
+  `Entry.cs` `BuildMarker`。由 `.github/workflows/static-checks.yml` 在 push / PR 上执行。
+  **门禁 1~5/7/10 需要本机游戏安装，不要指望 CI 跑它们。**
 
 ## 10. Fix verification contract
 

@@ -19,9 +19,9 @@
                            [--no-src-check]                 # 跳过反编译交叉核对
                            [--json]                         # 输出结构化 JSON（供其它工具复用）
 
-示例:
-  python ..\\tools\\patch_coverage.py --repo . --out ../maintenance-docs/patch-coverage.md
-  python ..\\tools\\patch_coverage.py --repo . --json
+示例（本脚本**只存在于 Scripts/Tools/ 下**，不要再写成本仓库之外的工具目录）:
+  python Scripts/Tools/patch_coverage.py --repo . --out ../maintenance-docs/patch-coverage.md
+  python Scripts/Tools/patch_coverage.py --repo . --json
 """
 
 from __future__ import annotations
