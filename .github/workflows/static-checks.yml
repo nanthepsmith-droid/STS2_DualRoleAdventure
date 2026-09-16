@@ -1,0 +1,45 @@
+# 离线静态层 CI（2026-09-16 新增）
+#
+# 为什么只有这一层：
+#   本仓库的构建、单测、CLR/ABI、部署字节校验都**必须本机装有 Slay the Spire 2**
+#   ——`LocalMultiControl.csproj` 引用 `$(Sts2DataDir)` 下的 `sts2.dll` / `0Harmony.dll` /
+#   `Steamworks.NET.dll`，测试项目还要 `GodotSharp.dll`；这些是闭源商业资产，不能上传到 CI。
+#   所以那条主门禁链（`Scripts/Tools/build_all_mods.ps1`，见 AGENTS.md §9）只能在本机跑。
+#
+# 本 workflow 只跑「不需要游戏」的静态检查 —— `Scripts/Tools/static_checks.py`：
+#   S1 产物/反编译源码未入库      S2 含中文的 .ps1 必须带 UTF-8 BOM
+#   S3 三处元数据 version 一致    S4 补丁类级 [HarmonyPatch]（PatchAll 静默跳过，方法级-only 必须为 0）
+#   S5 csproj 源码隔离            S6 Entry.cs BuildMarker 身份
+#
+# 本地等价命令（Windows PowerShell 也行）：
+#   python Scripts/Tools/static_checks.py --repo .
+
+name: static-checks
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 准备 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 离线静态自检
+        run: python Scripts/Tools/static_checks.py --repo .
+
+      - name: 失败时再输出一份 JSON（便于归档/对照）
+        if: failure()
+        run: python Scripts/Tools/static_checks.py --repo . --json || true
