@@ -126,7 +126,7 @@ Write-Host ("-" * 100) -ForegroundColor DarkGray
 
 # ---------------------------------------------------------------- G1 离线静态自检
 $staticChecks = Join-Path $RepoDir "Scripts\Tools\static_checks.py"
-Invoke-Native "G1" "离线静态自检（6 项，不需要游戏安装）" "python" @($staticChecks, "--repo", ".") `
+Invoke-Native "G1" "离线静态自检（不需要游戏安装）" "python" @($staticChecks, "--repo", ".") `
     $(if (-not (Test-Path -LiteralPath $staticChecks)) { "缺少 $staticChecks" } else { "" })
 
 # ---------------------------------------------------------------- G2 字符串/反射目标核对
