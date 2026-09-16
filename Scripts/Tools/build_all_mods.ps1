@@ -95,7 +95,7 @@ function Test-GameRunning {
 function Get-Marker([string]$dllPath) {
     # BuildMarker 形如 "...marker=2026-08-30-r30"，在元数据里是 UTF-16 字符串。
     # 坑（r92）：#US 堆的字符串起始偏移可能是奇数，只按偶对齐解码会假阴性
-    # → 与 tools/dll_check.py、tools/deploy_dll.ps1 一致，两种对齐都扫。
+    # → 与 Scripts\Tools\dll_check.py、..\tools\deploy_dll.ps1 一致，两种对齐都扫。
     try {
         $bytes = [System.IO.File]::ReadAllBytes($dllPath)
         foreach ($offset in 0, 1) {
@@ -294,8 +294,9 @@ function Invoke-CompatCheck {
     param([string]$RepoDir, [string]$OutDll)
     $script = Join-Path $RepoDir "Scripts\Tools\clr_compat_check.py"
     if (-not (Test-Path -LiteralPath $script)) {
-        Write-Host "[!] 跳过兼容性检查（无 clr_compat_check.py）: $RepoDir" -ForegroundColor Yellow
-        return $true
+        # 只对主 mod 调用本函数；主 mod 仓库必须自带该脚本 ⇒ 缺失 = FAIL（AGENTS.md §9：不允许"跳过即绿"）
+        Write-Host "[X] 门禁 4/5 无法执行：缺少 $script" -ForegroundColor Red
+        return $false
     }
     Write-Step "CLR/PE 兼容性检查: $OutDll"
     Push-Location $RepoDir
@@ -314,12 +315,13 @@ function Invoke-CompatCheck {
 # 部署后字节/结构校验（AGENTS.md §9 门禁 6/7）：缺文件 = FAIL，不允许跳过即绿
 function Invoke-DllCheck {
     param([string]$SrcDll, [string]$SlotDir, [string]$SlotDllName)
-    $script = Join-Path $ReposRoot "tools\dll_check.py"
-    if (-not (Test-Path -LiteralPath $script)) {
-        Write-Host "[!] 跳过 dll_check（无 tools\dll_check.py）" -ForegroundColor Yellow
-        return $true
-    }
+    # dll_check.py 自 2026-09-16 起**随主仓库走**（AGENTS.md §9 门禁 6），不再依赖仓库外的 ..\tools\
+    $script = Join-Path (Join-Path (Join-Path $ReposRoot $MainRepo) "Scripts\Tools") "dll_check.py"
     $dst = Join-Path $SlotDir $SlotDllName
+    if (-not (Test-Path -LiteralPath $script)) {
+        Write-Host "[X] 门禁 6 无法执行：缺少 $script（缺文件 = FAIL，不允许'跳过即绿'）" -ForegroundColor Red
+        return $false
+    }
     Write-Step "部署后校验: $dst"
     python $script --deployed --expect-deployed --slot-dll $dst --root-dll $SrcDll | Out-Host
     if ($LASTEXITCODE -ne 0) {
