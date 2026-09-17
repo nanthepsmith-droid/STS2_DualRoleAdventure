@@ -908,3 +908,56 @@
    清单写错在游戏更新/手误时**单测先红**，不再等到实机误报 Critical 缺失。
 6. **marker 解析的对齐坑**：`deploy_dll.ps1` 的 UTF-16 解码已修（r92，两种对齐都扫）。
    同类隐患：`dll_check.py` 早就是双对齐，其它自研脚本若从 dll 里抠字符串需同样处理。
+
+---
+
+## 决策表缺口（`coverage_digest.py` 对账发现，2026-09-16，**待用户拍板**）
+
+> 来源：`tools/coverage_digest.py`（外部 CombatSolver 的 `COMBAT_HOOK_COVERAGE.md` 汇总 × 仓库决策表对账），
+> 报告落 `maintenance-docs/combat-hook-coverage.md`，哨兵结果 **PASS 11 / WARN 1**。
+
+### 改进-4 三种原版药水「一览表写了使用时机、规则表与代码里都没有」（**2026-09-17 r136 已补实现**）
+
+| 药水（类型名） | `原版药水一览表.md` 的「使用时机」 | 该表「当前mod行为」列 | 代码实况 |
+|---|---|---|---|
+| `FlexPotion`（肌肉药水） | 精英/Boss 有攻击牌 | 精英/Boss 首回合 | `Scripts/` 下 **0 处**出现 |
+| `PotionOfBinding` | 精英/Boss 首回合对敌 | 精英/Boss 首回合对敌 | **0 处** |
+| `OrobicAcid` | 精英/Boss 首回合 | 保守不自动用 | **0 处** |
+
+- **机制**（已核实代码）：`LocalWakuuPotionAutoUse.cs:419` 对**未收录的原版药水**是
+  `continue; // 未收录原版药水保守跳过` ⇒ 这三瓶目前**永远不会被瓦库自动使用**，
+  真人手动用不受影响（也不影响任何数据层正确性）。
+- **为什么算「疑似缺口」而不是「预期」**：一览表的「使用时机」列是**期望**，写了具体时机；
+  另外两根对照项已排除：`FairyInABottle` 那行写的是「不用（游戏会自动使用）」、
+  `FoulPotion` 走 `FoulPotionPatch` 专用机制（`Scripts/` 下 15 处出现）。所以只剩这 3 瓶说不清。
+- **两种可能，需用户判定**：① **漏实现** —— 用户当初写了期望但没落地（那就补规则表条目）；
+  ② **表填过头** —— 「当前mod行为」列把期望写成了现状（那就改表 + 明确不自动）。
+  ⚠ 注意 `FlexPotion` / `PotionOfBinding` 两行的「当前mod行为」列写的就是「精英/Boss …」，
+  与实际不符 —— 无论走哪条路，**这一列都该顺手校正**。
+- ✅ **2026-09-17 用户拍板「补实现」→ r136 已落地**：
+  - `LocalWakuuPotionAutoUse` 规则表 **+3 条**（都照同类药水的既有形状写，并加注释注明来源）：
+    | 规则名 | 药水 | 形状 |
+    |---|---|---|
+    | `肌肉药水有攻击牌` | `FlexPotion`（肌肉药水） | `HardFight` + `Condition = 手牌有攻击牌`（与「速度药水有技能牌」同型，不限定首回合） |
+    | `缚魂药水首回合对敌` | `PotionOfBinding`（缚魂药水） | `HardFight` + `FirstRoundOnly`（`AllEnemies`，与易伤/虚弱同批） |
+    | `欧洛巴斯之酸首回合` | `OrobicAcid`（欧洛巴斯之酸） | `HardFight` + `FirstRoundOnly`（`AnyPlayer`，与攻击/技能/能力药水同批） |
+  - 单测 **+3**（`PotionRuleTableTests`：逐条断言 `MatchedPotionTypeName` / `Scope` / `Phases` / `FirstRoundOnly` / `Target`），
+    数量断言 `InRange(55, 65)` → `InRange(55, 70)`（当前 **63** 条；上线时才发现默认 `Phases` 是 `Both`，
+    断言按实际语义写并注明理由）。**502 单测全绿**（499 → +3）。
+  - 一览表的「当前mod行为」列顺手校正：`FlexPotion` 「精英/Boss 首回合」→「精英/Boss 有攻击牌」、
+    `OrobicAcid` 「保守不自动用」→「精英/Boss 首回合」（`PotionOfBinding` 本来就对）。
+  - 门禁：构建 0 警告 0 错误、`preflight.ps1 -Deploy` **4 PASS / 3 SKIP**、`dll_check --deployed`
+    全绿（marker **`2026-09-17-r136`**、部署位与仓库根字节一致 sha256 `8e299f88…`、无 `__runOriginal`）。
+  - **对账已清零**：`python tools\coverage_digest.py --strict` → **PASS 16 / WARN 0**
+    （药水规则表覆盖 60 → **63**，缺口规则消失；退出码 0）。
+- **验证要点（实机）**：`marker=2026-09-17-r136` + `INIT_OK`；三瓶药水在对应时机应出现
+  `瓦库自动用药` 日志（药水名 `FLEX_POTION` / `POTION_OF_BINDING` / `OROBIC_ACID`）。
+  回归：其它药水行为不变、`未收录原版药水保守跳过` 仍只覆盖真正没规则的药水。
+
+### 另记：逐卡评级草表**仍缺输入**（P4 前置未真正满足）
+
+外部文件拿到的是 **Hook 目录汇总**（分类级计数），不是逐项明细 —— 文档里「3035 项」是
+`2302（Exact）+ 733（OutOfScope）` 的 Hook 总数，没有可枚举的条目清单。
+⇒ 「用 LLM 从 3035 项产出逐卡/逐药水评级草表」这条**当前不成立**（凭空生成即幻觉）。
+要做必须另拿 CombatSolver `tools/CoverageCatalog` 的**明细导出**；否则只能用仓库内已整理的表
+（`原版药水一览表.md` / `原版附魔一览表.md`）。详见 `maintenance-docs/combat-hook-coverage.md` §一。

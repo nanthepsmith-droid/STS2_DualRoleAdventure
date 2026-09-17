@@ -33,8 +33,9 @@ public class PotionRuleTableTests
     [Test]
     public void 规则表_非空且数量在预期范围()
     {
-        // 当前 60 条；留上下缓冲以容忍"新增规则但忘改测试"也能被大致察觉
-        Assert.That(_metas.Count, Is.InRange(55, 65));
+        // 当前 63 条（2026-09-17 补实现 3 条：肌肉药水 / 缚魂药水 / 欧洛巴斯之酸，TODO § 改进-4）；
+        // 留上下缓冲以容忍"新增规则但忘改测试"也能被大致察觉
+        Assert.That(_metas.Count, Is.InRange(55, 70));
     }
 
     [Test]
@@ -179,6 +180,59 @@ public class PotionRuleTableTests
             Assert.That(meta.FirstRoundOnly, Is.True);
             Assert.That(meta.Target, Is.EqualTo(WakuuPotionTargetKind.Default));
             Assert.That(meta.HasCondition, Is.False);
+        });
+    }
+
+    // ---------------------------------------------------------------
+    // 2026-09-17 补实现的 3 条（覆盖率对账抓出的缺口，TODO § 改进-4）
+    // ---------------------------------------------------------------
+
+    [Test]
+    public void 肌肉药水有攻击牌_硬仗带条件()
+    {
+        WakuuPotionRuleMeta? meta = Find("肌肉药水有攻击牌");
+        Assert.That(meta, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(meta!.MatchedPotionTypeName, Is.EqualTo(PotionNs + "FlexPotion"));
+            Assert.That(meta.Scope, Is.EqualTo(WakuuPotionFightScope.HardFight));
+            // 未显式指定相位 ⇒ 取规则类默认 Both（回合开始前 / 回合结束前都评估）：
+            // 与「速度药水有技能牌」同型 —— 回合结束前手里还有攻击牌同样值得喝（+5 力量本回合有效）
+            Assert.That(meta.Phases, Is.EqualTo(WakuuPotionPhase.Both));
+            // 条件 = 手牌里有攻击牌；不限定首回合（与「速度药水有技能牌」同型）
+            Assert.That(meta.HasCondition, Is.True);
+            Assert.That(meta.FirstRoundOnly, Is.False);
+            Assert.That(meta.Target, Is.EqualTo(WakuuPotionTargetKind.Default));
+        });
+    }
+
+    [Test]
+    public void 缚魂药水首回合对敌_全体敌人()
+    {
+        WakuuPotionRuleMeta? meta = Find("缚魂药水首回合对敌");
+        Assert.That(meta, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(meta!.MatchedPotionTypeName, Is.EqualTo(PotionNs + "PotionOfBinding"));
+            Assert.That(meta.Scope, Is.EqualTo(WakuuPotionFightScope.HardFight));
+            Assert.That(meta.FirstRoundOnly, Is.True);
+            Assert.That(meta.HasCondition, Is.False);
+            Assert.That(meta.Target, Is.EqualTo(WakuuPotionTargetKind.Default));
+        });
+    }
+
+    [Test]
+    public void 欧洛巴斯之酸首回合_硬仗首回合自用()
+    {
+        WakuuPotionRuleMeta? meta = Find("欧洛巴斯之酸首回合");
+        Assert.That(meta, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(meta!.MatchedPotionTypeName, Is.EqualTo(PotionNs + "OrobicAcid"));
+            Assert.That(meta.Scope, Is.EqualTo(WakuuPotionFightScope.HardFight));
+            Assert.That(meta.FirstRoundOnly, Is.True);
+            Assert.That(meta.HasCondition, Is.False);
+            Assert.That(meta.Target, Is.EqualTo(WakuuPotionTargetKind.Default));
         });
     }
 

@@ -130,6 +130,9 @@ internal static class LocalWakuuPotionAutoUse
         new() { Name = "灾厄首回合对敌", Match = (p) => p is PotionOfDoom, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
         new() { Name = "易伤首回合对敌", Match = (p) => p is VulnerablePotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
         new() { Name = "虚弱首回合对敌", Match = (p) => p is WeakPotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        // 2026-09-17 补实现：覆盖率对账发现「一览表写了时机、规则表缺条目」（TODO § 改进-4）。
+        // 缚魂药水 = 对全体敌人上 1 易伤 + 1 虚弱（TargetType.AllEnemies，与易伤/虚弱同批时机）。
+        new() { Name = "缚魂药水首回合对敌", Match = (p) => p is PotionOfBinding, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
         new() { Name = "消亡粉末首回合对敌", Match = (p) => p is PowderedDemise, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
         new()
         {
@@ -150,12 +153,22 @@ internal static class LocalWakuuPotionAutoUse
             Name = "速度药水有技能牌", Match = (p) => p is SpeedPotion, Scope = WakuuPotionFightScope.HardFight,
             Condition = (c) => c.Hand.Any((card) => card.Type == CardType.Skill),
         },
+        // 2026-09-17 补实现（TODO § 改进-4）：肌肉药水 = 本回合 +5 力量（回合末失去），
+        // 只有手牌里有攻击牌时才值得喝（一览表「使用时机」写的就是「精英/Boss 有攻击牌」）。
+        new()
+        {
+            Name = "肌肉药水有攻击牌", Match = (p) => p is FlexPotion, Scope = WakuuPotionFightScope.HardFight,
+            Condition = (c) => c.Hand.Any((card) => card.Type == CardType.Attack),
+        },
 
         // —— 卡牌授予类（精英/Boss 首回合）——
         new() { Name = "攻击药水首回合", Match = (p) => p is AttackPotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
         new() { Name = "技能药水首回合", Match = (p) => p is SkillPotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
         new() { Name = "能力药水首回合", Match = (p) => p is PowerPotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
         new() { Name = "无色药水首回合", Match = (p) => p is ColorlessPotion, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
+        // 2026-09-17 补实现（TODO § 改进-4）：欧洛巴斯之酸 = 从本职业卡池生成 攻击/技能/能力 各 1 张
+        // 并使其本回合免费（TargetType.AnyPlayer）⇒ 与攻击/技能/能力药水同批时机（精英/Boss 首回合）。
+        new() { Name = "欧洛巴斯之酸首回合", Match = (p) => p is OrobicAcid, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true },
 
         // —— 给真人玩家优先 ——
         new() { Name = "复制药水优先真人", Match = (p) => p is Duplicator, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true, Target = WakuuPotionTargetKind.HumanFirst },

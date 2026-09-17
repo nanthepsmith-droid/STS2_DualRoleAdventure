@@ -5,6 +5,12 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 ## [Unreleased]
 
 ### Added
+- **瓦库自动用药补 3 条规则（2026-09-17，r136）**：覆盖率对账（`tools/coverage_digest.py`，报告
+  `maintenance-docs/combat-hook-coverage.md`）抓出「一览表写了使用时机、但规则表与代码里都没有」的
+  三种原版药水 ⇒ 按一览表写的时机补实现（`LocalWakuuPotionAutoUse` 规则表 +3、单测 +3）：
+  **肌肉药水**（`FlexPotion`：精英/Boss **手牌有攻击牌**时）、**缚魂药水**（`PotionOfBinding`：
+  精英/Boss 首回合对敌）、**欧洛巴斯之酸**（`OrobicAcid`：精英/Boss 首回合）。
+  此前这三瓶走「未收录原版药水保守跳过」分支，瓦库**永远不会自动使用**（真人手动用药不受影响）。
 - **离线静态自检 + 静态层 CI（2026-09-16）**：新增 `Scripts/Tools/static_checks.py` —— **不需要游戏安装**的
   6 项检查：① 产物/反编译源码未入库（`git ls-files`）；② 含非 ASCII 的 `.ps1` 必须带 UTF-8 BOM；
   ③ 根 json / `workshop\content` json / `mod_manifest.json` 三处 `version` 一致；④ 补丁类级
