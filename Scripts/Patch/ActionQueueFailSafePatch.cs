@@ -24,7 +24,7 @@ namespace LocalMultiControl.Scripts.Patch;
 ///
 /// 以前这条只靠本文件的 Finalizer 兜（吞异常 + 强制对齐上下文），代价是每次都要给
 /// `ActionQueueSet.ActionEnqueued` 抛一次异常、刷一条 WARN，并无谓地触发一次上下文校正。
-/// 方案 D 实验档（`wakuuPlayQueue`）让**瓦库的出牌也走 `PlayCardAction` 入队** ⇒ 这条路径
+/// 方案 D 实验档（`vakuuPlayQueue`）让**瓦库的出牌也走 `PlayCardAction` 入队** ⇒ 这条路径
 /// 从"偶发"变成"每次瓦库出牌都可能撞"（实机 2026-09-13 日志 6 条，已按 600ms 限流）。
 ///
 /// 这里改为**先判后跳**：拿不到绘制所需的对象就 `return false` ——

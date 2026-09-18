@@ -107,7 +107,7 @@ public class ConfigNormalizationTests
     }
 }
 
-/// <summary>瓦库大脑模式（wakuuBrain 开关）取值规范化测试。</summary>
+/// <summary>瓦库大脑模式（vakuuBrain 开关）取值规范化测试。</summary>
 [TestFixture]
 public class BrainModeNormalizationTests
 {

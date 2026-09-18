@@ -25,7 +25,7 @@ internal static class WakuuPlaySpeedPolicy
     /// <summary>
     /// 是否给瓦库的自动出牌传 <c>skipCardPileVisuals: true</c>（跳过卡牌堆动画与固定等待）。
     /// </summary>
-    /// <param name="toggleEnabled">配置开关（<c>fastWakuuPlay</c>）是否开启。</param>
+    /// <param name="toggleEnabled">配置开关（<c>fastVakuuPlay</c>）是否开启。</param>
     /// <param name="localMultiControlEnabled">本地多控是否生效（单人局不干预，保持原生观感）。</param>
     /// <param name="isVakuuFormPlayer">出牌者是否处于【瓦库形态】托管（只管瓦库自己的自动出牌）。</param>
     /// <returns>true = 跳过卡牌堆视觉与固定等待（加速）；false = 播完整演出（原生观感）。</returns>
@@ -53,7 +53,7 @@ internal static class WakuuPlaySpeedPolicy
     ///    与前段牌堆补间，能跳过的只有**收尾固定等待** `CustomScaledWait(0.15f - num, 0.3f - num)`
     ///    与**结算堆**（弃牌堆 / 消耗 / 移出战斗）的补间，实测约 0.15~0.3s/张。
     /// </summary>
-    /// <param name="toggleEnabled">配置开关（<c>fastWakuuPlay</c>）是否开启。</param>
+    /// <param name="toggleEnabled">配置开关（<c>fastVakuuPlay</c>）是否开启。</param>
     /// <param name="localMultiControlEnabled">本地多控是否生效。</param>
     /// <param name="isVakuuFormPlayer">出牌者是否处于【瓦库形态】托管。</param>
     /// <param name="isWakuuQueuedPlay">这次出牌是否是"我们替该瓦库入队"的队列路径出牌。</param>

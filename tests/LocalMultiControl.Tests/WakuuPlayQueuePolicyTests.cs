@@ -70,7 +70,7 @@ public class WakuuPlayQueuePolicyTests
     {
         // 实验档默认关 = 与既有行为完全一致（方案 §12.6：r117 加速后单张已 ~0.2~0.58s，
         // 方案 D 的收益主要是"多人语义"，语义迁移风险由用户自己决定是否尝试验证）。
-        Assert.That(new WakuuConfigData().wakuuPlayQueue, Is.False);
+        Assert.That(new WakuuConfigData().vakuuPlayQueue, Is.False);
     }
 
     [Test]
@@ -107,7 +107,7 @@ public class WakuuPlayQueuePolicyTests
     public void 配置默认关闭并发出牌档()
     {
         // 第二步（去掉全局闸门）风险集中在"真重叠"，默认关 = 与 r121~r125 已实机确认的行为完全一致。
-        Assert.That(new WakuuConfigData().wakuuPlayOverlap, Is.False);
+        Assert.That(new WakuuConfigData().vakuuPlayOverlap, Is.False);
     }
 
     [Test]

@@ -790,7 +790,7 @@ internal static class LocalWakuuRelicRuntime
     /// 通道（`NCardPlayQueue.RemoveCardFromQueueForCancellation` 会把它从出牌队列 UI 里撤掉，
     /// 非本地玩家只做移除动画、不动手牌）。**正在执行 / 正在等选择**的动作一律不撤（见纯函数注释）。
     ///
-    /// 只在并发出牌档生效（`wakuuPlayOverlap` 开）；单瓦库串行路径本就最多 1 张在排队，行为不变。
+    /// 只在并发出牌档生效（`vakuuPlayOverlap` 开）；单瓦库串行路径本就最多 1 张在排队，行为不变。
     /// </summary>
     /// <param name="actorPlayerId">真人这次操作所针对的玩家（出牌是牌主人；结束回合是前台/点击目标角色）。</param>
     /// <param name="source">调用来源（日志用）。</param>

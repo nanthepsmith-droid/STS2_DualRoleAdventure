@@ -9,7 +9,7 @@ namespace LocalMultiControl.Scripts.Patch;
 /// <summary>
 /// 改进-2 / 方案 D 第三步（队列路径出牌加速）：瓦库**走动作队列**的那张牌也跳过卡牌堆演出。
 ///
-/// **问题**：r117 的「瓦库出牌加速」（`fastWakuuPlay`，默认开）是靠给 `CardCmd.AutoPlay` 传
+/// **问题**：r117 的「瓦库出牌加速」（`fastVakuuPlay`，默认开）是靠给 `CardCmd.AutoPlay` 传
 /// <c>skipCardPileVisuals: true</c> 实现的 —— 传参只对 **inline 路径**有效。队列路径（方案 D）由
 /// `PlayCardAction.ExecuteAction` 自己以 <c>isAutoPlay: false</c> 调 `CardModel.OnPlayWrapper`，
 /// **没有**这个形参可传 ⇒ 实机实测「两个开关都开 = 加速失效」（TODO r122 ③），
@@ -27,12 +27,12 @@ namespace LocalMultiControl.Scripts.Patch;
 ///
 /// **限定范围（三条同时成立才动手）**：
 /// <list type="number">
-///   <item>开关 <c>fastWakuuPlay</c> 开 且 本地多控生效（与 r117 同口径，见 `WakuuPlaySpeedPolicy`）；</item>
+///   <item>开关 <c>fastVakuuPlay</c> 开 且 本地多控生效（与 r117 同口径，见 `WakuuPlaySpeedPolicy`）；</item>
 ///   <item>牌主人处于【瓦库形态】托管；</item>
 ///   <item>这次出牌**确实是我们替该瓦库入队的**（`LocalWakuuRelicRuntime.HasPendingQueuePlay`）
 ///         —— 真人手动替瓦库出牌同样 `isAutoPlay: false`，那种"人点的牌"不加速，观感不倒退。</item>
 /// </list>
-/// 关掉 `fastWakuuPlay` 或 `wakuuPlayQueue` ⇒ 前缀恒为 no-op，行为与 r131 完全一致。
+/// 关掉 `fastVakuuPlay` 或 `vakuuPlayQueue` ⇒ 前缀恒为 no-op，行为与 r131 完全一致。
 ///
 /// ⚠ 前缀里的 `Owner` getter 会走 `AbstractModel.AssertMutable()`（非可变模型会抛
 /// `CanonicalModelException`）。正常出牌期间牌必为可变，但补丁**绝不允许**因为自己抛异常而打断出牌，

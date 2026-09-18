@@ -30,15 +30,15 @@ public class WakuuConfigJsonTests
             Assert.That(data.shopAssistBuyRemoval, Is.False); // Phase 4 增量 v3：自动删牌默认关
             Assert.That(data.statBadge, Is.False);
             Assert.That(data.skipTurnStartDrawAnim, Is.False);
-            Assert.That(data.wakuuPlayQueue, Is.False); // 方案 D 实验档默认关
-            Assert.That(data.wakuuPlayOverlap, Is.False); // 方案 D 第二步（并发出牌）默认关
+            Assert.That(data.vakuuPlayQueue, Is.False); // 方案 D 实验档默认关
+            Assert.That(data.vakuuPlayOverlap, Is.False); // 方案 D 第二步（并发出牌）默认关
             // 默认开
             Assert.That(data.playAllCards, Is.True);
             Assert.That(data.backgroundMode, Is.True);
             Assert.That(data.suppressVanillaEarring, Is.True);
             Assert.That(data.autoClaimCards, Is.True);
             Assert.That(data.autoClaimGoldRelics, Is.True);
-            Assert.That(data.fastWakuuPlay, Is.True);
+            Assert.That(data.fastVakuuPlay, Is.True);
             Assert.That(data.autoClaimPotions, Is.True);
             Assert.That(data.autoChooseEvents, Is.True);
             Assert.That(data.autoRestChoice, Is.True);
@@ -46,19 +46,77 @@ public class WakuuConfigJsonTests
             Assert.That(data.eventChoiceMode, Is.EqualTo("first"));
             Assert.That(data.cardPickMode, Is.EqualTo("last"));
             // 视角策略默认「不跟随」（改进-2 Phase 0）
-            Assert.That(data.wakuuViewMode, Is.EqualTo("never"));
+            Assert.That(data.vakuuViewMode, Is.EqualTo("never"));
             // 大脑默认值
-            Assert.That(data.wakuuBrain, Is.EqualTo("heuristic"));
+            Assert.That(data.vakuuBrain, Is.EqualTo("heuristic"));
+        });
+    }
+
+    [Test]
+    public void 旧拼写配置键_自动迁移到新键()
+    {
+        // r140：Vakuu 拼写统一后，玩家盘上旧 json 里的 wakuu* 键必须继续生效，
+        // 否则升级一次就把设置打回默认值。
+        const string json = """
+        {
+            "keepWakuuFormRelic": false,
+            "fastWakuuPlay": false,
+            "wakuuPlayQueue": true,
+            "wakuuPlayOverlap": true,
+            "wakuuViewMode": "keyNodes",
+            "wakuuBrain": "auto"
+        }
+        """;
+
+        WakuuConfigData data = WakuuConfigJson.Parse(json)!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(data.keepVakuuFormRelic, Is.False);
+            Assert.That(data.fastVakuuPlay, Is.False);
+            Assert.That(data.vakuuPlayQueue, Is.True);
+            Assert.That(data.vakuuPlayOverlap, Is.True);
+            Assert.That(data.vakuuViewMode, Is.EqualTo("keyNodes"));
+            Assert.That(data.vakuuBrain, Is.EqualTo("auto"));
+        });
+
+        // 写盘只输出新键 ⇒ 旧键自然淘汰（不需要额外的"删旧字段"逻辑）
+        string roundTrip = WakuuConfigJson.Serialize(data);
+        Assert.Multiple(() =>
+        {
+            Assert.That(roundTrip, Does.Contain("\"fastVakuuPlay\": false"));
+            Assert.That(roundTrip, Does.Contain("\"vakuuBrain\": \"auto\""));
+            Assert.That(roundTrip, Does.Not.Contain("Wakuu"), "序列化输出里不应再出现旧拼写");
+        });
+    }
+
+    [Test]
+    public void 新旧键同时存在时_以新键为准()
+    {
+        // 玩家若已手工改用新键，旧键不得把它覆盖回去。
+        WakuuConfigData data = WakuuConfigJson.Parse("""
+        {
+            "fastWakuuPlay": false,
+            "fastVakuuPlay": true,
+            "wakuuBrain": "auto",
+            "vakuuBrain": "heuristic"
+        }
+        """)!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(data.fastVakuuPlay, Is.True, "新键存在时旧键不得覆盖");
+            Assert.That(data.vakuuBrain, Is.EqualTo("heuristic"));
         });
     }
 
     [Test]
     public void 解析大脑开关_auto生效()
     {
-        WakuuConfigData data = WakuuConfigJson.Parse("""{ "wakuuBrain": "auto" }""")!;
+        WakuuConfigData data = WakuuConfigJson.Parse("""{ "vakuuBrain": "auto" }""")!;
         Assert.Multiple(() =>
         {
-            Assert.That(data.wakuuBrain, Is.EqualTo("auto"));
+            Assert.That(data.vakuuBrain, Is.EqualTo("auto"));
             Assert.That(data.cardPickMode, Is.EqualTo("last")); // 未提供 → 默认
         });
     }
@@ -227,13 +285,13 @@ public class WakuuConfigJsonTests
             Assert.That(json, Does.Contain("\"shopAssistBuyRemoval\""));
             Assert.That(json, Does.Contain("\"statBadge\""));
             Assert.That(json, Does.Contain("\"skipTurnStartDrawAnim\""));
-            Assert.That(json, Does.Contain("\"fastWakuuPlay\""));
-            Assert.That(json, Does.Contain("\"wakuuPlayQueue\""));
-            Assert.That(json, Does.Contain("\"wakuuPlayOverlap\""));
-            Assert.That(json, Does.Contain("\"wakuuViewMode\""));
+            Assert.That(json, Does.Contain("\"fastVakuuPlay\""));
+            Assert.That(json, Does.Contain("\"vakuuPlayQueue\""));
+            Assert.That(json, Does.Contain("\"vakuuPlayOverlap\""));
+            Assert.That(json, Does.Contain("\"vakuuViewMode\""));
             Assert.That(json, Does.Contain("\"eventChoiceMode\""));
             Assert.That(json, Does.Contain("\"cardPickMode\""));
-            Assert.That(json, Does.Contain("\"wakuuBrain\""));
+            Assert.That(json, Does.Contain("\"vakuuBrain\""));
         });
     }
 }

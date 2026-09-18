@@ -179,21 +179,21 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
                 "默认开。瓦库自动出牌时跳过「牌飞向出牌区 + 烟雾特效 + 各牌堆补间」与打出/收尾的两段固定等待（约 0.4~0.65 秒/张）。多瓦库是串行出牌的，每张牌的耗时会直接相加成整回合时长（实测约 1.0~1.4 秒/张），所以这是提速最明显的一项。下方两个「走动作队列」实验档的出牌同样吃本项（队列路径能跳过的只有收尾等待与结算堆补间，约省 0.15~0.3 秒/张）。关闭后恢复完整的出牌动画（与旧版观感一致）。",
                 "On by default. Vakuu auto-plays skip the \"card flies to play area + smoke effect + pile tweens\" and two fixed waits (about 0.4-0.65s/card). Vakuu play serially, so per-card time adds up to the whole turn (about 1.0-1.4s/card measured), making this the biggest speedup. The two experimental \"action queue\" modes below also benefit (the queue path can only skip the settle wait and discard-pile tween, saving ~0.15-0.3s/card). Turning it off restores full play animations (as before)."),
             () => LocalWakuuAutopilotConfig.FastWakuuPlay,
-            value => LocalWakuuAutopilotConfig.TrySetAndSave("fastWakuuPlay", value));
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("fastVakuuPlay", value));
         AddToggleRow(column,
             LocalModText.Select("【实验】瓦库出牌走动作队列", "[EXPERIMENTAL] Vakuu Plays via Action Queue"),
             LocalModText.Select(
                 "默认关。**实验档**：开启后瓦库出牌不再用模组内联的自动出牌，而是像真人/远端玩家那样「把出牌动作排进自己的动作队列」（原版多人模式的同一条路径），换来多人模式的真实语义——某个瓦库在等自己的选牌时不挡住其他瓦库与真人。代价是三条刻意接受的语义变化：① 瓦库的出牌不再按「自动出牌」处理（虚无形态、佩尔之眼、不歇之巅等对自动出牌有特判的牌会开始把瓦库出牌算进去）；② 需要指定目标的牌若当刻解析不到目标，牌会留在手里（旧行为是打出去进弃牌堆）；③ 队列路径的演出比内联自动出牌略多（原版 PlayCardAction 自己没带跳过动画的参数，模组靠前缀补丁补上），**但仍然吃上面的「瓦库出牌加速」**：开着加速时队列出牌同样会跳过收尾固定等待与结算堆补间（约省 0.15~0.3 秒/张），只是「牌从手牌飞出」那段真人分支动画省不掉，所以仍比内联路径稍慢一点。关掉「瓦库出牌加速」即恢复完整演出。关闭本项即恢复既有行为；遇到任何异常请关掉本项并保留 godot.log。",
                 "Off by default. **Experimental**: Vakuu plays no longer use the mod's inline auto-play; they enqueue plays into their own action queue like humans/remote players (the vanilla multiplayer path), gaining true multiplayer semantics — a Vakuu waiting on its own pick no longer blocks other Vakuu or humans. Three accepted trade-offs: 1) plays are no longer treated as \"auto-play\" (cards with special auto-play checks such as Void Form, Perr's Eye, Unresting Summit start counting Vakuu plays); 2) a targeted card stays in hand if no target resolves right now (old behavior played it into the discard); 3) the queue path shows slightly more animation than inline plays (vanilla PlayCardAction has no skip-anim flag; the mod adds one via a Prefix), but it **still benefits from \"Fast Vakuu Plays\" above**: it skips the settle wait and discard-pile tween (~0.15-0.3s/card); only the \"card flying out of hand\" human-branch animation remains, so it's slightly slower than the inline path. Turn off \"Fast Vakuu Plays\" to restore full animation. Turning this off restores prior behavior; if anything looks wrong, turn it off and keep godot.log."),
             () => LocalWakuuAutopilotConfig.WakuuPlayQueue,
-            value => LocalWakuuAutopilotConfig.TrySetAndSave("wakuuPlayQueue", value));
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("vakuuPlayQueue", value));
         AddToggleRow(column,
             LocalModText.Select("【实验】瓦库并发出牌（不互相等）", "[EXPERIMENTAL] Vakuu Concurrent Plays (No Mutual Waiting)"),
             LocalModText.Select(
                 "默认关，**必须先开上面那项「瓦库出牌走动作队列」才生效**。这是上一项实验档的第二步（最终目标）：开启后多个瓦库不再排队等「全局出牌闸门」，一个瓦库在等自己的选牌时，其他瓦库与真人照常出牌（原版多人模式的真实语义）。代价：① 瓦库出牌期间不再把「当前玩家」钉在瓦库身上（出牌改由游戏动作泵执行、归属按角色分发），所以瓦库出牌的**前台视觉演出会更少**（更接近后台托管，伤害与效果照常）；② 视角档位设成「全程跟随」时，多个瓦库可能来回抢视角（建议配合默认的「不跟随」使用）。只想稳就先别开；遇到任何异常请关掉本项并保留 godot.log。",
                 "Off by default; **requires \"Vakuu Plays via Action Queue\" above**. This is the second step of that experiment (end goal): multiple Vakuu no longer queue on the \"global play gate\" — a Vakuu waiting on its own pick no longer holds up other Vakuu or humans (true multiplayer semantics). Costs: 1) Vakuu plays no longer pin the \"current player\" to the Vakuu (plays run on the game action pump, attribution by character), so Vakuu plays have **less foreground visual flair** (closer to background autopilot; damage/effects work as normal); 2) with \"Always Follow\" camera, multiple Vakuu may fight over the camera (best used with the default \"Never\"). If you want stability first, leave it off; if anything looks wrong, turn it off and keep godot.log."),
             () => LocalWakuuAutopilotConfig.WakuuPlayOverlap,
-            value => LocalWakuuAutopilotConfig.TrySetAndSave("wakuuPlayOverlap", value));
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("vakuuPlayOverlap", value));
         AddToggleRow(column,
             LocalModText.Select("后台托管（不切前台）", "Background Autopilot (No Camera Switch)"),
             LocalModText.Select(
@@ -219,7 +219,7 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
                 "默认开。第三方遗物/事件（已见案例：东方「无底之胃」——拾起时吞噬初始遗物与先古遗物以外的全部遗物）会把【瓦库形态】一起移除，而托管判据只看是否持有该遗物，移除后瓦库会彻底停止自动操作。开启后：本 mod 会拦下对托管遗物的移除，并在遗物真的没了时按瓦库名单继续托管并补发。关闭 = 回到旧行为（可被移除，移除后瓦库停摆）。",
                 "On by default. Third-party relics/events (seen: Touhou \"Bottomless Stomach\" — devours all relics except starter & ascend relics) can remove [Vakuu Form]; the autopilot check only looks at the relic, so Vakuu would stop entirely. When on, this mod blocks removal of the autopilot relic and, if it's ever gone, keeps autopiloting per the Vakuu list and re-issues it. Off = old behavior (can be removed; Vakuu stalls after removal)."),
             () => LocalWakuuAutopilotConfig.KeepWakuuFormRelic,
-            value => LocalWakuuAutopilotConfig.TrySetAndSave("keepWakuuFormRelic", value));
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("keepVakuuFormRelic", value));
 
         column.AddChild(CreateSpacer(8));
 
@@ -621,7 +621,7 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
 
     /// <summary>
     /// 「瓦库托管视角」策略切换行（三档：不跟随 → 仅关键节点 → 全程跟随，循环，改进-2 Phase 0）。
-    /// 默认不跟随；取值经 TrySetAndSaveString("wakuuViewMode", ...) 即时写回 json。
+    /// 默认不跟随；取值经 TrySetAndSaveString("vakuuViewMode", ...) 即时写回 json。
     /// 仅当「后台托管（不切前台）」开启时生效（关闭时一律按全程跟随，向后兼容）。
     /// </summary>
     private Control CreateViewModeRow(string title, string description)
@@ -655,7 +655,7 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         viewButton.Connect(NClickableControl.SignalName.Released, Callable.From<NClickableControl>(_ =>
         {
             string next = NextViewMode(LocalWakuuAutopilotConfig.ViewMode);
-            if (LocalWakuuAutopilotConfig.TrySetAndSaveString("wakuuViewMode", next))
+            if (LocalWakuuAutopilotConfig.TrySetAndSaveString("vakuuViewMode", next))
             {
                 viewButton.ButtonText = GetViewModeDisplayText(LocalWakuuAutopilotConfig.ViewMode);
                 LocalMultiControlLogger.Info($"瓦库托管视角已切换: {next}");

@@ -1,7 +1,7 @@
 namespace LocalMultiControl.Scripts.Runtime;
 
 /// <summary>
-/// 瓦库大脑工厂：按配置（wakuuBrain 开关）返回大脑实例。
+/// 瓦库大脑工厂：按配置（vakuuBrain 开关）返回大脑实例。
 /// 当前只有启发式默认实现；auto 模式先探测可用求解器（未来 CombatSolver 适配器，
 /// 反射探测未命中即静默降级），未探测到一律回退启发式——行为与 heuristic 完全相同。
 /// </summary>

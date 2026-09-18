@@ -66,7 +66,7 @@ public class WakuuPlaySpeedPolicyTests
     {
         // 默认开是本轮的拍板（多瓦库串行、单张 1.0~1.4s，加速收益最大）；
         // 关掉即恢复完整演出，行为与旧版一致。
-        Assert.That(new WakuuConfigData().fastWakuuPlay, Is.True);
+        Assert.That(new WakuuConfigData().fastVakuuPlay, Is.True);
     }
 
     // ===== 队列路径（方案 D 第三步）：多一条"这次出牌是我们替瓦库入队的" =====

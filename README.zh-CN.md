@@ -73,6 +73,18 @@ cp -r ~/sts2-src/MegaCrit/Sts2/. src/
 - [docs/design/](docs/design/) — 原设计文档（英译版）
 - [docs/archive/](docs/archive/) — 原中文文档原样保留
 
+## 命名说明（Vakuu 与 Wakuu）
+
+游戏里这个角色的官方拼写是 **Vakuu**（游戏程序集里是 `Vakuu` / `VakuuCardSelector`）。本 Mod 早期开发把它写成了 **“Wakuu”**，而这个错误拼写至今仍留在**内部 C# 标识符与文件名**里（`LocalWakuuAutopilotConfig`、`WakuuConfigData` 等）。
+
+现状：
+
+- **玩家可见文案是对的**：全部界面文本、本 README、玩家指南与工坊条目都使用 **Vakuu**。
+- **配置键已统一**（`vakuu_autopilot.json`）：`wakuuBrain` / `wakuuViewMode` / `wakuuPlayQueue` / `wakuuPlayOverlap` / `fastWakuuPlay` / `keepWakuuFormRelic` 已改成 `vakuu*` 拼写，并带**向后兼容迁移** —— 旧配置里的旧键照常生效，下次保存时自动改写成新键。
+- **内部标识符有意保留旧拼写**：重命名约 95 个源文件对玩法没有任何收益，却要动整个代码库，因此**没有修正计划**。日志 / 源码 / 堆栈里看到 `Wakuu`，按 `Vakuu` 理解即可。
+
+即：只有配置键值得改，且已经改完；其余属外观问题，刻意保留。
+
 ## 致谢与许可
 
 - 原作者：**liwenhao0427（磁石战士Ω）** — 全部设计及 v0.1~v1.30 的实现。如果这个 Mod 对你有帮助，欢迎请原作者喝杯咖啡：

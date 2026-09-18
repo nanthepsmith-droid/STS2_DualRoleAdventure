@@ -73,6 +73,18 @@ Please open a [GitHub issue](https://github.com/nanthepsmith-droid/STS2_DualRole
 - [docs/design/](docs/design/) — original design documents (translated)
 - [docs/archive/](docs/archive/) — original Chinese documents preserved as-is
 
+## Naming (Vakuu vs Wakuu)
+
+The game spells this character **Vakuu** (see `Vakuu` / `VakuuCardSelector` in the game assembly). This mod's early development wrote **"Wakuu"**, and that misspelling is still baked into **internal C# identifiers and file names** (`LocalWakuuAutopilotConfig`, `WakuuConfigData`, …).
+
+Status:
+
+- **Player-visible text is correct.** All UI strings, this README, the Player Guide and the Workshop page use **Vakuu**.
+- **Config keys were unified** (`vakuu_autopilot.json`): `wakuuBrain` / `wakuuViewMode` / `wakuuPlayQueue` / `wakuuPlayOverlap` / `fastWakuuPlay` / `keepWakuuFormRelic` were renamed to their `vakuu*` spelling, with a **backward-compatible migration** — an existing config using the old keys keeps working and is rewritten with the new keys on the next save.
+- **Internal identifiers keep the old spelling on purpose.** Renaming ~95 source files brings no gameplay benefit but churns the whole codebase, so there is **no plan to fix them**. If you see `Wakuu` in logs, source or stack traces, read it as `Vakuu`.
+
+In short: only the config keys were worth changing, and that is done; the rest is cosmetic and intentionally left alone.
+
 ## Credits & license
 
 - Original author: **liwenhao0427 (磁石战士Ω)** — design and the entire v0.1–v1.30 implementation. If this mod helps you, consider buying them a coffee:

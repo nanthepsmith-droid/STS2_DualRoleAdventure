@@ -72,6 +72,15 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   发布由此仍是**一条命令**（AGENTS §7 第 5 步已同步）。
 
 ### Changed
+- **配置键拼写统一：`wakuu*` → `vakuu*`（2026-09-18，r140）**：游戏里这个角色的官方拼写是
+  **Vakuu**（程序集里是 `Vakuu` / `VakuuCardSelector`），而本 Mod 早期把配置键写成了 `Wakuu`。
+  已统一 6 个键：`wakuuBrain` → `vakuuBrain`、`wakuuViewMode` → `vakuuViewMode`、
+  `wakuuPlayQueue` → `vakuuPlayQueue`、`wakuuPlayOverlap` → `vakuuPlayOverlap`、
+  `fastWakuuPlay` → `fastVakuuPlay`、`keepWakuuFormRelic` → `keepVakuuFormRelic`。
+  带**向后兼容迁移**（`WakuuConfigJson.MigrateLegacyKeys`）：旧配置里的旧键照常生效、
+  写盘时自动改写成新键；**新旧键同时存在时以新键为准**（不会把玩家手工改过的新键覆盖回去）。
+  ⚠ **内部 C# 标识符与文件名仍保留 `Wakuu` 拼写，且没有修正计划** —— 重命名约 95 个文件
+  对玩法零收益、却要动整个代码库；详见 README 新增的「Naming (Vakuu vs Wakuu)」一节。
 - **维护工具与文档路径纠正（2026-09-16）**：`patch_coverage.py` docstring 里的示例路径从仓库外的
   `tools\` 改回 `Scripts/Tools/`（该脚本一直只存在于 `Scripts/Tools/`，历史文档里的旧路径会误导）；
   `AGENTS.md` §2 与 `README.md` / `README.zh-CN.md` 的部署说明改为"只拷 dll、不要往已有槽位塞第二个 json"。

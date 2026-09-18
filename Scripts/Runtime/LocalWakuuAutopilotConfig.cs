@@ -244,7 +244,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.playAllCards): data.playAllCards = value; break;
                     case nameof(WakuuConfigData.backgroundMode): data.backgroundMode = value; break;
                     case nameof(WakuuConfigData.suppressVanillaEarring): data.suppressVanillaEarring = value; break;
-                    case nameof(WakuuConfigData.keepWakuuFormRelic): data.keepWakuuFormRelic = value; break;
+                    case nameof(WakuuConfigData.keepVakuuFormRelic): data.keepVakuuFormRelic = value; break;
                     case nameof(WakuuConfigData.autoClaimCards): data.autoClaimCards = value; break;
                     case nameof(WakuuConfigData.autoClaimGoldRelics): data.autoClaimGoldRelics = value; break;
                     case nameof(WakuuConfigData.autoClaimPotions): data.autoClaimPotions = value; break;
@@ -266,9 +266,9 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.statBadge): data.statBadge = value; break;
                     case nameof(WakuuConfigData.petHpBadge): data.petHpBadge = value; break;
                     case nameof(WakuuConfigData.skipTurnStartDrawAnim): data.skipTurnStartDrawAnim = value; break;
-                    case nameof(WakuuConfigData.fastWakuuPlay): data.fastWakuuPlay = value; break;
-                    case nameof(WakuuConfigData.wakuuPlayQueue): data.wakuuPlayQueue = value; break;
-                    case nameof(WakuuConfigData.wakuuPlayOverlap): data.wakuuPlayOverlap = value; break;
+                    case nameof(WakuuConfigData.fastVakuuPlay): data.fastVakuuPlay = value; break;
+                    case nameof(WakuuConfigData.vakuuPlayQueue): data.vakuuPlayQueue = value; break;
+                    case nameof(WakuuConfigData.vakuuPlayOverlap): data.vakuuPlayOverlap = value; break;
                     default:
                         LocalMultiControlLogger.Warn($"瓦库托管配置写入失败：未知开关名 {key}");
                         return false;
@@ -287,8 +287,8 @@ internal static class LocalWakuuAutopilotConfig
     }
 
     /// <summary>
-    /// 设置界面专用：更新单个字符串型配置（eventChoiceMode / cardPickMode / wakuuBrain / personalTier /
-    /// statBadgeCorner / statBadgeSource / wakuuViewMode）。
+    /// 设置界面专用：更新单个字符串型配置（eventChoiceMode / cardPickMode / vakuuBrain / personalTier /
+    /// statBadgeCorner / statBadgeSource / vakuuViewMode）。
     /// 立即刷新内存生效值并写回 json；返回 false 表示 key 未知、值非法或写盘失败。
     /// </summary>
     public static bool TrySetAndSaveString(string key, string value)
@@ -298,18 +298,18 @@ internal static class LocalWakuuAutopilotConfig
             try
             {
                 if (key is nameof(WakuuConfigData.eventChoiceMode) or nameof(WakuuConfigData.cardPickMode)
-                    or nameof(WakuuConfigData.wakuuBrain) or nameof(WakuuConfigData.personalTier)
+                    or nameof(WakuuConfigData.vakuuBrain) or nameof(WakuuConfigData.personalTier)
                     or nameof(WakuuConfigData.statBadgeCorner) or nameof(WakuuConfigData.statBadgeSource)
-                    or nameof(WakuuConfigData.wakuuViewMode))
+                    or nameof(WakuuConfigData.vakuuViewMode))
                 {
                     string? normalized = key switch
                     {
-                        nameof(WakuuConfigData.wakuuBrain) => NormalizeBrainMode(value),
+                        nameof(WakuuConfigData.vakuuBrain) => NormalizeBrainMode(value),
                         nameof(WakuuConfigData.cardPickMode) => NormalizeCardPickMode(value),
                         nameof(WakuuConfigData.personalTier) => NormalizePersonalTier(value),
                         nameof(WakuuConfigData.statBadgeCorner) => WakuuStatBadgeCorner.Normalize(value),
                         nameof(WakuuConfigData.statBadgeSource) => WakuuStatBadgeSource.Normalize(value),
-                        nameof(WakuuConfigData.wakuuViewMode) => WakuuViewModes.Normalize(value),
+                        nameof(WakuuConfigData.vakuuViewMode) => WakuuViewModes.Normalize(value),
                         _ => NormalizeChoiceMode(value),
                     };
                     if (normalized == null)
@@ -319,7 +319,7 @@ internal static class LocalWakuuAutopilotConfig
                     }
 
                     WakuuConfigData data = ReadConfigDataOrThrow();
-                    // r83 修复：statBadgeCorner / statBadgeSource 此前落进 else 分支被写到了 wakuuBrain，
+                    // r83 修复：statBadgeCorner / statBadgeSource 此前落进 else 分支被写到了 vakuuBrain，
                     // 导致角标位置改不动（永远停在默认左下）、数据来源也改不动。
                     switch (key)
                     {
@@ -338,11 +338,11 @@ internal static class LocalWakuuAutopilotConfig
                         case nameof(WakuuConfigData.statBadgeSource):
                             data.statBadgeSource = normalized;
                             break;
-                        case nameof(WakuuConfigData.wakuuViewMode):
-                            data.wakuuViewMode = normalized;
+                        case nameof(WakuuConfigData.vakuuViewMode):
+                            data.vakuuViewMode = normalized;
                             break;
                         default:
-                            data.wakuuBrain = normalized;
+                            data.vakuuBrain = normalized;
                             break;
                     }
 
@@ -366,39 +366,39 @@ internal static class LocalWakuuAutopilotConfig
     /// 修正磁盘配置里的历史脏值（返回是否有改动），加载时自愈一次。
     ///
     /// 已知案例（r84 之前）：<c>TrySetAndSaveString</c> 的 if/else 链没认
-    /// <c>statBadgeCorner</c>/<c>statBadgeSource</c>，把它们落进了最后的 else 写进 <c>wakuuBrain</c>，
-    /// 于是磁盘上留下 `"wakuuBrain": "bottomRight"` 这类非法值。r84 已修掉写入路径，但**旧的脏值会一直留在盘上**
+    /// <c>statBadgeCorner</c>/<c>statBadgeSource</c>，把它们落进了最后的 else 写进 <c>vakuuBrain</c>，
+    /// 于是磁盘上留下 `"vakuuBrain": "bottomRight"` 这类非法值。r84 已修掉写入路径，但**旧的脏值会一直留在盘上**
     /// （被 <see cref="NormalizeBrainMode"/> 兜成 heuristic，功能无影响，但日志与排查都容易误导）。
     /// 这里把所有字符串型策略字段归一到合法取值并写回；已合法则不写盘。
     /// </summary>
     public static bool TryRepairHistoricalValues(WakuuConfigData data)
     {
-        string brain = NormalizeBrainMode(data.wakuuBrain) ?? HeuristicBrainMode;
+        string brain = NormalizeBrainMode(data.vakuuBrain) ?? HeuristicBrainMode;
         string eventMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;
         string cardMode = NormalizeCardPickMode(data.cardPickMode) ?? LastChoiceMode;
         string tier = NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier;
         string corner = WakuuStatBadgeCorner.Normalize(data.statBadgeCorner);
         string source = WakuuStatBadgeSource.Normalize(data.statBadgeSource);
-        string viewMode = WakuuViewModes.Normalize(data.wakuuViewMode);
+        string viewMode = WakuuViewModes.Normalize(data.vakuuViewMode);
 
         bool changed =
-            brain != data.wakuuBrain
+            brain != data.vakuuBrain
             || eventMode != data.eventChoiceMode
             || cardMode != data.cardPickMode
             || tier != data.personalTier
             || corner != data.statBadgeCorner
             || source != data.statBadgeSource
-            || viewMode != data.wakuuViewMode;
+            || viewMode != data.vakuuViewMode;
 
         if (changed)
         {
-            data.wakuuBrain = brain;
+            data.vakuuBrain = brain;
             data.eventChoiceMode = eventMode;
             data.cardPickMode = cardMode;
             data.personalTier = tier;
             data.statBadgeCorner = corner;
             data.statBadgeSource = source;
-            data.wakuuViewMode = viewMode;
+            data.vakuuViewMode = viewMode;
         }
 
         return changed;
@@ -533,7 +533,7 @@ internal static class LocalWakuuAutopilotConfig
                 if (TryRepairHistoricalValues(data))
                 {
                     LocalMultiControlLogger.Warn(
-                        "瓦库托管配置检测到历史脏值（如旧版把角标位置误写进 wakuuBrain），已自动归一并写回。");
+                        "瓦库托管配置检测到历史脏值（如旧版把角标位置误写进 vakuuBrain），已自动归一并写回。");
                     WriteConfigData(data);
                 }
 
@@ -554,7 +554,7 @@ internal static class LocalWakuuAutopilotConfig
             LocalMultiControlLogger.Info(
                 $"瓦库托管生效配置: useVakuuForm={data.useVakuuForm}, playAllCards={data.playAllCards}, "
                 + $"backgroundMode={data.backgroundMode}, suppressVanillaEarring={data.suppressVanillaEarring}, "
-                + $"keepWakuuFormRelic={data.keepWakuuFormRelic}, "
+                + $"keepVakuuFormRelic={data.keepVakuuFormRelic}, "
                 + $"autoClaimCards={data.autoClaimCards}, autoClaimGoldRelics={data.autoClaimGoldRelics}, "
                 + $"autoClaimPotions={data.autoClaimPotions}, "
                 + $"autoChooseEvents={data.autoChooseEvents}, autoRestChoice={data.autoRestChoice}, "
@@ -566,17 +566,17 @@ internal static class LocalWakuuAutopilotConfig
                 + $"shopAssist={data.shopAssist}, shopAssistBuyNoData={data.shopAssistBuyNoData}, "
                 + $"shopAssistBuyRelics={data.shopAssistBuyRelics}, shopAssistBuyPotions={data.shopAssistBuyPotions}, "
                 + $"shopAssistBuyRemoval={data.shopAssistBuyRemoval}, "
-                + $"statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, fastWakuuPlay={data.fastWakuuPlay}, wakuuPlayQueue={data.wakuuPlayQueue}, wakuuPlayOverlap={data.wakuuPlayOverlap}, wakuuViewMode={WakuuViewModes.Normalize(data.wakuuViewMode)}, "
+                + $"statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, fastVakuuPlay={data.fastVakuuPlay}, vakuuPlayQueue={data.vakuuPlayQueue}, vakuuPlayOverlap={data.vakuuPlayOverlap}, vakuuViewMode={WakuuViewModes.Normalize(data.vakuuViewMode)}, "
                 + $"personalTier={NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier}, "
                 + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}, "
-                + $"wakuuBrain={data.wakuuBrain}");
+                + $"vakuuBrain={data.vakuuBrain}");
         }
 
         UseVakuuForm = data.useVakuuForm;
         PlayAllCards = data.playAllCards;
         BackgroundMode = data.backgroundMode;
         SuppressVanillaEarring = data.suppressVanillaEarring;
-        KeepWakuuFormRelic = data.keepWakuuFormRelic;
+        KeepWakuuFormRelic = data.keepVakuuFormRelic;
         AutoClaimCards = data.autoClaimCards;
         AutoClaimGoldRelics = data.autoClaimGoldRelics;
         AutoClaimPotions = data.autoClaimPotions;
@@ -600,14 +600,14 @@ internal static class LocalWakuuAutopilotConfig
         StatBadgeSource = WakuuStatBadgeSource.Normalize(data.statBadgeSource);
         PetHpBadge = data.petHpBadge;
         SkipTurnStartDrawAnim = data.skipTurnStartDrawAnim;
-        FastWakuuPlay = data.fastWakuuPlay;
-        WakuuPlayQueue = data.wakuuPlayQueue;
-        WakuuPlayOverlap = data.wakuuPlayOverlap;
-        ViewMode = WakuuViewModes.Normalize(data.wakuuViewMode);
+        FastWakuuPlay = data.fastVakuuPlay;
+        WakuuPlayQueue = data.vakuuPlayQueue;
+        WakuuPlayOverlap = data.vakuuPlayOverlap;
+        ViewMode = WakuuViewModes.Normalize(data.vakuuViewMode);
         PersonalTier = NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier;
         EventChoiceMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;
         CardPickMode = NormalizeCardPickMode(data.cardPickMode) ?? LastChoiceMode;
-        BrainMode = NormalizeBrainMode(data.wakuuBrain) ?? HeuristicBrainMode;
+        BrainMode = NormalizeBrainMode(data.vakuuBrain) ?? HeuristicBrainMode;
 
         // 配置变化 → 大脑缓存失效（下次主循环用新开关值重新创建）。
         WakuuBrainFactory.Reset();

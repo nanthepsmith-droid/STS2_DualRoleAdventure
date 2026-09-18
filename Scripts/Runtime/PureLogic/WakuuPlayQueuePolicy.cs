@@ -40,7 +40,7 @@ internal static class WakuuPlayQueuePolicy
     /// 本次出牌走哪条路径。三条条件（开关 / 本地多控生效 / 出牌者确实是瓦库形态托管）全部满足才走队列，
     /// 任何一条不满足都保持既有 inline 路径 —— 与 <c>WakuuPlaySpeedPolicy</c> 同口径。
     /// </summary>
-    /// <param name="toggleEnabled">配置开关（<c>wakuuPlayQueue</c>）是否开启（默认关）。</param>
+    /// <param name="toggleEnabled">配置开关（<c>vakuuPlayQueue</c>）是否开启（默认关）。</param>
     /// <param name="localMultiControlEnabled">本地多控是否生效（单人局不干预，保持原生行为）。</param>
     /// <param name="isVakuuFormPlayer">出牌者是否处于【瓦库形态】托管（只管瓦库自己的出牌）。</param>
     public static WakuuPlayPath DecidePath(
@@ -54,7 +54,7 @@ internal static class WakuuPlayQueuePolicy
     }
 
     /// <summary>
-    /// 是否处于**并发出牌模式**（改进-2 / 方案 D **第二步**，配置键 <c>wakuuPlayOverlap</c>）。
+    /// 是否处于**并发出牌模式**（改进-2 / 方案 D **第二步**，配置键 <c>vakuuPlayOverlap</c>）。
     ///
     /// 真值 = 「队列路径」且「并发开关开启」。该模式下有三个调用点共用同一判据：
     /// ① 出牌循环**不再抢**全局 1 槽 `SelectorScopeGate`（这才是"多瓦库真正重叠"的来源）；

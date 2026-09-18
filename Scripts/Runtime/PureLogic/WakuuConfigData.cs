@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 
 namespace LocalMultiControl.Scripts.Runtime;
@@ -23,7 +24,7 @@ internal sealed class WakuuConfigData
     /// 开启时：拦截 Player.RemoveRelicInternal 保住托管遗物，且判据在遗物缺失时按瓦库名单兜底并补发。
     /// 关闭时：回到 r82 及以前的行为（遗物可被正常移除，移除后瓦库停止自动操作）。
     /// </summary>
-    public bool keepWakuuFormRelic { get; set; } = true;
+    public bool keepVakuuFormRelic { get; set; } = true;
 
     public bool autoClaimCards { get; set; } = true;
 
@@ -181,12 +182,12 @@ internal sealed class WakuuConfigData
     /// 所以这是收益最大的加速点；该参数是游戏官方给自动出牌场景（Havoc / 复制药水）用的，不改数据语义。
     /// 关闭 = 恢复完整出牌动画（观感与旧版一致）。
     ///
-    /// 另：<see cref="wakuuPlayQueue"/> 的**队列路径**同样吃本开关（见 `CardPlayVisualsSkipPatch` /
+    /// 另：<see cref="vakuuPlayQueue"/> 的**队列路径**同样吃本开关（见 `CardPlayVisualsSkipPatch` /
     /// `WakuuPlaySpeedPolicy.ShouldSkipCardPileVisualsForQueuedPlay`）—— 队列出牌由 <c>PlayCardAction</c>
     /// 自己调 <c>OnPlayWrapper</c>，没有形参可传，只能靠前缀补丁强制置 true；它只能跳过收尾固定等待与
     /// 结算堆补间（约 0.15~0.3s/张），因为 <c>isAutoPlay: false</c> 分支本来就不走前段等待。
     /// </summary>
-    public bool fastWakuuPlay { get; set; } = true;
+    public bool fastVakuuPlay { get; set; } = true;
 
     /// <summary>
     /// 【实验档】瓦库出牌走原生动作队列（改进-2 / 方案 D，**默认关**）：
@@ -200,23 +201,23 @@ internal sealed class WakuuConfigData
     /// ③ <c>SpendResources</c> 由动作自己调用，外层**绝不能再花一次**（否则双重扣费）。
     /// 默认关 = 与既有行为完全一致。
     /// </summary>
-    public bool wakuuPlayQueue { get; set; }
+    public bool vakuuPlayQueue { get; set; }
 
     /// <summary>
     /// 【实验档 · 第二步】瓦库并发出牌（改进-2 / 方案 D 的最终目标，**默认关**，仅在
-    /// <see cref="wakuuPlayQueue"/> 开启时生效）。
+    /// <see cref="vakuuPlayQueue"/> 开启时生效）。
     ///
     /// 开启后，出牌循环**不再抢占全局 1 槽的 `SelectorScopeGate`**，看门狗调度也不再因
     /// 「已有作用域在飞」被挡 —— 多个瓦库真正重叠："某个瓦库在等自己的选牌时，其他瓦库与真人照常出牌"
     /// （原版 `ActionQueueSet.GetReadyAction` 会跳过等选择的队列，这是多人模式的真实语义）。
     /// 两种选择各归各的路由由 Phase 1（r113）的 `WakuuSelectorRegistry` 承担。
     ///
-    /// 代价与前提（详见方案 §12.11）：必须走队列路径（`wakuuPlayQueue` 开），否则闸门照旧；
+    /// 代价与前提（详见方案 §12.11）：必须走队列路径（`vakuuPlayQueue` 开），否则闸门照旧；
     /// 并发时不再把 `LocalContext.NetId` 钉在瓦库身上（出牌由游戏全局单泵执行、归属走注册表分发），
     /// 因此瓦库出牌的**前台视觉**会更接近"后台托管"的观感。
     /// 默认关 = 与既有行为完全一致。
     /// </summary>
-    public bool wakuuPlayOverlap { get; set; }
+    public bool vakuuPlayOverlap { get; set; }
 
     /// <summary>
     /// 瓦库托管视角策略（改进-2 / Phase 0，默认 `never` **不跟随**，2026-09-10 用户拍板）：
@@ -226,14 +227,14 @@ internal sealed class WakuuConfigData
     /// 仅当 `backgroundMode` 为 true 时生效；后台托管关闭时一律按 `always`（向后兼容）。
     /// 取值见 WakuuViewModes（纯逻辑单一来源）。
     /// </summary>
-    public string wakuuViewMode { get; set; } = WakuuViewModes.Default;
+    public string vakuuViewMode { get; set; } = WakuuViewModes.Default;
 
     public string eventChoiceMode { get; set; } = WakuuChoiceModes.First;
 
     public string cardPickMode { get; set; } = WakuuChoiceModes.Last;
 
     /// <summary>战斗中决策大脑：heuristic=启发式（默认，即现有出牌逻辑）/ auto=自动探测可用求解器。</summary>
-    public string wakuuBrain { get; set; } = WakuuBrainModes.Heuristic;
+    public string vakuuBrain { get; set; } = WakuuBrainModes.Heuristic;
 }
 
 /// <summary>瓦库大脑模式取值常量（单一来源）。</summary>
@@ -259,7 +260,133 @@ internal static class WakuuConfigJson
     /// <summary>解析配置 json；输入 null 返回 null（沿用当前生效值的语义由调用方处理）。</summary>
     public static WakuuConfigData? Parse(string json)
     {
-        return JsonSerializer.Deserialize<WakuuConfigData>(json, JsonOptions);
+        WakuuConfigData? data = JsonSerializer.Deserialize<WakuuConfigData>(json, JsonOptions);
+        if (data != null)
+        {
+            MigrateLegacyKeys(json, data);
+        }
+
+        return data;
+    }
+
+    /// <summary>
+    /// **旧键兼容迁移**（r140，Vakuu 拼写统一）：游戏里这个角色官方拼写是 <c>Vakuu</c>，
+    /// 而模组早期的配置键写成了 <c>Wakuu</c>。键名统一后，玩家盘上那份旧 json 里的旧键
+    /// 若没人管，升级一次设置就会被打回默认值 —— 所以在这里把旧值搬到新字段。
+    ///
+    /// 旧 → 新：`fastWakuuPlay` → `fastVakuuPlay`、`wakuuPlayQueue` → `vakuuPlayQueue`、
+    /// `wakuuPlayOverlap` → `vakuuPlayOverlap`、`wakuuViewMode` → `vakuuViewMode`、
+    /// `wakuuBrain` → `vakuuBrain`、`keepWakuuFormRelic` → `keepVakuuFormRelic`。
+    ///
+    /// 规则：
+    /// <list type="bullet">
+    /// <item>**新键已存在时以新键为准**（玩家若已手工改用新键，旧键不再覆盖它）；</item>
+    /// <item>写盘只输出新键 ⇒ 旧键自然淘汰，不需要额外的"删除旧字段"逻辑；</item>
+    /// <item>迁移是**尽力而为**：注释 / 尾逗号由解析选项容忍，任何异常一律吞掉 ——
+    /// 绝不能让"迁移"把"本来能读的配置"变成"读不了"。</item>
+    /// </list>
+    /// </summary>
+    private static void MigrateLegacyKeys(string json, WakuuConfigData data)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(json, new JsonDocumentOptions
+            {
+                CommentHandling = JsonCommentHandling.Skip,
+                AllowTrailingCommas = true,
+            });
+
+            JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return;
+            }
+
+            if (!HasKey(root, nameof(WakuuConfigData.keepVakuuFormRelic))
+                && TryReadBool(root, "keepWakuuFormRelic", out bool keepForm))
+            {
+                data.keepVakuuFormRelic = keepForm;
+            }
+
+            if (!HasKey(root, nameof(WakuuConfigData.fastVakuuPlay))
+                && TryReadBool(root, "fastWakuuPlay", out bool fastPlay))
+            {
+                data.fastVakuuPlay = fastPlay;
+            }
+
+            if (!HasKey(root, nameof(WakuuConfigData.vakuuPlayQueue))
+                && TryReadBool(root, "wakuuPlayQueue", out bool playQueue))
+            {
+                data.vakuuPlayQueue = playQueue;
+            }
+
+            if (!HasKey(root, nameof(WakuuConfigData.vakuuPlayOverlap))
+                && TryReadBool(root, "wakuuPlayOverlap", out bool playOverlap))
+            {
+                data.vakuuPlayOverlap = playOverlap;
+            }
+
+            if (!HasKey(root, nameof(WakuuConfigData.vakuuViewMode))
+                && TryReadString(root, "wakuuViewMode", out string viewMode))
+            {
+                data.vakuuViewMode = viewMode;
+            }
+
+            if (!HasKey(root, nameof(WakuuConfigData.vakuuBrain))
+                && TryReadString(root, "wakuuBrain", out string brain))
+            {
+                data.vakuuBrain = brain;
+            }
+        }
+        catch (Exception)
+        {
+            // 迁移失败不影响已反序列化出的配置：旧键按"未设置"处理（等同默认值）。
+        }
+    }
+
+    /// <summary>json 里是否存在该键（不区分大小写，与反序列化口径一致）。</summary>
+    private static bool HasKey(JsonElement root, string name)
+    {
+        foreach (JsonProperty property in root.EnumerateObject())
+        {
+            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryReadBool(JsonElement root, string key, out bool value)
+    {
+        value = false;
+        if (!root.TryGetProperty(key, out JsonElement element)
+            || (element.ValueKind != JsonValueKind.True && element.ValueKind != JsonValueKind.False))
+        {
+            return false;
+        }
+
+        value = element.GetBoolean();
+        return true;
+    }
+
+    private static bool TryReadString(JsonElement root, string key, out string value)
+    {
+        value = string.Empty;
+        if (!root.TryGetProperty(key, out JsonElement element) || element.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        string? text = element.GetString();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        value = text;
+        return true;
     }
 
     /// <summary>序列化为缩进 json 文本。</summary>
