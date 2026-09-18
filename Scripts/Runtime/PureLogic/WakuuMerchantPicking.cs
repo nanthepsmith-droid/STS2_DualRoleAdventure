@@ -30,16 +30,23 @@ internal readonly struct WakuuMerchantCardCandidate
 /// </summary>
 internal readonly struct WakuuMerchantPricedItem
 {
-    public WakuuMerchantPricedItem(string itemId, int price)
+    public WakuuMerchantPricedItem(string itemId, int price, WakuuShopSignal? signal = null)
     {
         ItemId = itemId;
         Price = price;
+        Signal = signal;
     }
 
     /// <summary>商品标识（遗物 / 药水的 Id.Entry），仅用于日志与空值判定。</summary>
     public string ItemId { get; }
 
     public int Price { get; }
+
+    /// <summary>
+    /// 个人统计信号（可选，2026-09-18）：仅当「个人统计决策辅助」开关开启且样本足够时由运行层查好填入；
+    /// null = 无个人数据（回退纯价格规则）。判据见 <see cref="WakuuMerchantPicking.IsPersonalStatsVeto"/>。
+    /// </summary>
+    public WakuuShopSignal? Signal { get; }
 }
 
 /// <summary>
@@ -137,7 +144,9 @@ internal static class WakuuMerchantPicking
     public static List<int> SelectPricedBuys(
         IReadOnlyList<WakuuMerchantPricedItem> items,
         int gold,
-        int goldFloor = DefaultGoldFloor)
+        int goldFloor = DefaultGoldFloor,
+        long personalMinSample = 0,
+        double personalMinGain = 0.0)
     {
         List<int> picks = new();
         if (items == null || items.Count == 0 || gold <= 0)
@@ -154,6 +163,11 @@ internal static class WakuuMerchantPicking
                 continue; // 未上架 / 读不到价格（SafeCost 兜底 int.MaxValue 也会被下面拦掉）
             }
 
+            if (IsPersonalStatsVeto(item.Signal, personalMinSample, personalMinGain))
+            {
+                continue; // 个人统计负面否决：买过它的局明显更容易输
+            }
+
             if (item.Price > budget - goldFloor)
             {
                 // 金币保底：买完这件就跌破保底线，不买。
@@ -167,5 +181,31 @@ internal static class WakuuMerchantPicking
         }
 
         return picks;
+    }
+
+    /// <summary>
+    /// **个人统计负面否决**（Phase 4 增量，2026-09-18）：是否因为"买过它反而更容易输"而不买。
+    ///
+    /// 与卡牌 / 事件的负面信号出局同一套哲学（r48 教训：候选里只有部分"有数据"时，
+    /// 那个唯一有数据的候选会自动胜出 —— 哪怕它的信号是负的，等于用一个确切的坏信号
+    /// 覆盖中性默认，比不查表更糟）。这里**比卡牌更保守：只做否决、不做主动挑选** ——
+    /// 遗物 / 药水既没有选择率、样本也远少于卡牌，"用统计决定该买什么"是过度解读，
+    /// "阻止买明显亏的东西"才是它可靠的用途。
+    ///
+    /// 条件（三条全满足才否决）：① 统计已启用（<paramref name="minSample"/> &gt; 0）；
+    /// ② 有信号且"买过它的已结束局数"达到门槛；③ 因果增益低于 <paramref name="minGain"/>（默认 0）。
+    /// </summary>
+    public static bool IsPersonalStatsVeto(
+        WakuuShopSignal? signal,
+        long minSample,
+        double minGain = 0.0)
+    {
+        if (minSample <= 0 || !signal.HasValue)
+        {
+            return false; // 未启用统计 / 无数据 → 不否决（回退纯价格规则）
+        }
+
+        WakuuShopSignal value = signal.Value;
+        return value.BoughtRuns >= minSample && value.WinRateGain < minGain;
     }
 }

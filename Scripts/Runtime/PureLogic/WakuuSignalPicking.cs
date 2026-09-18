@@ -92,6 +92,59 @@ internal readonly struct WakuuEventSignal
 }
 
 /// <summary>
+/// 商店商品（遗物 / 药水）的**个人统计**信号（Phase 4 增量，2026-09-18）。
+///
+/// 数据源 = 个人记录器 <c>shopPurchases</c> × <c>runs</c> 胜负（查询见
+/// <c>WakuuPersonalQuery.CountShopWinSlice</c> / <c>TryGetShopDecisionSignal</c>）。
+///
+/// ⚠ 与卡牌 / 事件信号的关键差异：**没有选择率/命中率** —— <c>shopPurchases</c> 只记
+/// 「买了什么」，**不记「商店摆出过什么」**（那需要 offer 记录），所以算不出"摆在面前但没买"。
+/// 基准只能取**该切片内其他已结束局的胜率**，语义是「买过它的局 vs 其他局」。
+/// ⇒ 定位是**负面否决**（买过它反而更容易输 → 不买），不足以支撑精细排序。
+/// 另：角色维度只作用于 held（<c>shopPurchases</c> 有 character），<c>runs</c> 表没有角色字段，
+/// 所以指定 character 时基准仍是该模式下的全量。
+/// </summary>
+internal readonly struct WakuuShopSignal
+{
+    public WakuuShopSignal(
+        string kind,
+        string item,
+        long boughtRuns,
+        double winRateHeld,
+        long baselineRuns,
+        double winRateBaseline)
+    {
+        Kind = kind ?? string.Empty;
+        Item = item ?? string.Empty;
+        BoughtRuns = boughtRuns;
+        WinRateHeld = winRateHeld;
+        BaselineRuns = baselineRuns;
+        WinRateBaseline = winRateBaseline;
+    }
+
+    /// <summary>商品类别（card / relic / potion，见 <c>WakuuPersonalQuery.ShopKind*</c>）。</summary>
+    public string Kind { get; }
+
+    /// <summary>商品裸 id（RelicModel / PotionModel 的 <c>Id.Entry</c>）。</summary>
+    public string Item { get; }
+
+    /// <summary>买过它的**已结束**局数（样本量；低于门槛视为无数据）。</summary>
+    public long BoughtRuns { get; }
+
+    /// <summary>买过它的那批局的胜率（0~1）。</summary>
+    public double WinRateHeld { get; }
+
+    /// <summary>基准局数：同切片内**没买过它**的已结束局。</summary>
+    public long BaselineRuns { get; }
+
+    /// <summary>基准胜率（0~1）。<see cref="BaselineRuns"/> 为 0 时该值为 0，调用方须先看样本量。</summary>
+    public double WinRateBaseline { get; }
+
+    /// <summary>因果增益近似：买过它的胜率 − 基准胜率。越负越可疑（买了反而更容易输）。</summary>
+    public double WinRateGain => WinRateHeld - WinRateBaseline;
+}
+
+/// <summary>
 /// 社区统计信号决策纯函数（可行性分析 §8.2 / §8.4.1 的第②③级：社区统计 → 兜底策略）。
 ///
 /// 设计原则：本文件不依赖任何游戏类型与第三方类型，全部输入输出都是基础类型，可直接单测。

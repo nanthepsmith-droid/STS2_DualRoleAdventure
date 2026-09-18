@@ -5,6 +5,23 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 ## [Unreleased]
 
 ### Added
+- **商店自动化 v3：个人统计接入（否决式）+ 自动删牌服务（2026-09-18，r139）**：
+  - **遗物 / 药水决策现在读个人统计**：新增「商店购买 → 局胜负」切片
+    （`WakuuPersonalQuery.CountShopWinSlice` / `TryGetShopDecisionSignal`）——
+    held = 买了该商品的局，基准 = 同切片内**没买它**的已结束局（abandon 不进分母），
+    增益 = 买过胜率 − 基准胜率。开「个人统计决策辅助」且买过 ≥ 3 局时，**增益为负 → 不买**
+    （`WakuuMerchantPicking.IsPersonalStatsVeto`）。**只做否决、不做主动挑选**：
+    遗物 / 药水没有选择率（`shopPurchases` 只记"买了什么"、不记"摆出过什么"）、样本远少于卡牌，
+    "用统计决定该买什么"是过度解读；无数据 / 开关关 → 回退纯价格规则（行为与 v2 一致）。
+  - **新增 `shopAssistBuyRemoval`（商店自动删牌，默认关）**：金币保底允许时替瓦库买一次删牌服务，
+    用 `Remove` 场景的选牌优先级挑一张删掉（开「智能选牌优先级」时按 诅咒 > 状态 > 任务 > 打击 >
+    基础防御 > 其余，否则按「战斗内选牌策略」）。
+    ⚠ **没有走原版入口**：`MerchantCardRemovalEntry.OnTryPurchaseWrapper` 内部调
+    `OneOffSynchronizer.DoLocalMerchantCardRemoval`，它读的是**同步器自己的** `_localPlayerId`
+    （不是 `LocalContext`）并会广播 `MerchantCardRemovalMessage`（接收端对「sender == LocalPlayer」
+    直接抛 `InvalidOperationException`）—— 本地多控下"其他玩家"全在同一进程，会删错人的牌 / 重复执行。
+    改为自实现它的后半段（选牌 → 扣钱 → 移除 → 计数 → `OnCardRemovalUsed` + `AfterItemPurchased`
+    + `InvokePurchaseCompleted`），**不广播、只认传入的 player**。
 - **商店自动化增量：自动买遗物 / 买药水（2026-09-18，r137）**：`shopAssist`（默认关）此前只买卡，
   现补齐 Phase 4 的两块：新增子开关 **`shopAssistBuyRelics`（商店自动买遗物）** 与
   **`shopAssistBuyPotions`（商店自动买药水）**，均**默认关**、均需总开关开启。
@@ -17,9 +34,9 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   顺带修一处既有下标错位：买卡原先在跳过 Null 占位卡时只 `continue`、不往候选补位，
   导致候选列表与库存条目下标错开，一旦店里出现占位卡就会买到"错位的那张"（连读到的价格都是别人的）；
   现改为候选与条目**成对**收集。
-  **删牌服务仍未做**（刻意）：它走 `OneOffSynchronizer.DoLocalMerchantCardRemoval`，该方法读的是
-  **该同步器自己的** `_localPlayerId`（不是 `LocalContext`）并会广播 `MerchantCardRemovalMessage`，
-  本地多控下的归属与消息回环需要单独处理，单列一轮做。
+  ~~删牌服务仍未做（刻意）~~ —— **v3 已补齐**（见上方 r139 条目）：原版入口走
+  `OneOffSynchronizer.DoLocalMerchantCardRemoval`，该方法读的是**该同步器自己的** `_localPlayerId`
+  （不是 `LocalContext`）并会广播 `MerchantCardRemovalMessage`，所以改成了自实现、不广播。
 - **瓦库自动用药补 3 条规则（2026-09-17，r136）**：覆盖率对账（`tools/coverage_digest.py`，报告
   `maintenance-docs/combat-hook-coverage.md`）抓出「一览表写了使用时机、但规则表与代码里都没有」的
   三种原版药水 ⇒ 按一览表写的时机补实现（`LocalWakuuPotionAutoUse` 规则表 +3、单测 +3）：

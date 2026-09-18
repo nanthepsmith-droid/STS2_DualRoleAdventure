@@ -5,14 +5,19 @@ using System.Threading;
 using System.Threading.Tasks;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Patch;
+using MegaCrit.Sts2.Core.CardSelection;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Cards;
+using MegaCrit.Sts2.Core.Entities.Gold;
 using MegaCrit.Sts2.Core.Entities.Merchant;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Entities.Potions;
 using MegaCrit.Sts2.Core.Entities.Relics;
 using MegaCrit.Sts2.Core.Helpers;
+using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
 
@@ -23,12 +28,18 @@ namespace LocalMultiControl.Scripts.Runtime;
 /// 瓦库角色的商店库存被打开（NMerchantInventory.Initialize）后，等界面就绪，依次自动：
 /// ① 买卡（v1，r64）——角色卡 + 无色卡按「社区统计胜率 ≥ 门槛 + 支付后保留 ≥ 金币保底」；
 /// ② 买遗物（v2，2026-09-18，开关 shopAssistBuyRelics）——无评级可查，只按价格 + 金币保底；
-/// ③ 买药水（v2，2026-09-18，开关 shopAssistBuyPotions）——同上，且药水栏必须还有空位。
+/// ③ 买药水（v2，2026-09-18，开关 shopAssistBuyPotions）——同上，且药水栏必须还有空位；
+/// ④ 删牌服务（v3，2026-09-18，开关 shopAssistBuyRemoval）——**自实现**原版流程的后半段
+///    （原版入口 `OneOffSynchronizer.DoLocalMerchantCardRemoval` 会广播消息、且读同步器自己的
+///    `_localPlayerId`，多控下不安全，详见该方法注释）。
 ///
-/// **删牌服务仍未做**（刻意）：它走
-/// <c>RunManager.OneOffSynchronizer.DoLocalMerchantCardRemoval</c>，该方法读**该同步器自己的**
-/// <c>_localPlayerId</c>（不是 <see cref="LocalContext"/>）并会广播 <c>MerchantCardRemovalMessage</c>；
-/// 本地多控下归属与消息回环需要单独处理，随手接会删错人的牌、或让别的角色重复执行，故单列一轮做。
+/// **个人统计（②③）**：`personalAssist` 开启且样本足够时，用「买过它的局 vs 其他局」的胜率差
+/// 做**负面否决**（买过反而更容易输就不买）；**只否决、不主动挑选** ——
+/// 遗物 / 药水没有选择率、样本远少于卡牌，"用统计决定该买什么"是过度解读。
+/// 无数据 / 开关关闭 → 不干预，回退纯价格规则（行为与本功能未接入时一致）。
+///
+/// ⚠ **同一家商店只采购一次**（<see cref="_handled"/> 按 (room, player) 去重，用户 2026-09-18 拍板接受）：
+/// 买完再用控制台加钱不会补买；真实游戏里金币只会在商店界面**之外**变化，不存在该场景。
 ///
 /// 与污浊药水投掷（LocalWakuuMerchantFoulThrow）同入口体系但独立触发时机：库存打开才买。
 /// 为什么开库存触发而不是进房触发：合并屏/多控下只有切到该角色的商店视图，其库存才会被
@@ -116,6 +127,7 @@ internal static class LocalWakuuMerchantAuto
                 await TryAutoBuyCardsAsync(player, inventory);
                 await TryAutoBuyRelicsAsync(player, inventory);
                 await TryAutoBuyPotionsAsync(player, inventory);
+                await TryAutoBuyRemovalAsync(player, inventory);
             }
             finally
             {
@@ -251,18 +263,26 @@ internal static class LocalWakuuMerchantAuto
                 continue; // 未上架 / 已被买走（ClearAfterPurchase 会把 Model 置 null）
             }
 
-            plan.Add((entry, new WakuuMerchantPricedItem(relic.Id.Entry, SafeCost(entry)), relic.Rarity.ToString()));
+            plan.Add((
+                entry,
+                new WakuuMerchantPricedItem(
+                    relic.Id.Entry,
+                    SafeCost(entry),
+                    TryGetShopSignal(player, WakuuPersonalQuery.ShopKindRelic, relic.Id.Entry)),
+                relic.Rarity.ToString()));
         }
 
-        List<WakuuMerchantPricedItem> candidates = plan.Select((p) => p.Candidate).ToList();
-        List<int> picks = WakuuMerchantPicking.SelectPricedBuys(candidates, player.Gold);
+        (List<WakuuMerchantPricedItem> candidates, long personalMinSample) = BuildPricedCandidates(plan);
+        List<int> picks = WakuuMerchantPicking.SelectPricedBuys(
+            candidates, player.Gold, personalMinSample: personalMinSample);
         if (picks.Count == 0)
         {
             int cheapest = candidates.Count == 0 ? 0 : candidates.Min((c) => c.Price);
             LocalMultiControlLogger.Info(
                 $"瓦库商店自动买遗物: 无符合条件候选，不买。player={player.NetId}, "
                 + $"候选={candidates.Count}, 金币={player.Gold}, 最便宜={cheapest}, "
-                + $"保留≥{WakuuMerchantPicking.DefaultGoldFloor}金");
+                + $"保留≥{WakuuMerchantPicking.DefaultGoldFloor}金, "
+                + DescribePersonalStats(candidates, personalMinSample));
             return;
         }
 
@@ -342,18 +362,26 @@ internal static class LocalWakuuMerchantAuto
                 continue;
             }
 
-            plan.Add((entry, new WakuuMerchantPricedItem(potion.Id.Entry, SafeCost(entry)), potion.Rarity.ToString()));
+            plan.Add((
+                entry,
+                new WakuuMerchantPricedItem(
+                    potion.Id.Entry,
+                    SafeCost(entry),
+                    TryGetShopSignal(player, WakuuPersonalQuery.ShopKindPotion, potion.Id.Entry)),
+                potion.Rarity.ToString()));
         }
 
-        List<WakuuMerchantPricedItem> candidates = plan.Select((p) => p.Candidate).ToList();
-        List<int> picks = WakuuMerchantPicking.SelectPricedBuys(candidates, player.Gold);
+        (List<WakuuMerchantPricedItem> candidates, long personalMinSample) = BuildPricedCandidates(plan);
+        List<int> picks = WakuuMerchantPicking.SelectPricedBuys(
+            candidates, player.Gold, personalMinSample: personalMinSample);
         if (picks.Count == 0)
         {
             int cheapest = candidates.Count == 0 ? 0 : candidates.Min((c) => c.Price);
             LocalMultiControlLogger.Info(
                 $"瓦库商店自动买药水: 无符合条件候选，不买。player={player.NetId}, "
                 + $"候选={candidates.Count}, 金币={player.Gold}, 最便宜={cheapest}, "
-                + $"保留≥{WakuuMerchantPicking.DefaultGoldFloor}金");
+                + $"保留≥{WakuuMerchantPicking.DefaultGoldFloor}金, "
+                + DescribePersonalStats(candidates, personalMinSample));
             return;
         }
 
@@ -406,6 +434,147 @@ internal static class LocalWakuuMerchantAuto
 
         LocalMultiControlLogger.Info(
             $"瓦库商店自动买药水完成: player={player.NetId}, 买了={bought}, 花={spent}");
+    }
+
+    /// <summary>
+    /// **自动删牌服务**（v3，2026-09-18，开关 <c>shopAssistBuyRemoval</c>，默认关）。
+    ///
+    /// ⚠ **刻意不走原版 `MerchantCardRemovalEntry.OnTryPurchaseWrapper`**：它内部调
+    /// `OneOffSynchronizer.DoLocalMerchantCardRemoval`，而该方法
+    /// ① 用的是**同步器自己的** `_localPlayerId`（不是 `LocalContext`）—— 多控下不对齐就会删错人的牌；
+    /// ② 会 `_gameService.SendMessage(MerchantCardRemovalMessage)` 广播，接收端
+    /// `HandleMerchantCardRemoval` 对「sender == LocalPlayer」直接抛 `InvalidOperationException`，
+    /// 而本地多控下"其他玩家"全在同一进程 ⇒ 要么重复执行、要么刷错误日志。
+    /// 所以这里**复刻它的后半段**（选牌 → 扣钱 → 从牌组移除 → 计数 → 收尾），但不广播、只认传入的 player。
+    ///
+    /// 收尾三件事与原版一致：`Inventory.OnCardRemovalUsed()`（标记条目 Used + 刷新视觉）、
+    /// `Hook.AfterItemPurchased`（会员卡之类折扣遗物靠它）、`InvokePurchaseCompleted`（触发库存刷新）。
+    ///
+    /// 选牌用 <see cref="WakuuPickScenario.Remove"/> 的策略选择器（与事件 / 营地删牌同一套优先级表）；
+    /// 并写入选牌归属者 —— `CardSelectCmd.FromDeckGeneric` **不在** `CardSelectForegroundSwitchPatch`
+    /// 的 6 个 From* 前缀清单里，不写就会被 `CardSelectCmdSelectorGuardPatch` 按异步链残留的旧归属者
+    /// 把选择器摘掉（r134 卡牌奖励踩过同一个坑）。
+    /// </summary>
+    private static async Task TryAutoBuyRemovalAsync(Player player, MerchantInventory inventory)
+    {
+        if (!LocalWakuuAutopilotConfig.ShopAssistBuyRemoval)
+        {
+            return;
+        }
+
+        MerchantCardRemovalEntry? entry = inventory.CardRemovalEntry;
+        if (entry == null || entry.Used)
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库商店自动删牌跳过：本店删牌服务不可用。player={player.NetId}, used={entry?.Used}");
+            return;
+        }
+
+        int cost = SafeCost(entry);
+        if (cost <= 0 || cost > player.Gold - WakuuMerchantPicking.DefaultGoldFloor)
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库商店自动删牌: 金币不足或价格异常，不删。player={player.NetId}, "
+                + $"价格={cost}, 金币={player.Gold}, 保留≥{WakuuMerchantPicking.DefaultGoldFloor}金");
+            return;
+        }
+
+        ulong? previousChoiceOwner = CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value;
+        CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value = player.NetId;
+        try
+        {
+            CardSelectorPrefs prefs = new(CardSelectorPrefs.RemoveSelectionPrompt, 1)
+            {
+                Cancelable = true,
+                RequireManualConfirmation = true,
+            };
+
+            using (WakuuSelectorRegistry.Open(player.NetId, new LocalWakuuStrategySelector(WakuuPickScenario.Remove)
+                   {
+                       LogLabel = "商店删牌服务",
+                   }))
+            {
+                CardModel? card = (await CardSelectCmd.FromDeckForRemoval(player, prefs)).FirstOrDefault();
+                if (card == null)
+                {
+                    LocalMultiControlLogger.Info(
+                        $"瓦库商店自动删牌: 没有选出可删的牌，放弃。player={player.NetId}");
+                    return;
+                }
+
+                await PlayerCmd.LoseGold(cost, player, GoldLossType.Spent);
+                await CardPileCmd.RemoveFromDeck(card);
+                player.ExtraFields.CardShopRemovalsUsed++;
+                NRun.Instance?.MerchantRoom?.Inventory.OnCardRemovalUsed();
+                await Hook.AfterItemPurchased(player.RunState, player, entry, cost);
+                entry.InvokePurchaseCompleted(entry);
+
+                LocalMultiControlLogger.Info(
+                    $"瓦库商店自动删牌成功: player={player.NetId}, card={card.Id.Entry}, gold={cost}");
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn(
+                $"瓦库商店自动删牌失败: player={player.NetId}, error={exception.Message}");
+        }
+        finally
+        {
+            CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value = previousChoiceOwner;
+        }
+    }
+
+    /// <summary>
+    /// 查单个商品的个人统计信号（仅当「个人统计决策辅助」开启时；关闭 / 无数据一律返回 null = 不干预）。
+    /// 判据与兜底见 <see cref="WakuuMerchantPicking.IsPersonalStatsVeto"/>。
+    /// </summary>
+    private static WakuuShopSignal? TryGetShopSignal(Player player, string kind, string itemId)
+    {
+        if (!LocalWakuuAutopilotConfig.PersonalAssist || string.IsNullOrEmpty(itemId))
+        {
+            return null;
+        }
+
+        PersonalStore store = LocalPersonalRecorder.Snapshot();
+        if (store.shopPurchases.Count == 0)
+        {
+            return null;
+        }
+
+        bool isMulti = player.RunState?.Players.Count > 1;
+        string characterId = player.Character?.Id?.Entry?.ToUpperInvariant() ?? string.Empty;
+        return WakuuPersonalQuery.TryGetShopDecisionSignal(
+            store, kind, itemId, isMulti, characterId,
+            tierPreference: LocalWakuuAutopilotConfig.PersonalTier);
+    }
+
+    /// <summary>把「条目 ↔ 候选」配对表拆成纯逻辑候选列表，并给出个人统计样本门槛（开关关时为 0 = 不干预）。</summary>
+    private static (List<WakuuMerchantPricedItem> Candidates, long PersonalMinSample) BuildPricedCandidates<T>(
+        List<(T Entry, WakuuMerchantPricedItem Candidate, string Rarity)> plan)
+    {
+        List<WakuuMerchantPricedItem> candidates = plan.Select((p) => p.Candidate).ToList();
+        long minSample = LocalWakuuAutopilotConfig.PersonalAssist
+            ? WakuuPersonalQuery.DefaultMinPersonalCount
+            : 0;
+        return (candidates, minSample);
+    }
+
+    /// <summary>
+    /// 日志用：个人统计链的样本概况。把「开关没开」「开了但一件都没数据」「有几件被否决」区分开
+    /// —— 否则"统计没生效"与"没数据"在日志里长得一样（r115 的教训）。
+    /// </summary>
+    private static string DescribePersonalStats(
+        IReadOnlyList<WakuuMerchantPricedItem> candidates,
+        long personalMinSample)
+    {
+        if (personalMinSample <= 0)
+        {
+            return "个人统计=关";
+        }
+
+        int withSignal = candidates.Count((c) => c.Signal.HasValue);
+        int vetoed = candidates.Count((c) => WakuuMerchantPicking.IsPersonalStatsVeto(c.Signal, personalMinSample));
+        return $"个人统计样本={withSignal}/{candidates.Count}, 否决={vetoed}, 门槛={personalMinSample}局";
     }
 
     private static int SafeCost(MerchantEntry entry)

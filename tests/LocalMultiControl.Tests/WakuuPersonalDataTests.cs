@@ -489,4 +489,75 @@ public class WakuuPersonalDataTests
             Assert.That(store.cardOffers.Any((c) => c.card == "CARD_C"), Is.True);  // 已结束 → 留
         });
     }
+
+    [Test]
+    public void 商店购买胜负归因_买过它的局对比其他局()
+    {
+        // Phase 4 增量（2026-09-18）：shopPurchases 只记"买了什么"、不记"摆出过什么"，
+        // 所以基准是「其他已结束局」，不是「摆了但没买」。
+        PersonalStore store = MakeStore();
+        store.runs.Add(Run("r1", true, "win"));
+        store.runs.Add(Run("r2", true, "loss"));
+        store.runs.Add(Run("r3", true, "win"));
+        store.runs.Add(Run("r4", true, "win"));
+        store.runs.Add(Run("r5", true, "abandon")); // abandon：两侧都不进分母
+        store.shopPurchases.Add(Shop("r1", true, "IRONCLAD", 1, WakuuPersonalQuery.ShopKindRelic, "RELIC_A", 175));
+        store.shopPurchases.Add(Shop("r2", true, "IRONCLAD", 1, WakuuPersonalQuery.ShopKindRelic, "RELIC_A", 175));
+        store.shopPurchases.Add(Shop("r5", true, "IRONCLAD", 1, WakuuPersonalQuery.ShopKindRelic, "RELIC_A", 175));
+
+        PersonalWinSlice slice = WakuuPersonalQuery.CountShopWinSlice(
+            store, WakuuPersonalQuery.ShopKindRelic, "RELIC_A", isMulti: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(slice.HeldRuns, Is.EqualTo(2));    // r1 / r2（r5 abandon 不计）
+            Assert.That(slice.HeldWins, Is.EqualTo(1));
+            Assert.That(slice.SkippedRuns, Is.EqualTo(2)); // r3 / r4（买过它的局已剔除）
+            Assert.That(slice.SkippedWins, Is.EqualTo(2));
+            Assert.That(slice.WinRateHeld, Is.EqualTo(0.5).Within(1e-9));
+            Assert.That(slice.WinRateSkipped, Is.EqualTo(1.0).Within(1e-9));
+        });
+
+        // 类别不匹配 → 无信号
+        Assert.That(
+            WakuuPersonalQuery.CountShopWinSlice(store, WakuuPersonalQuery.ShopKindPotion, "RELIC_A", isMulti: true)
+                .HeldRuns,
+            Is.EqualTo(0));
+    }
+
+    [Test]
+    public void 商店决策信号_样本不足或无基准时返回空()
+    {
+        PersonalStore store = MakeStore();
+        store.runs.Add(Run("r1", true, "win"));
+        store.runs.Add(Run("r2", true, "loss"));
+        store.runs.Add(Run("r3", true, "win"));
+        store.shopPurchases.Add(Shop("r1", true, "IRONCLAD", 1, WakuuPersonalQuery.ShopKindRelic, "RELIC_A", 175));
+        store.shopPurchases.Add(Shop("r2", true, "IRONCLAD", 1, WakuuPersonalQuery.ShopKindRelic, "RELIC_A", 175));
+
+        // 买过 2 局 < 门槛 3 → null
+        Assert.That(
+            WakuuPersonalQuery.TryGetShopDecisionSignal(store, WakuuPersonalQuery.ShopKindRelic, "RELIC_A", true, "IRONCLAD"),
+            Is.Null);
+
+        // 补齐到 3 局，但其他局都买掉 → 基准为 0 → 仍 null（没有基准就没有增益可言）
+        store.shopPurchases.Add(Shop("r3", true, "IRONCLAD", 1, WakuuPersonalQuery.ShopKindRelic, "RELIC_A", 175));
+        Assert.That(
+            WakuuPersonalQuery.TryGetShopDecisionSignal(store, WakuuPersonalQuery.ShopKindRelic, "RELIC_A", true, "IRONCLAD"),
+            Is.Null);
+
+        // 出现没买过它的局 → 出信号，增益 = 买过胜率 − 基准胜率
+        store.runs.Add(Run("r4", true, "win"));
+        WakuuShopSignal? signal = WakuuPersonalQuery.TryGetShopDecisionSignal(
+            store, WakuuPersonalQuery.ShopKindRelic, "RELIC_A", true, "IRONCLAD");
+
+        Assert.That(signal, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(signal!.Value.BoughtRuns, Is.EqualTo(3));
+            Assert.That(signal.Value.WinRateHeld, Is.EqualTo(2.0 / 3.0).Within(1e-9));
+            Assert.That(signal.Value.BaselineRuns, Is.EqualTo(1));
+            Assert.That(signal.Value.WinRateGain, Is.EqualTo(2.0 / 3.0 - 1.0).Within(1e-9));
+        });
+    }
 }

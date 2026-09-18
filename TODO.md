@@ -903,31 +903,49 @@
   店里一旦出现 Null 占位卡（2026-09-07 实测出现过），后续 `picks` 里的下标就会买到"错位的那张"、
   读到的价格也是别人的。现改为候选与条目**成对**收集（`plan`），下标恒等；
   新增的遗物 / 药水路径从一开始就用成对收集。
-- **删牌服务仍未做（刻意，不是漏做）**：它走
-  `MerchantCardRemovalEntry.OnTryPurchaseWrapper → RunManager.OneOffSynchronizer.DoLocalMerchantCardRemoval`，
-  两个坑都必须在多控下专门处理：
-  ① 该方法用的是**同步器自己的** `_localPlayerId`（`OneOffSynchronizer.LocalPlayer`，不是 `LocalContext`），
-     而 `AlignContext` 目前只对齐了 `RewardsSetSynchronizer` / `RewardSynchronizer`
-     ⇒ 不处理会**删真人的牌、扣瓦库的钱**；
-  ② 它会 `_gameService.SendMessage(MerchantCardRemovalMessage)` 广播，接收端 `HandleMerchantCardRemoval`
-     对「sender == LocalPlayer」直接抛 `InvalidOperationException`
-     ⇒ 本地回环下要先确认消息投递与异常处理路径，否则要么重复执行、要么刷错误日志。
-  选牌侧本身不难：压 `WakuuPickScenario.Remove` 的策略选择器 + 写 `CurrentChoicePlayerId`
-  （与 r134 的卡牌奖励同一套；`CardSelectCmd.FromDeckGeneric` 的 `Selector != null` 分支优先于
-  `RequireManualConfirmation`，压栈后不会弹屏）。
-  **下一步**：单开一轮做，先按上面两点取证（`AlignContext` 补 `OneOffSynchronizer` + 消息回环实测）。
-- **门禁**：构建 0 警告 0 错误、**507 单测全绿**（502 → +5：`WakuuMerchantPickingTests` 遗物/药水 5 例 +
-  `WakuuConfigJsonTests` 默认值/camelCase 断言同步）、`clr_compat_check` PASS、`preflight.ps1 -Deploy`
-  **4 PASS / 3 SKIP**、部署位 marker **`2026-09-18-r137`**、`dll_check --deployed` 全绿
-  （`SelectPricedBuys` / `shopAssistBuyRelics` / `shopAssistBuyPotions` / `WakuuMerchantPricedItem` 在、
-  `__runOriginal` 不在）、部署位与仓库根 **字节一致**（sha256 `a3360b236c70…`）。**未 commit**。
-- **实机验证方法（请复测）**：设置页「瓦库托管」区把 **「商店自动买卡」+「商店自动买遗物」+
-  「商店自动买药水」** 三个开关都打开 → 进商店切到瓦库视图，期望日志：
+- **删牌服务 + 个人统计：2026-09-18（r139）已做**（用户指示「遗物/药水决策要用统计」「删牌也做掉」）：
+  - **新增开关 `shopAssistBuyRemoval`（商店自动删牌，默认关）**：金币保底允许时买一次删牌服务，
+    并用 `WakuuPickScenario.Remove` 的选牌优先级挑一张删掉。
+    ⚠ **刻意没走原版入口** —— 它有两个多控致命伤：
+    ① `OneOffSynchronizer.DoLocalMerchantCardRemoval` 用的是**同步器自己的** `_localPlayerId`
+       （不是 `LocalContext`；`AlignContext` 只对齐了 Rewards/Reward 两个同步器）
+       ⇒ 会**删真人的牌、扣瓦库的钱**；
+    ② 它会 `_gameService.SendMessage(MerchantCardRemovalMessage)` 广播，接收端
+       `HandleMerchantCardRemoval` 对「sender == LocalPlayer」直接抛 `InvalidOperationException`，
+       而本地多控下"其他玩家"全在同一进程 ⇒ 要么重复执行、要么刷错误日志。
+    ⇒ 改为**自实现它的后半段**：`CardSelectCmd.FromDeckForRemoval`（压选择器 + 写
+    `CurrentChoicePlayerId`，与 r134 卡牌奖励同一套；`FromDeckGeneric` 的 `Selector != null` 分支
+    优先于 `RequireManualConfirmation`，压栈后不会弹屏）→ `PlayerCmd.LoseGold` →
+    `CardPileCmd.RemoveFromDeck` → `CardShopRemovalsUsed++` →
+    `NRun.Instance.MerchantRoom.Inventory.OnCardRemovalUsed()` → `Hook.AfterItemPurchased` →
+    `entry.InvokePurchaseCompleted`。**不广播、只认传入的 player。**
+  - **遗物 / 药水决策接入个人统计（否决式）**：新增「商店购买 → 局胜负」切片
+    `WakuuPersonalQuery.CountShopWinSlice` / `TryGetShopDecisionSignal`（+2 单测）、
+    信号结构 `WakuuShopSignal`（held = 买了该商品的局；基准 = 同切片内**没买它**的已结束局；
+    abandon 不进分母）；`personalAssist` 开且买过 ≥ 3 局时**增益为负 → 不买**
+    （`WakuuMerchantPicking.IsPersonalStatsVeto`，+3 单测）。
+    **只做否决、不做主动挑选** —— 遗物/药水没有选择率（`shopPurchases` 不记"摆出过什么"）、
+    样本远少于卡牌，"用统计决定该买什么"是过度解读；无数据 / 开关关 → 回退纯价格规则（行为不变）。
+    日志新增 `个人统计样本=N/M, 否决=K, 门槛=3局`，把"没开统计 / 没数据 / 有数据但没否决"区分开。
+- **门禁（r139 最终态）**：构建 0 警告 0 错误、**512 单测全绿**（507 → +5：`WakuuMerchantPickingTests`
+  +3 统计用例、`WakuuPersonalDataTests` +2 商店切片用例；`WakuuConfigJsonTests` 断言同步）、
+  `clr_compat_check` PASS、`preflight.ps1 -Deploy` **4 PASS / 3 SKIP**、部署位 marker
+  **`2026-09-18-r139`**、`dll_check --deployed` 全绿（`IsPersonalStatsVeto` / `CountShopWinSlice` /
+  `TryGetShopDecisionSignal` / `WakuuShopSignal` / `shopAssistBuyRemoval` / `TryAutoBuyRemovalAsync` 在、
+  `__runOriginal` 不在）、部署位与仓库根 **字节一致**（sha256 `4b6454d5e301…`）。**未 commit**。
+- **实机验证方法（请复测，r139）**：设置页「瓦库托管」区把 **「商店自动买卡」+「商店自动买遗物」+
+  「商店自动买药水」+「商店自动删牌」** 四个开关都打开 → 进商店切到瓦库视图，期望日志：
   - `瓦库商店自动买遗物成功: player=…, relic=…, rarity=…, gold=…`（不买时是
-    `瓦库商店自动买遗物: 无符合条件候选，不买 … 最便宜=…`）；
+    `瓦库商店自动买遗物: 无符合条件候选，不买 … 最便宜=…`，并带 `个人统计样本=N/M, 否决=K, 门槛=3局`）；
   - `瓦库商店自动买药水成功: …` / `瓦库商店自动买药水跳过：药水栏已满`；
+  - **`瓦库商店自动删牌成功: player=…, card=…, gold=…`**（每次进店最多 1 次；
+    选牌前应有 `瓦库自动选牌作答: source=商店删牌服务, scenario=Remove, …`；
+    不删时是 `瓦库商店自动删牌: 金币不足或价格异常，不删 …` 或
+    `瓦库商店自动删牌跳过：本店删牌服务不可用 …`）；
   - 钱不够时不买（日志里写 `保留≥50金`）；买卡的行照旧（回归）。
-  另需确认：**删牌服务没有被自动点掉**（该项本轮未做，商店里删牌仍要真人自己点）。
+  - **个人统计否决**（需开「个人统计决策辅助」且某商品买过 ≥ 3 局）：期望出现
+    `个人统计样本=…, 否决=1 …` 且该商品**没有**出现在成功日志里；
+    样本不足时 `否决=0` 属正常（个人样本本来就少），不是 bug。
 - ✅ **2026-09-18 实机确认（r137，用户「有金币可以正常购买遗物、药水」+ 日志核对）**：
   日志 `logs-archive/godot__20260918-222513__r137.log`（1.0 MB，终态 OK）——
   - `瓦库商店自动采购启动` **2** 次（两家商店）；

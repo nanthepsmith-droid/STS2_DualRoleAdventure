@@ -308,8 +308,8 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         AddToggleRow(column,
             LocalModText.Select("商店自动买卡", "Auto-Buy at Shop"),
             LocalModText.Select(
-                "默认关（Phase 4 实验）。开启后瓦库角色的商店视图打开时，自动买「社区统计胜率 ≥ 20% 且付完仍保留 ≥ 50 金币」的卡。这是下面两个子开关的总开关；删牌服务仍未做。",
-                "Off by default (Phase 4 experimental). When a Vakuu character's shop view opens, auto-buys cards with community win rate >= 20% that keep >= 50 gold after purchase. This is the master switch for the two sub-options below; the card-removal service isn't automated yet."),
+                "默认关（Phase 4 实验）。开启后瓦库角色的商店视图打开时，自动买「社区统计胜率 ≥ 20% 且付完仍保留 ≥ 50 金币」的卡。这是下面三个子开关的总开关。",
+                "Off by default (Phase 4 experimental). When a Vakuu character's shop view opens, auto-buys cards with community win rate >= 20% that keep >= 50 gold after purchase. This is the master switch for the three sub-options below."),
             () => LocalWakuuAutopilotConfig.ShopAssist,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("shopAssist", value));
         AddToggleRow(column,
@@ -333,6 +333,13 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
                 "Off by default; requires the \"Auto-Buy at Shop\" master switch. Same rule as relics (price + keep >= 50 gold), plus a free potion slot is required; stops once the bar is full."),
             () => LocalWakuuAutopilotConfig.ShopAssistBuyPotions,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("shopAssistBuyPotions", value));
+        AddToggleRow(column,
+            LocalModText.Select("商店自动删牌", "Auto Card Removal at Shop"),
+            LocalModText.Select(
+                "默认关。需「商店自动买卡（总开关）」开启。金币保底允许时就替瓦库买一次删牌服务并自动挑一张删掉：开「智能选牌优先级」时按删牌优先级挑（诅咒 > 状态 > 任务 > 打击 > 基础防御 > 其余），否则按「战斗内选牌策略」。",
+                "Off by default; requires the \"Auto-Buy at Shop\" master switch. Buys the card-removal service once (when the gold floor allows) and auto-picks a card: with \"Smart Pick Priority\" on it follows the removal priority (Curse > Status > Quest > Strike > Defend > rest), otherwise the in-combat card-pick strategy."),
+            () => LocalWakuuAutopilotConfig.ShopAssistBuyRemoval,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("shopAssistBuyRemoval", value));
         column.AddChild(CreateStrategyRow(
             LocalModText.Select("事件选项策略", "Event Choice Strategy"),
             LocalModText.Select(

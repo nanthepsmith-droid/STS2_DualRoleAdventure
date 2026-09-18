@@ -631,6 +631,134 @@ internal static class WakuuPersonalQuery
     }
 
     /// <summary>
+    /// **商店购买胜负归因**（Phase 4 增量，2026-09-18）：held = 买了该商品（同 kind + item）的**局**；
+    /// baseline（放在 <see cref="PersonalWinSlice.SkippedRuns"/> 里复用）= 同切片内**没买过它**的已结束局。
+    ///
+    /// ⚠ 与卡牌 / 事件的 skipped 不同：`shopPurchases` **只记"买了什么"、不记"商店摆出过什么"**，
+    /// 所以算不出"摆出来但没买"（那要 offer 记录），基准只能取「其他已结束局」——
+    /// 语义是「买过它的局 vs 其他局」，用于**负面否决**足够，别拿它做精细排序。
+    /// 角色维度只作用于 held（`shopPurchases` 有 character）；`runs` 表没有角色字段，
+    /// 故指定 character 时基准仍是该模式下的全量。
+    /// abandon / 进行中的局不进任何一侧分母（与卡牌 / 事件同一口径）。
+    /// </summary>
+    public static PersonalWinSlice CountShopWinSlice(
+        PersonalStore store,
+        string kind,
+        string item,
+        bool? isMulti = null,
+        string? character = null)
+    {
+        if (store == null || store.runs.Count == 0
+            || string.IsNullOrEmpty(kind) || string.IsNullOrEmpty(item))
+        {
+            return new PersonalWinSlice(0, 0, 0, 0);
+        }
+
+        Dictionary<string, bool?> resultByRun = BuildRunOutcomeMap(store);
+
+        HashSet<string> heldRuns = new();
+        foreach (PersonalShopPurchaseRecord row in store.shopPurchases)
+        {
+            if (row == null || string.IsNullOrEmpty(row.runKey))
+            {
+                continue;
+            }
+
+            if (!string.Equals(row.kind, kind, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(row.item, item, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (isMulti.HasValue && row.isMulti != isMulti.Value)
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrEmpty(character)
+                && !string.Equals(row.character, character, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (resultByRun.TryGetValue(row.runKey, out bool? outcome) && outcome.HasValue)
+            {
+                heldRuns.Add(row.runKey);
+            }
+        }
+
+        HashSet<string> baselineRuns = new();
+        foreach (PersonalRunRecord run in store.runs)
+        {
+            if (run == null || string.IsNullOrEmpty(run.runKey))
+            {
+                continue;
+            }
+
+            if (isMulti.HasValue && run.isMulti != isMulti.Value)
+            {
+                continue;
+            }
+
+            if (!resultByRun.TryGetValue(run.runKey, out bool? outcome) || !outcome.HasValue)
+            {
+                continue; // 进行中 / abandon，不进分母
+            }
+
+            baselineRuns.Add(run.runKey);
+        }
+
+        // 买过它的局从基准里剔除：held 与 baseline 必须互斥
+        foreach (string held in heldRuns)
+        {
+            baselineRuns.Remove(held);
+        }
+
+        long heldWins = heldRuns.Count((key) => resultByRun.TryGetValue(key, out bool? o) && o == true);
+        long baselineWins = baselineRuns.Count((key) => resultByRun.TryGetValue(key, out bool? o) && o == true);
+        return new PersonalWinSlice(heldRuns.Count, heldWins, baselineRuns.Count, baselineWins);
+    }
+
+    /// <summary>
+    /// 决策用商店信号（Phase 4 增量，2026-09-18）：档位放宽顺序与卡牌 / 事件同一套
+    /// <see cref="DecisionTiers"/>；命中条件 = **买过它的已结束局数 ≥ <paramref name="minBought"/>**
+    /// **且基准局数 &gt; 0**（没有基准就没有增益可言，宁可当无数据）。
+    /// 全部档位都不足样本 → null（调用方回退"价格 + 金币保底"）。
+    /// </summary>
+    public static WakuuShopSignal? TryGetShopDecisionSignal(
+        PersonalStore store,
+        string kind,
+        string item,
+        bool isMultiPreference,
+        string? characterPreference,
+        long minBought = DefaultMinPersonalCount,
+        string? tierPreference = PersonalTierCharacterFirst)
+    {
+        if (store == null || string.IsNullOrEmpty(kind) || string.IsNullOrEmpty(item)
+            || store.shopPurchases.Count == 0)
+        {
+            return null;
+        }
+
+        foreach ((bool useMode, bool useChar) in DecisionTiers(tierPreference))
+        {
+            PersonalWinSlice win = CountShopWinSlice(
+                store, kind, item,
+                isMulti: useMode ? isMultiPreference : (bool?)null,
+                character: useChar ? characterPreference : null);
+            if (win.HeldRuns < minBought || win.SkippedRuns == 0)
+            {
+                continue;
+            }
+
+            return new WakuuShopSignal(
+                kind, item, win.HeldRuns, win.WinRateHeld, win.SkippedRuns, win.WinRateSkipped);
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// 统计某张卡在给定切片下被真人删掉过多少次（删牌统计，Phase 4）。
     /// 只计已结束且非 abandon 的局（与 offer/pick 同一批数据，避免未完成局污染）。
     /// </summary>

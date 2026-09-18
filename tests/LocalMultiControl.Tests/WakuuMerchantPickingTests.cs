@@ -185,4 +185,82 @@ public class WakuuMerchantPickingTests
         Assert.That(WakuuMerchantPicking.SelectPricedBuys(
             new List<WakuuMerchantPricedItem> { Priced("POTION_COMMON", 50) }, -10), Is.Empty);
     }
+
+    private static WakuuShopSignal Signal(string kind, string item, long bought, double held, long baseline, double baseRate)
+    {
+        return new WakuuShopSignal(kind, item, bought, held, baseline, baseRate);
+    }
+
+    private static WakuuMerchantPricedItem PricedWithSignal(string id, int price, WakuuShopSignal signal)
+    {
+        return new WakuuMerchantPricedItem(id, price, signal);
+    }
+
+    [Test]
+    public void 个人统计负面否决时不买()
+    {
+        // 买过它 4 局、胜率 0.25 vs 基准 0.50 ⇒ 增益 -0.25 < 0 ⇒ 否决
+        WakuuShopSignal negative = Signal("relic", "RELIC_BAD", 4, 0.25, 100, 0.50);
+        // 买过它 5 局、胜率 0.70 vs 0.50 ⇒ 增益 +0.20 ⇒ 不否决
+        WakuuShopSignal positive = Signal("relic", "RELIC_GOOD", 5, 0.70, 100, 0.50);
+
+        List<WakuuMerchantPricedItem> items = new()
+        {
+            PricedWithSignal("RELIC_BAD", 175, negative),
+            PricedWithSignal("RELIC_GOOD", 175, positive),
+            Priced("RELIC_NO_DATA", 175),
+        };
+
+        Assert.Multiple(() =>
+        {
+            // 未启用统计（门槛 0）⇒ 三件都按价格规则买
+            Assert.That(WakuuMerchantPicking.SelectPricedBuys(items, gold: 1000), Is.EqualTo(new[] { 0, 1, 2 }));
+            // 启用统计且样本达标 ⇒ 只否决负面那件
+            Assert.That(
+                WakuuMerchantPicking.SelectPricedBuys(items, gold: 1000, personalMinSample: 3),
+                Is.EqualTo(new[] { 1, 2 }));
+        });
+    }
+
+    [Test]
+    public void 个人统计样本不足或增益不为负时不否决()
+    {
+        // 只有 2 局样本、门槛 3 ⇒ 不否决（宁可不干预）
+        List<WakuuMerchantPricedItem> thin = new()
+        {
+            PricedWithSignal("POTION_THIN", 50, Signal("potion", "POTION_THIN", 2, 0.0, 50, 0.60)),
+        };
+        Assert.That(WakuuMerchantPicking.SelectPricedBuys(thin, gold: 500, personalMinSample: 3),
+            Is.EqualTo(new[] { 0 }));
+
+        // 样本够、增益正好 0（不低于门槛 0）⇒ 不否决
+        List<WakuuMerchantPricedItem> flat = new()
+        {
+            PricedWithSignal("POTION_FLAT", 50, Signal("potion", "POTION_FLAT", 3, 0.60, 50, 0.60)),
+        };
+        Assert.That(WakuuMerchantPicking.SelectPricedBuys(flat, gold: 500, personalMinSample: 3),
+            Is.EqualTo(new[] { 0 }));
+    }
+
+    [Test]
+    public void 统计否决与金币保底各自独立生效()
+    {
+        // 否决优先于金币判定：即使钱多得花不完也不买
+        List<WakuuMerchantPricedItem> items = new()
+        {
+            PricedWithSignal("RELIC_BAD", 100, Signal("relic", "RELIC_BAD", 3, 0.1, 20, 0.6)),
+        };
+        Assert.Multiple(() =>
+        {
+            Assert.That(WakuuMerchantPicking.SelectPricedBuys(items, gold: 10000, personalMinSample: 3), Is.Empty);
+            // 纯函数判据本身的三条边界
+            Assert.That(
+                WakuuMerchantPicking.IsPersonalStatsVeto(Signal("relic", "X", 3, 0.1, 20, 0.6), minSample: 3),
+                Is.True);
+            Assert.That(WakuuMerchantPicking.IsPersonalStatsVeto(null, minSample: 3), Is.False);
+            Assert.That(
+                WakuuMerchantPicking.IsPersonalStatsVeto(Signal("relic", "X", 3, 0.1, 20, 0.6), minSample: 0),
+                Is.False);
+        });
+    }
 }

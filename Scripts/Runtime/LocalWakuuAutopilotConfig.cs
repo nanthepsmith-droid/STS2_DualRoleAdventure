@@ -126,6 +126,9 @@ internal static class LocalWakuuAutopilotConfig
     /// <summary>商店自动买药水（Phase 4 增量，默认关）：价格 + 金币保底 + 药水栏有空位。</summary>
     public static bool ShopAssistBuyPotions { get; private set; }
 
+    /// <summary>商店自动删牌（Phase 4 增量 v3，默认关）：价格 + 金币保底，Remove 场景优先级挑一张删。</summary>
+    public static bool ShopAssistBuyRemoval { get; private set; }
+
     /// <summary>
     /// 自有统计角标（默认关）：奖励选牌卡/商店卡/事件选项按钮的右下角个人统计角标 + 悬停弹窗。
     /// 只显示本地个人记录器数据，与皮皮军师/SkadaHelper 社区统计 UI 分开。
@@ -259,6 +262,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.shopAssistBuyNoData): data.shopAssistBuyNoData = value; break;
                     case nameof(WakuuConfigData.shopAssistBuyRelics): data.shopAssistBuyRelics = value; break;
                     case nameof(WakuuConfigData.shopAssistBuyPotions): data.shopAssistBuyPotions = value; break;
+                    case nameof(WakuuConfigData.shopAssistBuyRemoval): data.shopAssistBuyRemoval = value; break;
                     case nameof(WakuuConfigData.statBadge): data.statBadge = value; break;
                     case nameof(WakuuConfigData.petHpBadge): data.petHpBadge = value; break;
                     case nameof(WakuuConfigData.skipTurnStartDrawAnim): data.skipTurnStartDrawAnim = value; break;
@@ -561,6 +565,7 @@ internal static class LocalWakuuAutopilotConfig
                 + $"personalRecorder={data.personalRecorder}, personalAssist={data.personalAssist}, "
                 + $"shopAssist={data.shopAssist}, shopAssistBuyNoData={data.shopAssistBuyNoData}, "
                 + $"shopAssistBuyRelics={data.shopAssistBuyRelics}, shopAssistBuyPotions={data.shopAssistBuyPotions}, "
+                + $"shopAssistBuyRemoval={data.shopAssistBuyRemoval}, "
                 + $"statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, fastWakuuPlay={data.fastWakuuPlay}, wakuuPlayQueue={data.wakuuPlayQueue}, wakuuPlayOverlap={data.wakuuPlayOverlap}, wakuuViewMode={WakuuViewModes.Normalize(data.wakuuViewMode)}, "
                 + $"personalTier={NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier}, "
                 + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}, "
@@ -589,6 +594,7 @@ internal static class LocalWakuuAutopilotConfig
         ShopAssistBuyNoData = data.shopAssistBuyNoData;
         ShopAssistBuyRelics = data.shopAssistBuyRelics;
         ShopAssistBuyPotions = data.shopAssistBuyPotions;
+        ShopAssistBuyRemoval = data.shopAssistBuyRemoval;
         StatBadge = data.statBadge;
         StatBadgeCorner = WakuuStatBadgeCorner.Normalize(data.statBadgeCorner);
         StatBadgeSource = WakuuStatBadgeSource.Normalize(data.statBadgeSource);
