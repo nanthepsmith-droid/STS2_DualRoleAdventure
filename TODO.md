@@ -878,6 +878,90 @@
   - 社区侧若 SkadaHelper 的事件条目其实带选择率字段（当前只读了 `Text/WinRate/Count`），
     可一并接入 —— **待确认字段名，别猜**。
 
+### 改进-5 商店自动化增量：自动买遗物 / 买药水（**2026-09-18 r137 已实现，待实机**）
+
+- **背景**：`shopAssist`（Phase 4，默认关）此前只买卡（r64/r65/r66/r67）。可行性分析 §9.3 里的
+  「遗物 / 药水 / 删牌服务」三项一直挂着未做。
+- **本轮做了两项（各自独立开关，均默认关、均需总开关）**：
+  - **`shopAssistBuyRelics`（商店自动买遗物）**：遗物**没有社区评级**（SkadaHelper 只有卡牌统计，
+    `maintenance-docs/game-entities.md` 只是实体清单），所以只按「买得起 + 付完仍保留 ≥ 50 金币」；
+    不做稀有度加权（没有可信数据源，凭空加权就是拍脑袋）。参考价：`RelicModel.MerchantCost` =
+    Common 175 / Uncommon 225 / Rare 275 / Shop 200（商店价再乘 0.85~1.15 随机）。
+    生效条件 = 本地多角色模式启用（`LocalSelfCoopContext.IsEnabled`，外层已判）+ 瓦库形态 + 在商店房 + 本开关。
+    ⚠ **r138 订正**：初版这里写过一道"仅在单机冒险模式生效"的门禁
+    （`LocalSelfCoopContext.UseSingleAdventureMode`），但该属性是 **`=> true` 的常量** ⇒ 门禁恒不成立、
+    纯死代码，还让设置页文案 / CHANGELOG / 日志都描述了一个不存在的条件（实机证据：`遗物跳过_非单机` 恒 0）。
+    **已删除该门禁与相关文案**；遗物获得触发的选牌由 `LocalWakuuRelicEffectAutoChoice`（r94，非战斗期）
+    照常自动作答，不需要额外门禁。
+  - **`shopAssistBuyPotions`（商店自动买药水）**：同口径（价格 + 金币保底），额外要求
+    `Player.HasOpenPotionSlots`；每买一瓶后再判一次，栏满即停手并在日志里说明。
+  - 决策纯函数 `WakuuMerchantPicking.SelectPricedBuys`（+5 单测 → **507 全绿**）；
+    判定写成「价格 > 余额 - 保底」而不是「余额 - 价格 < 保底」，避免 `SafeCost` 兜底的
+    `int.MaxValue` 做减法溢出。
+- **顺手修的一处既有 bug（买卡下标错位）**：`TryAutoBuyCardsAsync` 原先在跳过 Null 占位卡 /
+  未上架条目时只 `continue`、**不往候选列表补位**，于是 `candidates` 的下标与 `entries` 错开 ——
+  店里一旦出现 Null 占位卡（2026-09-07 实测出现过），后续 `picks` 里的下标就会买到"错位的那张"、
+  读到的价格也是别人的。现改为候选与条目**成对**收集（`plan`），下标恒等；
+  新增的遗物 / 药水路径从一开始就用成对收集。
+- **删牌服务仍未做（刻意，不是漏做）**：它走
+  `MerchantCardRemovalEntry.OnTryPurchaseWrapper → RunManager.OneOffSynchronizer.DoLocalMerchantCardRemoval`，
+  两个坑都必须在多控下专门处理：
+  ① 该方法用的是**同步器自己的** `_localPlayerId`（`OneOffSynchronizer.LocalPlayer`，不是 `LocalContext`），
+     而 `AlignContext` 目前只对齐了 `RewardsSetSynchronizer` / `RewardSynchronizer`
+     ⇒ 不处理会**删真人的牌、扣瓦库的钱**；
+  ② 它会 `_gameService.SendMessage(MerchantCardRemovalMessage)` 广播，接收端 `HandleMerchantCardRemoval`
+     对「sender == LocalPlayer」直接抛 `InvalidOperationException`
+     ⇒ 本地回环下要先确认消息投递与异常处理路径，否则要么重复执行、要么刷错误日志。
+  选牌侧本身不难：压 `WakuuPickScenario.Remove` 的策略选择器 + 写 `CurrentChoicePlayerId`
+  （与 r134 的卡牌奖励同一套；`CardSelectCmd.FromDeckGeneric` 的 `Selector != null` 分支优先于
+  `RequireManualConfirmation`，压栈后不会弹屏）。
+  **下一步**：单开一轮做，先按上面两点取证（`AlignContext` 补 `OneOffSynchronizer` + 消息回环实测）。
+- **门禁**：构建 0 警告 0 错误、**507 单测全绿**（502 → +5：`WakuuMerchantPickingTests` 遗物/药水 5 例 +
+  `WakuuConfigJsonTests` 默认值/camelCase 断言同步）、`clr_compat_check` PASS、`preflight.ps1 -Deploy`
+  **4 PASS / 3 SKIP**、部署位 marker **`2026-09-18-r137`**、`dll_check --deployed` 全绿
+  （`SelectPricedBuys` / `shopAssistBuyRelics` / `shopAssistBuyPotions` / `WakuuMerchantPricedItem` 在、
+  `__runOriginal` 不在）、部署位与仓库根 **字节一致**（sha256 `a3360b236c70…`）。**未 commit**。
+- **实机验证方法（请复测）**：设置页「瓦库托管」区把 **「商店自动买卡」+「商店自动买遗物」+
+  「商店自动买药水」** 三个开关都打开 → 进商店切到瓦库视图，期望日志：
+  - `瓦库商店自动买遗物成功: player=…, relic=…, rarity=…, gold=…`（不买时是
+    `瓦库商店自动买遗物: 无符合条件候选，不买 … 最便宜=…`）；
+  - `瓦库商店自动买药水成功: …` / `瓦库商店自动买药水跳过：药水栏已满`；
+  - 钱不够时不买（日志里写 `保留≥50金`）；买卡的行照旧（回归）。
+  另需确认：**删牌服务没有被自动点掉**（该项本轮未做，商店里删牌仍要真人自己点）。
+- ✅ **2026-09-18 实机确认（r137，用户「有金币可以正常购买遗物、药水」+ 日志核对）**：
+  日志 `logs-archive/godot__20260918-222513__r137.log`（1.0 MB，终态 OK）——
+  - `瓦库商店自动采购启动` **2** 次（两家商店）；
+  - **`瓦库商店自动买遗物成功` 7 次**（Common 172/170/175、Uncommon 230、Shop 210 …；
+    两次分别「2 个 / 402 金」与「3 个 / 555 金」）；
+  - **`瓦库商店自动买药水成功` 3 次**（Rare 99 / Common 48 / Uncommon 77）；另一次是
+    `瓦库商店自动买药水: 无符合条件候选，不买。… 金币=54, 最便宜=50, 保留≥50金` ⇒ **金币保底正确**；
+  - 买卡回归正常（7 张/543 金 + 7 张/529 金）；六个回归项（选择器作用域 / 看门狗 / 手牌节点 /
+    队列空引用 / 领取失败 / 保留人工领取）**全 0**；
+  - **`个人记录-商店购买` 0** ⇒ 瓦库自动购买**没有被误记成真人决策**（`PurchaseOwnerId` 排除生效）；
+  - **`商店-删牌归属玩家` 0** ⇒ 删牌服务确实没被自动点（与本轮"未做"一致）。
+- 📌 **已知行为（用户 2026-09-18 拍板：不算 bug、不用修，仅记录）**：**同一家商店只采购一次**
+  （`_handled` 以 `(room, player)` 去重，见 `LocalWakuuMerchantAuto.OnMerchantInventoryShown`）——
+  所以「买完后再用控制台给瓦库加钱」不会触发第二轮采购，本来买不起的也不会补买。
+  实际游戏里金币只会在商店界面**之外**变化（战斗 / 事件 / 遗物），不存在"同店加钱"的场景，
+  **不影响游戏体验**。若将来真要支持，需把去重键从"每店一次"改成"金币变化后重评"，
+  并处理 `OnMerchantInventoryShown` 反复触发时的节流。
+- 📌 **`UseSingleAdventureMode` 是常量 `true`（2026-09-18 发现）**：`LocalSelfCoopContext` 里
+  `public static bool UseSingleAdventureMode => true;` ⇒ 全 mod **60+ 处**拿它当门禁的地方**都是 no-op**
+  （既有老代码同样如此，非本轮引入）。本轮已删掉自己新加的那一处并订正文案；
+  **其余存量不动**（清理属纯卫生工作、零行为收益、改动面大）。日后写新门禁请用 `IsEnabled`
+  （真正会变）或别的实变量，别再拿这个常量当条件。
+- 📌 **商店统计现状（回答"遗物 / 药水 / 删牌有没有做统计"）**：**都做了，只是分两张表** ——
+  - 卡 / 遗物 / 药水 → `shopPurchases`（`kind=card|relic|potion`，字段 `item` + `goldSpent` + `act` + `isMulti`），
+    入口 `MerchantEntry.OnTryPurchaseWrapper`（`PersonalShopPurchasePatch`）；
+  - 删牌（**含商店删牌服务** / 事件删牌 / 营地删牌 / 删牌遗物）→ `cardRemovals`，
+    入口 `CardSelectCmd.FromDeckGeneric`（r64 / r130）；
+  - **刻意不重叠**：`MerchantCardRemovalEntry` 用三参重载自己走另一条链，
+    `PersonalShopPurchasePatch` 的类型 switch 里明确写了 `// 删卡服务等不记（花钱删牌不是"买了什么"）`。
+  **本轮遗物 / 药水的决策并未使用这些统计**（只按价格 + 金币保底）：`shopPurchases` 只回答
+  "买过什么、花了多少钱"，**没有**"买了它之后胜率如何"的切片（卡牌有 `PersonalWinSlice`、
+  事件有 `CountEventWinSlice`，商店侧没有对应物）。要用统计驱动商店决策，得先补一个
+  「商店购买 → 局胜负」的查询（纯函数 + 单测）—— **待用户拍板**。
+
 ---
 
 ## 维护性改进 backlog（门禁体系 2026-09-08 之后的下一批）
@@ -950,9 +1034,24 @@
     全绿（marker **`2026-09-17-r136`**、部署位与仓库根字节一致 sha256 `8e299f88…`、无 `__runOriginal`）。
   - **对账已清零**：`python tools\coverage_digest.py --strict` → **PASS 16 / WARN 0**
     （药水规则表覆盖 60 → **63**，缺口规则消失；退出码 0）。
-- **验证要点（实机）**：`marker=2026-09-17-r136` + `INIT_OK`；三瓶药水在对应时机应出现
-  `瓦库自动用药` 日志（药水名 `FLEX_POTION` / `POTION_OF_BINDING` / `OROBIC_ACID`）。
-  回归：其它药水行为不变、`未收录原版药水保守跳过` 仍只覆盖真正没规则的药水。
+- ✅ **2026-09-17 实机确认（用户「测试无异常」）** —— 日志：`godot.log`（11116 行，已归档
+  `logs-archive/godot__20260917-221609__r136.log`）：
+  - `BUILD_ID … marker=2026-09-17-r136`、`INIT_OK 1` / `INIT_FAILED 0`、`COMPAT_RESULT` / `PATCH_RESULT` 各 1 条；
+  - **三条新规则各命中 1 次**（均 `round=1, phase=StartOfTurn`，`target` 与语义一致）：
+
+    | 行号 | 日志（节选） |
+    |---|---|
+    | L9734 | `瓦库自动用药: player=…327, round=1, phase=StartOfTurn, potion=FLEX_POTION, reason=肌肉药水有攻击牌, target=PlayerId …327` |
+    | L9779 | `… potion=POTION_OF_BINDING, reason=缚魂药水首回合对敌, target=无`（`AllEnemies` ⇒ 目标解析为"无" ✓） |
+    | L9825 | `… potion=OROBIC_ACID, reason=欧洛巴斯之酸首回合, target=PlayerId …327`（`AnyPlayer` ⇒ 自用 ✓） |
+
+  - 用药链路异常 0：`瓦库自动用药跳过（目标非法）` **0**、`瓦库用药条件判定异常` **0**；
+  - 回归项（`log_scan --preset health` 的期望 0 命中项）**全 0**：选择器作用域异常退出 / 看门狗重启失败 /
+    `Couldn't get hand node` / 动作队列UI入队触发空引用 / 保留为人工领取 / 检测到真人选牌请求 / 手牌UI与数据存在差异；
+  - **我们的 `[ERROR]` 行 0**（全局 5 条 `[ERROR]` 全为第三方/环境：Manosaba·ddu 分支不支持、
+    BetterModMenu 抓 Workshop tags 超时、游戏自身删旧存档失败 ×2）；
+    我们的 `[WARN]` 行 19 → 20（+1，唯一一条是 § BUG-15 的自恢复命中，与本轮改动无关）。
+  ⇒ **本项关单**。
 
 ### 另记：逐卡评级草表**仍缺输入**（P4 前置未真正满足）
 
@@ -961,3 +1060,32 @@
 ⇒ 「用 LLM 从 3035 项产出逐卡/逐药水评级草表」这条**当前不成立**（凭空生成即幻觉）。
 要做必须另拿 CombatSolver `tools/CoverageCatalog` 的**明细导出**；否则只能用仓库内已整理的表
 （`原版药水一览表.md` / `原版附魔一览表.md`）。详见 `maintenance-docs/combat-hook-coverage.md` §一。
+
+---
+
+### BUG-15 事件页自动切换后残留 1 个策略选择器（自恢复已清理，**无功能影响，待观察**）
+
+- **现象（2026-09-17 r136 局首次出现在日志里）**：
+  ```
+  L8437 [INFO] 瓦库选择器栈探针: source=apply-control-before-rewards-offer, selectorStackCount=1,
+        selectorStackTop=LocalWakuuStrategySelector, allVakuu=True, inFlight=0
+  L8438 [WARN] 检测到瓦库选择器栈残留，已执行自恢复清理: source=apply-control-before-rewards-offer,
+        clearedCount=1, selectorStackTop=LocalWakuuStrategySelector
+  ```
+  清理后 L8441/L8442 探针 `selectorStackCount=0`，后续流程正常。
+- **上下文（同一局 L8415~L8438）**：`apply-control-after-event-finished-next-player`（栈 0）→
+  `个人记录-事件选择 event=NEOW page=2 chosen=YUWANCARD-SEVEN_CURSES_SKIP` →
+  `记录事件自动切换请求` → `event=NEOW page=3 chosen=LOST_COFFER` →
+  发奖励前的自检点发现栈里有 1 个 `LocalWakuuStrategySelector` ⇒ 判定为**事件页自动切换路径上压了选择器
+  而该步没有走到摘除**（`allVakuu=True` 说明压入时上下文还钉在瓦库身上）。
+- **归因（为什么说与本轮 r136 无关）**：
+  ① r136 只加了 3 条**药水规则表条目**，未触碰选择器栈的压/摘代码；且本局的 3 次自动用药发生在
+  **L9734 / L9779 / L9825**（战斗 round=1），**晚于**这条残留（L8437），时间上不可能由它引起；
+  ② 这条路径（多页事件自动切换 + 宇万卡扩展事件）在**此前 8 份归档日志里从未被走过**
+  （`记录事件自动切换请求` / `YUWANCARD-SEVEN_CURSES` / `非共享事件房间…重建` 全为 0 命中，
+  连 `瓦库自动用药` 也是 0）⇒ 旧日志**不是有效的对照基线**，"首次出现"更可能是**首次覆盖到这条路径**；
+  ③ 守卫按设计自愈：清理后栈归零、无异常计数、无软锁。
+- **影响**：无（自恢复）。**决策：先不动**，等下次复现（或再遇到多页事件）时看是否稳定复现，
+  复现再顺 `WakuuSelectorRegistry.Open` 在"事件页自动切换"这条链上的配对 `Pop`。
+  ⚠ 若日后要查：`log_scan.py --rules <含"检测到瓦库选择器栈残留"的规则文件> --file godot.log --show`
+  （中文关键字**不能走命令行**，必须走规则文件）。

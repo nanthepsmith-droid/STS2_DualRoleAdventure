@@ -95,7 +95,8 @@ internal sealed class WakuuConfigData
     /// 商店自动化（Phase 4，默认关）：瓦库角色商店界面打开时自动买卡——
     /// 卡牌按社区统计胜率 ≥ WakuuMerchantPicking.DefaultMinBuyWinRate（默认 0.2）
     /// 且支付后仍保留 ≥ DefaultGoldFloor（默认 50）金币才买。
-    /// 遗物/药水与删牌服务的自动化后续增量（§9.3）。
+    /// 遗物 / 药水见下面的 shopAssistBuyRelics / shopAssistBuyPotions（v2 增量）；
+    /// **删牌服务仍未做**（走 OneOffSynchronizer，需单独处理归属与消息回环，§9.3）。
     /// </summary>
     public bool shopAssist { get; set; }
 
@@ -106,6 +107,20 @@ internal sealed class WakuuConfigData
     /// 仅 shopAssist 开启时生效。
     /// </summary>
     public bool shopAssistBuyNoData { get; set; }
+
+    /// <summary>
+    /// 商店自动买遗物（Phase 4 增量，2026-09-18，默认关）：遗物没有社区评级可查，
+    /// 只按「付完仍保留 ≥ WakuuMerchantPicking.DefaultGoldFloor（默认 50）金币」买入；
+    /// 且仅在单机冒险模式下生效（遗物效果触发的选牌要由自动作答链路接管）。
+    /// 仅 shopAssist 开启时生效。
+    /// </summary>
+    public bool shopAssistBuyRelics { get; set; }
+
+    /// <summary>
+    /// 商店自动买药水（Phase 4 增量，2026-09-18，默认关）：与遗物同口径（价格 + 金币保底），
+    /// 额外要求药水栏还有空位。仅 shopAssist 开启时生效。
+    /// </summary>
+    public bool shopAssistBuyPotions { get; set; }
 
     /// <summary>
     /// 自有统计角标（默认关，2026-09-07 用户拍板 Phase 4 增量）：开启后在

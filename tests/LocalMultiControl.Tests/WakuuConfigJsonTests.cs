@@ -25,6 +25,8 @@ public class WakuuConfigJsonTests
             Assert.That(data.neowAutoChoose, Is.False);
             Assert.That(data.shopAssist, Is.False);
             Assert.That(data.shopAssistBuyNoData, Is.False);
+            Assert.That(data.shopAssistBuyRelics, Is.False); // Phase 4 增量：自动买遗物默认关
+            Assert.That(data.shopAssistBuyPotions, Is.False); // Phase 4 增量：自动买药水默认关
             Assert.That(data.statBadge, Is.False);
             Assert.That(data.skipTurnStartDrawAnim, Is.False);
             Assert.That(data.wakuuPlayQueue, Is.False); // 方案 D 实验档默认关
@@ -219,6 +221,8 @@ public class WakuuConfigJsonTests
             Assert.That(json, Does.Contain("\"suppressVanillaEarring\""));
             Assert.That(json, Does.Contain("\"autoClaimPotions\""));
             Assert.That(json, Does.Contain("\"shopAssistBuyNoData\""));
+            Assert.That(json, Does.Contain("\"shopAssistBuyRelics\""));
+            Assert.That(json, Does.Contain("\"shopAssistBuyPotions\""));
             Assert.That(json, Does.Contain("\"statBadge\""));
             Assert.That(json, Does.Contain("\"skipTurnStartDrawAnim\""));
             Assert.That(json, Does.Contain("\"fastWakuuPlay\""));

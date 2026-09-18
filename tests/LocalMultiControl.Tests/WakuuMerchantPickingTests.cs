@@ -5,7 +5,7 @@ using NUnit.Framework;
 
 namespace LocalMultiControl.Tests;
 
-/// <summary>瓦库商店自动买卡决策纯函数测试（Phase 4 §9.3）。</summary>
+/// <summary>瓦库商店自动购买决策纯函数测试（Phase 4 §9.3）：买卡 / 遗物 / 药水。</summary>
 [TestFixture]
 public class WakuuMerchantPickingTests
 {
@@ -120,5 +120,69 @@ public class WakuuMerchantPickingTests
         Assert.That(WakuuMerchantPicking.SelectCardBuys(null!, 500), Is.Empty);
         Assert.That(WakuuMerchantPicking.SelectCardBuys(
             new List<WakuuMerchantCardCandidate> { Card("CLASH", 50, 0.9) }, -10), Is.Empty);
+    }
+
+    private static WakuuMerchantPricedItem Priced(string id, int price)
+    {
+        return new WakuuMerchantPricedItem(id, price);
+    }
+
+    [Test]
+    public void 遗物与药水只按价格与金币保底购买()
+    {
+        // 遗物价位 175 / 225 / 275（RelicModel.MerchantCost）；金币 500、保底 50：
+        // 买 175 后剩 325 → 再买 225 后剩 100 → 第三件 275 会跌破保底，停手。
+        List<WakuuMerchantPricedItem> items = new()
+        {
+            Priced("RELIC_COMMON", 175),
+            Priced("RELIC_UNCOMMON", 225),
+            Priced("RELIC_RARE", 275),
+        };
+
+        Assert.That(WakuuMerchantPicking.SelectPricedBuys(items, gold: 500), Is.EqualTo(new[] { 0, 1 }));
+    }
+
+    [Test]
+    public void 商品价格恰好等于金币减保底时可买()
+    {
+        // 边界取「买完 >= 保底」（与买卡同口径）：225 - 175 = 50，不低于保底 50 → 买
+        List<WakuuMerchantPricedItem> items = new() { Priced("RELIC_COMMON", 175) };
+        Assert.That(WakuuMerchantPicking.SelectPricedBuys(items, gold: 225), Is.EqualTo(new[] { 0 }));
+        // 差 1 金就不买
+        Assert.That(WakuuMerchantPicking.SelectPricedBuys(items, gold: 224), Is.Empty);
+        // 金币本身低于保底：一件都不买（余额 - 保底 为负，任何正价都比它大）
+        Assert.That(WakuuMerchantPicking.SelectPricedBuys(
+            new List<WakuuMerchantPricedItem> { Priced("POTION_COMMON", 50) }, gold: 30), Is.Empty);
+    }
+
+    [Test]
+    public void 商品id为空或价格非正一律跳过()
+    {
+        List<WakuuMerchantPricedItem> items = new()
+        {
+            Priced("", 50),                  // 未上架 / 空 id（运行层用空 id 表示跳过项）
+            Priced("POTION_COMMON", 0),      // 价格异常
+            Priced("POTION_UNCOMMON", -1),   // 价格异常
+            Priced("POTION_RARE", 100),      // 正常 → 买
+        };
+
+        Assert.That(WakuuMerchantPicking.SelectPricedBuys(items, gold: 500), Is.EqualTo(new[] { 3 }));
+    }
+
+    [Test]
+    public void 商品读不到价格时被金币保底拦下()
+    {
+        // 运行层 SafeCost 读价异常时给 int.MaxValue：必须不买（且不能因减法溢出而误判）
+        List<WakuuMerchantPricedItem> items = new() { Priced("RELIC_UNKNOWN", int.MaxValue) };
+        Assert.That(WakuuMerchantPicking.SelectPricedBuys(items, gold: 999), Is.Empty);
+    }
+
+    [Test]
+    public void 商品空候选与负数金币返回空()
+    {
+        Assert.That(WakuuMerchantPicking.SelectPricedBuys(new List<WakuuMerchantPricedItem>(), 500), Is.Empty);
+        Assert.That(WakuuMerchantPicking.SelectPricedBuys(null!, 500), Is.Empty);
+        Assert.That(WakuuMerchantPicking.SelectPricedBuys(
+            new List<WakuuMerchantPricedItem> { Priced("POTION_COMMON", 50) }, -10), Is.Empty);
     }
 }

@@ -5,6 +5,21 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 ## [Unreleased]
 
 ### Added
+- **商店自动化增量：自动买遗物 / 买药水（2026-09-18，r137）**：`shopAssist`（默认关）此前只买卡，
+  现补齐 Phase 4 的两块：新增子开关 **`shopAssistBuyRelics`（商店自动买遗物）** 与
+  **`shopAssistBuyPotions`（商店自动买药水）**，均**默认关**、均需总开关开启。
+  遗物 / 药水**没有社区评级可查**（社区统计只有卡牌），因此只按「买得起 + 付完仍保留 ≥ 50 金币」决策
+  （`WakuuMerchantPicking.SelectPricedBuys`，纯函数 +5 单测），**不做稀有度加权**（没有可信数据源，
+  凭空加权就是拍脑袋 —— 先量后猜，实机看效果再收紧）；药水额外要求药水栏有空位，买满即停手。
+  遗物获得时若触发选牌（如 YUI 灵草丹的变化选牌），由既有的瓦库自动作答链路处理。
+  （初版曾写"仅在单机冒险模式下生效"，**r138 订正**：`UseSingleAdventureMode` 是常量 `true`，
+  那道门禁是死代码，文档/日志描述了一个并不存在的条件。）
+  顺带修一处既有下标错位：买卡原先在跳过 Null 占位卡时只 `continue`、不往候选补位，
+  导致候选列表与库存条目下标错开，一旦店里出现占位卡就会买到"错位的那张"（连读到的价格都是别人的）；
+  现改为候选与条目**成对**收集。
+  **删牌服务仍未做**（刻意）：它走 `OneOffSynchronizer.DoLocalMerchantCardRemoval`，该方法读的是
+  **该同步器自己的** `_localPlayerId`（不是 `LocalContext`）并会广播 `MerchantCardRemovalMessage`，
+  本地多控下的归属与消息回环需要单独处理，单列一轮做。
 - **瓦库自动用药补 3 条规则（2026-09-17，r136）**：覆盖率对账（`tools/coverage_digest.py`，报告
   `maintenance-docs/combat-hook-coverage.md`）抓出「一览表写了使用时机、但规则表与代码里都没有」的
   三种原版药水 ⇒ 按一览表写的时机补实现（`LocalWakuuPotionAutoUse` 规则表 +3、单测 +3）：

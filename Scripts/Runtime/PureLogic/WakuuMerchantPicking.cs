@@ -22,7 +22,30 @@ internal readonly struct WakuuMerchantCardCandidate
 }
 
 /// <summary>
-/// 瓦库商店自动买卡决策纯函数（Phase 4，可行性分析 §9.3）：
+/// 商店里「没有社区评级、只按价格 + 金币保底」的商品候选（遗物 / 药水，Phase 4 增量）。
+///
+/// 遗物与药水**没有社区统计胜率可查**（社区数据只有卡牌的 PickRate/WinRate），所以不能沿用
+/// 买卡那套「胜率门槛」，只能退化为「买得起 + 付完仍保留保底金」。两者决策规则完全一致，
+/// 因此共用一个候选形状，差别只在运行层怎么读 id 与价格。
+/// </summary>
+internal readonly struct WakuuMerchantPricedItem
+{
+    public WakuuMerchantPricedItem(string itemId, int price)
+    {
+        ItemId = itemId;
+        Price = price;
+    }
+
+    /// <summary>商品标识（遗物 / 药水的 Id.Entry），仅用于日志与空值判定。</summary>
+    public string ItemId { get; }
+
+    public int Price { get; }
+}
+
+/// <summary>
+/// 瓦库商店自动购买决策纯函数（Phase 4，可行性分析 §9.3）：买卡 / 遗物 / 药水三类。
+///
+/// 卡牌（<see cref="SelectCardBuys"/>）：
 /// - 有社区统计胜率的卡：胜率 ≥ minWinRate 才买；
 /// - 无数据（null）的卡：默认跳过；buyNoData=true（shopAssistBuyNoData 开关）时按金币保底买入
 ///   （2026-09-06 用户拍板：mod 卡大多查不到社区统计，需放开才能让自动买卡生效）；
@@ -93,6 +116,53 @@ internal static class WakuuMerchantPicking
             }
 
             budget -= candidate.Price;
+            picks.Add(i);
+        }
+
+        return picks;
+    }
+
+    /// <summary>
+    /// 遗物 / 药水购买决策（Phase 4 增量，2026-09-18）：**没有评级数据可用**，只做两件事 ——
+    /// ① 丢掉读不到 id / 价格异常（≤0，多为 SafeCost 兜底值）的条目；
+    /// ② 每件都必须满足「付完这件后仍保留 ≥ goldFloor 金币」。
+    ///
+    /// 刻意**不做稀有度排序或选择性购买**：遗物/药水当前没有任何可信的"值不值得买"数据源
+    /// （社区统计只有卡牌；`maintenance-docs/game-entities.md` 是实体清单，不含评级），
+    /// 凭空加权重就是拍脑袋。留给用户的控制手段是各自独立的开关 + 金币保底，
+    /// 实机观察后再决定要不要收紧（先量后猜）。
+    ///
+    /// 与原序保持一致：目录顺序即游戏给的随机顺序，不做重排。
+    /// </summary>
+    public static List<int> SelectPricedBuys(
+        IReadOnlyList<WakuuMerchantPricedItem> items,
+        int gold,
+        int goldFloor = DefaultGoldFloor)
+    {
+        List<int> picks = new();
+        if (items == null || items.Count == 0 || gold <= 0)
+        {
+            return picks;
+        }
+
+        int budget = gold;
+        for (int i = 0; i < items.Count; i++)
+        {
+            WakuuMerchantPricedItem item = items[i];
+            if (string.IsNullOrWhiteSpace(item.ItemId) || item.Price <= 0)
+            {
+                continue; // 未上架 / 读不到价格（SafeCost 兜底 int.MaxValue 也会被下面拦掉）
+            }
+
+            if (item.Price > budget - goldFloor)
+            {
+                // 金币保底：买完这件就跌破保底线，不买。
+                // 写成「价格 > 余额 - 保底」而不是「余额 - 价格 < 保底」：价格可能是运行层
+                // SafeCost 兜底的 int.MaxValue，减法会溢出（unchecked 下结论虽相同，但别依赖它）。
+                continue;
+            }
+
+            budget -= item.Price;
             picks.Add(i);
         }
 

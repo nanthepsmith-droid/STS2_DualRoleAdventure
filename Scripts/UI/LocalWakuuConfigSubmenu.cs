@@ -308,8 +308,8 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         AddToggleRow(column,
             LocalModText.Select("商店自动买卡", "Auto-Buy at Shop"),
             LocalModText.Select(
-                "默认关（Phase 4 实验）。开启后瓦库角色的商店视图打开时，自动买「社区统计胜率 ≥ 20% 且付完仍保留 ≥ 50 金币」的卡。遗物/药水与删牌服务自动化尚未做。",
-                "Off by default (Phase 4 experimental). When a Vakuu character's shop view opens, auto-buys cards with community win rate >= 20% that keep >= 50 gold after purchase. Relic/potion buying and card-removal service automation aren't done yet."),
+                "默认关（Phase 4 实验）。开启后瓦库角色的商店视图打开时，自动买「社区统计胜率 ≥ 20% 且付完仍保留 ≥ 50 金币」的卡。这是下面两个子开关的总开关；删牌服务仍未做。",
+                "Off by default (Phase 4 experimental). When a Vakuu character's shop view opens, auto-buys cards with community win rate >= 20% that keep >= 50 gold after purchase. This is the master switch for the two sub-options below; the card-removal service isn't automated yet."),
             () => LocalWakuuAutopilotConfig.ShopAssist,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("shopAssist", value));
         AddToggleRow(column,
@@ -319,6 +319,20 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
                 "Off by default; requires \"Auto-Buy at Shop\". Cards with no community win-rate data (mostly mod cards, not indexed by SkadaHelper) are also bought under the \"keep >= 50 gold\" rule; otherwise data-less cards are silently skipped."),
             () => LocalWakuuAutopilotConfig.ShopAssistBuyNoData,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("shopAssistBuyNoData", value));
+        AddToggleRow(column,
+            LocalModText.Select("商店自动买遗物", "Auto-Buy Relics at Shop"),
+            LocalModText.Select(
+                "默认关。需「商店自动买卡（总开关）」开启。遗物没有社区统计可查，只按「买得起且付完仍保留 ≥ 50 金币」买入（不会挑稀有度）。遗物获得时若触发选牌，由瓦库托管的自动作答处理。",
+                "Off by default; requires the \"Auto-Buy at Shop\" master switch. Relics have no community stats, so they're bought purely by \"affordable and still >= 50 gold after paying\" (no rarity bias). If obtaining a relic triggers a card pick, the Vakuu auto-answer chain handles it."),
+            () => LocalWakuuAutopilotConfig.ShopAssistBuyRelics,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("shopAssistBuyRelics", value));
+        AddToggleRow(column,
+            LocalModText.Select("商店自动买药水", "Auto-Buy Potions at Shop"),
+            LocalModText.Select(
+                "默认关。需「商店自动买卡（总开关）」开启。与遗物同一口径（按价格 + 付完保留 ≥ 50 金币），额外要求药水栏还有空位；栏位满了就停手。",
+                "Off by default; requires the \"Auto-Buy at Shop\" master switch. Same rule as relics (price + keep >= 50 gold), plus a free potion slot is required; stops once the bar is full."),
+            () => LocalWakuuAutopilotConfig.ShopAssistBuyPotions,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("shopAssistBuyPotions", value));
         column.AddChild(CreateStrategyRow(
             LocalModText.Select("事件选项策略", "Event Choice Strategy"),
             LocalModText.Select(
