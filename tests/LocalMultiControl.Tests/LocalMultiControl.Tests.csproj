@@ -13,8 +13,8 @@
          优先级：-p:Sts2Dir=<path>  >  环境变量 STS2_DIR  >  下面的默认路径。
          测试不硬编码绝对路径，全部经 AssemblyMetadata 注入（见 AssemblyCompatibilityTests）。 -->
     <Sts2Dir Condition="'$(Sts2Dir)' == '' AND '$(STS2_DIR)' != ''">$(STS2_DIR)</Sts2Dir>
-    <Sts2Dir Condition="'$(Sts2Dir)' == ''">D:\SteamLibrary\steamapps\common\Slay the Spire 2</Sts2Dir>
-    <Sts2DataDir>$(Sts2Dir)\data_sts2_windows_x86_64</Sts2DataDir>
+    <Sts2Dir Condition="'$(Sts2Dir)' == ''">D:/SteamLibrary/steamapps/common/Slay the Spire 2</Sts2Dir>
+    <Sts2DataDir>$(Sts2Dir)/data_sts2_windows_x86_64</Sts2DataDir>
     <!-- 部署门禁：true = 缺游戏安装判失败；false（本地开发默认）= Skip。
          build_all_mods.ps1 用 -p:RequireGameInstall=true 跑门禁。 -->
     <RequireGameInstall Condition="'$(RequireGameInstall)' == ''">false</RequireGameInstall>
@@ -43,15 +43,15 @@
     </Reference>
     <!-- 游戏程序集：随测试复制到输出目录，供类型加载（不实际调用 Godot 运行时） -->
     <Reference Include="sts2">
-      <HintPath>$(Sts2DataDir)\sts2.dll</HintPath>
+      <HintPath>$(Sts2DataDir)/sts2.dll</HintPath>
       <Private>true</Private>
     </Reference>
     <Reference Include="GodotSharp">
-      <HintPath>$(Sts2DataDir)\GodotSharp.dll</HintPath>
+      <HintPath>$(Sts2DataDir)/GodotSharp.dll</HintPath>
       <Private>true</Private>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>$(Sts2DataDir)\0Harmony.dll</HintPath>
+      <HintPath>$(Sts2DataDir)/0Harmony.dll</HintPath>
       <Private>true</Private>
     </Reference>
   </ItemGroup>

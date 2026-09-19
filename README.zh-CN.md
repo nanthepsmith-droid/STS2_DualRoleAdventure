@@ -37,7 +37,11 @@
 
 环境要求：.NET SDK 9、一份杀戮尖塔 2 游戏。
 
-1. 把 `LocalMultiControl.csproj` 里的 `<Sts2Dir>` 指向你的游戏安装目录。
+1. 把 `LocalMultiControl.csproj` 里的 `<Sts2Dir>` 指向你的游戏安装目录。取值优先级：
+   `-p:Sts2Dir=<路径>` > 环境变量 `STS2_DIR` > 内置默认值（Windows `D:/SteamLibrary/...`）。
+   Linux / WSL 下请显式传入，例如
+   `dotnet build LocalMultiControl.csproj -c Release -p:Sts2Dir=/mnt/d/SteamLibrary/"steamapps/common/Slay the Spire 2"`。
+   csproj 里路径统一用正斜杠，同一份文件在两个平台都能用（反斜杠在 Linux 下不是分隔符）。
 2. 构建：
 
 ```bash

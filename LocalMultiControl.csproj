@@ -8,9 +8,16 @@
     <AssemblyName>DualRoleAdventure</AssemblyName>
     <RootNamespace>DualRoleAdventure</RootNamespace>
 
-    <!-- 改成你的杀戮尖塔2目录 -->
-    <Sts2Dir>D:\SteamLibrary\steamapps\common\Slay the Spire 2</Sts2Dir>
-    <Sts2DataDir>$(Sts2Dir)\data_sts2_windows_x86_64</Sts2DataDir>
+    <!-- 游戏安装目录。优先级：-p:Sts2Dir=<path>  >  环境变量 STS2_DIR  >  下面的平台默认值。
+         ⚠ 路径统一用正斜杠（/）：Windows 与 Linux 的 MSBuild 都把它当目录分隔符；
+         而反斜杠在 Linux 下**不是**分隔符（会被当成文件名的一部分），会让跨平台构建找不到 dll。
+         Linux / WSL 下请覆盖（路径含空格要加引号）：
+           dotnet build LocalMultiControl.csproj -c Release -p:Sts2Dir=/mnt/d/SteamLibrary/"steamapps/common/Slay the Spire 2"
+         ⚠ 改这几行前先看 Scripts/Tools/clr_compat_check.py 的 resolve_game_dir —— 它按正则读这里的
+         具体路径（会自动跳过 $(STS2_DIR) 这类未展开的变量值）。 -->
+    <Sts2Dir Condition="'$(Sts2Dir)' == '' AND '$(STS2_DIR)' != ''">$(STS2_DIR)</Sts2Dir>
+    <Sts2Dir Condition="'$(Sts2Dir)' == ''">D:/SteamLibrary/steamapps/common/Slay the Spire 2</Sts2Dir>
+    <Sts2DataDir>$(Sts2Dir)/data_sts2_windows_x86_64</Sts2DataDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -42,17 +49,17 @@
 
   <ItemGroup>
     <Reference Include="sts2">
-      <HintPath>$(Sts2DataDir)\sts2.dll</HintPath>
+      <HintPath>$(Sts2DataDir)/sts2.dll</HintPath>
       <Private>false</Private>
     </Reference>
 
     <Reference Include="0Harmony">
-      <HintPath>$(Sts2DataDir)\0Harmony.dll</HintPath>
+      <HintPath>$(Sts2DataDir)/0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
 
     <Reference Include="Steamworks.NET">
-      <HintPath>$(Sts2DataDir)\Steamworks.NET.dll</HintPath>
+      <HintPath>$(Sts2DataDir)/Steamworks.NET.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

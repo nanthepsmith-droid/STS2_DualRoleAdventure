@@ -275,9 +275,13 @@ def resolve_game_dir(explicit: str | None) -> tuple[Path, str]:
     if DEFAULT_CSPROJ.is_file():
         try:
             text = DEFAULT_CSPROJ.read_text(encoding="utf-8", errors="replace")
-            match = re.search(r"<Sts2Dir>(.*?)</Sts2Dir>", text)
-            if match and match.group(1).strip():
-                return Path(match.group(1).strip()), "LocalMultiControl.csproj <Sts2Dir>"
+            # csproj 里 <Sts2Dir> 是**多行条件赋值**（-p:Sts2Dir > STS2_DIR > 平台默认值），
+            # 所以带 Condition 的属性行也要认；但 $(STS2_DIR) 这类**未展开的变量值**没有意义，
+            # 必须跳过，取第一条"字面路径"（2026-09-19 双平台化时改，旧的无属性写法仍兼容）。
+            for match in re.finditer(r"<Sts2Dir(?:\s[^>]*)?>(.*?)</Sts2Dir>", text):
+                value = match.group(1).strip()
+                if value and "$(" not in value:
+                    return Path(value), "LocalMultiControl.csproj <Sts2Dir>"
         except OSError:
             pass
     return Path(DEFAULT_GAME_DIR), "内置默认路径"

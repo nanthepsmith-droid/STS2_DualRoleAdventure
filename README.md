@@ -37,7 +37,12 @@ See the **[Player Guide](PLAYER_GUIDE.md)** ([简体中文](PLAYER_GUIDE.zh-CN.m
 
 Requirements: .NET SDK 9, a Slay the Spire 2 install.
 
-1. Point `<Sts2Dir>` in `LocalMultiControl.csproj` at your game install (it is OS-conditional: a Windows path and a WSL `/mnt/c/...` path are both preconfigured — edit yours).
+1. Point `<Sts2Dir>` in `LocalMultiControl.csproj` at your game install. Resolution order is
+   `-p:Sts2Dir=<path>` > env var `STS2_DIR` > the built-in default (Windows `D:/SteamLibrary/...`).
+   On Linux / WSL pass it explicitly, e.g.
+   `dotnet build LocalMultiControl.csproj -c Release -p:Sts2Dir=/mnt/d/SteamLibrary/"steamapps/common/Slay the Spire 2"`.
+   Every path in the csproj uses forward slashes, so the same file works on both platforms
+   (backslashes are not separators on Linux).
 2. Build:
 
 ```bash
