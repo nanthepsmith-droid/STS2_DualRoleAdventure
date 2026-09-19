@@ -107,6 +107,31 @@ shopping can optionally be handed to Vakuu via "Auto-buy cards" (below).
   from the action-queue UI; hand order self-heals after card transforms; reward/shop/event ownership
   fixes for local multiplayer.
 
+### New in v1.42 (same settings submenus, saved instantly)
+
+- **Shop automation completed** (inside "Vakuu autopilot"; all off by default and requiring the
+  "Auto-buy cards" master switch):
+  - **Auto-buy relics** and **auto-buy potions**: relics/potions have no community ratings, so these only
+    check "affordable + still ≥ 50 gold afterwards"; potions additionally require a free potion slot.
+  - **Auto card removal**: when the gold floor allows it, Vakuu buys the shop's card-removal service once and
+    removes one card by pick priority (with "smart pick priority" on: Curse > Status > Quest > Strike >
+    basic Defend > the rest).
+  - With "Personal-stats decision assist" on and at least 3 finished runs that bought something, relics and
+    potions also consult **your own** win-rate delta (runs where you bought it vs. runs where you did not):
+    a **negative delta vetoes the purchase** (veto only — it never proactively picks what to buy).
+- **Faster Vakuu card plays now also applies to the action-queue mode** (r132): previously only the in-place
+  path benefited, so turning on queue mode + speed-up looked ineffective; queue plays now skip the
+  result-pile tweens as well. Also fixes **cards stuck in the play area** after queue-mode plays (r133).
+- **Fixed: post-combat card rewards are no longer left unclaimed** (r134): gold/potion rewards worked, but the
+  **card reward** could stall waiting for you (log: `Card selector unset during test!`); it now auto-claims
+  the leftmost card.
+- **Settings page fully bilingual** (r135): no more Chinese leaking into the English UI; the three Vakuu play
+  options (speed-up / action queue / concurrent) moved from "Other settings" into the "Vakuu autopilot"
+  section (config keys and storage unchanged).
+- **Config key spelling unified** (r140): `wakuu*` keys in the config file are now `vakuu*` (the game's
+  official spelling is Vakuu). **Old keys keep working** and are migrated on save; when both exist, the new
+  key wins.
+
 ## During a run
 
 - **Switch characters:** `Tab` (next) / `Shift+Tab` (previous). Legacy keys `]` `R` `/` (next) and `[` `T` (previous) still work.

@@ -3,7 +3,7 @@
     "name":  "Local Multi-Control — 本地多控 · 多角色冒险",
     "author":  "liwenhao0427",
     "description":  "Convert the online multiplayer flow into local multi-control: 2-12 switchable characters on one machine for solo / local co-op. 将联网多人流程改造为本地多角色可切换操控，支持单机多人协作。",
-    "version":  "1.41.0",
+    "version":  "1.42.0",
     "min_game_version":  "0.111.0",
     "tag":  "本地多控 多角色 | Local Multi-Control",
     "detail":  "Turns the online multiplayer flow into local multi-control: character switching, lobby multi-character editing, and control-context sync for combat / events / rest sites, plus stability fixes. Pure code, no extra assets. 将联网多角色流程转为本地多控：角色切换、大厅多角色编辑、战斗/事件/休息区等阶段的控制上下文同步与稳定性修复。纯代码实现，无额外素材依赖。",

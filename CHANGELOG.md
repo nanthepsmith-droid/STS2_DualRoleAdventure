@@ -2,7 +2,13 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
-## [Unreleased]
+## [1.42.0] - 2026-09-19
+
+> v1.42 = r131~r140（2026-09-14 起）：商店自动化补全（自动买遗物 / 药水 / 删牌，含个人统计否决式接入）/
+> 瓦库出牌队列路径加速（r132）与卡面滞留修复（r133）/ 战后卡牌奖励漏领修复（BUG-13，r134）/
+> 设置页全面中英文双语（r135）/ 配置键拼写统一 `wakuu*` → `vakuu*`（r140，带旧键兼容迁移）/
+> 门禁与发布工具链（`preflight.ps1` 一键门禁、离线静态自检 + 静态层 CI、运行期目标基线、
+> 发布包附 `build-info.json`）。
 
 ### Added
 - **发布包附带 `build-info.json`（源码 commit + 依赖锁定，2026-09-19）**：`release_build.ps1` 在
