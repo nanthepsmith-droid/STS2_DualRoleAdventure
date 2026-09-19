@@ -19,6 +19,7 @@
 #      可从 Entry.cs 当前 marker 自动取下一 rN
 #   4. dotnet build -c Release -warnaserror（0 警告 0 错误门禁）
 #   5. 拷贝 dll + json 到 workshop\content\
+#   5.5 生成 build-info.json（源码 commit + 依赖锁定；打进 zip，并在 release\ 留同名副本）
 #   6. 打 zip 到 release\DualRoleAdventure-v{major}.{minor}.zip
 #   7. 打印 SHA256（源 dll / zip / zip 内 dll）供发布时核对
 #   8. -PublishGitHub：提交版本改动 → 打 tag `v{major}.{minor}` →（-PushGit 时）推 origin
@@ -138,6 +139,157 @@ if (-not $DryRun) {
     }
 }
 
+# ---------------------------------------------------------------- 4.5 构建元数据：源码 commit + 依赖锁定
+# 产出 build-info.json（发布包内 + release\ 同名副本），回答三个问题：
+#   ① 这一版从哪个 commit 构建的？② 用哪套工具链？③ 对着哪几个游戏程序集（含 SHA256）构建？
+# 做法参照 CouchCoop 的 build-info.txt（2026-09-19 调研）。我们的"依赖锁定"重点是**游戏侧程序集**——
+# Harmony mod 的 ABI 兼容性完全取决于 sts2.dll / 0Harmony.dll 这些文件的版本与哈希。
+Write-Step "生成构建元数据 build-info.json（源码 commit + 依赖锁定）"
+
+function Get-Sha256OrEmpty {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return "" }
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLower()
+}
+
+# 原生命令包装：本脚本 $ErrorActionPreference='Stop'，而工具往 stderr 写提示时会抛
+# NativeCommandError 打断脚本（见 tools\powershell-pitfalls.md）。这里临时降级，并把
+# "非 0 退出"一律当作"取不到值"（build-info 是元数据，取不到不该让发布失败）。
+function Invoke-TextCommand {
+    param([string]$Exe, [string[]]$CmdArgs)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $out = & $Exe @CmdArgs 2>$null
+        if ($LASTEXITCODE -ne 0) { return $null }
+        $text = ($out | Out-String).Trim()
+        if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+        return $text
+    } catch {
+        return $null
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+}
+
+$zipTag = "v{0}.{1}" -f $verMajor, $verMinor
+$builtUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+$gitCommit = Invoke-TextCommand "git" @("-C", $projectRoot, "rev-parse", "--short", "HEAD")
+$gitCommitFull = Invoke-TextCommand "git" @("-C", $projectRoot, "rev-parse", "HEAD")
+if (-not $gitCommit) { $gitCommit = "no-git" }
+if (-not $gitCommitFull) { $gitCommitFull = "no-git" }
+$gitBranch = Invoke-TextCommand "git" @("-C", $projectRoot, "rev-parse", "--abbrev-ref", "HEAD")
+if (-not $gitBranch) { $gitBranch = "no-git" }
+
+# 工作区状态：故意不用 `git status --porcelain` —— porcelain 的 " M path" 首行前导空格是**有意义**的，
+# 而 Invoke-TextCommand 里的 .Trim() 会把它吃掉，导致首行路径少一个字符（实测踩中 "ualRoleAdventure.json"）。
+# 改用两条输出干净的只读命令（改动的跟踪文件 + 未跟踪文件），再合并去重。
+$dirtyPaths = @()
+foreach ($chunk in @(
+        (Invoke-TextCommand "git" @("-C", $projectRoot, "diff", "--name-only", "HEAD")),
+        (Invoke-TextCommand "git" @("-C", $projectRoot, "ls-files", "--others", "--exclude-standard")))) {
+    if (-not $chunk) { continue }
+    foreach ($line in @($chunk -split "`r?`n")) {
+        $p = ($line.Trim()) -replace '\\', '/'
+        if (-not [string]::IsNullOrWhiteSpace($p) -and $dirtyPaths -notcontains $p) { $dirtyPaths += $p }
+    }
+}
+$dirtyPaths = @($dirtyPaths | Sort-Object)
+# ⚠ 本脚本第 2 步已经改过 3 处版本 json ⇒ 发布时整体 dirty=true 属**预期**；
+#    dirtyFilesExcludingVersionJsons 才是"除版本号外还改了别的吗"的真实信号
+#    （**直接列路径**而不是只给计数，事后能一眼看出是哪几个文件）。
+$versionJsonRel = @("DualRoleAdventure.json", "mod_manifest.json", "workshop/content/DualRoleAdventure.json")
+$nonVersionDirty = @($dirtyPaths | Where-Object { $versionJsonRel -notcontains $_ })
+$sourceDirty = if ($dirtyPaths.Count -gt 0) { "dirty" } else { "clean" }
+
+$dotnetSdk = Invoke-TextCommand "dotnet" @("--version")
+if (-not $dotnetSdk) { $dotnetSdk = "unknown" }
+$csprojText = ""
+try { $csprojText = [System.IO.File]::ReadAllText((Join-Path $projectRoot "LocalMultiControl.csproj"), [System.Text.Encoding]::UTF8) } catch { }
+$godotSdk = "unknown"
+$targetFramework = "unknown"
+$sdkMatch = [regex]::Match($csprojText, 'Sdk="Godot\.NET\.Sdk/([^"]+)"')
+if ($sdkMatch.Success) { $godotSdk = $sdkMatch.Groups[1].Value }
+$tfMatch = [regex]::Match($csprojText, '<TargetFramework>([^<]+)</TargetFramework>')
+if ($tfMatch.Success) { $targetFramework = $tfMatch.Groups[1].Value }
+
+# 依赖锁定（主）：真正的运行期依赖 = 游戏安装里的这几个程序集（ABI 兼容性就靠它们）。
+$gameDataDir = Join-Path $GameDir "data_sts2_windows_x86_64"
+$lockedAssemblies = @()
+foreach ($asmName in @("sts2.dll", "0Harmony.dll", "Steamworks.NET.dll", "GodotSharp.dll")) {
+    $asmPath = Join-Path $gameDataDir $asmName
+    if (-not (Test-Path -LiteralPath $asmPath)) { continue }
+    $asmItem = Get-Item -LiteralPath $asmPath
+    $lockedAssemblies += [ordered]@{
+        name           = $asmName
+        fileVersion    = "" + $asmItem.VersionInfo.FileVersion
+        productVersion = "" + $asmItem.VersionInfo.ProductVersion
+        sizeBytes      = $asmItem.Length
+        sha256         = (Get-FileHash -LiteralPath $asmPath -Algorithm SHA256).Hash.ToLower()
+    }
+}
+
+# 依赖锁定（次）：NuGet 解析结果。本工程只有 SDK + HintPath 引用（无 PackageReference），
+# 所以这里通常是空的；有 assets 文件就照实记录，没有不算失败。
+$nugetPackages = @()
+$assetsPath = Join-Path $projectRoot "obj\project.assets.json"
+if (Test-Path -LiteralPath $assetsPath) {
+    try {
+        $assets = Get-Content -LiteralPath $assetsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($lib in $assets.libraries.PSObject.Properties) {
+            $nugetPackages += [ordered]@{ id = $lib.Name; sha512 = "" + $lib.Value.sha512 }
+        }
+    } catch { }
+}
+
+$artifacts = [ordered]@{}
+foreach ($artifact in @(
+        @{ key = "dll"; path = $dllPath; name = "DualRoleAdventure.dll" },
+        @{ key = "json"; path = $rootJson; name = "DualRoleAdventure.json" })) {
+    $sizeBytes = 0
+    if (Test-Path -LiteralPath $artifact.path) { $sizeBytes = (Get-Item -LiteralPath $artifact.path).Length }
+    $artifacts[$artifact.key] = [ordered]@{
+        name      = $artifact.name
+        sha256    = (Get-Sha256OrEmpty $artifact.path)
+        sizeBytes = $sizeBytes
+    }
+}
+$dllSha = "" + $artifacts["dll"].sha256
+
+$buildInfo = [ordered]@{
+    schemaVersion            = "dualroleadventure-release-build-info/v1"
+    modId                    = "DualRoleAdventurefixed"
+    version                  = $Version
+    tag                      = $zipTag
+    marker                   = $markerSuggestion
+    builtUtc                 = $builtUtc
+    source                   = [ordered]@{
+        commit                          = $gitCommitFull
+        commitShort                     = $gitCommit
+        branch                          = $gitBranch
+        dirty                           = $sourceDirty
+        dirtyFileCount                  = $dirtyPaths.Count
+        dirtyFiles                      = $dirtyPaths
+        dirtyFilesExcludingVersionJsons = $nonVersionDirty
+    }
+    dependencies             = [ordered]@{
+        toolchain      = [ordered]@{ dotnetSdk = $dotnetSdk; godotSdk = $godotSdk; targetFramework = $targetFramework }
+        gameAssemblies = $lockedAssemblies
+        nugetPackages  = $nugetPackages
+    }
+    game                     = [ordered]@{ version = $gameVersion; installDir = $GameDir; dataDir = $gameDataDir }
+    artifacts                = $artifacts
+}
+$buildInfoJson = $buildInfo | ConvertTo-Json -Depth 8
+
+if ($DryRun) {
+    Write-Host "  [DRY] build-info.json 内容预览（不写盘）:"
+    Write-Host $buildInfoJson
+} else {
+    Write-Ok "  build-info 就绪: commit=$gitCommit/$sourceDirty, 游戏程序集锁定 $($lockedAssemblies.Count) 个, 非版本号改动 $($nonVersionDirty.Count) 处"
+}
+
 # ---------------------------------------------------------------- 5. 拷贝到 workshop\content\
 Write-Step "拷贝 dll + json 到 workshop\content\ ..."
 if (-not $DryRun) {
@@ -149,9 +301,9 @@ if (-not $DryRun) {
 }
 
 # ---------------------------------------------------------------- 6. 打 zip 到 release\
-$zipTag = "v{0}.{1}" -f $verMajor, $verMinor
 $releaseName = "DualRoleAdventure-$zipTag"
 $zipPath = Join-Path $releaseRoot "$releaseName.zip"
+$buildInfoCopy = Join-Path $releaseRoot "$releaseName-build-info.json"
 Write-Step "打包: $zipPath"
 if (-not $DryRun) {
     if (-not (Test-Path -LiteralPath $releaseRoot)) { New-Item -ItemType Directory -Path $releaseRoot | Out-Null }
@@ -161,17 +313,20 @@ if (-not $DryRun) {
     New-Item -ItemType Directory -Path $tempDir | Out-Null
     Copy-Item -LiteralPath $dllPath -Destination (Join-Path $tempDir "DualRoleAdventure.dll") -Force
     Copy-Item -LiteralPath $rootJson -Destination (Join-Path $tempDir "DualRoleAdventure.json") -Force
+    # build-info.json 打进发布包（UTF-8 无 BOM），并在 release\ 留一份同名副本便于不开包核对/比对
+    [System.IO.File]::WriteAllText((Join-Path $tempDir "build-info.json"), $buildInfoJson, (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($buildInfoCopy, $buildInfoJson, (New-Object System.Text.UTF8Encoding($false)))
     Compress-Archive -Path (Join-Path $tempDir "*") -DestinationPath $zipPath -Force
     Remove-Item -LiteralPath $tempDir -Recurse -Force
-    Write-Ok "  发布包已生成: $zipPath"
+    Write-Ok "  发布包已生成: $zipPath（含 build-info.json）"
 } else {
-    Write-Host "  [DRY] 打包 -> $zipPath"
+    Write-Host "  [DRY] 打包 -> $zipPath（含 build-info.json；release\ 另留 $([System.IO.Path]::GetFileName($buildInfoCopy)) 副本）"
 }
 
 # ---------------------------------------------------------------- 7. SHA256（dll / zip / zip 内 dll）
 Write-Step "SHA256 指纹（发布时核对）"
 if (-not $DryRun) {
-    $dllSha = (Get-FileHash -LiteralPath $dllPath -Algorithm SHA256).Hash.ToLower()
+    # $dllSha 已在 4.5 步算好（build-info.json 里是同一份）
     $zipSha = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLower()
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem

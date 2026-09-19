@@ -5,6 +5,16 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 ## [Unreleased]
 
 ### Added
+- **发布包附带 `build-info.json`（源码 commit + 依赖锁定，2026-09-19）**：`release_build.ps1` 在
+  `dotnet build` 之后生成构建元数据并打进发布 zip（`release\` 下另留一份同名副本）：
+  - `source`：git commit（全哈希 / 短哈希 / 分支）、`dirty`，以及**改动文件路径清单** ——
+    其中 `dirtyFilesExcludingVersionJsons` 用来区分"发布流程自身改了 3 处版本 json"（预期）
+    与"还夹带了别的未提交改动"（要留意）。
+  - `dependencies`：`toolchain`（dotnet SDK / Godot SDK / TargetFramework）＋ **`gameAssemblies`**：
+    `sts2.dll` / `0Harmony.dll` / `Steamworks.NET.dll` / `GodotSharp.dll` 的
+    fileVersion、productVersion（含上游 git revision）、大小与 **SHA256**；外加 `nugetPackages`（通常为空）。
+  - 用途：事后回答「这一版是从哪个 commit、对着哪几个游戏程序集构建的」——游戏更新导致 ABI 变化时可一眼比对。
+  - 做法参照 CouchCoop（工坊 3799476240）的 `build-info.txt`。
 - **商店自动化 v3：个人统计接入（否决式）+ 自动删牌服务（2026-09-18，r139）**：
   - **遗物 / 药水决策现在读个人统计**：新增「商店购买 → 局胜负」切片
     （`WakuuPersonalQuery.CountShopWinSlice` / `TryGetShopDecisionSignal`）——

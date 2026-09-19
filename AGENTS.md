@@ -158,6 +158,8 @@ When the game updates and the mod breaks:
 5. Commit, push to `origin`, optionally create a GitHub release —— 一条命令搞定（版本三处同步 + marker +
    构建门禁 + zip + SHA + tag + gh release）：`.\Scripts\Tools\release_build.ps1 -Version x.y.z -PublishGitHub -PushGit`
    （原 `BuildRelease.ps1` 已于 2026-09-16 并入本脚本，不再单独存在）。
+   发布 zip 内附 **`build-info.json`**（源码 commit + 依赖锁定：toolchain 与 `sts2.dll` /
+   `0Harmony.dll` / `Steamworks.NET.dll` / `GodotSharp.dll` 的版本与 SHA256），2026-09-19 起生效。
 6. Never touch the original author's Workshop item (3747538947).
 
 ## 8. Documentation map

@@ -31,7 +31,7 @@
 - **排查入口**：`CombatManager.SetupPlayerTurn`、本 mod 的 `CombatManagerTurnHookForegroundPatch`
   （回合开始 hook 前切前台）、能量 UI 的归属刷新（战斗 UI 能量条 / `PlayerCombatState` 能量同步）。
 - 待确认：能量**数值**本身是否也错（数据层），还是仅 UI 串了（表现层）。
-- ✅ **2026-09-10 r96 已修并部署（待实机复测）**：根因 = 能量球与手牌分属两个玩家；
+- ✅ **2026-09-10 r96 已修并部署（r96 实机未通过 → r97 再修后闭环，见下）**：根因 = 能量球与手牌分属两个玩家；
   按不变量「能量球必须与当前展示的手牌同属一个玩家」收口——新纯函数
   `CombatEnergyOwnership.TryResolveMismatch` + 手牌归属追踪 `_lastCombatUiPlayerId`
   （入战先记原版 `NCombatUi.Activate` 那一版）+ 入战延迟刷新改按手牌归属 +
@@ -237,7 +237,7 @@
   怀疑 orb 归属可能受「上下文短暂钉在瓦库身上」影响 → 顺 `OrbCmd.Channel` 的 `player` 参数来源追。
 - **优先级**：低（偶发、自愈、不影响数据）。
 
-### BUG-9 SL（读档）后个人记录的抉择未回滚 → 选择率被污染（2026-09-11 用户反馈；**r118 已修，待实机**）
+### BUG-9 SL（读档）后个人记录的抉择未回滚 → 选择率被污染（2026-09-11 用户反馈；**r118/r119 定位 → r120 改为"写时幂等" → ✅ 2026-09-12 实机确认，关单**）
 
 - **现象（用户 2026-09-11）**：「本地事件选项选择率记录好像有点问题？比如说我 **SL** 了它还是会记录我
   **SL 前的选项**」。
@@ -313,7 +313,7 @@
     ⇒ 选牌一次 SL 只留最后一页，抓取率不被放大。**本节可关单**。
   - 本轮复测会话**无战斗**，故 r116/r117 的战斗路径未参与（r117 早前已单独实机确认）。
 
-### BUG-10 瓦库在「回合被强行结束」后仍继续出牌（虚空形态，2026-09-13 用户实机发现；**r122 初修（✅ 实机确认已修）→ r123 收敛为"按结束来源归因"，待实机**）
+### BUG-10 瓦库在「回合被强行结束」后仍继续出牌（虚空形态，2026-09-13 用户实机发现；**r122 初修 → r123 收敛为"按结束来源归因" → ✅ 2026-09-13 实机确认，关单**）
 
 - **现象（用户原话）**：瓦库打出**虚空形态**后，"本来虚空形态打出后强行结束回合无法出牌，
   但是瓦库结束回合了也能出牌"。**与两个新开关（出牌队列实验档 / 出牌加速）无关** —— 四种组合都能复现。
@@ -367,7 +367,7 @@
   并且挪到**闸门之后**调用 —— 即"闸门已放行、下一次迭代真的要去打牌"才记录。
   **行为零变化（只动日志）**，+2 单测（豁免状态真值表）。
 
-### BUG-11 `NCardPlayQueue.OnActionEnqueued` 对「本地非前台玩家出牌」必然空引用（2026-09-13 实机日志发现；**r124 已修，待实机**）
+### BUG-11 `NCardPlayQueue.OnActionEnqueued` 对「本地非前台玩家出牌」必然空引用（2026-09-13 实机日志发现；**r124 已修 → ✅ 2026-09-13 实机确认，关单**）
 
 - **现象（日志）**：`动作队列UI入队触发空引用，已拦截避免阻塞: action=PlayCardAction card: CARD.DEFEND_IRONCLAD index: 25 …,
   context=76561198422527326` ×6（既有 fail-safe 的 WARN，600ms 限流）。
@@ -445,7 +445,7 @@
   - 本会话无战斗（只进商店），战斗路径回归与上下文漂移降噪已在 r129 会话确认
     （4 条 INFO / 0 条 WARN）。**BUG-12 关单。**
 
-### BUG-13 战后卡牌奖励不被瓦库自动领取（2026-09-14 实机发现；**r134 已修，待实机**）
+### BUG-13 战后卡牌奖励不被瓦库自动领取（2026-09-14 实机发现；**r134 已修 → ✅ 2026-09-14 实机确认，关单**）
 
 - **现象（用户）**：「战斗结束后瓦库不会自动领取**卡牌**奖励（其它奖励依旧领取）；我退出重进后瓦库就正常自动领取了。」
 - **实机证据（marker r133，`godot.log` 行 13128~13189）**：同一场战斗的 5 个瓦库，金币/药水全部领取成功，
@@ -545,6 +545,11 @@
 
 ### 改进-2 多瓦库串行打牌 + 视角跟着切（新增）
 
+> ⚠ **配置键拼写（2026-09-18 r140 起）**：本节各轮记录里出现的 `wakuuPlayQueue` / `wakuuPlayOverlap` /
+> `wakuuViewMode` / `wakuuBrain` / `fastWakuuPlay` / `keepWakuuFormRelic` 是**当时的旧键名**；
+> 现键名已统一为 `vakuu*`（旧键仍兼容、加载时自动迁移，见顶部指针与 § 改进-5 的 r140 条）。
+> **C# 属性/类名**（`WakuuPlayQueue` / `LocalWakuuAutopilotConfig` 等）**刻意不改**（纯机械重构零收益）。
+
 > 📄 **2026-09-10 方案已产出（用户拍板：只做调研+方案，未动代码）**：
 > `maintenance-docs/decision-records/多瓦库并行托管可行性与方案.md`（无 git，不进 github）。
 > 结论要点：① 「后台托管免切前台」已落地（本节「现象」描述部分过时，`backgroundMode` 默认开、5 处切前台点有守卫）；
@@ -566,7 +571,7 @@
 > `FromChooseACardScreen`，漏了 `FromSimpleGrid`；已补同款前缀（顺带用同一判据跳过无意义切前台）。
 > ② 「仅关键节点」档位**实际无效**（被同一钩子里的「改进-1」开关再拦一次）→ 改为 **peek**
 > （回合开始跳过去看一眼、约 1.2s 后自动切回真人），并让改进-1 不再管辖瓦库形态角色。
-> ⑬ **Phase 1 已实现（r113，2026-09-11，已部署待实机）**：**选择器按归属者分发**（方案 §4）。
+> ⑬ **Phase 1 已实现（r113，2026-09-11，已部署；✅ 2026-09-11 实机核对通过）**：**选择器按归属者分发**（方案 §4）。
 > 新增纯逻辑 `WakuuOwnerSelectorMap<TSelector>`（归属者→选择器登记表，支持同归属者嵌套、乱序释放、
 > 幂等释放）+ `WakuuSelectorDispatch.Decide(hasChooser, registryHit, chooserIsWakuu)`（路由真值表）；
 > 运行层 `WakuuSelectorRegistry.Open(ownerId, selector)` = `CardSelectCmd.PushSelector` + 登记，
@@ -609,7 +614,7 @@
 > 即「跳过去看一眼再自动切回」与观察一致，符合设计预期（用户原话：跳过去看一眼然后自动切回）。
 > **附带确认**：该会话**没有**再次出现脏值自愈 WARN（`wakuuBrain=heuristic` 保持）→
 > 证明 r110 的「每刀只改一次」在**跨会话**同样成立。
-> ⑭ **方案 D 可开关实验档已落地（r121，2026-09-12，已部署待实机）**：新增开关
+> ⑭ **方案 D 可开关实验档已落地（r121，2026-09-12，已部署；✅ 后续 ⑮~⑱ 实机确认）**：新增开关
 > **「【实验】瓦库出牌走动作队列」（配置键 `wakuuPlayQueue`，默认关）** —— 开启后瓦库出牌不再用
 > inline 的 `CardCmd.AutoPlay`，而是 `new PlayCardAction(card, target)` 经
 > `ActionQueueSynchronizer.RequestEnqueue` 入**该瓦库自己的**动作队列（原版 `CardModel.EnqueueManualPlay`
@@ -878,7 +883,7 @@
   - 社区侧若 SkadaHelper 的事件条目其实带选择率字段（当前只读了 `Text/WinRate/Count`），
     可一并接入 —— **待确认字段名，别猜**。
 
-### 改进-5 商店自动化增量：自动买遗物 / 买药水（**2026-09-18 r137 已实现，待实机**）
+### 改进-5 商店自动化增量：自动买遗物 / 买药水 / 删牌服务（**r137 / r139 已实现，✅ 2026-09-18 实机确认**）
 
 - **背景**：`shopAssist`（Phase 4，默认关）此前只买卡（r64/r65/r66/r67）。可行性分析 §9.3 里的
   「遗物 / 药水 / 删牌服务」三项一直挂着未做。
@@ -932,7 +937,7 @@
   `clr_compat_check` PASS、`preflight.ps1 -Deploy` **4 PASS / 3 SKIP**、部署位 marker
   **`2026-09-18-r139`**、`dll_check --deployed` 全绿（`IsPersonalStatsVeto` / `CountShopWinSlice` /
   `TryGetShopDecisionSignal` / `WakuuShopSignal` / `shopAssistBuyRemoval` / `TryAutoBuyRemovalAsync` 在、
-  `__runOriginal` 不在）、部署位与仓库根 **字节一致**（sha256 `4b6454d5e301…`）。**未 commit**。
+  `__runOriginal` 不在）、部署位与仓库根 **字节一致**（sha256 `4b6454d5e301…`）。后已提交 **`b737374`**（r137+r138 为 `7a7eb5e`）。
 - **实机验证方法（请复测，r139）**：设置页「瓦库托管」区把 **「商店自动买卡」+「商店自动买遗物」+
   「商店自动买药水」+「商店自动删牌」** 四个开关都打开 → 进商店切到瓦库视图，期望日志：
   - `瓦库商店自动买遗物成功: player=…, relic=…, rarity=…, gold=…`（不买时是
@@ -956,7 +961,42 @@
   - 买卡回归正常（7 张/543 金 + 7 张/529 金）；六个回归项（选择器作用域 / 看门狗 / 手牌节点 /
     队列空引用 / 领取失败 / 保留人工领取）**全 0**；
   - **`个人记录-商店购买` 0** ⇒ 瓦库自动购买**没有被误记成真人决策**（`PurchaseOwnerId` 排除生效）；
-  - **`商店-删牌归属玩家` 0** ⇒ 删牌服务确实没被自动点（与本轮"未做"一致）。
+  - **`商店-删牌归属玩家` 0** ⇒ 删牌服务确实没被自动点（**r137 当时未做**；r139 已做并实机确认，见下条）。
+- ✅ **2026-09-18 实机确认（r139，含自动删牌）**：日志 `logs-archive/godot__20260918-225158__r139.log`
+  （1.07 MB，终态 OK）—— 两家商店共 `瓦库商店自动采购启动` **2** 次：
+  - 买卡 7+7 张（527 / 516 金）；
+  - **`瓦库商店自动买遗物成功` 6 次**（VAJRA/JUZU_BRACELET/CHEMICAL_X + MINIATURE_CANNON/GIANT_TURTLE_SHELL/DINGY_RUG，
+    Common/Uncommon/Shop 都有；两次「买了=3，花=542 / 579 金」）；
+  - **`瓦库商店自动买药水成功` 3 次**（CURE_ALL/POWER_POTION/ATTACK_POTION，花 178 金）；
+    另一店 `瓦库商店自动买药水跳过：药水栏已满（上限=3）` ⇒ **栏满即停正确**；
+  - **`瓦库商店自动删牌成功: player=…327, card=STRIKE_IRONCLAD, gold=75` 1 次**；
+    删牌前有 `瓦库自动选牌作答: source=商店删牌服务, scenario=Remove`（选牌优先级生效）；
+    另一店 `瓦库商店自动删牌: 金币不足或价格异常，不删 … 价格=75, 金币=52, 保留≥50金` ⇒ **金币保底正确**；
+  - 记录归属：`个人记录-删牌钩子命中 … 跳过: 瓦库商店自动采购作用域内（归属者=本人）`
+    ⇒ 自动删牌**没有被误记成真人决策**；`个人记录-商店购买` **0**、`商店-删牌归属玩家` **0**；
+  - 六个回归项（选择器作用域异常/看门狗/手牌节点/队列空引用/领取失败/保留人工领取）**全 0**。
+  - ⚠ **未覆盖项**：**个人统计否决路径**本局没被走到（无 `个人统计样本=…` 行 —— 该行只在
+    "无符合条件候选，不买"分支打印，本局两家店都买到了东西）⇒ 属**未覆盖**而非失败，下次顺带观察。
+- ✅ **2026-09-18 实机确认（r140，配置键 `wakuu*` → `vakuu*` 迁移）**：日志
+  `logs-archive/godot__20260918-230800__r140.log` —— `瓦库托管生效配置` 已是**新键**且取值与升级前逐项一致；
+  **决定性证据 = `vakuuPlayQueue=True` / `vakuuPlayOverlap=True`**（这两个开关**默认是"关"**）
+  ⇒ 确认是**旧键迁移过来的**，而不是被打回默认值；`INIT_STATUS=OK`、`INIT_FAILED=0`、`FATAL=0`、
+  我们的 `[ERROR]` **0**、我们的 `[WARN]` **19 条全为启动期第三方 owner / 框架提示**（无选择器残留、无 BUG-15 命中）。
+  - 📌 **一处订正（原验证步骤写得太乐观）**：磁盘上的 `vakuu_autopilot.json` 当时**仍是旧键**
+    （该文件 mtime 停在 2026-09-18 22:46，早于 r140 那次启动）—— 迁移逻辑**只在"保存配置"时**才把新键写盘，
+    那局没动过任何设置 ⇒ 文件未被重写。**不影响读取**（每次加载都会迁移）。这是预期行为，不是 bug。
+  - ✅ **2026-09-19 10:53 补验（用户随便改了一个设置）**：磁盘文件 mtime → **09-19 10:53:48**、
+    **内容只剩新键**（`wakuu*` 全部消失）、`keepVakuuFormRelic: false`；同会话 `瓦库托管生效配置`
+    由启动时的 `keepVakuuFormRelic=True`（旧键迁移值）变为改设置后的 `=False`（L7506）
+    ⇒ **读 → 迁移 → 改 → 写新键**整条链闭环。该会话门禁：`marker=2026-09-18-r140`、`INIT_STATUS=OK`、
+    `PATCH_RESULT critical=25/25 optional=11/11`、`COMPAT_RESULT PASS`、我们的 `[ERROR]` **0**、
+    `[WARN]` 19 条全为启动期第三方 owner（全局 4 条 `[ERROR]` 均第三方/游戏侧）。
+- ✅ **配置键清理复查（2026-09-19，静态核对，无代码改动）**：写盘路径**全部**走 `WakuuConfigData`
+  的属性名（`TrySetAndSave` / `TrySetAndSaveString` 都是 `nameof(WakuuConfigData.*)`，`Serialize` 直接序列化该类）
+  ⇒ 保存时**只会写新键**；旧键仅存在于 `MigrateLegacyKeys`（**读侧**兼容）与迁移测试样本里；
+  全仓 `*.json` 搜不到任何旧键样例；`README(.zh-CN).md` 的命名说明是**有意引用旧键**；
+  `CHANGELOG.md` 里 r140 之前的条目属**历史记录、不改写**；`TODO.md` § 改进-2 的旧记录同理 ——
+  已在该节顶部加一行「键名已统一为 `vakuu*`」的提示（只提示、不改历史）。
 - 📌 **已知行为（用户 2026-09-18 拍板：不算 bug、不用修，仅记录）**：**同一家商店只采购一次**
   （`_handled` 以 `(room, player)` 去重，见 `LocalWakuuMerchantAuto.OnMerchantInventoryShown`）——
   所以「买完后再用控制台给瓦库加钱」不会触发第二轮采购，本来买不起的也不会补买。
@@ -1010,6 +1050,27 @@
    清单写错在游戏更新/手误时**单测先红**，不再等到实机误报 Critical 缺失。
 6. **marker 解析的对齐坑**：`deploy_dll.ps1` 的 UTF-16 解码已修（r92，两种对齐都扫）。
    同类隐患：`dll_check.py` 早就是双对齐，其它自研脚本若从 dll 里抠字符串需同样处理。
+7. ~~**发布包构建元数据（源码 commit + 依赖锁定）**~~ ✅ 已做（2026-09-19，用户拍板）：
+   `release_build.ps1` 在 build 后生成 `build-info.json`（打进 zip + `release\` 留同名副本），
+   记录 git commit / 分支 / dirty（含**改动文件路径清单**，并单独给出
+   `dirtyFilesExcludingVersionJsons` 以区分"发布流程自身改的 3 处版本 json"）与依赖锁定
+   （toolchain：dotnet SDK / Godot SDK / TargetFramework；**gameAssemblies**：`sts2.dll` /
+   `0Harmony.dll` / `Steamworks.NET.dll` / `GodotSharp.dll` 的 fileVersion · productVersion ·
+   size · SHA256）。做法参照 CouchCoop 的 `build-info.txt`。
+   ⚠ **实现踩坑（已修）**：**不要用 `git status --porcelain` 的字符串截位取路径** —— porcelain
+   首行 `" M path"` 的**前导空格是有意义的**，被 `Out-String | .Trim()` 吃掉后首行路径会少一个字符
+   （实测产出过 `ualRoleAdventure.json`，进而把版本 json 误判成"非版本号改动"）。
+   现改用两条输出干净的命令：`git diff --name-only HEAD` + `git ls-files --others --exclude-standard`。
+8. **版本 lane + 根 loader（**待正式版更新再做**，用户 2026-09-19 拍板）**：
+   现状 = 只吃当前游戏版本（public-beta `0.111.0`），而且**原作者的 mod 依旧适配现在的正式版**
+   ⇒ 现在做没有任何收益，**先不做**。等**正式版更新**（我们和原作者都不得不跟版本）时再动手。
+   做法参照社区两个工坊作品（`3799476240` CouchCoop 的 `lanes/0.107.1` + `lanes/0.111.0`；
+   `3802686135` LocalCoopClone 的 `lib/<ver>/`）：根目录放一个极薄的 **loader dll**
+   （读 `release_info.json` 判定宿主游戏版本 → 用自定义 `AssemblyLoadContext` 从
+   `lanes\<gameVersion>\` 加载对应实现），一份工坊作品同时覆盖正式版与 public-beta。
+   我们侧的额外成本：每个 lane 需要一份**独立的引用路径配置** + 各自重跑 `regenerate_src.ps1`
+   生成对应 `sts2src`，S7 目标基线也要按 lane 拆（`targets.baseline.txt`）。
+   ⚠ 前置判断：**只有真的需要同时支持两个游戏版本时才做**，单版本下 lane 纯属增加复杂度。
 
 ---
 
