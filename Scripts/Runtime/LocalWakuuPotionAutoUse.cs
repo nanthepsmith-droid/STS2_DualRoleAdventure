@@ -13,7 +13,6 @@ using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Characters;
 using MegaCrit.Sts2.Core.Models.Potions;
 using MegaCrit.Sts2.Core.Models.Powers;
-using MegaCrit.Sts2.Core.MonsterMoves.Intents;
 using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
@@ -476,38 +475,9 @@ internal static class LocalWakuuPotionAutoUse
         IReadOnlyList<CardModel> draw = PileType.Draw.GetPile(player).Cards;
         IReadOnlyList<CardModel> discard = PileType.Discard.GetPile(player).Cards;
 
-        bool anyAttack = false;
-        int totalIncoming = 0;
-        try
-        {
-            foreach (Creature? enemy in combatState.GetCreaturesOnSide(CombatSide.Enemy))
-            {
-                if (enemy == null || !enemy.IsAlive || !enemy.IsHittable)
-                {
-                    continue;
-                }
-
-                MonsterModel? monster = enemy.Monster;
-                if (monster == null || !monster.IntendsToAttack)
-                {
-                    continue;
-                }
-
-                anyAttack = true;
-                foreach (AbstractIntent intent in monster.NextMove.Intents)
-                {
-                    if (intent is AttackIntent attackIntent)
-                    {
-                        totalIncoming += attackIntent.GetTotalDamage(combatState.Allies, enemy);
-                    }
-                }
-            }
-        }
-        catch (Exception exception)
-        {
-            // 意图解析异常时保守视为"没有可估的伤害"，不阻塞用药流程
-            LocalMultiControlLogger.Warn($"估算敌人意图伤害失败: {exception.Message}");
-        }
+        // 意图伤害求和：2026-09-20 抽到 LocalWakuuThreatEstimate（评分大脑的致死线判定要同一套口径），
+        // 这里改为调用它 —— 逻辑逐字搬移，行为零变化。
+        (bool anyAttack, int totalIncoming) = LocalWakuuThreatEstimate.EstimateIncomingThreat(combatState);
 
         return new PotionRuleContext
         {

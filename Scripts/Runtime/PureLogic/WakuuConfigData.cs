@@ -233,7 +233,10 @@ internal sealed class WakuuConfigData
 
     public string cardPickMode { get; set; } = WakuuChoiceModes.Last;
 
-    /// <summary>战斗中决策大脑：heuristic=启发式（默认，即现有出牌逻辑）/ auto=自动探测可用求解器。</summary>
+    /// <summary>
+    /// 战斗中决策大脑：heuristic=启发式（默认，即"最左可打牌"的原逻辑，行为零变化）/
+    /// scored=启发式评分（§18.2 轻量评分 + 目标选择升级）/ auto=自动探测可用求解器。
+    /// </summary>
     public string vakuuBrain { get; set; } = WakuuBrainModes.Heuristic;
 }
 
@@ -241,6 +244,9 @@ internal sealed class WakuuConfigData
 internal static class WakuuBrainModes
 {
     public const string Heuristic = "heuristic";
+
+    /// <summary>启发式评分大脑（§18.2，2026-09-20 新增）：按卡牌评分排序出牌 + 目标选择升级。</summary>
+    public const string Scored = "scored";
 
     public const string Auto = "auto";
 }

@@ -206,6 +206,11 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             LocalModText.Select(
                 "本档位细化「后台托管」的跟随程度，默认不跟随。**不跟随**：瓦库全程不抢视角，只保留两处防软锁兜底（作用域外需要你自己操作的选牌、安全网超时救援）；**仅关键节点**：瓦库回合开始时跳过去看一眼（看到轮到谁、抽了什么），约 1 秒后自动切回你自己，日常出牌不跟随；**全程跟随**：回合开始/结束、Hook 入队、瓦库出牌前都切过去（约等于关闭「后台托管」的观感）。仅当上方「后台托管（不切前台）」开启时生效。",
                 "Finer control over \"Background Autopilot\" above (default: Never). **Never**: Vakuu never takes the camera, except two softlock guards (out-of-scope card picks that need you, and the safety-net timeout rescue); **Key Moments Only**: at Vakuu turn start, peek at that character (see whose turn it is and what's drawn), auto-switch back in ~1s; daily plays don't follow; **Always Follow**: switch over at turn start/end, hook enqueue, and before each Vakuu play (~like turning \"Background Autopilot\" off). Only effective when \"Background Autopilot (No Camera Switch)\" is on.")));
+        column.AddChild(CreateBrainModeRow(
+            LocalModText.Select("战斗决策大脑", "Combat Decision Brain"),
+            LocalModText.Select(
+                "瓦库战斗里「打哪张牌 / 打谁」怎么决定，默认**启发式**。**启发式**：取手牌最左的那张可打牌（模组一直以来的行为，最稳、可预期）。**评分**：给每张可打牌打分再挑最高的一张——能力牌/0 费/能击杀敌人/该补格挡的牌会被优先；手牌里有牌可打时**最后才打 X 费牌**（把 X 值攒到最大）；需要指定敌人时**优先能击杀的目标，否则打有效血量最低的敌人**（集火），队友增益优先给真人。⚠ 评分用的是「卡面数值 + 力量/敏捷」的粗估（不含易伤/虚弱等额外修正），且本期没有跨回合计划；体感不对随时切回「启发式」。**自动探测**：留给将来的外部求解器（现在未装时等同启发式）。三者都**不影响**选牌/事件/商店等其它决策链。",
+                "How Vakuu decides \"which card to play / at whom\" in combat. Default is **Heuristic**. **Heuristic**: play the leftmost playable card (the mod's long-standing behavior; most stable and predictable). **Scored**: score every playable card and take the best — Powers / 0-cost / lethal-on-an-enemy / needed-block cards rank higher; X-cost cards are played **last** while any other playable card remains (to maximize X); for single-enemy cards it **prefers a killable target, otherwise the enemy with the lowest effective HP** (focus fire) and gives ally buffs to human players first. ⚠ Scoring uses a rough estimate (card values + Strength/Dexterity, no Vulnerable/Weak modifiers) and has no cross-turn planning; switch back to Heuristic anytime if it feels off. **Auto**: reserved for a future external solver (currently identical to Heuristic). None of these affect card picks / events / shops.")));
         AddToggleRow(column,
             LocalModText.Select("压制原版低语耳环", "Suppress Vanilla Earring"),
             LocalModText.Select(
@@ -682,6 +687,72 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             LocalWakuuAutopilotConfig.ViewModeNever => LocalWakuuAutopilotConfig.ViewModeKeyNodes,
             LocalWakuuAutopilotConfig.ViewModeKeyNodes => LocalWakuuAutopilotConfig.ViewModeAlways,
             _ => LocalWakuuAutopilotConfig.ViewModeNever,
+        };
+    }
+
+    /// <summary>
+    /// 战斗决策大脑切换行（三档：启发式 → 评分 → 自动探测，循环，2026-09-20 §18.2）。
+    /// 取值经 TrySetAndSaveString("vakuuBrain", ...) 即时写回 json；切换后由
+    /// LocalWakuuAutopilotConfig 的 Reload 链路调 WakuuBrainFactory.Reset 让新档位生效。
+    /// </summary>
+    private Control CreateBrainModeRow(string title, string description)
+    {
+        HBoxContainer row = new();
+        row.AddThemeConstantOverride("separation", 28);
+
+        VBoxContainer textColumn = new();
+        textColumn.CustomMinimumSize = new Vector2(880f, 0f);
+        textColumn.SizeFlagsHorizontal = (SizeFlags)3; // ExpandFill
+        textColumn.AddThemeConstantOverride("separation", 2);
+
+        Label titleLabel = CreateLabel(title, 26, new Color(1f, 0.85f, 0.35f));
+        titleLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        textColumn.AddChild(titleLabel);
+
+        Label descLabel = CreateLabel(description, 19, new Color(0.8f, 0.78f, 0.72f));
+        descLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        descLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        textColumn.AddChild(descLabel);
+
+        row.AddChild(textColumn);
+
+        LocalSimpleTextButton brainButton = new()
+        {
+            ButtonText = GetBrainModeDisplayText(LocalWakuuAutopilotConfig.BrainMode),
+            FontSize = 24,
+            SizeFlagsVertical = (SizeFlags)4, // ShrinkCenter
+        };
+        brainButton.CustomMinimumSize = new Vector2(220f, 64f);
+        brainButton.Connect(NClickableControl.SignalName.Released, Callable.From<NClickableControl>(_ =>
+        {
+            string next = NextBrainMode(LocalWakuuAutopilotConfig.BrainMode);
+            if (LocalWakuuAutopilotConfig.TrySetAndSaveString("vakuuBrain", next))
+            {
+                brainButton.ButtonText = GetBrainModeDisplayText(LocalWakuuAutopilotConfig.BrainMode);
+                LocalMultiControlLogger.Info($"战斗决策大脑已切换: {next}");
+            }
+        }));
+        row.AddChild(brainButton);
+        return row;
+    }
+
+    private static string GetBrainModeDisplayText(string mode)
+    {
+        return mode switch
+        {
+            LocalWakuuAutopilotConfig.ScoredBrainMode => LocalModText.Select("评分", "Scored"),
+            LocalWakuuAutopilotConfig.AutoBrainMode => LocalModText.Select("自动探测", "Auto"),
+            _ => LocalModText.Select("启发式", "Heuristic"),
+        };
+    }
+
+    private static string NextBrainMode(string mode)
+    {
+        return mode switch
+        {
+            LocalWakuuAutopilotConfig.HeuristicBrainMode => LocalWakuuAutopilotConfig.ScoredBrainMode,
+            LocalWakuuAutopilotConfig.ScoredBrainMode => LocalWakuuAutopilotConfig.AutoBrainMode,
+            _ => LocalWakuuAutopilotConfig.HeuristicBrainMode,
         };
     }
 

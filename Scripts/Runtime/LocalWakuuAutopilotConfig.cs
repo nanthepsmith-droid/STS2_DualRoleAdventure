@@ -201,6 +201,7 @@ internal static class LocalWakuuAutopilotConfig
 
     /// <summary>
     /// 战斗决策大脑（任务 2.2，默认启发式）：heuristic=现有出牌逻辑原样（行为零变化）；
+    /// scored=启发式评分（§18.2 轻量评分 + 目标选择升级，2026-09-20 新增）；
     /// auto=自动探测可用求解器（当前未探测到一律回退启发式，行为与 heuristic 相同）。
     /// </summary>
     public static string BrainMode { get; private set; } = HeuristicBrainMode;
@@ -210,6 +211,7 @@ internal static class LocalWakuuAutopilotConfig
     public const string RandomChoiceMode = WakuuChoiceModes.Random;
     public const string RareChoiceMode = WakuuChoiceModes.Rare;
     public const string HeuristicBrainMode = WakuuBrainModes.Heuristic;
+    public const string ScoredBrainMode = WakuuBrainModes.Scored;
     public const string AutoBrainMode = WakuuBrainModes.Auto;
     public const string CharacterFirstTier = WakuuPersonalQuery.PersonalTierCharacterFirst;
     public const string ViewModeNever = WakuuViewModes.Never;
@@ -439,7 +441,7 @@ internal static class LocalWakuuAutopilotConfig
         };
     }
 
-    /// <summary>规范化战斗决策大脑取值（heuristic/auto）；非法返回 null。</summary>
+    /// <summary>规范化战斗决策大脑取值（heuristic/scored/auto）；非法返回 null。</summary>
     public static string? NormalizeBrainMode(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -450,6 +452,7 @@ internal static class LocalWakuuAutopilotConfig
         return value.Trim().ToLowerInvariant() switch
         {
             HeuristicBrainMode => HeuristicBrainMode,
+            ScoredBrainMode => ScoredBrainMode,
             AutoBrainMode => AutoBrainMode,
             _ => null,
         };

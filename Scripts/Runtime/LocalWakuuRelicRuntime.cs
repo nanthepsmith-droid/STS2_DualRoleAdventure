@@ -505,6 +505,18 @@ internal static class LocalWakuuRelicRuntime
                         break;
                     }
 
+                    // 评分档专用锚点（r142）：每打一张牌记一条「选了什么牌 / 打了多少分 / 目标是谁」。
+                    // 只在 `vakuuBrain=scored` 时打印 —— 默认启发式档一行都不会多（保持既有日志基线不变）。
+                    // 记在**执行处**而不是大脑里：`IWakuuCombatBrain` 约定"快路径必须无副作用"，日志属于副作用。
+                    if (string.Equals(brain.Id, WakuuBrainModes.Scored, StringComparison.Ordinal))
+                    {
+                        string targetText = next.Target == null
+                            ? "无"
+                            : next.Target.CombatId?.ToString() ?? "有";
+                        LocalMultiControlLogger.Info(
+                            $"瓦库评分出牌: player={player.NetId}, round={combatState.RoundNumber}, card={next.Card.Id}, target={targetText}, {next.Reason}");
+                    }
+
                     // 扣费归属：只有 inline AutoPlay 需要"外层先花"（它随后跳过 X 捕获）；
                     // 队列路径由 PlayCardAction 自己扣 —— 外层再花一次就是双重扣能量（方案 §12.2 ③）。
                     if (WakuuPlayQueuePolicy.NeedsExternalSpendResources(playPath))

@@ -99,6 +99,7 @@ public class ConfigNormalizationTests
             Assert.That(LocalWakuuAutopilotConfig.RandomChoiceMode, Is.EqualTo(WakuuChoiceModes.Random));
             Assert.That(LocalWakuuAutopilotConfig.RareChoiceMode, Is.EqualTo(WakuuChoiceModes.Rare));
             Assert.That(LocalWakuuAutopilotConfig.HeuristicBrainMode, Is.EqualTo(WakuuBrainModes.Heuristic));
+            Assert.That(LocalWakuuAutopilotConfig.ScoredBrainMode, Is.EqualTo(WakuuBrainModes.Scored));
             Assert.That(LocalWakuuAutopilotConfig.AutoBrainMode, Is.EqualTo(WakuuBrainModes.Auto));
             Assert.That(LocalWakuuAutopilotConfig.ViewModeNever, Is.EqualTo(WakuuViewModes.Never));
             Assert.That(LocalWakuuAutopilotConfig.ViewModeKeyNodes, Is.EqualTo(WakuuViewModes.KeyNodes));
@@ -112,10 +113,13 @@ public class ConfigNormalizationTests
 public class BrainModeNormalizationTests
 {
     [TestCase("heuristic", "heuristic")]
+    [TestCase("scored", "scored")]
     [TestCase("auto", "auto")]
     [TestCase("HEURISTIC", "heuristic")]
+    [TestCase("Scored", "scored")]
     [TestCase("Auto", "auto")]
     [TestCase(" heuristic ", "heuristic")]
+    [TestCase("  scored  ", "scored")]
     [TestCase("  auto  ", "auto")]
     public void NormalizeBrainMode_合法取值_返回规范化值(string input, string expected)
     {

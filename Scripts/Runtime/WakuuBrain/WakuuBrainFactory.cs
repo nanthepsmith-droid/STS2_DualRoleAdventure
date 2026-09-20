@@ -2,12 +2,15 @@ namespace LocalMultiControl.Scripts.Runtime;
 
 /// <summary>
 /// 瓦库大脑工厂：按配置（vakuuBrain 开关）返回大脑实例。
-/// 当前只有启发式默认实现；auto 模式先探测可用求解器（未来 CombatSolver 适配器，
-/// 反射探测未命中即静默降级），未探测到一律回退启发式——行为与 heuristic 完全相同。
+/// heuristic=原「最左可打牌」逻辑（默认，行为零变化）；scored=启发式评分（§18.2）；
+/// auto 先探测可用求解器（未来 CombatSolver 适配器，反射探测未命中即静默降级），
+/// 未探测到一律回退启发式——行为与 heuristic 完全相同。
 /// </summary>
 internal static class WakuuBrainFactory
 {
     private static readonly IWakuuCombatBrain Heuristic = new HeuristicWakuuBrain();
+
+    private static readonly IWakuuCombatBrain Scored = new ScoredWakuuBrain();
 
     /// <summary>当前生效的大脑（主循环每轮调用；创建后缓存，配置变更在下次加载时生效）。</summary>
     private static IWakuuCombatBrain? _current;
@@ -19,9 +22,12 @@ internal static class WakuuBrainFactory
             return _current;
         }
 
-        _current = LocalWakuuAutopilotConfig.BrainMode == LocalWakuuAutopilotConfig.AutoBrainMode
-            ? TryCreateAuto() ?? Heuristic
-            : Heuristic;
+        _current = LocalWakuuAutopilotConfig.BrainMode switch
+        {
+            LocalWakuuAutopilotConfig.ScoredBrainMode => Scored,
+            LocalWakuuAutopilotConfig.AutoBrainMode => TryCreateAuto() ?? Heuristic,
+            _ => Heuristic,
+        };
 
         LocalMultiControlLogger.Info($"瓦库大脑就绪: mode={LocalWakuuAutopilotConfig.BrainMode}, id={_current.Id}");
         return _current;
