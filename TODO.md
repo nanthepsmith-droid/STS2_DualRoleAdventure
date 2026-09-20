@@ -1020,6 +1020,129 @@
   事件有 `CountEventWinSlice`，商店侧没有对应物）。要用统计驱动商店决策，得先补一个
   「商店购买 → 局胜负」的查询（纯函数 + 单测）—— **待用户拍板**。
 
+### 改进-7（= BUG-16）遗物效果自建的奖励集不自动领取 → 瓦库奖励弹屏等真人点（**r143，2026-09-20 已部署，待实机**）
+
+- **现象（用户 2026-09-20 实机反馈）**：「瓦库拾取 YUI extra mod 的**赐福**（一种遗物）时不会自动领取
+  赐福自动弹出的、**只有一张牌**的战斗奖励；其它『拾取遗物时获得卡牌奖励』的情况（如**星系仪**）似乎同样如此。」
+- **实机证据（`godot.log` 2026-09-20 会话，marker r142，已归档）**：本局 **3 次**
+  `打开奖励界面: player=…327, count=1|2`（**327 = 瓦库**）——L48127 / L52195 / L194910，
+  紧跟 `RewardsSetSynchronizer Beginning rewards set Id: 0|1|2 Owner: …327 Rewards: CardReward`，
+  之后是**真人手动点击**的痕迹（`Card selected: Rampage` / `Card selected: IronWave`）
+  与 `个人记录-卡牌奖励批次: … picked=1`（**瓦库的奖励被当成真人决策记进了个人统计**）。
+  三处上下文都能看到 `Player …327 obtained RELIC.YUI_SPIRE_EXPANSION_RELIC_BLESSED_* from relic reward`
+  —— 「赐福」类遗物的拾取效果就是给一张卡的卡牌奖励。
+- **根因（两层，都已修）**：
+  1. **直接原因 = `IsMe` 误判（`RewardsCmdOfferCustomPatch` 的静默门禁）**：
+     栈痕迹实证 YUI 赐福遗物走的是
+     `YuiExtra.Relics.CardBlessingRelic.OfferBlessingReward()` → `MegaCrit.Sts2.Core.Commands.RewardsCmd.OfferCustom`，
+     而我们的 `RewardsCmdOfferCustomPatch` 里有一条「**前台正是瓦库（`LocalContext.IsMe(player)`）就不干预，
+     交真人点**」（r54 写的）。遗物是在**瓦库的战后奖励结算作用域内**被获得的，该作用域会把 `LocalContext`
+     **对齐到瓦库**（`LocalWakuuRewardAutoClaim.AlignLocalContext`）⇒ 作用域内 `IsMe(瓦库)` 恒真
+     ⇒ 判据把「我们的自动化造成的 IsMe」误读成「真人正看着瓦库」⇒ **静默 `return true`**（连日志都没有）
+     ⇒ 原版弹屏等人点。**与 r54 给"事件自动选择作用域"补 `IsAutoChoosingFor` 是同一个坑，只是换了个作用域。**
+  2. **兜底缺口 = 非战斗奖励集没有自动领取链**：即便绕开第 1 条，遗物/第三方自建的 `RewardsSet`
+     Room 不是 `CombatRoom`（战后合并链不管）、也不走 `OfferCustom`（第 1 条那条链不管），
+     落到 `RewardsSetPatch.OfferLocalSelfCoop` 时原实现一律「切控制到归属者 + 弹原生界面」。
+- **修法（r143，两层都补）**：
+  1. **`LocalWakuuRewardAutoClaim` 新增 `IsAutoClaimingFor(player)`**（AsyncLocal 作用域标记，与
+     `AutoClaimCardOwnerId` 同套写法：`TrySettleAsync` 里置位、`finally` 还原）；
+     `RewardsCmdOfferCustomPatch` 在该作用域内**照常自动结算**，并打一条可区分的日志
+     `瓦库自定义奖励改由自动结算（奖励自动领取作用域内，上下文被对齐到瓦库，并非真人前台）`。
+     ⚠ 判定顺序：`eventAutoScope` → `autoClaimScope` → `LocalContext.IsMe(player)` 交真人，
+     保持 r54「整批里有不可自动领取的项就交真人、绝不静默跳过」的语义不变。
+  2. **`RewardsSetPatch.OfferLocalSelfCoop` 兜底**：弹屏前对**瓦库形态**归属者调用同款
+     `LocalWakuuRewardAutoClaim.SettleAsync`（复用既有开关与规则：卡牌最左 / 金币 / 遗物 / 药水换栏）：
+     - 领掉的从 `rewardsSet.Rewards` 移除（该列表是 public 的 `List<Reward>`）；
+     - **全部领完 → 直接返回，不弹屏、也不抢视角**，并用
+       `CombatRewardMergeContext.BeginDisplaySet/CompleteDisplaySet` 把该奖励集在同步器里登记后立即
+       标记完成（与「真人领完最后一张」同一条收口语义），避免留下永不完成的奖励集；
+     - 仍有剩余（开关关着 / 删牌类奖励 / 药水换栏判定不值得领）→ 照旧弹屏，**行为与旧版逐字一致**；
+     - **刻意不进 `CombatRewardMergeContext`**：本路径没有「每个角色已独立生成奖励」的前提，
+       与 `RewardsCmdOfferCustomPatch` 同一套写法（那条链同样直接调 Settle 入口）。
+- **顺带修一处真隐患**：`LocalWakuuRewardAutoClaim._suppressCardRewardScreen`（布尔）→
+  **深度计数 `_suppressCardRewardDepth`**。r143 起结算会**嵌套**（遗物效果自建的奖励集会在战后奖励结算的
+  await 链里再进一次 `TrySettleAsync`），布尔会被内层的 `finally` 提前清成 `false` ⇒ 外层那次卡牌奖励
+  漏抑制、又弹出选牌界面。
+- **门禁（r143）**：构建 **0 警告 0 错误**（195 个 .cs）、**545 单测全绿**（无新增：修的是运行时链路，靠实机回归）、
+  `static_checks` **7 PASS / 0 FAIL**、`clr_compat_check` **PASS**、`preflight.ps1 -Deploy` **4 PASS / 3 SKIP**、
+  marker **`2026-09-20-r143`**、`dll_check --deployed` 全绿
+  （`IsAutoClaimingFor` / `瓦库自定义奖励改由自动结算` / `瓦库非战斗奖励已自动结算` /
+  `瓦库奖励已全部自动领取` 在、`__runOriginal` 不在、部署位与仓库根字节一致 sha256 `e19a44ee0499…`）。
+  分支 `feat/wakuu-scored-brain`，**未 commit / 未 push**。
+- **验证方法（请实机）**：再拾取一次「赐福」类遗物（或任意"拾取时给卡牌奖励"的遗物 / 星系仪）——
+  - ✅ 期望：**不再弹奖励界面**，日志出现
+    `瓦库自定义奖励改由自动结算（奖励自动领取作用域内…）: player=…327, rewards=1`
+    （若走的是兜底那条链则是 `瓦库非战斗奖励已自动结算: … 自动领取=1, 剩余=0` +
+    `瓦库奖励已全部自动领取，不再弹奖励界面: player=…327, 原奖励数=1`），卡片直接进牌组；
+  - ✅ 期望：控制视角**不会**被切到瓦库（旧版会切过去再让你点）；
+  - ✅ 期望：**没有** `个人记录-卡牌奖励批次` 里那一笔（那是真人点出来的）；
+  - ⚠ 反例（属正常）：若你把「卡牌奖励自动领取」开关关掉，则照旧弹屏 —— 那时日志里
+    **不应**出现上面那些行，行为与旧版一致。
+- **同类风险点（本轮已一并覆盖，无需另做）**：任何第三方 mod / 遗物 / 事件用
+  `new RewardsSet(...).WithCustomRewards(...).Offer()` 直接开奖励的写法，都会走同一条 `RewardsSet.Offer`，
+  因此本次改动**一次性覆盖**了这一整类入口。
+- **仍未覆盖（刻意，按开关语义）**：`CardRemovalReward`（删牌奖励）等 `ShouldAutoClaim` 里 `default: return false`
+  的类型仍交真人（与战后奖励链一致）。
+
+### 改进-6 Phase 5「局内打牌评分」落地：新增 `vakuuBrain=scored` 档（**r142，2026-09-20 已部署，待实机**）
+
+> 方向来源：`maintenance-docs/decision-records/瓦库托管优化可行性分析.md` §18.2（阶段 B 卡牌评分 /
+> §18.2.6 目标选择升级）与 §21.6（**Phase 5 范围收缩为「接口 + 轻量启发式评分 + 目标选择升级」**）。
+> 本轮做的是收缩后的那一版：**不引入任何外部求解器、不复制参考实现代码**（§21.6 门槛 4）。
+
+- **做了什么**：
+  1. 新增纯逻辑评分/排序 `Scripts/Runtime/PureLogic/WakuuCardScoring.cs`
+     （类型基础分 + 费用 + 关键词 + 场景修正；**致死线硬门槛** / **X 费收尾** / **同分最左** / 分数下限 0）；
+  2. 新增纯逻辑目标选择 `Scripts/Runtime/PureLogic/WakuuTargetPicking.cs`
+     （**可击杀优先 → 否则有效血量最低（集火）→ 并列取最左**）；
+  3. 新增大脑实现 `Scripts/Runtime/WakuuBrain/ScoredWakuuBrain.cs`（只做"游戏模型 → 纯逻辑标量"映射，
+     含伤害/格挡粗估、`AnyAlly` 优先真人、异常降级为最左可打牌）；
+  4. 新增第三档 `vakuuBrain=scored`（`WakuuBrainModes.Scored` + `NormalizeBrainMode` + 工厂分支），
+     设置页「瓦库托管」区新增**「战斗决策大脑」**循环行（启发式 → 评分 → 自动探测）；
+  5. 意图伤害求和抽成 `Scripts/Runtime/LocalWakuuThreatEstimate.cs`
+     （原内联在 `LocalWakuuPotionAutoUse.BuildContext`，药水侧改为调用它，**逻辑逐字搬移、行为零变化**），
+     供药水规则表与评分大脑的致死线判定共用同一口径；
+  6. 出牌循环加**评分档专属日志锚点** `瓦库评分出牌: player=…, round=…, card=…, target=…, scored:score=N:…`
+     （**只在 `vakuuBrain=scored` 时打印**，默认档日志基线不变；记在**执行处**而非大脑里 ——
+     `IWakuuCombatBrain` 约定"快路径必须无副作用"）；
+  7. 单测 **+31 → 545 全绿**（`WakuuCardScoringTests` 19 / `WakuuTargetPickingTests` 8 / 归一化 4）。
+- **默认档不变**：`vakuuBrain` 默认仍是 `heuristic`（最左可打牌），**默认档行为零变化**；
+  评分档只在显式切换后生效。
+- **已知取舍**（写进代码注释与 CHANGELOG，别再当 bug 报）：
+  ① 伤害/格挡是「卡面基础值（含附魔）+ 力量/敏捷」的**粗估**，不含易伤/虚弱等 Hook 修正；
+  ② 本期**没有跨回合计划**（逐张重新评分）—— §21.4.2 #7 指出的"线性总分"缺陷靠**致死线硬门槛**兜住最要紧的部分；
+  ③ 阵容中途变化（§21.4.2 #2）与局内生成卡的入场联动（#3）不在本期范围（目标选择每轮现读
+     `HittableEnemies`，能跟上敌人增减，但不为新增单位重算计划）。
+- **实机回归清单（请务必按 §21.4.2 的 #1/#2/#3 各走一遍）**：
+  1. **自动出牌/自动从抽牌堆出牌的嵌套选择**（#1）：瓦库打出 横祸 / 破灭 / 骚动 / 蒸馏混沌 等
+     "自动出牌"卡 → 观察是否卡住或选牌错位（我们靠全局 selector 兜住，评分档不应改变这一点）；
+  2. **阵容中途变化**（#2）：召唤物出现 / 敌人逃跑 / 复活后，瓦库的目标选择与"敌人已全部死亡"判定是否正常；
+  3. **局内生成卡的入场联动**（#3）：幻影之刃 / 鬼种等"入战斗时触发"的生成牌是否照常结算；
+  4. **基础回归**：`瓦库出牌走动作队列` / `瓦库并发出牌` / `瓦库出牌加速` 三个实验档与评分档的四种组合
+     任选一两个组合打一场，确认无 `瓦库选择器作用域异常退出` / `Couldn't get hand node` /
+     `瓦库看门狗重启失败`；`瓦库评分大脑异常，本次降级为最左可打牌` 若出现请把日志发回来（那是降级信号）。
+  5. **观测锚点**：评分档每打一张牌会有一条
+     `瓦库评分出牌: player=…, round=…, card=<卡 id>, target=…, scored:score=<分数>:<卡 id>`；
+     切回启发式应**一条都没有**（反过来也说明档位真的切过去了）。
+- **门禁（r142）**：构建 **0 警告 0 错误**（195 个 .cs）、`dotnet test` **545 全绿**、
+  `static_checks` **7 PASS / 0 FAIL**（S6 marker = `2026-09-20-r142`、S7 目标基线一致）、
+  `clr_compat_check` **PASS**、`preflight.ps1 -Deploy` **4 PASS / 3 SKIP**、
+  `dll_check --deployed` 全绿（`ScoredWakuuBrain` / `WakuuCardScoring` / `WakuuTargetPicking` /
+  `LocalWakuuThreatEstimate` / `EstimateIncomingThreat` / `战斗决策大脑` / `瓦库评分出牌` 在、
+  `__runOriginal` 不在、部署位与仓库根字节一致 sha256 `9bf8f9f3b711…`）。
+  分支：**`feat/wakuu-scored-brain`**（用户要求"先建分支再干活"；`master` 停在 `6e6dc41`）。
+- ✅ **2026-09-20 实机通过（评分档首局，marker r142）**：用户把「战斗决策大脑」切到**评分**打了一整局 ——
+  `瓦库大脑就绪: mode=scored, id=scored` ×4、**`瓦库评分出牌` 501 条**、
+  **`瓦库评分大脑异常，本次降级为最左可打牌` 0 条**；回归项 `瓦库选择器作用域异常退出` /
+  `Couldn't get hand node` / `瓦库看门狗重启失败` / `瓦库奖励自动领取失败` / `保留为人工领取` 全 **0**，
+  我们的 `[ERROR]` **0**（全局 22 条全为第三方/游戏）。`手牌UI与数据存在差异` 2 条属 r112 的
+  **只诊断不处理**锚点（设计如此）；`检测到真人选牌请求` 31 条上下文都是**真人自己打需要选牌的牌**
+  （Private Square / Knife Throw），是既有设计的正确路径。
+  ⇒ §21.4.2 的 #1/#2/#3 三条回归**未单独取证**（本局没有走到可判定的场景），
+  但"评分档本身不引入异常/降级"已有 501 次决策的实测支撑。**玩法观感仍以用户主观为准。**
+- **仍未做**：`vakuuBrain=auto` 的求解器适配器（§21.3.4，等真有可用求解器再说）；
+  逐卡评级/效果表（P4）仍卡在"要自己写抽取器"这条路上（见 § 决策表缺口）。
+
 ---
 
 ## 维护性改进 backlog（门禁体系 2026-09-08 之后的下一批）
@@ -1132,13 +1255,24 @@
     我们的 `[WARN]` 行 19 → 20（+1，唯一一条是 § BUG-15 的自恢复命中，与本轮改动无关）。
   ⇒ **本项关单**。
 
-### 另记：逐卡评级草表**仍缺输入**（P4 前置未真正满足）
+### 另记：逐卡评级草表 —— **明细已到手，但这条路仍然不成立（理由换了）**（2026-09-19 订正）
 
-外部文件拿到的是 **Hook 目录汇总**（分类级计数），不是逐项明细 —— 文档里「3035 项」是
-`2302（Exact）+ 733（OutOfScope）` 的 Hook 总数，没有可枚举的条目清单。
-⇒ 「用 LLM 从 3035 项产出逐卡/逐药水评级草表」这条**当前不成立**（凭空生成即幻觉）。
-要做必须另拿 CombatSolver `tools/CoverageCatalog` 的**明细导出**；否则只能用仓库内已整理的表
-（`原版药水一览表.md` / `原版附魔一览表.md`）。详见 `maintenance-docs/combat-hook-coverage.md` §一。
+- **09-16 的问题**：外部文件只有 **Hook 目录汇总**（分类级计数），没有逐项明细；文档里
+  「3035 项」是 `2302（Exact）+ 733（OutOfScope）` 的 Hook 总数，没有可枚举的条目清单。
+- **09-19 已解**：用户拉下 CombatSolver 仓库 ⇒ `CombatSolver-main\coverage\combat-hooks.json`
+  **就是那份逐项明细**（**3035 行**，正好等于汇总结论那句「3035 项」），已由
+  `tools/coverage_digest.py --detail-out` 吃干 → **`maintenance-docs/combat-hook-detail.md`**
+  （逐实体档位 A 引擎精确 / B 推断 / C 求解器补偿 / D 不支持 / E 非战斗、与 `game-entities.md`
+  逐类目对账、样板外卡 51 张）。
+- ⚠ **但「LLM 从明细产出逐卡评级草表」这条依然不成立**：明细是 **hook 级**的，而卡牌层
+  **529/580** 张卡只有 `OnPlay` + `OnUpgrade` 两条**样板 hook** ⇒ **hook 名不携带逐卡效果信息**，
+  让模型据此写评级仍是幻觉。逐卡有信息量的只剩两列：
+  `engineDispatch` 三档（Card 分类：精确 218 / 推断 150 / 不支持 225 行，**确定性**）与
+  `notes`（Card 分类 475 条，是 CombatSolver 作者的措辞 —— **许可红线：只读思路，不得复制**）。
+- ▶ **若要继续做（待拍板）**：把 `combat-hook-detail.md` 当**优先级清单**（三档 + 51 张样板外卡），
+  由**我们自己的抽取器**从 `sts2src` 产逐卡效果表 → 人审 → 固化 `WakuuBrain` 用的 `PureLogic` 表；
+  **默认关**，须过 §21.4.2 回归清单。详见 `maintenance-docs/combat-hook-detail.md` 与
+  `本地LLM辅助开发可行性分析.md` §4.6 / §7-P4。
 
 ---
 

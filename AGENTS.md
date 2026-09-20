@@ -22,6 +22,15 @@ AGENTS.md, CHANGELOG.md, README*.md, PLAYER_GUIDE*.md, TODO.md
 - No destructive git operations (`reset --hard`, force-push, `checkout --` over user changes). Never push to `upstream` (GuyGinat's fork) or the original author's repo; pushes go to `origin` (nanthepsmith-droid's repo). `lanternx` is a read-only reference remote.
 - **Do not commit or push unless the user explicitly asks.** Default = leave changes in the working tree.
   When the user does ask, commit per logical change with a clear Chinese message.
+- **Work on a dedicated branch, created *before* touching code** (`feat/<topic>`, branched off `master`;
+  如 `feat/wakuu-scored-brain`)。一轮改动做完、门禁全绿后再合回 `master` —— **合回前需用户确认**。
+  （2026-09-20 维护者要求：「先新建分支再干活」。此前 `feat/personal-recorder`、
+  `feat/decision-interface`、`feat/osty-hp-badge` 都是这么走的。）
+- ⚠ **`git status` 在本仓库会误报**（`.gitattributes` 里的 `working-tree-encoding=UTF-8` + `eol=lf`
+  造成的 stat 缓存噪声）：一次检查里它列出了 19 个**内容与 HEAD 完全一致**的文件（`git diff` 为空、
+  `git update-index --really-refresh` 也不清）。**判断"到底改了什么"请用
+  `git diff HEAD --stat`**（或 `git hash-object -- <file>` 与 `git rev-parse HEAD:<file>` 对比），
+  不要只看 `git status`，否则会以为有人在并行改代码。
 - Language: **Chinese** for all new code comments, commits, logs, and documentation. Original Chinese documents are preserved under `docs/archive/`.
 
 ## 2. Build, format, deploy

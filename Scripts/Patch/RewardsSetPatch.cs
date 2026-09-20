@@ -125,6 +125,49 @@ internal static class RewardsSetPatch
             Log.Warn("Some rewards are populated and others are not when calling RewardsCmd.Offer! This might lead to hooks getting called twice");
         }
 
+        // r143：瓦库角色的**非战斗自定义奖励**也要自动结算。
+        //
+        // 这是一条此前完全没被覆盖的路径：遗物效果 / 第三方 mod 自己
+        // `new RewardsSet(...).WithCustomRewards(...).Offer()` 走的就是这里 ——
+        // 它**不经过** `RewardsCmd.OfferCustom`（所以 RewardsCmdOfferCustomPatch 拦不到），
+        // Room 也不是 CombatRoom（所以战后合并奖励那条链也不管）。
+        // 原实现一律"把控制切到奖励归属者 + 弹原生奖励界面"，于是**瓦库的奖励也要真人手动点**。
+        // 实机案例（2026-09-20）：YUI「赐福」类遗物（`BLESSED_*`）在拾取时给一张卡的卡牌奖励，
+        // 界面弹出等人点（本局 3 次，其中一次 2 张卡），点完还进了个人统计；
+        // 「星系仪」这类"拾取时给卡牌奖励"的遗物同理。
+        //
+        // 规则与开关**完全复用**战后奖励那条链（LocalWakuuRewardAutoClaim.SettleAsync →
+        // 卡牌最左 / 金币 / 遗物 / 药水换栏规则 + 各自的自动领取开关），因此：
+        // 开关关着、或奖励类型不被自动接管（如删牌奖励、药水换栏判定不值得领）时**一个都不会动**，
+        // 剩余奖励照旧弹屏给真人 —— 行为与旧版逐字一致。
+        // 注意：这里**不进** `CombatRewardMergeContext` —— 本路径没有"每个角色已独立生成奖励"的前提，
+        // 与 `RewardsCmdOfferCustomPatch` 同一套写法（那条链同样直接调 Settle 入口、不包 Enter/Exit）。
+        if (LocalWakuuRelicRuntime.IsVakuuFormMode(rewardsSet.Player))
+        {
+            int beforeCount = rewardsSet.Rewards.Count;
+            List<Reward> remaining = await LocalWakuuRewardAutoClaim.SettleAsync(rewardsSet.Rewards.ToList());
+            if (remaining.Count != beforeCount)
+            {
+                // 已结算的奖励从本集移除：展示界面上不该再出现"已经领过"的按钮。
+                rewardsSet.Rewards.RemoveAll((reward) => !remaining.Contains(reward));
+                LocalMultiControlLogger.Info(
+                    $"瓦库非战斗奖励已自动结算: player={rewardsSet.Player.NetId}, "
+                    + $"自动领取={beforeCount - remaining.Count}, 剩余={remaining.Count}");
+            }
+
+            if (rewardsSet.Rewards.Count == 0)
+            {
+                LocalMultiControlLogger.Info(
+                    $"瓦库奖励已全部自动领取，不再弹奖励界面: player={rewardsSet.Player.NetId}, 原奖励数={beforeCount}");
+                // 后端收口：登记 + 立刻标记完成（奖励已全部 SuccessfullySelected），
+                // 与"真人领完最后一张"走的是同一条 OnRewardClaimed → CompleteDisplaySet 语义，
+                // 否则同步器里会留下一个永不完成的奖励集。
+                CombatRewardMergeContext.BeginDisplaySet(rewardsSet);
+                CombatRewardMergeContext.CompleteDisplaySet(rewardsSet, "wakuu-local-rewards-all-claimed");
+                return;
+            }
+        }
+
         LocalMultiControlRuntime.SwitchControlledPlayerTo(rewardsSet.Player.NetId, "rewards-offer");
         LocalMultiControlLogger.Info($"打开奖励界面: player={rewardsSet.Player.NetId}, count={rewardsSet.Rewards.Count}");
         Task rewardsSetTask = RunManager.Instance.RewardsSetSynchronizer.BeginRewardsSet(rewardsSet);

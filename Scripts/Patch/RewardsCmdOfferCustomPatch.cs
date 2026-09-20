@@ -62,6 +62,15 @@ internal static class RewardsCmdOfferCustomPatch
         // 真人自己玩的事件不在该作用域内，行为完全不变。
         bool eventAutoScope = LocalWakuuEventAutoChoice.IsAutoChoosingFor(player);
 
+        // r143：**与"事件自动选择作用域"同一类的误判**，只是换了个作用域 ——
+        // 「奖励自动领取」作用域（LocalWakuuRewardAutoClaim.TrySettleAsync）会把 `LocalContext` 对齐到瓦库，
+        // 于是作用域内 `LocalContext.IsMe(player)` 恒为 true，下面的"前台正是瓦库就不干预"就会把
+        // **自动化造成的 IsMe** 当成"真人正看着瓦库"，静默交真人 → 原版弹屏等人点。
+        // 实机案例（2026-09-20，用户报）：瓦库拾取 YUI「赐福」遗物
+        // （`YuiExtra.Relics.CardBlessingRelic.OfferBlessingReward` → `RewardsCmd.OfferCustom`），
+        // 弹屏等真人点「只有一张牌的卡牌奖励」，本局发生 3 次。
+        bool autoClaimScope = LocalWakuuRewardAutoClaim.IsAutoClaimingFor(player);
+
         // 开关门禁（r54）：整批里只要有一项不满足自动领取条件（对应开关关闭 / 未知奖励类型），
         // 能交真人的就交真人——正常弹奖励界面由真人点，**绝不静默跳过**。
         // 静默跳过会让"开关关了"和"瓦库漏领/结算失败"在体感上完全一样，事后排查分不清是配置还是 bug。
@@ -87,6 +96,12 @@ internal static class RewardsCmdOfferCustomPatch
         {
             LocalMultiControlLogger.Info(
                 $"瓦库事件奖励改由自动结算（事件自动选择作用域内，控制权在瓦库身上）: "
+                + $"player={player.NetId}, rewards={rewards.Count}");
+        }
+        else if (autoClaimScope)
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库自定义奖励改由自动结算（奖励自动领取作用域内，上下文被对齐到瓦库，并非真人前台）: "
                 + $"player={player.NetId}, rewards={rewards.Count}");
         }
         else if (LocalContext.IsMe(player))

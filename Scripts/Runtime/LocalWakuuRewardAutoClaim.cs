@@ -41,7 +41,7 @@ internal static class LocalWakuuRewardAutoClaim
     /// <summary>喝鲜血腾位时等待动作队列处理的超时。</summary>
     private const int BloodDrinkTimeoutMs = 5000;
 
-    private static bool _suppressCardRewardScreen;
+    private static int _suppressCardRewardDepth;
 
     /// <summary>
     /// 卡牌奖励自动领取作用域内的归属玩家（供个人记录器区分「瓦库自动」与「真人点选」）。
@@ -50,13 +50,36 @@ internal static class LocalWakuuRewardAutoClaim
     private static readonly AsyncLocal<ulong?> _autoClaimCardOwner = new();
 
     /// <summary>NCardRewardSelectionScreenAutoClaimPatch 读取：true 时 ShowScreen 直接返回 null 不弹屏。</summary>
-    internal static bool SuppressCardRewardScreen => _suppressCardRewardScreen;
+    internal static bool SuppressCardRewardScreen => _suppressCardRewardDepth > 0;
 
     /// <summary>
     /// 个人记录器读取：非 null 表示当前 CardReward.OnSelect 由瓦库自动领取驱动（Selector 自动作答、不弹屏），
     /// 不是真人决策，不应计入个人偏好样本。值为奖励归属玩家的 NetId。
     /// </summary>
     internal static ulong? AutoClaimCardOwnerId => _autoClaimCardOwner.Value;
+
+    /// <summary>
+    /// 「奖励自动领取」作用域内的归属玩家（本类 <see cref="TrySettleAsync"/> 期间置位）。
+    ///
+    /// 为什么需要它（r143 实机案例）：本作用域会把 `LocalContext` **对齐到瓦库**（<see cref="AlignLocalContext"/>），
+    /// 于是作用域内任何代码看到的 `LocalContext.IsMe(瓦库玩家)` 都是 **true** —— 看起来像"真人正看着瓦库"，
+    /// 实际是**我们的自动化**造成的。`RewardsCmdOfferCustomPatch` 恰好有一条"前台正是瓦库（IsMe）就不干预、
+    /// 交真人点"的判据，于是在这个作用域里被误判：
+    /// 瓦库拾取 YUI「赐福」遗物（`CardBlessingRelic.OfferBlessingReward`）→ 遗物在 RelicReward 结算
+    /// 作用域内回调 `RewardsCmd.OfferCustom` → IsMe 为真 → **静默交真人** → 原版弹屏等人点。
+    /// （与 r54 给"事件自动选择作用域"补 `IsAutoChoosingFor` 是同一个坑，只是换了一个作用域。）
+    /// 用 AsyncLocal 与 <see cref="_autoClaimCardOwner"/> 同套理由：await 链上会嵌套/交错，普通字段读脏。
+    /// </summary>
+    private static readonly AsyncLocal<ulong?> _autoClaimScopeOwner = new();
+
+    /// <summary>
+    /// 当前是否处于「为这一位玩家自动领取奖励」的作用域内。供 RewardsCmdOfferCustomPatch 区分
+    /// 「真人前台真的是瓦库」与「是我们的自动化把上下文对齐过去了」。
+    /// </summary>
+    internal static bool IsAutoClaimingFor(Player player)
+    {
+        return player != null && _autoClaimScopeOwner.Value == player.NetId;
+    }
 
     /// <summary>
     /// 结算合并奖励列表中归属瓦库角色的可自动领取项，返回剩余需要展示给真人的奖励。
@@ -129,10 +152,14 @@ internal static class LocalWakuuRewardAutoClaim
     private static async Task<bool> TrySettleAsync(Reward reward, Player owner)
     {
         ulong? previousNetId = LocalContext.NetId;
+        ulong? previousScopeOwner = _autoClaimScopeOwner.Value;
         try
         {
             // 与看门狗相同的上下文对齐模式：OnSelect 内部依赖 LocalContext.IsMe(Player)
             AlignLocalContext(owner.NetId);
+            // 登记"这是自动化作用域"（见 IsAutoClaimingFor 的注释）：作用域内 IsMe(owner) 恒真，
+            // 其它补丁不能把它误读成"真人正看着这一位"。
+            _autoClaimScopeOwner.Value = owner.NetId;
 
             switch (reward)
             {
@@ -141,7 +168,10 @@ internal static class LocalWakuuRewardAutoClaim
                     // 关闭 skadaAssist 时其取牌结果与游戏原生 VakuuCardSelector 完全一致（最左）。
                     using (WakuuSelectorRegistry.Open(owner.NetId, new LocalWakuuStrategySelector(owner)))
                     {
-                        _suppressCardRewardScreen = true;
+                        // 用**深度计数**而不是布尔：结算可以嵌套（r143 起，"遗物效果自建的奖励集"
+                        // 会在战后奖励结算的 await 链里再进一次本方法），布尔会被内层的 finally 提前清成 false，
+                        // 外层那次卡牌奖励就会漏抑制 → 又弹出选牌界面。
+                        _suppressCardRewardDepth++;
                         _autoClaimCardOwner.Value = owner.NetId;
 
                         // r134：**同步写入选牌归属者**（与 LocalWakuuEventAutoChoice / LocalWakuuRelicEffectAutoChoice 同一套做法）。
@@ -177,7 +207,7 @@ internal static class LocalWakuuRewardAutoClaim
                         finally
                         {
                             CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value = savedChoicePlayerId;
-                            _suppressCardRewardScreen = false;
+                            _suppressCardRewardDepth = Math.Max(0, _suppressCardRewardDepth - 1);
                             _autoClaimCardOwner.Value = null;
                         }
                     }
@@ -214,6 +244,7 @@ internal static class LocalWakuuRewardAutoClaim
         }
         finally
         {
+            _autoClaimScopeOwner.Value = previousScopeOwner;
             AlignLocalContext(previousNetId);
         }
     }

@@ -132,6 +132,24 @@ shopping can optionally be handed to Vakuu via "Auto-buy cards" (below).
   official spelling is Vakuu). **Old keys keep working** and are migrated on save; when both exist, the new
   key wins.
 
+### New in v1.43 (unreleased; same settings submenus, saved instantly)
+
+- **"Combat Decision Brain"** (inside "Vakuu autopilot", config key `vakuuBrain`, default **Heuristic**)
+  decides **which card Vakuu plays and at whom** in combat.
+  - **Heuristic (default)**: plays the leftmost playable card — the mod's long-standing behavior, most
+    stable and predictable.
+  - **Scored**: scores every playable card and takes the best — Powers / 0-cost / "this one kills an
+    enemy" cards rank higher; when below half HP or **facing a lethal hit this turn** it prioritizes
+    Block (and then **only picks among Block cards**, so a higher-scoring attack cannot push the
+    life-saving card aside); AoE cards are worth more against multiple enemies; **X-cost cards are saved
+    for last as long as any other card can be played** (to maximize X); ties go to the leftmost card.
+    For single-enemy cards it **prefers a killable target, otherwise the enemy with the lowest effective
+    HP** (focus fire); ally buffs go to human players first.
+  - **Auto**: reserved for a future external solver; currently identical to Heuristic.
+  - ⚠ Scoring uses a **rough estimate** (card values + Strength/Dexterity, no Vulnerable/Weak modifiers)
+    and has **no cross-turn planning**; switch back to Heuristic anytime if it feels off. All three modes
+    only affect in-combat plays — never card picks, events or shops.
+
 ## During a run
 
 - **Switch characters:** `Tab` (next) / `Shift+Tab` (previous). Legacy keys `]` `R` `/` (next) and `[` `T` (previous) still work.
