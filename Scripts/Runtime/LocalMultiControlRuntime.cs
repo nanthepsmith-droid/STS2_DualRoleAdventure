@@ -85,6 +85,10 @@ internal static class LocalMultiControlRuntime
             LocalMultiControlLogger.Warn($"瓦库托管配置加载异常(已忽略): {exception.Message}");
         }
 
+        // 联机机器人（Co-op Bots）席位：重读配置 → 三态互斥收敛 → 对本局真实席位逐席接管。
+        // 必须在 GrantWakuuRelicsAsync 之前：冲突席位的瓦库登记要先摘掉，免得又发一次瓦库形态遗物。
+        CoopBotsSeatRuntime.ApplyOnRunLaunch(runState);
+
         // SL（读档重玩）造成的重复记录由「写时幂等」消除（r120，见 WakuuPersonalDedupe）——
         // 原来在进局时按"存档点 mtime"回滚的思路已废弃（读档动作本身会刷新 mtime，判据恒失效）。
 
@@ -144,6 +148,8 @@ internal static class LocalMultiControlRuntime
         _watchdogScheduleLastSource = "run-cleanup";
         LocalMerchantInventoryRuntime.Clear();
         LocalWakuuRelicRuntime.ProbeAndRecoverSelectorStack("run-cleanup", allowRecover: true);
+        // 联机机器人席位：退局释放（只放本 mod 接管过的那些；CB 的接管集合是进程内静态的，不清会跨局残留）。
+        CoopBotsSeatRuntime.ReleaseOnRunCleanup();
         LocalSelfCoopContext.Disable("RunManager.CleanUp");
         LocalMultiControlLogger.Info("RunManager.CleanUp 后已完成本地多控会话清理。");
     }
@@ -408,7 +414,8 @@ internal static class LocalMultiControlRuntime
 
         foreach (Player player in combatState.Players)
         {
-            if (player?.Creature == null || !player.Creature.IsAlive)
+            // 只管我们自己的席位：第三方 Bot 手上有没有牌，不该拦住我们收口自己的席位。
+            if (!IsLocalSessionPlayer(player) || player.Creature == null || !player.Creature.IsAlive)
             {
                 continue;
             }
@@ -434,7 +441,9 @@ internal static class LocalMultiControlRuntime
         bool endedAnyPlayer = false;
         foreach (Player player in combatState.Players)
         {
-            if (player?.Creature == null || !player.Creature.IsAlive)
+            // 只结束我们自己的席位：第三方 Bot 的回合该由它自己的 mod 结束，
+            // 我们替它 `EndTurn` 会污染它的动作流（r144 实机：日志里出现过对 Bot 席位的切人失败告警）。
+            if (!IsLocalSessionPlayer(player) || player.Creature == null || !player.Creature.IsAlive)
             {
                 continue;
             }
@@ -1065,6 +1074,17 @@ internal static class LocalMultiControlRuntime
     }
 
     /// <summary>
+    /// 该席位是否属于**本地多控会话**。
+    /// 第三方往局里塞的席位（如 Co-op Bots 的合成 Bot：netId 形如 `0xB07B…`）**不是**我们的席位：
+    /// 我们不能切到它、不能替它结束回合、也不能替它报"进入敌方回合"的就绪
+    /// —— 那些都由第三方 mod 自己负责（r144：3 席局"回合结束不了"的根因之一就是这层没分开）。
+    /// </summary>
+    private static bool IsLocalSessionPlayer(Player? player)
+    {
+        return player != null && LocalSelfCoopContext.IsLocalSessionSeat(player.NetId);
+    }
+
+    /// <summary>
     /// 按玩家ID把前台/控制上下文切到指定角色，适用于只有 NetId、没有现成 Player 引用的挂点
     /// （如 ActionQueueSynchronizer.EnqueueHookAction 入队瞬间，仅有 GenericHookGameAction.OwnerId）。
     /// </summary>
@@ -1375,7 +1395,13 @@ internal static class LocalMultiControlRuntime
             return false;
         }
 
-        List<ulong> combatPlayerIds = combatState.Players.Select((player) => player.NetId).Distinct().ToList();
+        // 只在我们自己的席位之间切换：第三方席位（Co-op Bots 合成 Bot）不是本地会话成员，切过去必然失败
+        // （r144 实机日志：`尝试设置当前操控角色失败：玩家 12716757972810793218 不在会话中`）。
+        List<ulong> combatPlayerIds = combatState.Players
+            .Select((player) => player.NetId)
+            .Where((playerId) => LocalSelfCoopContext.LocalPlayerIds.Contains(playerId))
+            .Distinct()
+            .ToList();
         if (combatPlayerIds.Count < 2)
         {
             // 风险点：当前实现只保证“双角色本地多控”，人数异常时继续切换会引入不可预期 owner 绑定。
@@ -1420,7 +1446,13 @@ internal static class LocalMultiControlRuntime
             return false;
         }
 
-        List<ulong> combatPlayerIds = combatState.Players.Select((player) => player.NetId).Distinct().ToList();
+        // 只在我们自己的席位之间切换：第三方席位（Co-op Bots 合成 Bot）不是本地会话成员，切过去必然失败
+        // （r144 实机日志：`尝试设置当前操控角色失败：玩家 12716757972810793218 不在会话中`）。
+        List<ulong> combatPlayerIds = combatState.Players
+            .Select((player) => player.NetId)
+            .Where((playerId) => LocalSelfCoopContext.LocalPlayerIds.Contains(playerId))
+            .Distinct()
+            .ToList();
         if (combatPlayerIds.Count < 2)
         {
             return false;
@@ -1479,7 +1511,13 @@ internal static class LocalMultiControlRuntime
             return false;
         }
 
-        List<ulong> combatPlayerIds = combatState.Players.Select((player) => player.NetId).Distinct().ToList();
+        // 只在我们自己的席位之间切换：第三方席位（Co-op Bots 合成 Bot）不是本地会话成员，切过去必然失败
+        // （r144 实机日志：`尝试设置当前操控角色失败：玩家 12716757972810793218 不在会话中`）。
+        List<ulong> combatPlayerIds = combatState.Players
+            .Select((player) => player.NetId)
+            .Where((playerId) => LocalSelfCoopContext.LocalPlayerIds.Contains(playerId))
+            .Distinct()
+            .ToList();
         if (combatPlayerIds.Count < 2)
         {
             return false;

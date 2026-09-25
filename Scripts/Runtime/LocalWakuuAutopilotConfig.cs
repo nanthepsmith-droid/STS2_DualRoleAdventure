@@ -206,6 +206,12 @@ internal static class LocalWakuuAutopilotConfig
     /// </summary>
     public static string BrainMode { get; private set; } = HeuristicBrainMode;
 
+    /// <summary>
+    /// 联机机器人（Co-op Bots）接管席位的原始配置文本（POC，默认空）。
+    /// 解析 / 互斥口径见 <see cref="CoopBotsSeatPlan"/>，运行期接管见 <see cref="CoopBotsSeatRuntime"/>。
+    /// </summary>
+    public static string CoopBotsSeats { get; private set; } = string.Empty;
+
     public const string FirstChoiceMode = WakuuChoiceModes.First;
     public const string LastChoiceMode = WakuuChoiceModes.Last;
     public const string RandomChoiceMode = WakuuChoiceModes.Random;
@@ -572,7 +578,7 @@ internal static class LocalWakuuAutopilotConfig
                 + $"statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, fastVakuuPlay={data.fastVakuuPlay}, vakuuPlayQueue={data.vakuuPlayQueue}, vakuuPlayOverlap={data.vakuuPlayOverlap}, vakuuViewMode={WakuuViewModes.Normalize(data.vakuuViewMode)}, "
                 + $"personalTier={NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier}, "
                 + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}, "
-                + $"vakuuBrain={data.vakuuBrain}");
+                + $"vakuuBrain={data.vakuuBrain}, coopBotsSeats={data.coopBotsSeats}");
         }
 
         UseVakuuForm = data.useVakuuForm;
@@ -611,6 +617,8 @@ internal static class LocalWakuuAutopilotConfig
         EventChoiceMode = NormalizeChoiceMode(data.eventChoiceMode) ?? FirstChoiceMode;
         CardPickMode = NormalizeCardPickMode(data.cardPickMode) ?? LastChoiceMode;
         BrainMode = NormalizeBrainMode(data.vakuuBrain) ?? HeuristicBrainMode;
+        // 原始文本照收（解析/非法值过滤在 CoopBotsSeatPlan，配置损坏不该让加载失败）。
+        CoopBotsSeats = data.coopBotsSeats;
 
         // 配置变化 → 大脑缓存失效（下次主循环用新开关值重新创建）。
         WakuuBrainFactory.Reset();

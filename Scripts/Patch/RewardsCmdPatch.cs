@@ -31,6 +31,12 @@ internal static class RewardsCmdPatch
             return true;
         }
 
+        // 第三方席位（Co-op Bots 合成 Bot）的奖励走原版流程，由 CB 自己接管（同 RewardsSetPatch 的理由）。
+        if (!LocalSelfCoopContext.IsLocalSessionSeat(player.NetId))
+        {
+            return true;
+        }
+
         if (!CombatRewardMergeContext.TryMarkRoomMerged(room))
         {
             LocalMultiControlLogger.Info($"检测到重复战后奖励调用，已忽略: player={player.NetId}, room={room.RoomType}");

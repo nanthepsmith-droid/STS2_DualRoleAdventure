@@ -27,6 +27,12 @@ internal static class LocalSelfCoopContext
     private static readonly List<ulong> _localPlayerIds = new() { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
     private static readonly HashSet<ulong> _wakuuPlayerIds = new();
 
+    /// <summary>
+    /// 由第三方 mod「Co-op Bots」接管的本地席位（POC）。与 <see cref="_wakuuPlayerIds"/> **互斥**：
+    /// 同一席位同时只能有一种驱动（真人 / 瓦库 / 联机机器人），见 <see cref="CoopBotsSeatPlan"/>。
+    /// </summary>
+    private static readonly HashSet<ulong> _coopBotsPlayerIds = new();
+
     private static int _desiredLocalPlayerCount = 2;
 
     private static bool _isSyncingCharacterHighlight;
@@ -42,6 +48,7 @@ internal static class LocalSelfCoopContext
 
     public static IReadOnlyList<ulong> LocalPlayerIds => _localPlayerIds;
     public static IReadOnlyCollection<ulong> WakuuPlayerIds => _wakuuPlayerIds;
+    public static IReadOnlyCollection<ulong> CoopBotsPlayerIds => _coopBotsPlayerIds;
 
     public static ulong PrimaryPlayerId { get; private set; } = 1;
     // 保留兼容字段，旧代码仍可读取第二槽位。
@@ -103,9 +110,87 @@ internal static class LocalSelfCoopContext
         LocalMultiControlLogger.Info($"已恢复瓦库勾选玩家: {string.Join(",", _wakuuPlayerIds)}");
     }
 
+    /// <summary>
+    /// 从配置层恢复联机机器人席位（不落盘、不接管，只是把「谁归联机机器人」记进来）。
+    /// 席位过滤口径与瓦库一致：只认本地席位表里存在的 id。
+    /// </summary>
+    public static void UseSavedCoopBotsPlayerIds(IReadOnlyList<ulong> playerIds)
+    {
+        _coopBotsPlayerIds.Clear();
+        foreach (ulong playerId in playerIds.Where((id) => id != 0))
+        {
+            if (_localPlayerIds.Contains(playerId))
+            {
+                _coopBotsPlayerIds.Add(playerId);
+            }
+        }
+
+        LocalMultiControlLogger.Info($"联机机器人席位已登记: {string.Join(",", GetCoopBotsPlayerIdsSnapshot())}");
+    }
+
     public static bool IsWakuuEnabled(ulong playerId)
     {
         return _wakuuPlayerIds.Contains(playerId);
+    }
+
+    /// <summary>该席位是否交给第三方 mod「Co-op Bots」作答。</summary>
+    public static bool IsCoopBotsDriven(ulong playerId)
+    {
+        return _coopBotsPlayerIds.Contains(playerId);
+    }
+
+    /// <summary>
+    /// 该席位是否属于**本地多控会话**（= 位于本地席位表里）。
+    ///
+    /// 第三方往局里塞进来的席位（典型：Co-op Bots 的**合成 Bot**，netId 形如 `0xB07B…`）**不是**我们的席位：
+    /// 一律不该由我们代它领奖励 / 镜像遗物金币药水 / 切前台 / 结束回合 / 报就绪。
+    /// 判据只用本地席位表（**不**查 `IsCoopBotsDriven`）—— 因为「被 CB 接管的本地席位」仍然是我们自己的席位，
+    /// 只是作答方换成了第三方（见《Co-op_Bots联机队友兼容可行性分析》§2.1 的三态模型）。
+    /// </summary>
+    public static bool IsLocalSessionSeat(ulong playerId)
+    {
+        return playerId != 0 && _localPlayerIds.Contains(playerId);
+    }
+
+    /// <summary>
+    /// 席位驱动三态互斥（POC 版入口，Phase 1 由选人屏循环钮调用）：
+    /// 勾选联机机器人即把该席位从瓦库名单移除（反向由 <see cref="SetWakuuEnabled"/> 调用点保证）。
+    /// 返回 false = 该席位不在本地席位表内、或状态本就如此（未变更）。
+    /// </summary>
+    public static bool SetCoopBotsDriven(ulong playerId, bool enabled, string source)
+    {
+        if (!_localPlayerIds.Contains(playerId))
+        {
+            return false;
+        }
+
+        bool changed = enabled
+            ? _coopBotsPlayerIds.Add(playerId)
+            : _coopBotsPlayerIds.Remove(playerId);
+
+        if (enabled && _wakuuPlayerIds.Remove(playerId))
+        {
+            changed = true;
+            LocalMultiControlLogger.Info($"席位驱动互斥: seat={playerId} 由瓦库改为联机机器人, source={source}");
+        }
+
+        if (!changed)
+        {
+            return false;
+        }
+
+        LocalMultiControlLogger.Info($"席位驱动变更: seat={playerId}, coopBots={enabled}, source={source}");
+        MarkCurrentProfileTag();
+        return true;
+    }
+
+    /// <summary>当前被标记为联机机器人的席位（按本地席位表顺序，日志/接管顺序稳定）。</summary>
+    public static List<ulong> GetCoopBotsPlayerIdsSnapshot()
+    {
+        return _coopBotsPlayerIds
+            .Where((playerId) => _localPlayerIds.Contains(playerId))
+            .OrderBy((playerId) => _localPlayerIds.IndexOf(playerId))
+            .ToList();
     }
 
     public static bool SetWakuuEnabled(ulong playerId, bool enabled, string source)
@@ -118,6 +203,14 @@ internal static class LocalSelfCoopContext
         bool changed = enabled
             ? _wakuuPlayerIds.Add(playerId)
             : _wakuuPlayerIds.Remove(playerId);
+
+        // 三态互斥（POC）：勾选瓦库即取消该席位的「联机机器人」驱动，避免两侧同时作答（分析 §4.3）。
+        if (enabled && _coopBotsPlayerIds.Remove(playerId))
+        {
+            LocalMultiControlLogger.Info(
+                $"席位驱动互斥: player={playerId} 由联机机器人改为瓦库, source={source}");
+        }
+
         if (!changed)
         {
             return false;
@@ -754,6 +847,8 @@ internal static class LocalSelfCoopContext
     {
         HashSet<ulong> activeSet = _localPlayerIds.Take(_desiredLocalPlayerCount).ToHashSet();
         _wakuuPlayerIds.RemoveWhere((playerId) => !activeSet.Contains(playerId));
+        // 联机机器人席位同口径收敛（本地玩家数下调后，超出的席位不再接管）。
+        _coopBotsPlayerIds.RemoveWhere((playerId) => !activeSet.Contains(playerId));
     }
 
     private static void MarkCurrentProfileTag()

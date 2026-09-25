@@ -50,7 +50,10 @@ internal static class SpoilsMapPatch
 
         try
         {
-            foreach (Player otherPlayer in runState.Players.Where((candidate) => sourceOwner != null && candidate.NetId != sourceOwner.NetId))
+            // 只结算**本地席位**的藏宝图（第三方席位如 Co-op Bots 的 Bot 由它自己那侧结算）。
+            foreach (Player otherPlayer in runState.Players.Where((candidate) => sourceOwner != null
+                && candidate.NetId != sourceOwner.NetId
+                && LocalSelfCoopContext.IsLocalSessionSeat(candidate.NetId)))
             {
                 CardPile deckPile = PileType.Deck.GetPile(otherPlayer);
                 List<SpoilsMap> pendingMaps = deckPile.Cards

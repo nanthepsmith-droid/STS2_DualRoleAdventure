@@ -14,7 +14,7 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    private const string BuildMarker = "Revival v1.42.0 (game v0.111.0, marker=2026-09-20-r143)";
+    private const string BuildMarker = "Revival v1.42.0 (game v0.111.0, marker=2026-09-25-r146)";
 
     private static Harmony? _harmony;
 
@@ -154,6 +154,9 @@ public partial class Entry
             SafeAction(fatalFailures, FatalCode.Model, "瓦库遗物本地化", () => LocalWakuuRelicLocalization.Initialize());
             // 社区统计（SkadaHelper）为可选第三方依赖：探测失败只打日志，永不阻断
             WakuuSkadaAdapter.Probe();
+            // 联机 AI 队友（Co-op Bots）同为可选第三方依赖：只探测 + 登记配置里的席位，绝不接管（进局时才接管）
+            CoopBotsAdapter.Probe();
+            SafeAction(fatalFailures, FatalCode.Config, "联机机器人席位配置", () => CoopBotsSeatRuntime.LoadFromConfig("entry-init"));
         });
 
         // 阶段 4：应用 Harmony 补丁

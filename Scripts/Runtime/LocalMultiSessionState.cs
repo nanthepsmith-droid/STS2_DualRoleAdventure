@@ -9,6 +9,9 @@ internal sealed class LocalMultiSessionState
 {
     private readonly List<ulong> _orderedPlayerIds = new();
 
+    /// <summary>被拒绝切换的第三方席位（每个 id 只记一条 Info，避免刷屏；会话重置时清空）。</summary>
+    private readonly HashSet<ulong> _thirdPartySkipLogged = new();
+
     private int _activeIndex;
 
     public bool IsInitialized { get; private set; }
@@ -77,6 +80,7 @@ internal sealed class LocalMultiSessionState
         IsInitialized = false;
         _orderedPlayerIds.Clear();
         _activeIndex = 0;
+        _thirdPartySkipLogged.Clear();
     }
 
     public bool SwitchNextPlayer()
@@ -115,6 +119,19 @@ internal sealed class LocalMultiSessionState
         int index = _orderedPlayerIds.IndexOf(playerId);
         if (index < 0)
         {
+            // 第三方席位（Co-op Bots 的合成 Bot 等）既不在会话里、也不该被切到：
+            // 静默跳过（每个 id 只在首次记一条 Info），不要刷成"设置失败"告警 ——
+            // 那会把"某处还在把第三方席位当自家席位"这种真问题淹没（r145 实机就刷过）。
+            if (!LocalSelfCoopContext.IsLocalSessionSeat(playerId))
+            {
+                if (_thirdPartySkipLogged.Add(playerId))
+                {
+                    LocalMultiControlLogger.Info($"忽略切换到第三方席位（不在本地多控会话中）: player={playerId}");
+                }
+
+                return false;
+            }
+
             LocalMultiControlLogger.Warn($"尝试设置当前操控角色失败：玩家 {playerId} 不在会话中。");
             return false;
         }

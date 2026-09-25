@@ -26,6 +26,14 @@ internal static class RewardsSetPatch
             return true;
         }
 
+        // 第三方席位（Co-op Bots 合成 Bot）的奖励集一律**放行给原版流程**：CB 自己 patch 了
+        // `RewardsSet.Offer`（只认 `BotRegistry.IsBot`）会整批接管并自动领取；被我们拦下来合并或弹屏，
+        // 就会变成真人界面上一条「[未知角色]」的奖励（2026-09-25 实机）。
+        if (!LocalSelfCoopContext.IsLocalSessionSeat(__instance.Player.NetId))
+        {
+            return true;
+        }
+
         if (LocalSelfCoopContext.UseSingleAdventureMode
             && __instance.Room is CombatRoom combatRoom
             && __instance.Player.RunState.Players.Count > 1)

@@ -2,8 +2,8 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-09-16 21:06  HEAD=8f29460
-# 统计: patch_classes=173 patch_rows=197 string_targets=183 descriptors=336
+# 生成时间=2026-09-25 13:38  HEAD=9d014e2
+# 统计: patch_classes=174 patch_rows=198 string_targets=189 descriptors=338
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	CardManualPlayContextPatch	CardModel	EnqueueManualPlay	string
@@ -37,6 +37,7 @@ P	CombatManagerPatch	CombatManager	SetReadyToEndTurn	nameof
 P	CombatManagerReadyEnemyTurnPatch	CombatManager	SetReadyToBeginEnemyTurn	nameof
 P	CombatManagerSetupPlayerTurnForegroundPatch	CombatManager	SetupPlayerTurn	string
 P	CombatRoomOfferRoomEndRewardsPatch	CombatRoom	OfferRoomEndRewards	nameof
+P	CoopBotsShopAckPatch	-	-	no-target
 P	CreatureCmdKillWinCheckPatch	CreatureCmd	Kill	nameof
 P	CrystalSphereMinigameProceedGuardPatch	NCrystalSphereScreen	OnProceedButtonPressed	string
 P	CrystalSpherePaymentPlanPatch	CrystalSphere	PaymentPlan	string
@@ -206,6 +207,7 @@ S	accesstools	ActionQueueSet	_actionQueues	field
 S	accesstools	ActionQueueSynchronizer	_actionQueueSet	field
 S	accesstools	CombatManager	_playersReadyToBeginEnemyTurn	field
 S	accesstools	CombatManager	_turnState	field
+S	accesstools	CoopBotsShopAckPatch	Postfix	method
 S	accesstools	EventSynchronizer	ChooseSharedEventOption	method
 S	accesstools	EventSynchronizer	SaveEventOptionToHistory	method
 S	accesstools	EventSynchronizer	_localPlayerId	field

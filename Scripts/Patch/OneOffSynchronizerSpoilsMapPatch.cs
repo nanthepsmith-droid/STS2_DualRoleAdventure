@@ -68,7 +68,9 @@ internal static class OneOffSynchronizerSpoilsMapPatch
                     $"宝箱房间检测到藏宝图 quest 丢失（读档后未恢复），按持卡兜底结算: coord={runState.CurrentMapCoord}");
             }
 
+            // 只批处理**本地席位**的藏宝图：第三方席位（Co-op Bots 的 Bot）由它自己那侧结算。
             List<Player> playersWithSpoilsMap = runState.Players
+                .Where((player) => LocalSelfCoopContext.IsLocalSessionSeat(player.NetId))
                 .Where((player) => player.Deck.Cards.OfType<SpoilsMap>().Any((map) => map.SpoilsActIndex == runState.CurrentActIndex))
                 .ToList();
             if (playersWithSpoilsMap.Count == 0)

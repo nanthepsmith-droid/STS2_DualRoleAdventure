@@ -77,6 +77,12 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
             return;
         }
 
+        // 第三方席位（Co-op Bots 合成 Bot）的战后奖励**不进我们的合并展示集**，交回原版 Offer() 流程：
+        // CB 自己 patch 了 `RewardsSet.Offer`（只认 `BotRegistry.IsBot`）会整批接管并自动领取。
+        // 2026-09-25 实机：并进合并集后，真人奖励界面上出现「[未知角色]」的奖励，而 CB 侧一条 reward 日志都没有
+        // —— 既没被 CB 领取，又要真人替它点。
+        await OfferThirdPartySeatsRewardsAsync(combatRoom, allPlayers);
+
         // 标记进入汇总奖励流程，抑制遗物/药水/金币的镜像复制
         CombatRewardMergeContext.Enter();
         try
@@ -89,6 +95,45 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
         }
     }
 
+    /// <summary>
+    /// 把**第三方席位**的战后奖励交回原版流程（与原版 `OfferRoomEndRewards` 同款 fire-and-forget）。
+    /// 我们只负责"生成奖励集 + 调 `Offer()`"；生成与领取都由第三方（Co-op Bots）自己完成。
+    /// </summary>
+    private static async Task OfferThirdPartySeatsRewardsAsync(CombatRoom combatRoom, List<Player> allPlayers)
+    {
+        bool shouldGiveRewards = combatRoom.Encounter == null || combatRoom.Encounter.ShouldGiveRewards;
+        foreach (Player player in allPlayers)
+        {
+            if (player.Creature?.IsDead == true || LocalSelfCoopContext.IsLocalSessionSeat(player.NetId))
+            {
+                continue;
+            }
+
+            try
+            {
+                RewardsSet thirdPartySet = shouldGiveRewards
+                    ? new RewardsSet(player).WithRewardsFromRoom(combatRoom)
+                    : new RewardsSet(player).EmptyForRoom(combatRoom);
+
+                // 与原版 OfferRoomEndRewards 一致：展示前结算 BeforeCombatRewardOffered（持久奶糖等依赖它）。
+                await Hook.BeforeCombatRewardOffered(thirdPartySet, player.RunState!, combatRoom);
+
+                LocalMultiControlLogger.Info(
+                    $"第三方席位战后奖励已交回原版流程: player={player.NetId}, "
+                    + $"驱动={(CoopBotsAdapter.Drives(player.NetId) ? "Co-op Bots" : "未识别（未装/未就绪）")}");
+
+                // fire-and-forget：与原版同款；生成与领取都由第三方（Co-op Bots）自己完成。
+                // 显式丢弃（async 方法里不丢弃会报 CS4014）。
+                _ = TaskHelper.RunSafely(thirdPartySet.Offer());
+            }
+            catch (Exception exception)
+            {
+                LocalMultiControlLogger.Warn(
+                    $"第三方席位战后奖励交回原版流程失败（已忽略，该席位本场无奖励）: player={player.NetId}, err={exception.Message}");
+            }
+        }
+    }
+
     private static async Task OfferMergedCore(CombatRoom combatRoom, List<Player> allPlayers)
     {
         bool shouldGiveRewards = combatRoom.Encounter == null || combatRoom.Encounter.ShouldGiveRewards;
@@ -97,6 +142,12 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
         foreach (Player player in allPlayers)
         {
             if (player.Creature?.IsDead == true)
+            {
+                continue;
+            }
+
+            // 第三方席位在上面已经单独交回原版流程（这里再兜一道，防止将来有人只改一处）。
+            if (!LocalSelfCoopContext.IsLocalSessionSeat(player.NetId))
             {
                 continue;
             }
@@ -248,6 +299,8 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
             Player player = perPlayerSet.Player;
             List<CardPoolModel> otherPools = allPlayers
                 .Where((candidate) => candidate.NetId != player.NetId && candidate.Creature?.IsDead != true && candidate.Character != null)
+                // 只取本地席位的卡池：第三方席位（Co-op Bots 的 Bot）不是我们的队友选择，别把它的角色池混进来。
+                .Where((candidate) => LocalSelfCoopContext.IsLocalSessionSeat(candidate.NetId))
                 .Select((candidate) => candidate.Character!.CardPool)
                 .Distinct()
                 .ToList();

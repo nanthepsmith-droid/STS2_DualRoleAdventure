@@ -72,7 +72,9 @@ internal static class RewardPotionMirrorPatch
         IsMirroring.Value = true;
         try
         {
-            foreach (Player otherPlayer in sourcePlayer.RunState.Players.Where((candidate) => candidate.NetId != sourcePlayer.NetId))
+            // 只镜像给**本地席位**（第三方席位如 Co-op Bots 的 Bot 由它自己那侧负责）。
+            foreach (Player otherPlayer in sourcePlayer.RunState.Players
+                .Where((candidate) => candidate.NetId != sourcePlayer.NetId && LocalSelfCoopContext.IsLocalSessionSeat(candidate.NetId)))
             {
                 PotionModel mirroredPotion = PotionModel.FromSerializable(potion.ToSerializable(-1));
                 PotionProcureResult result = await PotionCmd.TryToProcure(mirroredPotion, otherPlayer);

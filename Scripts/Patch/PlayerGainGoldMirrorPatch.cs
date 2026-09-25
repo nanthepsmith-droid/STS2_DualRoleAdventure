@@ -89,7 +89,11 @@ internal static class PlayerGainGoldMirrorPatch
     {
         await originalTask;
 
-        var otherPlayers = sourcePlayer.RunState.Players.Where((candidate) => candidate.NetId != sourcePlayer.NetId).ToList();
+        // 只镜像给**本地席位**：第三方席位（Co-op Bots 的合成 Bot）是独立队友，不该拿我们的金币
+        // （更严重的是会污染它的决策状态；r145 之前一律按"本地角色"处理）。
+        var otherPlayers = sourcePlayer.RunState.Players
+            .Where((candidate) => candidate.NetId != sourcePlayer.NetId && LocalSelfCoopContext.IsLocalSessionSeat(candidate.NetId))
+            .ToList();
         if (otherPlayers.Count == 0)
         {
             return;

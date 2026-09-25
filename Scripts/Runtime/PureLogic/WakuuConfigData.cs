@@ -238,6 +238,16 @@ internal sealed class WakuuConfigData
     /// scored=启发式评分（§18.2 轻量评分 + 目标选择升级）/ auto=自动探测可用求解器。
     /// </summary>
     public string vakuuBrain { get; set; } = WakuuBrainModes.Heuristic;
+
+    /// <summary>
+    /// **联机机器人（Co-op Bots）接管席位**（POC 临时入口，默认空 = 一个都不接管）：
+    /// 逗号分隔的席位号（如 <c>"2"</c> / <c>"2,3"</c>；席位号 = 局内 netId，与瓦库勾选同一套编号）。
+    /// 进局时本 mod 对这些席位调 <c>CoopBots.AutoPilot.Set(netId, true)</c>，由第三方 mod 代替其作答；
+    /// 未安装 Co-op Bots 时这些席位只是回落真人/瓦库，不致命。
+    /// 与瓦库名单**互斥**（同时勾选时以联机机器人优先并打 WARN，见《Co-op_Bots联机队友兼容可行性分析》§4.3）。
+    /// Phase 1 会把它换成选人屏三态钮 + 存档标记，届时本键保留兼容读。
+    /// </summary>
+    public string coopBotsSeats { get; set; } = string.Empty;
 }
 
 /// <summary>瓦库大脑模式取值常量（单一来源）。</summary>

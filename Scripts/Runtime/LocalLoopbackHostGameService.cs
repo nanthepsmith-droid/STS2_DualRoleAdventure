@@ -34,6 +34,9 @@ internal sealed class LocalLoopbackHostGameService : INetHostGameService
         LocalMultiControlLogger.Info($"创建本地回环网络服务，初始 sender={_currentSenderId}");
         Patch.IdAfterCardDrawnOwnerGuardPatch.TryApplyLate();
         Patch.IdLiberationBeforeHandDrawFixPatch.TryApplyLate();
+        // 第三方 Co-op Bots 晚于本 mod 加载时，商店 ACK 旁路补丁要在这里补挂
+        // （它对**任何** CB 驱动的席位都成立，包括 CB 自己加的合成 Bot，不只是我们接管的席位）。
+        Patch.CoopBotsShopAckPatch.TryApplyLate();
     }
 
     public ulong NetId => _currentSenderId;

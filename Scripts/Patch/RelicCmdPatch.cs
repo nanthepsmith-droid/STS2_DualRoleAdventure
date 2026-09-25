@@ -110,7 +110,10 @@ internal static class RelicCmdObtainPatch
             return obtainedRelic;
         }
 
-        foreach (Player otherPlayer in player.RunState.Players.Where((candidate) => candidate.NetId != player.NetId))
+        // 只镜像给**本地席位**：第三方席位（Co-op Bots 的合成 Bot）是独立队友，不该跟着我们共享遗物
+        // （它的遗物由它自己的奖励流程获得）。
+        foreach (Player otherPlayer in player.RunState.Players.Where((candidate) => candidate.NetId != player.NetId
+            && LocalSelfCoopContext.IsLocalSessionSeat(candidate.NetId)))
         {
             if (!obtainedRelic.IsStackable && otherPlayer.GetRelicById(obtainedRelic.Id) != null)
             {
@@ -188,7 +191,9 @@ internal static class RelicCmdRemovePatch
             return;
         }
 
-        foreach (Player otherPlayer in runState.Players.Where((candidate) => candidate.NetId != removedRelic.Owner.NetId))
+        // 同步移除同样只针对**本地席位**（第三方席位从没被我们镜像过遗物）。
+        foreach (Player otherPlayer in runState.Players.Where((candidate) => candidate.NetId != removedRelic.Owner.NetId
+            && LocalSelfCoopContext.IsLocalSessionSeat(candidate.NetId)))
         {
             RelicModel? mirroredRelic = otherPlayer.GetRelicById(removedRelic.Id);
             if (mirroredRelic == null)

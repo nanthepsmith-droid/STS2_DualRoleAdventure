@@ -234,6 +234,8 @@ internal static class PatchDomainMap
             ["IdAfterCardDrawnOwnerGuardPatch"] = PatchDomain.ThirdParty,
             ["SecondaryResourceCombatUiOwnerPatch"] = PatchDomain.ThirdParty,
             ["IdLiberationBeforeHandDrawFixPatch"] = PatchDomain.ThirdParty,
+            // Co-op Bots（联机机器人）：本地回环下的商店 ACK 死锁旁路（R1）
+            ["CoopBotsShopAckPatch"] = PatchDomain.ThirdParty,
         };
 
     /// <summary>
