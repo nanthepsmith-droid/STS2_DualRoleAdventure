@@ -35,6 +35,10 @@ AGENTS.md, CHANGELOG.md, README*.md, PLAYER_GUIDE*.md, TODO.md
 
 ## 2. Build, format, deploy
 
+> 本机环境：Windows + **PowerShell 7（pwsh）为默认 shell**（opencode 标注 `Shell: pwsh`），另装有 git bash，
+> 但仓库内脚本与命令一律以 **pwsh** 为准（`.ps1` 用 pwsh 跑，内嵌 shell 命令按 pwsh 语法写）。
+> `bash`/`git bash` 仅当你明确要求时才用，不用于构建/部署链。
+
 Run from the repo root:
 
 ```bash
@@ -176,6 +180,25 @@ When the game updates and the mod breaks:
 - `README.md` — project front door; `PLAYER_GUIDE.md` — player-facing usage; `CHANGELOG.md` — history; `TODO.md` — open issues.
 - `docs/architecture.md`, `docs/console-commands.md`, `docs/design/*` — developer docs.
 - `docs/archive/*.zh.md` — original Chinese documents, preserved verbatim; do not edit them.
+
+### 8.1 文档职责与单一事实源（2026-09-25 起）
+
+| 层 | 文档 | 只管什么 |
+|---|---|---|
+| 操作规矩 | `AGENTS.md`（本文件） | 硬规矩 / 门禁 / 提交纪律 |
+| 经验集 | `<home>\.codebuddy\skills\dualroleadventure-development\SKILL.md` + `references/` | 稳定做法与坑、场景路由（**不写日期戳现状**） |
+| 工作项 | 仓库 `TODO.md`（含 §「决策记录跟踪表」） | 待做 → 做到哪 → 关单；**工作项状态的唯一事实源** |
+| 提案索引 | `D:\Download\pain\maintenance-docs\decision-records\README.md` | 全部提案/方案的清单、定位与状态（**状态类事实的单一来源**）；提案正文里的旧「待拍板/未动工」字样不再作为判据 |
+| 快照 | `D:\Download\pain\maintenance-docs\维护现状分析.md` | 某时间点的全貌盘点（会漂移，**不作判据**） |
+
+**同步纪律**（新提案当天就要做，别攒）：
+
+1. 新 proposal 落进 `maintenance-docs\decision-records\`（`maintenance-docs\` 无 git，不进仓库）
+   → 当天在 `decision-records\README.md` **登记一行**（定位 / 登记日期 / 状态）；
+2. 同时在 `TODO.md` §「决策记录跟踪表」**挂条目**（或明确写「仅调研，不排期」）—— **登记 ≠ 排期、≠ 承诺动工**；
+3. 状态变化（拍板 / 动工 / 关单 / 不做）**只改上面两处的那一行**，不要往提案正文追加状态；
+4. `SKILL.md` 只在「做法 / 坑」本身变化时才改；**日期戳现状（分支、部署位 marker、未推送提交数、单测条数）
+   只进 `维护现状分析.md`**，不进 SKILL.md。
 
 ## 9. Hard gates (run before every deploy)
 
