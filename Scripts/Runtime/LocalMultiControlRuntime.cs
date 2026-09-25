@@ -2405,7 +2405,12 @@ internal static class LocalMultiControlRuntime
             NRun.Instance?.SetCurrentRoom(refreshedRoom);
             LocalWakuuRelicRuntime.ProbeAndRecoverSelectorStack($"event-refresh-after-{playerId}", allowRecover: true);
             string scopeLabel = synchronizer.IsShared ? "共享自定义事件界面" : "非共享事件房间";
-            LocalMultiControlLogger.Info($"{scopeLabel}已按当前角色重建: player={playerId}, event={targetEvent.Id.Entry}");
+            // r147 诊断：事件房间"重建后停在半死状态"（实机 2026-09-25 第一幕，事件末页效果为
+            // 牌组选牌时房间推不动）需要区分「弹层没关」还是「事件状态机没走完」——
+            // isFinished + 弹层栈快照（inTree=False 即幽灵弹层）足以定性。
+            LocalMultiControlLogger.Info(
+                $"{scopeLabel}已按当前角色重建: player={playerId}, event={targetEvent.Id.Entry}, "
+                + $"isFinished={targetEvent.IsFinished}, overlay={LocalOverlayPhantomGuard.DescribeOverlayStack()}");
         }
         catch (Exception exception)
         {

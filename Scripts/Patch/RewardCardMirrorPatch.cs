@@ -35,6 +35,12 @@ internal static class RewardCardMirrorPatch
             return;
         }
 
+        // r147：**来源**也必须是本地席位（旧实现只过滤了"镜像给谁"）。
+        if (!MirrorSeatPolicy.IsMirrorableSource(sourcePlayer.NetId, LocalSelfCoopContext.LocalPlayerIds))
+        {
+            return;
+        }
+
         TaskHelper.RunSafely(MirrorCardToOtherPlayersAsync(sourcePlayer, card));
     }
 

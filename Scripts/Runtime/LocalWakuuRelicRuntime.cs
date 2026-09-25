@@ -889,6 +889,9 @@ internal static class LocalWakuuRelicRuntime
         // 有弹层打开（含真人的牌堆/发现选牌）时不起看门狗，避免打断交互。
         if ((NOverlayStack.Instance?.ScreenCount ?? 0) > 0)
         {
+            // r147 诊断：同一次阻塞只记一条「栈里是谁、节点在不在树里」——
+            // inTree=False 即 r147 的自愈目标（幽灵弹层），inTree=True 才是真的有人在看界面。
+            LocalOverlayPhantomGuard.NoteOverlayBlocked("wakuu-watchdog");
             reason = "overlay-open";
             return false;
         }
@@ -1293,6 +1296,7 @@ internal static class LocalWakuuRelicRuntime
         // 既可能是真人正在交互（如酒狐合成选牌），也防止全局选择器被抢答。
         if ((NOverlayStack.Instance?.ScreenCount ?? 0) > 0)
         {
+            LocalOverlayPhantomGuard.NoteOverlayBlocked("wakuu-play-guard");
             reason = $"overlay-open({NOverlayStack.Instance?.ScreenCount})";
             return true;
         }

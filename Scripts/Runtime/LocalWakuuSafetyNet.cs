@@ -286,5 +286,7 @@ internal sealed partial class LocalSafetyNetTicker : Node
     public override void _Process(double delta)
     {
         LocalWakuuSafetyNet.Tick();
+        // r147：弹层栈的幽灵条目巡检（不依赖瓦库托管开关，进局即有；自身每 1s 才真正跑一次）。
+        LocalOverlayPhantomGuard.Tick();
     }
 }

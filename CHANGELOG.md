@@ -5,6 +5,49 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 ## [Unreleased]
 
 ### Fixed
+- **屏幕变暗且点不动 / 战斗里出不了牌（只有 bot 能出）/ 商店点不开商人 / 火堆锻造卡住 —— 只能退出重进（r147，2026-09-25）**：
+  玩家实测第一幕反馈「事件获得卡牌奖励、战斗中暂停继续、火堆锻造导致屏幕变暗且无法继续（可退出重进恢复）」
+  与「有时候战斗开始时无法出牌（不止我不能出牌，瓦库也不能，只有 bot 出牌）」「有时候进商店不能点击商人交易，
+  切到瓦库瓦库依旧可以自动交易，但瓦库视角也不能点击商人进入交易面板」。
+  这三条**是同一个根因**，且是 r146 引入的新问题（跨会话对比：`Parent node is busy setting up children,
+  add_child() failed` 在前四份日志里全 0，本局 12 次）。
+  - **根因（幽灵弹层）**：`CardRewardPatch` 会在 `CardReward.OnSelect` 前缀里把 `LocalContext.NetId`
+    改成奖励归属者（r134 修 BUG-13 用的归属钉住）。r146 把第三方席位的战后奖励交回原版 `RewardsSet.Offer()`
+    之后，Co-op Bots 的 `BotRewardDriver` 会**逐个**选它的奖励；轮到卡牌奖励时，
+    `CardReward.OnSelect` 的 `LocalContext.IsMe(player)` 因为我们的钉住变成真
+    ⇒ 游戏为**机器人**弹了真正的 `NCardRewardSelectionScreen`。而 Co-op Bots 只为「被接管的真人席位」
+    抑制这个弹屏（它对**合成 Bot** 用的是远端作答，本来根本不弹屏）⇒ 机器人一套奖励里的**第二张**卡牌奖励
+    在上一张屏的 `_ExitTree` 过程中推屏 ⇒ 游戏 `NOverlayStack.Push` 里 `AddChildSafely` 失败。
+    要命的是 `Push` 的顺序是「挂节点 → 名单.Add → 背板吞输入 → 背板变暗」：节点没进树，**名单照加、
+    背板照暗**，而节点不在树里 ⇒ 它自己的关闭逻辑永远不会跑 ⇒ 屏幕上多了一层"看不见却吃得下所有点击"的
+    全屏变暗层，**只能整局重开**（`NRun` 重建时 `NOverlayStack._ExitTree → Clear()` 才会清掉）。
+    实机 12 次失败 → 11 处卡死点（事件 / 火堆锻造 / 商店 / 战斗均中招），每次都在失败后按下 ESC 退出重进。
+  - **修法两层**：
+    ① **根治**：`CardRewardPatch` 的归属钉住**不再作用于第三方席位**（判据 `IsLocalSessionSeat`）——
+    机器人的卡牌奖励回到 `WaitForRemoteChoice`，由 Co-op Bots 的大脑作答，**根本不弹屏**，碰撞消失；
+    本地席位（真人 / 瓦库）的 BUG-13 修复保持不变。
+    ② **兜底**：新增 `LocalOverlayPhantomGuard` + `NOverlayStackPhantomGuardPatch`（`NOverlayStack.Push`
+    的后缀 + 终结器）：推入后**下一帧**复查该条目是否真的进了场景树，没进就从弹层栈里清掉并恢复背板
+    （变亮 + 不再吞输入），把"整局软锁"降级成一条 `幽灵弹层已自愈` 日志；另有 1s 周期巡检补漏。
+    之所以延迟一帧：`AddChildSafely` 在"非主线程 / 父节点未 ready"时会改走 `CallDeferred(AddChild)`，
+    立刻判定会把正常的延迟入栈误判成幽灵。
+  - **顺带加诊断**（给仍未定性的第 2 类停滞留锚点）：弹层挡住自动流程时按"同一次阻塞"记一条
+    `弹层阻挡自动流程（同一次阻塞只记一条）: source=…, screenCount=…, top=Type[inTree=…]`；
+    事件房间按角色重建、以及"事件流程已完成，等待弹窗关闭"两处补弹层栈快照。
+- **Co-op Bots 的机器人自己的奖励被镜像给真人：金币（还被一起放大 3 倍）/「七咒之戒」的额外战斗掉落遗物 / 第一幕 BOSS 的千咒卷轴（r147，2026-09-25）**：
+  玩家实测反馈「bot 的遗物【七咒之戒】战斗奖励效果同步给所有玩家 …… 额外掉落遗物时所有玩家获得同样的额外遗物，
+  真人玩家也是自动获得而不是在战斗奖励页面中显示自主决定要不要拿」。
+  - **根因**：r146 给镜像加的判据只看了**目标**一头（不把我们的东西发给机器人），**来源**没管
+    ⇒ 机器人自己拿到的奖励被当成"本地角色共享"复制给两个真人。实机证据：`本地多控共享遗物同步:
+    GORGET/CANDELABRA/ODDLY_SMOOTH_STONE/PEAR/TROPICAL_FISH/TRAVEL_PERMIT/LETTER_OPENER/
+    YUWANCARD-THOUSAND_CURSE_SCROLL, 12716757972810793218 -> 326 与 -> 327`（8 件 × 2 人，
+    且是直接 `AddRelicInternal` ⇒ 真人连"要不要拿"都没得选）；
+    `事件/流程金币已同步到其余角色: owner=12716757972810793218` 12 条（Co-op Bots 的金币作弊是
+    Prefix 把金额 ×3、我们的镜像 Postfix 拿到的是**已放大**的值 ⇒ 真人跟着拿 3 倍）。
+  - **修法**：抽出纯逻辑 `MirrorSeatPolicy`（`IsMirrorableSource` / `ShouldMirrorTo`：**来源与目标都必须
+    是我们自己的席位**），金币 / 遗物（获得 + 移除）/ 药水 / 藏宝图（`SpoilsMapPatch`）/ 水晶球卡牌
+    五条镜像链全部改用该判据；新增 12 条单测钉住"两头都要看"。（`OneOffSynchronizerSpoilsMapPatch`
+    的批处理本来就是按本地席位筛选，未改。）
 - **3 席局（真人 + 瓦库 + Co-op Bots 的机器人）战后奖励里会出现一条「[未知角色]」的奖励（r146，2026-09-25）**：
   实机反馈「会给 bot 生成战斗奖励（显示为 [未知角色]），也不知道 bot 到底有没有领」。
   - **根因**：本 mod 的战后奖励是"逐角色生成 + 合并成一个界面给真人"，而逐角色的遍历用的是局内**全部玩家**
@@ -59,6 +102,14 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     `瓦库奖励已全部自动领取，不再弹奖励界面: player=…, 原奖励数=N`（旧行为下都不会出现）。
 
 ### Added
+- **手牌点击「被静默忽略」的诊断埋点（r148，2026-09-25，只记录不干预）**：
+  r147 那局实测「机器人死后瓦库连出 4 张牌的那 12 秒里，真人一次都没出成牌，日志里一条痕迹都没有」
+  —— 原版 `NPlayerHand.OnHolderPressed` 的点击闸门会**静默 return**（预览键 / 卡片节点没建出来 / 战斗未进行 /
+  有弹层 / 手牌模式不是 Play / 正在播出牌动画 / 动作被禁用 / 别人在额外回合），而 `NMouseCardPlay` 里
+  `Card.CanPlay()` 不通过也只会把牌静默拖回手牌。
+  本埋点在闸门拦住点击时打 `手牌点击被忽略: reason=…, card=…（本局累计 N 次）`，
+  在闸门放行但牌出不去时打 `手牌点击已受理但出不了牌: card=…, reason=<UnplayableReason>, preventer=…`；
+  同一 reason 10 秒内只记一条。**不改任何行为**，只为把"点了没反应"变成可判读的日志。
 - **联机 AI 队友「Co-op Bots」兼容（POC，r144，2026-09-25，可选第三方依赖）**：可以把指定席位交给
   第三方 mod **Co-op Bots / 联机机器人**接管 —— 席位保留原 netId / 角色，由它代替该席位作答
   （战斗出牌、卡牌奖励、商店、火堆、宝箱、事件、地图投票、药水）。

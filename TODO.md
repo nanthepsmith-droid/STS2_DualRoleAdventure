@@ -47,7 +47,7 @@
 | `本地多角色扩展到Daily模式可行性分析.md` | **拍板·未动工**：已拍板「Daily 禁止上传排行榜分数」；Custom ✅ 既有已实现、**Daily ❌ 未实现**（日志锚点 `DAILY_SCORE_SKIP` 已设计未实现） | 是否投入做 Daily 支持，待拍板 | 本表（待拍板） |
 | `瓦库四功能-可行性核验报告.md` | **待拍板**（结论已出）：四功能均无架构级死路；功能一难度下调为「中」 | 按建议顺序（净化 → 我们联合 → 炼化 → 地狱战神）逐级动工，动工前需用户拍板 | 本表 + 提案 §7 |
 | `瓦库炼化净化联合地狱战神-功能提案与可行性分析.md` | **未动工**（仅提案；已被 09-22 核验报告逐条核验） | 同上（以核验报告的顺序与难度为准） | 本表 |
-| `Co-op_Bots联机队友兼容可行性分析.md` | **部分落地 + 实机进行中（r144 POC → r145 回合死锁 → r146 席位隔离）**：分支 `feat/coop-bots-drivers`（从 master 切，r142/r143 已先合回 master）。落地 = ① `CoopBotsAdapter` 反射适配器（探测 / `AutoPilot.Set` 逐席接管与释放 / 未装即优雅降级）② 席位驱动**三态互斥**（`CoopBotsSeatPlan` + `LocalSelfCoopContext`，POC 配置键 `coopBotsSeats`）③ **R1 商店 ACK 旁路补丁** `CoopBotsShopAckPatch`（**装了 CB 就要挂**，与其 Bot 是否被我们接管无关）④ **r145**：3 席"回合结束不了"（就绪补齐改成"只补本地席位 + 走真实方法调用"）⑤ **r146**：第三方席位隔离（`LocalSelfCoopContext.IsLocalSessionSeat` —— 战后奖励不再替 Bot 生成/展示/领取，遗物/金币/药水/藏宝图镜像不再发给 Bot，切人不再刷告警）。**未做**：12 席三态 UI / 持久化、Phase 3 补丁面回归、**被接管的本地席位**的奖励归驱动方分流。**实机未验**：R1 商店（还没进过商店）、镜像链路的过滤（本局未触发）、R2 其余 10 个同方法叠加点 | ① 下一局**进一次商店**验 R1；② 打一场战斗确认奖励界面无 `[未知角色]`、CB 自动领取 Bot 奖励（锚点 `第三方席位战后奖励已交回原版流程`）；③ 按 r144 的 R2 清单（**9 类型 11 个同方法**）逐条实测；④ 之后再谈 Phase 1 的选人屏三态钮与 save tag v4 | 本表 |
+| `Co-op_Bots联机队友兼容可行性分析.md` | **部分落地 + 实机进行中（r144 POC → r145 回合死锁 → r146 席位隔离 → r147「幽灵弹层 + 镜像来源席位」）**：r144~r146 已提交并 `--ff-only` 合回 master（`50bff2b` 代码 / `25077d1` 文档），r147 在分支 `fix/r147-phantom-overlay-mirror`（**未 commit / 未 push**）。落地 = ① `CoopBotsAdapter` 反射适配器（探测 / `AutoPilot.Set` 逐席接管与释放 / 未装即优雅降级）② 席位驱动**三态互斥**（`CoopBotsSeatPlan` + `LocalSelfCoopContext`，POC 配置键 `coopBotsSeats`）③ **R1 商店 ACK 旁路补丁** `CoopBotsShopAckPatch`（**装了 CB 就要挂**，与其 Bot 是否被我们接管无关）④ **r145**：3 席"回合结束不了"（就绪补齐改成"只补本地席位 + 走真实方法调用"）⑤ **r146**：第三方席位隔离（`LocalSelfCoopContext.IsLocalSessionSeat`）⑥ **r147**：r146 实机暴露的两类新问题 —— **幽灵弹层**（`CardRewardPatch` 不再为第三方席位钉 `LocalContext`；`NOverlayStackPhantomGuardPatch` + `LocalOverlayPhantomGuard` 自愈）与**镜像来源席位**（`MirrorSeatPolicy`：金币/遗物/药水/藏宝图/水晶球卡牌五条链「两头都要是自己的席位」）。**未做**：12 席三态 UI / 持久化、Phase 3 补丁面回归、**被接管的本地席位**的奖励归驱动方分流、**BUG-17**（事件末页牌组选牌推不动，r147 只加诊断）。**实机待验**：r147 全部改动（幽灵弹层自愈 / 三条镜像链的来源过滤 / BUG-17 诊断锚点）、R1 商店未单独复验、R2 其余 10 个同方法叠加点 | ① 下一局**进一次商店**验 R1 与「点商人能不能开面板」；② 打完一局确认：全程 0 条 `add_child() failed`、0 条 `幽灵弹层已自愈`、0 条 `本地多控共享遗物同步: <Bot id> -> …`、0 条 `owner=<Bot id>` 的金币镜像；③ 事件末页选牌复现后按 BUG-17 的三条锚点分流；④ 按 r144 的 R2 清单（**9 类型 11 个同方法**）逐条实测；⑤ 之后再谈 Phase 1 的选人屏三态钮与 save tag v4 | 本表 + §BUG-17 |
 | `局内加人与战斗临时玩家-可行性分析.md` | **未动工**（调研结论稿）：需求 A 局内加正式玩家 = 有条件可行但风险高；需求 B 战斗中临时玩家（召唤型）= 可行且有现成抓手 | 2026-09-25 **已归位**到 `maintenance-docs/decision-records/`（原先错放在 `maintenance-docs/` 根）；是否排期待拍板 | 本表（待拍板） |
 | `原版药水一览表.md` / `原版附魔一览表.md` | **参考数据表**（非提案）；药水表已随 r136 校正"当前 mod 行为"列 | 改规则表时同步这两张表；附魔侧"优先选哪类牌"待用户填期望 | **§改进-4** |
 
@@ -1361,3 +1361,96 @@
   复现再顺 `WakuuSelectorRegistry.Open` 在"事件页自动切换"这条链上的配对 `Pop`。
   ⚠ 若日后要查：`log_scan.py --rules <含"检测到瓦库选择器栈残留"的规则文件> --file godot.log --show`
   （中文关键字**不能走命令行**，必须走规则文件）。
+
+---
+
+### BUG-17 事件末页效果是「牌组选牌」时，非共享事件房间推不动（2026-09-25 第一幕实机发现，**r147 只加了诊断，未定死根因**）
+
+- **现象（用户原话）**：「事件获得卡牌奖励 …… 导致屏幕变暗且无法继续（可退出重进恢复）」。
+  日志里两种形态都能看到：
+  - 卡死形态：事件末页选完后界面停在 `optionCount=1`，点角色按钮反复重建
+    （`非共享事件房间已按当前角色重建` ↔ `optionCount=1`）也不动，用户按 ESC 退出重进；
+  - 对比能过的那次：同一事件（`INTEGRATED_STRATEGY_EVENTS_EVENT_DESPERATE_CHOICE_EVENT`）
+    多出一行 `打开奖励界面: player=…326, count=1`，领完即正常推进。
+- **日志证据（marker r146 那局，已归档 `logs-archive/godot__20260925-…`）**：
+  - 卡死的两次（L15535 起 / L15955 起）末页都选了 `BANSHEE.options.HOME_GIFT`（＝牌组变形选牌），
+    只有 `本地多控下强制牌组选牌弹出背包: source=FromDeckForTransformation` /
+    `NDeckCardSelectScreen`，**没有** `打开奖励界面`；
+  - 能过的那次（L16423 起）末页选 `CYCLOPS.options.ALLIES_GIFT`（＝卡牌奖励），有 `打开奖励界面`。
+  - ⚠ 其中一次（L15619）所在的那局内**没有任何** `Parent node is busy … add_child() failed`，
+    所以**不能**全归给 r147 已修的幽灵弹层（那是另一条，见 CHANGELOG r147）。
+- **假设（待下一局日志判定）**：非共享事件的末页效果走 `NDeckCardSelectScreen` 牌组选牌时，
+  `EventRoom` 的"完成 → 推进"没被触发（或我们的"按角色重建"把某个已完成的视图重建成了半死状态）。
+- **r147 已加的诊断（下一局按这三条锚点定性）**：
+  1. `事件流程已完成，等待奖励/选择弹窗关闭后自动切换角色。 overlay=screenCount=N, top=Type[inTree=…]`
+  2. `事件已完成，等待弹窗关闭后自动切换到下一位: … overlay=…`
+  3. `非共享事件房间已按当前角色重建: player=…, event=…, isFinished=…, overlay=…`
+     —— `inTree=False` ⇒ 仍是幽灵弹层（回到 r147 那条）；`screenCount=0` ⇒ 事件状态机自身问题。
+- **下一步**：复现一局 → 用上面三条锚点分流 → 再决定是补 `NEventRoom` 的推进兜底，还是回到
+  `EventRoom` + `NDeckCardSelectScreen` 的完成链。
+
+---
+
+### BUG-18 瓦库出牌期间真人「点了牌没反应 / 无法插队」（2026-09-25 r147 实机反馈，**r148 已加诊断，根因未定**）
+
+- **现象（用户原话）**：「战斗中 bot 死后瓦库出牌我无法插队，只能等瓦库打完才能打」。
+- **实机量化（marker r147 那局，43 MB / 305133 行；`EnqueueManualPlay` ↔ `playing card` 对齐统计）**：
+  - 机器人死亡（L262323）**之前**：真人 338 次点牌里有 **40 次**要排队等别的牌先结算
+    （等待 1~15 张，最长一次 `WWWWWBBBBBBBBBW` = 15 张），其余 298 次立即结算；
+    `让真人插队`（撤掉瓦库尚未执行的入队动作）命中 **89 次**，**全部在死亡之前**；
+  - 死亡**之后**：41 次点牌**全部立即结算**（0 张插队），`让真人插队` **0 次**；
+  - 但死亡后有一段 **12 秒**（L263362 真人出完 ERUPTION → L265792 才出下张）期间，
+    瓦库连出 4 张（THRASH / POMMEL_STRIKE / INFERNO / ECLIPSE），而**真人一次 `EnqueueManualPlay` 都没有**
+    —— 也就是说这段时间里真人的点击**被静默吃掉了**，日志里没有任何痕迹（既无我方日志，也无游戏提示）。
+- **已排除**：幽灵弹层（本局 `幽灵弹层已自愈` = 0、`Parent node is busy` = 0）、
+  弹层遮挡（同窗口看门狗拒绝原因是 `watchdog-in-flight` 而非 `overlay-open`）、
+  玩家动作被禁用（`actionsDisabled=True` 的 37 次都不在该窗口）、额外回合（只在 L255348 及之前出现过，且都是真人自己）。
+- **r148 已加诊断（`NPlayerHandClickDiagnosticPatch`，只记录不干预）**，下一局按这两个锚点分流：
+  - `手牌点击被忽略: reason=…` —— `hand-in-card-play` / `overlay(screenCount=…, top=…)` /
+    `hand-mode-none` / `player-actions-disabled` / `extra-turn-other` / `no-card-node` …
+    （`hand-in-card-play` 说明手牌节点卡在"正在出牌"状态 → 方向是给 `RefreshCombatUiForControlledPlayer`
+    补一条"长时间 InCardPlay 强制收口"）
+  - `手牌点击已受理但出不了牌: card=…, reason=<UnplayableReason>, preventer=…` —— 说明点中了但
+    `CanPlay` 不通过（能量不足 / 无合法目标等），原版只会把牌拖回去，属"预期行为"，不算 bug。
+- **r148 实机首测（2026-09-25 17:30，marker r148，已归档 `logs-archive/godot__20260925-173038__r148.log`）：未复现**。
+  - 新一局（floor 0，3 席）：真人 **点牌 9 次 / 开打 9 次（1:1，全成功）**，`让真人插队` 0 次（本次不需要）；
+    时间线正常：瓦库在飞的那张结算完（L9724 `瓦库出牌走动作队列完成 … BASH`）→ 真人 L9740 立刻开打。
+  - 埋点自证有效：`手牌点击被忽略` **0 条**（= 没有任何一次点击被闸门吃掉）；
+    唯一命中 `手牌点击已受理但出不了牌: card=SURVIVOR, reason=EnergyCostTooHigh` ⇒ **正常行为**
+    （费用不够，原版只把牌拖回手牌）—— 说明这个埋点能把"真·被吞"和"本来就出不了"分开。
+  - ⚠ 测试强度：本次只打了 **1 场战斗（3 个回合）** 就退出；r147 那次现象出现在"打到中段、机器人被打死之后"
+    ⇒ "未复现"是**弱信号**。埋点零副作用（只在真被忽略/真出不了时才打，10 秒节流），建议**保留**观察。
+- **下一步**：等下次自然复现（或专门打一局"机器人死后多轮"）再看 `手牌点击被忽略` 的 reason；
+  若长期 0 命中，可把本补丁降级为 `-`/或只在设置页开关下启用。
+
+---
+
+### BUG-19 通过 wtw mod 的额外第四幕后：BOSS 战打完黑屏、只剩部分 UI（2026-09-25 实机，**第三方 mod 冲突，非本 mod**）
+
+- **现象（用户原话）**：「通过 wtw mod 的额外的第四幕 BOSS 战后黑屏仅有部分 UI」。
+- **日志定性（marker r147 那局）**：异常栈里**只有游戏 + `IntegratedStrategyEvents` + `MomoLib`**，本 mod 一帧都没有：
+  ```
+  [WARN] [IntegratedStrategyEvents][Presentation] refresh temporary map: RoomSet.Ancient not set! You must call GenerateRooms
+  [INFO] [IntegratedStrategyEvents] Entering 渴欲大厅 finale act.
+  ERROR: System.InvalidOperationException: RoomSet.Ancient not set! You must call GenerateRooms
+     at MegaCrit.Sts2.Core.Rooms.RoomSet.get_Ancient()
+     at MomoLib.Abstracts.MomoAncientModel.AncientMapIconColorPatch.Postfix(NMapPoint, Color&)
+     at NMapPoint.get_TargetColor_Patch1(...)   →   NAncientMapPoint.RefreshColorInstantly_Patch1
+     →   NMapScreen.RecalculateTravelability_Patch3   →   NMapScreen.Open_Patch3   →   NMapRoom._Ready
+  ```
+  外加同一根因在 `NMapScreen.SetMap_Patch3` 的 `AddChildSafely` → `NAncientMapPoint._Ready()` 上再抛一次
+  （`NMapRoom._Ready` 中途抛 → `NMapScreen` 只建了一半 ⇒ **黑屏 + 只剩部分 UI**），
+  最后 `IntegratedStrategyTemporaryMapAction … SpecialFinale DesireHall / completed with exception`（共 6 条 `RoomSet.Ancient not set`，L304829~305010）。
+- **判据**：本 mod **不 patch `NMapScreen`**（只读 `NMapScreen.Instance`），异常链里没有我们的类型；
+  触发点是 `IntegratedStrategyEvents` 的"渴欲大厅/SpecialFinale 临时地图"流程在 **wtw 那个幕**里访问了
+  未生成的 `RoomSet.Ancient`（wtw 幕没有 Ancient 房间集），而 `MomoLib` 的 `AncientMapIconColorPatch` 直接取的它。
+- **可行处置（待用户拍板，按既有规矩"第三方的问题不塞进主 mod"）**：
+  ① 先做**最小验证**：不加载本 mod 跑同一路径（或只留 wtw + IntegratedStrategyEvents + MomoLib）看是否同样黑屏；
+  ② 确认是它们之间的问题后，二选一 —— 上报上游，或按模板 `D:\Download\pain\YuWanCardWhiteScarfFix\`
+     另开**独立补丁 mod**（把 `RoomSet.Ancient` 缺失时的取色/地图点 `_Ready` 兜住）。
+- **r148 复现确认（2026-09-25 17:26，`logs-archive/godot2026-09-25T17.26.16__20260925-172616__r148.log`）**：
+  载入 floor 52（`WTW_ENCOUNTER_SUKUNA_BOSS` 的 FinishedCombat 存档）后**每次都撞同一条异常**
+  （L8025/L8095/L8171 三处 `RoomSet.Ancient not set`，栈里同样是
+  `IntegratedStrategyEvents.TreeHoles.SpecialFinaleCoordinator.EnterSpecialFinale`），随后用户 `NGame.Quit` 退出。
+  ⇒ **该存档上的黑屏是必然的第三方问题**。
+- **用户决定（2026-09-25）**：**不管它**（不做卫星补丁 mod、不上报）；本条目只作记录，除非用户改口。

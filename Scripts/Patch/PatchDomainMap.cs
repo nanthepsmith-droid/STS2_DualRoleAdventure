@@ -211,8 +211,11 @@ internal static class PatchDomainMap
             ["NMultiplayerPlayerStateReadyPatch"] = PatchDomain.Ui,
             ["NMultiplayerPlayerStatePetHpPatch"] = PatchDomain.Ui,
             ["NOverlayStackPatch"] = PatchDomain.Ui,
+            ["NOverlayStackPhantomGuardPatch"] = PatchDomain.Ui,
             ["NPauseMenuRestartRoomPatch"] = PatchDomain.Ui,
             ["NPlayerHandAddOwnerGuardPatch"] = PatchDomain.Ui,
+            // r148 诊断线：手牌点击被静默忽略的原因埋点（只记录不干预）
+            ["NPlayerHandClickDiagnosticPatch"] = PatchDomain.Ui,
             ["NPotionContainerPatch"] = PatchDomain.Ui,
             ["NRelicInventoryPatch"] = PatchDomain.Ui,
             ["NRemoteMouseCursorContainerPatch"] = PatchDomain.Ui,

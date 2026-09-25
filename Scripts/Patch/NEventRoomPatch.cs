@@ -35,7 +35,9 @@ internal static class NEventRoomPatch
 
         if (NOverlayStack.Instance?.ScreenCount > 0)
         {
-            LocalMultiControlLogger.Info("事件流程已完成，等待奖励/选择弹窗关闭后自动切换角色。");
+            LocalMultiControlLogger.Info(
+                "事件流程已完成，等待奖励/选择弹窗关闭后自动切换角色。"
+                + $" overlay={LocalOverlayPhantomGuard.DescribeOverlayStack()}");
             return;
         }
 
@@ -71,7 +73,9 @@ internal static class NEventRoomPatch
 
         if (NOverlayStack.Instance?.ScreenCount > 0)
         {
-            LocalMultiControlLogger.Info($"事件已完成，等待弹窗关闭后自动切换到下一位: {eventModel.Owner.NetId} -> {pendingEvent.Owner.NetId}");
+            LocalMultiControlLogger.Info(
+                $"事件已完成，等待弹窗关闭后自动切换到下一位: {eventModel.Owner.NetId} -> {pendingEvent.Owner.NetId}, "
+                + $"overlay={LocalOverlayPhantomGuard.DescribeOverlayStack()}");
             return false;
         }
 

@@ -42,6 +42,12 @@ internal static class RewardPotionMirrorPatch
             return;
         }
 
+        // r147：**来源**也必须是本地席位（旧实现只过滤了"镜像给谁"）。
+        if (!MirrorSeatPolicy.IsMirrorableSource(sourcePlayer.NetId, LocalSelfCoopContext.LocalPlayerIds))
+        {
+            return;
+        }
+
         bool isCombatRewardContext = sourcePlayer.RunState.CurrentRoom is CombatRoom && !CombatManager.Instance.IsInProgress;
         // 每角色独立结算：占卜药水奖励只归拾取者，不再镜像到其余角色
         bool isCrystalSphereContext = CrystalSphereMirrorRuntime.CrossPlayerMirroringEnabled
@@ -72,9 +78,10 @@ internal static class RewardPotionMirrorPatch
         IsMirroring.Value = true;
         try
         {
-            // 只镜像给**本地席位**（第三方席位如 Co-op Bots 的 Bot 由它自己那侧负责）。
+            // 只镜像给**本地席位**（第三方席位如 Co-op Bots 的 Bot 由它自己那侧负责）；
+            // 来源端同样必须是本地席位（r147，见 MirrorSeatPolicy）。
             foreach (Player otherPlayer in sourcePlayer.RunState.Players
-                .Where((candidate) => candidate.NetId != sourcePlayer.NetId && LocalSelfCoopContext.IsLocalSessionSeat(candidate.NetId)))
+                .Where((candidate) => MirrorSeatPolicy.ShouldMirrorTo(sourcePlayer.NetId, candidate.NetId, LocalSelfCoopContext.LocalPlayerIds)))
             {
                 PotionModel mirroredPotion = PotionModel.FromSerializable(potion.ToSerializable(-1));
                 PotionProcureResult result = await PotionCmd.TryToProcure(mirroredPotion, otherPlayer);

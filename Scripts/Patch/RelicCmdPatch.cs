@@ -80,6 +80,18 @@ internal static class RelicCmdObtainPatch
             return obtainedRelic;
         }
 
+        // r147：**来源**也必须是本地席位。旧实现只过滤了"镜像给谁"，于是第三方席位（Co-op Bots 的
+        // 合成 Bot）自己的遗物被复制给两个真人 —— 实机最典型的是「七咒之戒」的额外战斗掉落遗物
+        // （2026-09-25：GORGET / CANDELABRA / ODDLY_SMOOTH_STONE / PEAR / TROPICAL_FISH /
+        // TRAVEL_PERMIT / LETTER_OPENER，以及第一幕 BOSS 的千咒卷轴 YUWANCARD-THOUSAND_CURSE_SCROLL，
+        // 各 8 件 × 2 人，且是直接 AddRelicInternal ⇒ 真人连"要不要拿"都没得选）。
+        if (!MirrorSeatPolicy.IsMirrorableSource(player.NetId, LocalSelfCoopContext.LocalPlayerIds))
+        {
+            LocalMultiControlLogger.Info(
+                $"第三方席位获得的遗物不做共享镜像: relic={obtainedRelic.Id.Entry}, owner={player.NetId}");
+            return obtainedRelic;
+        }
+
         // 汇总奖励流程中，每个角色已独立生成奖励，不需要镜像
         if (CombatRewardMergeContext.IsActive)
         {
@@ -111,9 +123,9 @@ internal static class RelicCmdObtainPatch
         }
 
         // 只镜像给**本地席位**：第三方席位（Co-op Bots 的合成 Bot）是独立队友，不该跟着我们共享遗物
-        // （它的遗物由它自己的奖励流程获得）。
-        foreach (Player otherPlayer in player.RunState.Players.Where((candidate) => candidate.NetId != player.NetId
-            && LocalSelfCoopContext.IsLocalSessionSeat(candidate.NetId)))
+        // （它的遗物由它自己的奖励流程获得）。来源端同样必须是本地席位（r147，见 MirrorSeatPolicy）。
+        foreach (Player otherPlayer in player.RunState.Players.Where((candidate) =>
+            MirrorSeatPolicy.ShouldMirrorTo(player.NetId, candidate.NetId, LocalSelfCoopContext.LocalPlayerIds)))
         {
             if (!obtainedRelic.IsStackable && otherPlayer.GetRelicById(obtainedRelic.Id) != null)
             {
@@ -191,9 +203,15 @@ internal static class RelicCmdRemovePatch
             return;
         }
 
+        // r147：来源席位同样过滤（第三方席位的遗物我们从没镜像过，也不该跟着它一起移除）。
+        if (!MirrorSeatPolicy.IsMirrorableSource(removedRelic.Owner.NetId, LocalSelfCoopContext.LocalPlayerIds))
+        {
+            return;
+        }
+
         // 同步移除同样只针对**本地席位**（第三方席位从没被我们镜像过遗物）。
-        foreach (Player otherPlayer in runState.Players.Where((candidate) => candidate.NetId != removedRelic.Owner.NetId
-            && LocalSelfCoopContext.IsLocalSessionSeat(candidate.NetId)))
+        foreach (Player otherPlayer in runState.Players.Where((candidate) =>
+            MirrorSeatPolicy.ShouldMirrorTo(removedRelic.Owner.NetId, candidate.NetId, LocalSelfCoopContext.LocalPlayerIds)))
         {
             RelicModel? mirroredRelic = otherPlayer.GetRelicById(removedRelic.Id);
             if (mirroredRelic == null)
