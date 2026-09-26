@@ -66,11 +66,12 @@ public class WakuuPlayQueuePolicyTests
     }
 
     [Test]
-    public void 配置默认关闭实验档()
+    public void 配置默认开启队列出牌档()
     {
-        // 实验档默认关 = 与既有行为完全一致（方案 §12.6：r117 加速后单张已 ~0.2~0.58s，
-        // 方案 D 的收益主要是"多人语义"，语义迁移风险由用户自己决定是否尝试验证）。
-        Assert.That(new WakuuConfigData().vakuuPlayQueue, Is.False);
+        // 2026-09-26 由实验档**转正为默认开**（方案 §12.15）：14 份归档会话零回归
+        //（`收回滞留节点` / `幽灵弹层` / `add_child failed` 全 0），且队列路径是并发档的前置。
+        // 回退方式：用户在设置页关掉本项即回到既有 inline 行为。
+        Assert.That(new WakuuConfigData().vakuuPlayQueue, Is.True);
     }
 
     [Test]
@@ -104,10 +105,12 @@ public class WakuuPlayQueuePolicyTests
     }
 
     [Test]
-    public void 配置默认关闭并发出牌档()
+    public void 配置默认开启并发出牌档()
     {
-        // 第二步（去掉全局闸门）风险集中在"真重叠"，默认关 = 与 r121~r125 已实机确认的行为完全一致。
-        Assert.That(new WakuuConfigData().vakuuPlayOverlap, Is.False);
+        // 2026-09-26 由实验档**转正为默认开**（方案 §12.15）：1 真人 + 3 瓦库同回合的启动延迟增量
+        // **中位 14ms**、8 个多瓦库回合无一达到秒级（inline 基线是秒级 494→6297→9724ms）；
+        // 第 3 个瓦库的启动延迟 9.7s → 95ms。回退方式：设置页关掉本项即回到抢全局闸门的串行行为。
+        Assert.That(new WakuuConfigData().vakuuPlayOverlap, Is.True);
     }
 
     [Test]

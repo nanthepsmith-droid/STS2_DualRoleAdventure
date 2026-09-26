@@ -164,7 +164,7 @@ internal static class LocalWakuuAutopilotConfig
     public static bool FastWakuuPlay { get; private set; } = true;
 
     /// <summary>
-    /// 【实验档】瓦库出牌走原生动作队列（改进-2 / 方案 D，默认关）：
+    /// 瓦库出牌走原生动作队列（改进-2 / 方案 D，**默认开** —— 2026-09-26 由实验档转正）：
     /// 开启后瓦库出牌改用 <c>PlayCardAction</c> 入自己的动作队列（原版"代理玩家出牌"路径），
     /// 语义迁移（isAutoPlay / 目标预解析 / 扣费）与风险见 <see cref="WakuuPlayQueuePolicy"/> 与方案 §12.2。
     /// 路径判定走纯函数 <see cref="WakuuPlayQueuePolicy.DecidePath"/>。
@@ -172,7 +172,7 @@ internal static class LocalWakuuAutopilotConfig
     public static bool WakuuPlayQueue { get; private set; }
 
     /// <summary>
-    /// 【实验档 · 第二步】瓦库并发出牌（改进-2 / 方案 D，默认关，仅 <see cref="WakuuPlayQueue"/> 开时生效）：
+    /// 瓦库并发出牌（改进-2 / 方案 D，**默认开** —— 2026-09-26 由实验档转正，仅 <see cref="WakuuPlayQueue"/> 开时生效）：
     /// 出牌循环不再抢占全局 <c>SelectorScopeGate</c>，多瓦库真正重叠（等选择时不挡别人）。
     /// 判定与前提见 <see cref="WakuuPlayQueuePolicy.IsOverlappingQueuePlay"/> 与方案 §12.11。
     /// </summary>

@@ -190,7 +190,7 @@ internal sealed class WakuuConfigData
     public bool fastVakuuPlay { get; set; } = true;
 
     /// <summary>
-    /// 【实验档】瓦库出牌走原生动作队列（改进-2 / 方案 D，**默认关**）：
+    /// 瓦库出牌走原生动作队列（改进-2 / 方案 D，**默认开** —— 2026-09-26 由实验档转正）：
     /// 开启后瓦库出牌不再用 inline 的 <c>CardCmd.AutoPlay</c>，而是像真人/远端玩家一样
     /// <c>new PlayCardAction(card, target)</c> 入**该瓦库自己的**动作队列
     /// （<c>ActionQueueSynchronizer.RequestEnqueue</c> —— 原版 <c>CardModel.EnqueueManualPlay</c> 就是这一行）。
@@ -199,12 +199,13 @@ internal sealed class WakuuConfigData
     /// ① <c>isAutoPlay</c> 由 true 变 false（`VoidFormPower` / `PaelsEye` / `UnceasingTop` 等牌对瓦库出牌的统计与触发会变）；
     /// ② `Any` 类目标必须由调用方**构造前**解析好，解析不到则牌留在手牌（比 AutoPlay 的"进堆"更严格）；
     /// ③ <c>SpendResources</c> 由动作自己调用，外层**绝不能再花一次**（否则双重扣费）。
-    /// 默认关 = 与既有行为完全一致。
+    /// **转正依据**（方案 §12.15，14 份归档会话）：回归全 0（`收回滞留节点` / `幽灵弹层` / `add_child failed`）；
+    /// 关掉本项即回到既有 inline 行为。
     /// </summary>
-    public bool vakuuPlayQueue { get; set; }
+    public bool vakuuPlayQueue { get; set; } = true;
 
     /// <summary>
-    /// 【实验档 · 第二步】瓦库并发出牌（改进-2 / 方案 D 的最终目标，**默认关**，仅在
+    /// 瓦库并发出牌（改进-2 / 方案 D 的最终目标，**默认开** —— 2026-09-26 由实验档转正，仅在
     /// <see cref="vakuuPlayQueue"/> 开启时生效）。
     ///
     /// 开启后，出牌循环**不再抢占全局 1 槽的 `SelectorScopeGate`**，看门狗调度也不再因
@@ -215,9 +216,11 @@ internal sealed class WakuuConfigData
     /// 代价与前提（详见方案 §12.11）：必须走队列路径（`vakuuPlayQueue` 开），否则闸门照旧；
     /// 并发时不再把 `LocalContext.NetId` 钉在瓦库身上（出牌由游戏全局单泵执行、归属走注册表分发），
     /// 因此瓦库出牌的**前台视觉**会更接近"后台托管"的观感。
-    /// 默认关 = 与既有行为完全一致。
+    /// **转正依据**（方案 §12.15）：1 真人 + 3 瓦库同回合的启动延迟增量为**中位 14ms**
+    /// （inline 基线是秒级 494→6297→9724ms，第 3 个瓦库 9.7s → 95ms），8 个多瓦库回合无一达到秒级；14 会话零回归。
+    /// 关掉本项即回到"抢全局闸门"的串行行为。
     /// </summary>
-    public bool vakuuPlayOverlap { get; set; }
+    public bool vakuuPlayOverlap { get; set; } = true;
 
     /// <summary>
     /// 瓦库托管视角策略（改进-2 / Phase 0，默认 `never` **不跟随**，2026-09-10 用户拍板）：

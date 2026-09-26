@@ -40,7 +40,7 @@ internal static class WakuuPlayQueuePolicy
     /// 本次出牌走哪条路径。三条条件（开关 / 本地多控生效 / 出牌者确实是瓦库形态托管）全部满足才走队列，
     /// 任何一条不满足都保持既有 inline 路径 —— 与 <c>WakuuPlaySpeedPolicy</c> 同口径。
     /// </summary>
-    /// <param name="toggleEnabled">配置开关（<c>vakuuPlayQueue</c>）是否开启（默认关）。</param>
+    /// <param name="toggleEnabled">配置开关（<c>vakuuPlayQueue</c>）是否开启（**默认开**，2026-09-26 转正）。</param>
     /// <param name="localMultiControlEnabled">本地多控是否生效（单人局不干预，保持原生行为）。</param>
     /// <param name="isVakuuFormPlayer">出牌者是否处于【瓦库形态】托管（只管瓦库自己的出牌）。</param>
     public static WakuuPlayPath DecidePath(

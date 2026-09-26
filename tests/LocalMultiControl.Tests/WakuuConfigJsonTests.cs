@@ -30,8 +30,7 @@ public class WakuuConfigJsonTests
             Assert.That(data.shopAssistBuyRemoval, Is.False); // Phase 4 增量 v3：自动删牌默认关
             Assert.That(data.statBadge, Is.False);
             Assert.That(data.skipTurnStartDrawAnim, Is.False);
-            Assert.That(data.vakuuPlayQueue, Is.False); // 方案 D 实验档默认关
-            Assert.That(data.vakuuPlayOverlap, Is.False); // 方案 D 第二步（并发出牌）默认关
+            // 方案 D 队列档 / 并发档已于 2026-09-26 转正为「默认开」（断言已移入下方「默认开」组）
             // 默认开
             Assert.That(data.playAllCards, Is.True);
             Assert.That(data.backgroundMode, Is.True);
@@ -39,6 +38,8 @@ public class WakuuConfigJsonTests
             Assert.That(data.autoClaimCards, Is.True);
             Assert.That(data.autoClaimGoldRelics, Is.True);
             Assert.That(data.fastVakuuPlay, Is.True);
+            Assert.That(data.vakuuPlayQueue, Is.True); // 方案 D 队列档：2026-09-26 转正（方案 §12.15）
+            Assert.That(data.vakuuPlayOverlap, Is.True); // 方案 D 并发档：2026-09-26 转正（方案 §12.15）
             Assert.That(data.autoClaimPotions, Is.True);
             Assert.That(data.autoChooseEvents, Is.True);
             Assert.That(data.autoRestChoice, Is.True);

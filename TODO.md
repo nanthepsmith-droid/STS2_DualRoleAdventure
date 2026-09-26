@@ -38,7 +38,7 @@
 | `瓦库托管最终阶段-实施草案.md`（M1~M4） | **拍板·未动工**：Q1~Q5 已拍板（新开关默认关 / Skip 跟随 `deckAwareDraft` / 静态效果表 ≤50 条 / 日志 `[瓦库评价]` / `AnyAlly` 自用优先）；**未建分支、未写代码** | 拆 M1 知识层 → M2 智能抓牌 → M3 智能打牌 → M4 学真人；建议在方案 D 转正判定之后推进 | 本表 + `STS2…AI总规范_Final_v2.md`（总约束） |
 | `STS2…瓦库托管最终阶段_AI总规范_Final_v2.md` | **规范稿**（无落地） | 作为 M1~M4 的总设计约束，不单独动工 | 本表 |
 | `瓦库托管基础收口草案-最终阶段前置G0.md` | **部分落地**：**G0.1**（B1 买遗物 / B2 买药水 / B3 删牌服务）**已被 §改进-5 吃掉**（r137/r139，已实机确认）；**G0.2**（B4 恋降级逃生门 / B5 回归清单固化）**未做** | 只做 G0.2 两个子项（范围小，差两项） | **§改进-5** |
-| `多瓦库并行托管可行性与方案.md` | **部分落地**：Phase 0（r107~r110）/ Phase 1（r113）/ 方案 D（r121~r134）均已实机确认；三层实验档（队列 / 并发 / 加速）**默认关** | **转正判定未做**：按方案 §5.4 / §12.6 先量化出牌总时延、真人插队延迟、卡面与节点回归，再定默认值与是否保留 inline 路径 | **§改进-2** |
+| `多瓦库并行托管可行性与方案.md` | **部分落地**：Phase 0（r107~r110）/ Phase 1（r113）/ 方案 D（r121~r134）均已实机确认；三层档位：队列 / 并发**已于 2026-09-26 转正为默认开**，加速档默认关（用户自选） | **转正判定已完成（2026-09-26，方案 §12.15，14 会话含 1 真人+3 瓦库对照局）**：① **并发档收益已证实** —— 同回合三瓦库 `delayMs` 增量中位 **14ms**（inline 基线是秒级 494→6297→9724），第 3 位瓦库启动 **9.7s → 95ms**；② 出牌总时延 —— 队列单张中位 1143ms（2 席）/ 1674ms（3 瓦库，排队所致），但 pass 相当 ⇒ **不提速也不劣化**；③ 回归 —— `收回滞留节点` / `幽灵弹层` / `add_child failed` **14 会话全 0**。⇒ **建议 `vakuuPlayOverlap` + `vakuuPlayQueue` 转正为默认开（待用户拍板，含语义代价确认）**；`fastVakuuPlay` 独立项（用户当前关着） | **§改进-2** |
 | 改进-2 出牌加速二期（`CardModel.OnPlayWrapper` 前缀省两段固定等待） | **待拍板**：r128 已给估值（~0.35~0.5s/张），用户未拍 | 拍板后作为独立的出牌路径优化做 | **§改进-2 ⑱** |
 | `长期方向L1-L3规划.md` | **部分落地**：L1 接口层已落地（任务 2.2，r31）；L3 离线静态层 CI 已落地（2026-09-16）；**L2 领域逻辑外置未动工** | L2 随 Phase 5 走；L1 剩"反射面收敛" | 本表 |
 | `键盘手柄双输入本地双控可行性分析.md`（L1 档） | **待拍板**：结论已出（L1 轮流操作可行 / L2·L3 真正同时不可行）；**未实现** | 备选线索：`LocalDeviceSplitRouter` + patch `NControllerManager` 模式抢占 + 秒切防抖（仅认确认性输入），默认关 | 本表（备选） |
@@ -53,6 +53,11 @@
 
 > 与其它清单的关系：`维护现状分析.md §4.6` 是**快照**（保留定位描述，状态可能滞后）；
 > 本表 + `decision-records/README.md` 是**单一口径**。发现两者不一致，先信本表，再顺手订正快照。
+>
+> ⚠ **2026-09-26 POC 实机结论（Co-op Bots 接管路径）**：接管链本身工作正常（配置 → 冲突收敛 → 接管 → 驱动分配 → 释放 全通过），
+> 但接管席会掉进「谁都不管」的空档（奖励既不自动领、也不交回 CB；休息区气泡/视角/事件亦未按三态分流）——
+> 根因 = 我们所有服务都按**瓦库名单**驱动。**结论：不做**（现状 CB 自己加合成 Bot 已能「真人+瓦库+CB」），
+> POC **冻结为能力保留**、`coopBotsSeats` 保持默认空；四条现象清单（含证据锚点）见提案 §七「若重启 POC 的必办清单」。
 
 ---
 
@@ -275,6 +280,25 @@
   `检测到手动出牌上下文漂移，已强制校正: 327 -> 326, source=card-enqueue-manual-play`，
   怀疑 orb 归属可能受「上下文短暂钉在瓦库身上」影响 → 顺 `OrbCmd.Channel` 的 `player` 参数来源追。
 - **优先级**：低（偶发、自愈、不影响数据）。
+
+### 已知项（游戏侧告警）：被取消的动作仍跑完 → `ActionExecutor` 报 `was in state Canceled`（r151 实机发现，**暂不修**）
+
+- **现象（marker r151，2026-09-26，归档 `logs-archive/godot__20260926-184411__r151.log` L11738）**：
+  ```
+  [ERROR] GameAction PlayCardAction card: CARD.YUI_CARD_EXPANSION_CARD_WEAKENING_STRIKE (…) index: 49
+          targetid: 3 finished execution, but was in state Canceled! The task probably kept executing
+          in a paused state without properly resuming.
+  ```
+  整局 **1 条**（该局 5 条 `[ERROR]` = 2 条第三方 mod 分支不兼容 + 2 条游戏侧 VFX 空引用 + 本条）。
+- **归因：游戏侧，不是我们的**。栈是 `GameAction.Execute()` → `ActionExecutor.ExecuteActions()`；
+  报错那张牌 `owner=…326`（**真人**），而本局「让真人插队」撤掉的是**瓦库**的两张动作
+  （L16173 `C_HH_UNITED_WE_STAND`、L17588 `DEFEND_IRONCLAD`，均 `source=card-enqueue-manual-play`）
+  ⇒ 撤掉的不是这一张。上游是游戏自身：`Combat state becomes EndTurnPhaseOne (from PlayPhase).
+  Starting to cancel all player-driven actions` + `Cancelling non-executing actions of type
+  PlayCardAction owned by …326`（本局 6 次）。
+- **影响：不阻塞**。紧随其后 L11747 `Completed execution of action … attempting to find new action`、
+  L11750 `Action … becomes new ready action` ⇒ 队列正常推进，未卡、未软锁。
+- **决策（沿用 BUG-8 口径）**：**暂不改代码、不降级日志**。
 
 ### BUG-9 SL（读档）后个人记录的抉择未回滚 → 选择率被污染（2026-09-11 用户反馈；**r118/r119 定位 → r120 改为"写时幂等" → ✅ 2026-09-12 实机确认，关单**）
 
@@ -1018,7 +1042,7 @@
     "无符合条件候选，不买"分支打印，本局两家店都买到了东西）⇒ 属**未覆盖**而非失败，下次顺带观察。
 - ✅ **2026-09-18 实机确认（r140，配置键 `wakuu*` → `vakuu*` 迁移）**：日志
   `logs-archive/godot__20260918-230800__r140.log` —— `瓦库托管生效配置` 已是**新键**且取值与升级前逐项一致；
-  **决定性证据 = `vakuuPlayQueue=True` / `vakuuPlayOverlap=True`**（这两个开关**默认是"关"**）
+  **决定性证据 = `vakuuPlayQueue=True` / `vakuuPlayOverlap=True`**（这两个开关在 2026-09-26 转正前默认是"关"）
   ⇒ 确认是**旧键迁移过来的**，而不是被打回默认值；`INIT_STATUS=OK`、`INIT_FAILED=0`、`FATAL=0`、
   我们的 `[ERROR]` **0**、我们的 `[WARN]` **19 条全为启动期第三方 owner / 框架提示**（无选择器残留、无 BUG-15 命中）。
   - 📌 **一处订正（原验证步骤写得太乐观）**：磁盘上的 `vakuu_autopilot.json` 当时**仍是旧键**
@@ -1245,10 +1269,14 @@
    我们侧的额外成本：每个 lane 需要一份**独立的引用路径配置** + 各自重跑 `regenerate_src.ps1`
    生成对应 `sts2src`，S7 目标基线也要按 lane 拆（`targets.baseline.txt`）。
    ⚠ 前置判断：**只有真的需要同时支持两个游戏版本时才做**，单版本下 lane 纯属增加复杂度。
-9. **存量日志/格式卫生（2026-09-25 r144 顺手发现，**待拍板**）**：
-   - **`LocalSelfCoopContext.cs` 有若干 mojibake 日志串**（如 `鏈湴澶氭帶妯″紡宸插惎鐢?`，应是某次
-     编码转换把 UTF-8 字节按 GBK 解过一遍），实机日志里就是乱码。**不是本轮引入**，修它属纯卫生
-     （改字符串、零行为），但涉及面要看全仓库同类串有多少。
+9. **存量日志/格式卫生（2026-09-25 r144 顺手发现；编码项已于 r151 完成）**：
+   - ✅ **已修（r151，2026-09-26）**：本文件前一条描述的乱码串实测**只集中在 `LocalSelfCoopContext.cs`**
+     （**10 条**日志串，UTF-8 字节被当 GBK 解码），已全部还原为正确中文，**零行为改动**（只改字符串字面量）。
+     扫描口径：`.cs` / `.ps1` / `.py` 共 **257 个文件**；判据 = 片段 `GBK→UTF-8` **严格往返**可还原 +
+     还原结果字符白名单 ⇒ 对正常中文零误报（旧版 10 行全命中、修复后 0 命中）。
+   - **已固化为门禁**：`static_checks.py` 新增 **S8 源码编码卫生**（离线静态层自此 **8 项**）。
+     理由：这类乱码**不报错、不影响功能**，但实机日志里就是乱码 ⇒ **日志锚点无法 grep**，
+     而我们的排查（`log_scan.py` 计数、跨会话对比）全靠锚点。日志字符串本身属排查资产，必须门禁化。
    - **`dotnet format --verify-no-changes` 本来就是红的**：报 `CardTransformNetIdPinPatch.cs` /
      `LocalWakuuMerchantAuto.cs` / `WakuuStatBadgeTests.cs` 的**存量** WHITESPACE 问题。
      它不在 §9 强制门禁链（`preflight` 的 G3 是 diff 预审，`-Lint` 才跑 lint）。
@@ -1463,7 +1491,10 @@
 - ✅ **2026-09-26 实机确认（marker r149，第二幕整局）**：4 个休息区**全部**成对出现
   `第三方席位休息区选择已记录（将补画气泡）: player=<Bot>, option=…, success=True` →
   `第三方席位休息区气泡已补画: source=rest-site-ready-0, player=<Bot>, option=…`；
-  `第三方席位休息区选项执行失败` **0 条** ⇒ 记录与补画链路都按设计工作（画面上的气泡以用户肉眼为准）。
+  `第三方席位休息区选项执行失败` **0 条** ⇒ 记录与补画链路都按设计工作。
+  ✅ **画面气泡已由用户肉眼确认可见（2026-09-26，用户反馈「bot 休息区气泡显示已经有了，我之前有看到」）** ——
+  本项**关单**（唯一剩余待确认项清零）。注：r151 那局（2 席、`coopBotsSeats` 空）Bot 未在休息区作答，
+  日志里只有 `第三方席位休息区气泡已复位: source=run-cleanup`（退局清理），属正常。
 
 ---
 
