@@ -47,7 +47,7 @@
 | `本地多角色扩展到Daily模式可行性分析.md` | **拍板·未动工**：已拍板「Daily 禁止上传排行榜分数」；Custom ✅ 既有已实现、**Daily ❌ 未实现**（日志锚点 `DAILY_SCORE_SKIP` 已设计未实现） | 是否投入做 Daily 支持，待拍板 | 本表（待拍板） |
 | `瓦库四功能-可行性核验报告.md` | **待拍板**（结论已出）：四功能均无架构级死路；功能一难度下调为「中」 | 按建议顺序（净化 → 我们联合 → 炼化 → 地狱战神）逐级动工，动工前需用户拍板 | 本表 + 提案 §7 |
 | `瓦库炼化净化联合地狱战神-功能提案与可行性分析.md` | **未动工**（仅提案；已被 09-22 核验报告逐条核验） | 同上（以核验报告的顺序与难度为准） | 本表 |
-| `Co-op_Bots联机队友兼容可行性分析.md` | **部分落地 + 实机进行中（r144 POC → r145 回合死锁 → r146 席位隔离 → r147「幽灵弹层 + 镜像来源席位」→ r148 商店 R1 通过）**：r144~r146 已提交并 `--ff-only` 合回 master（`50bff2b` 代码 / `25077d1` 文档）；r147+r148 已提交为 `1eefef7`，仍在分支 `fix/r147-phantom-overlay-mirror`（**未合回 master、未 push**）。落地 = ① `CoopBotsAdapter` 反射适配器（探测 / `AutoPilot.Set` 逐席接管与释放 / 未装即优雅降级）② 席位驱动**三态互斥**（`CoopBotsSeatPlan` + `LocalSelfCoopContext`，POC 配置键 `coopBotsSeats`）③ **R1 商店 ACK 旁路补丁** `CoopBotsShopAckPatch`（**装了 CB 就要挂**，与其 Bot 是否被我们接管无关）④ **r145**：3 席「回合结束不了」（就绪补齐改成「只补本地席位 + 走真实方法调用」）⑤ **r146**：第三方席位隔离（`LocalSelfCoopContext.IsLocalSessionSeat`）⑥ **r147**：**幽灵弹层**根治 + 自愈，以及 `MirrorSeatPolicy` 五条镜像链的来源席位过滤。**实机已验**：r147 全部改动通过（0 条 add_child failed / 0 条幽灵弹层自愈 / 0 条 bot 奖励镜像）；**R1 于 r148 通过**（Bot 删牌服务→药水，两次旁路均 `count=1,seats=[]`，最终 `done=1`，正常离店并进入下一战斗）。**未做**：12 席三态 UI / 持久化、Phase 3 补丁面回归、**被接管的本地席位**的奖励归驱动方分流、**BUG-17** 根因。**仍待验**：BUG-17 诊断锚点与 R2 其余 10 个同方法叠加点 | ① 按 r144 的 R2 清单（**9 类型 11 个同方法**）逐条实测 —— **清单已固化**：`Scripts/Tools/thirdparty_patch_overlap.py`（口径与命令见 `Co-op_Bots联机队友兼容可行性分析.md` §R2；逐条判据表同节，产物 `decision-records/第三方补丁目标交叉分析-CoopBots.md`）；② 事件末页选牌复现后按 BUG-17 的三条锚点分流；③ 之后再谈 Phase 1 的选人屏三态钮与 save tag v4 | 本表 + §BUG-17 |
+| `Co-op_Bots联机队友兼容可行性分析.md` | **部分落地 + 实机进行中（r144 POC → r145 回合死锁 → r146 席位隔离 → r147「幽灵弹层 + 镜像来源席位」→ r148 商店 R1 通过）**：r144~r146 已提交并 `--ff-only` 合回 master（`50bff2b` 代码 / `25077d1` 文档）；r147+r148 已提交为 `1eefef7`，仍在分支 `fix/r147-phantom-overlay-mirror`（**未合回 master、未 push**）。落地 = ① `CoopBotsAdapter` 反射适配器（探测 / `AutoPilot.Set` 逐席接管与释放 / 未装即优雅降级）② 席位驱动**三态互斥**（`CoopBotsSeatPlan` + `LocalSelfCoopContext`，POC 配置键 `coopBotsSeats`）③ **R1 商店 ACK 旁路补丁** `CoopBotsShopAckPatch`（**装了 CB 就要挂**，与其 Bot 是否被我们接管无关）④ **r145**：3 席「回合结束不了」（就绪补齐改成「只补本地席位 + 走真实方法调用」）⑤ **r146**：第三方席位隔离（`LocalSelfCoopContext.IsLocalSessionSeat`）⑥ **r147**：**幽灵弹层**根治 + 自愈，以及 `MirrorSeatPolicy` 五条镜像链的来源席位过滤。**实机已验**：r147 全部改动通过（0 条 add_child failed / 0 条幽灵弹层自愈 / 0 条 bot 奖励镜像）；**R1 于 r148 通过**（Bot 删牌服务→药水，两次旁路均 `count=1,seats=[]`，最终 `done=1`，正常离店并进入下一战斗）。**未做**：12 席三态 UI / 持久化、Phase 3 补丁面回归、**被接管的本地席位**的奖励归驱动方分流、**BUG-17** 根因。**2026-09-26 逐条实测（marker r148，第一幕整局；配置 `coopBotsSeats` 为空 ⇒ 本局 Bot 是 CB **自己的合成 Bot**、非我方 POC 接管）**：§R2 **11 点全部通过** —— #1 `地图自动跟投 … filled=3/3` **54 次 / 0 失败**（含 Bot 全票、随后均触发推进）；#2 `本地多控自动补齐敌方回合就绪 … mirrored=` **从不含 Bot id**（41 次）；#5 `RequestEnqueue 空引用已拦截` **0**；#7 `事件/流程金币已同步到其余角色` **0**；#8 `角色独立奖励已生成(Offer): player=<Bot>` **0** + `第三方席位卡牌奖励交回原版远端作答` 24；#9 `打开奖励界面: player=<瓦库>` **0**；#11 `瓦库火堆已自动选择 … success=True` 6 / `扫描瓦库休息区失败` 0；#6 `瓦库火堆队友选择已自动指定` 4；#3/#4 选人屏 **弱覆盖**（`角色选择页已创建本地人数 +/- 实体按钮` 4 次，无错位/残留）。同局 `add_child() failed` / `幽灵弹层已自愈` / `弹层阻挡自动流程` **全 0**（r147 稳定）。**仍待验**：**我方 POC 接管席位**路径下的 R2 回归（本局未接管）、BUG-17 诊断锚点 | ✅ ① R2 逐条实测**已完成（2026-09-26）** —— **清单已固化**：`Scripts/Tools/thirdparty_patch_overlap.py`（口径与命令见 `Co-op_Bots联机队友兼容可行性分析.md` §R2；逐条判据表同节，产物 `decision-records/第三方补丁目标交叉分析-CoopBots.md`）；② 事件末页选牌复现后按 BUG-17 的三条锚点分流；③ 之后再谈 Phase 1 的选人屏三态钮与 save tag v4 | 本表 + §BUG-17 |
 | `局内加人与战斗临时玩家-可行性分析.md` | **未动工**（调研结论稿）：需求 A 局内加正式玩家 = 有条件可行但风险高；需求 B 战斗中临时玩家（召唤型）= 可行且有现成抓手 | 2026-09-25 **已归位**到 `maintenance-docs/decision-records/`（原先错放在 `maintenance-docs/` 根）；是否排期待拍板 | 本表（待拍板） |
 | `原版药水一览表.md` / `原版附魔一览表.md` | **参考数据表**（非提案）；药水表已随 r136 校正"当前 mod 行为"列 | 改规则表时同步这两张表；附魔侧"优先选哪类牌"待用户填期望 | **§改进-4** |
 
@@ -1418,6 +1418,31 @@
   ② 再看有没有 `地图自动跟投` —— 0 条说明卡在"点 Proceed 之前"；
   ③ 若前两条都干净 ⇒ 才需要补「事件选项处理任务结束后采样 `IsFinished`」的新诊断
   （挂 `EventSynchronizer` 的 `_pendingOptionTasks`，注意必须在 Godot 主线程上采样）。
+- **2026-09-26 第三份负样本（marker r148，第一幕整局）**：r148 埋点**首次命中 2 条**，
+  但 reason 都是良性的 `combat-not-in-progress`（`PRECISE_CUT` L37800 / `DEADLY_POISON` L43663，
+  两张都在**战斗刚结束那一刻**被点，原版本来就不会打出）；`手牌点击已受理但出不了牌` 6 条
+  也全部正常（5 条 `GUILTY` 诅咒牌 `HasUnplayableKeyword` + 1 条 `EnergyCostTooHigh`）。
+  ⇒ 「瓦库出牌期间真人点不动」**连续三局未复现**；埋点零副作用、继续保留。
+  相关观察（既有设计，不是新问题）：`瓦库自动出牌已熔断跳过 … reason=hand-in-card-play` **33 次**、
+  `hand-in-card-selection` 11 次、`combat-not-in-progress` 4 次 —— 瓦库自动出牌会在"手牌正在出牌/正在选牌"时
+  主动收手，也说明 InCardPlay 这个状态在局内出现得很频繁（若将来 BUG-18 复现，这是第一个要看的方向）。
+
+---
+
+### 待拍板（2026-09-26 实机观察）：休息区里第三方席位（Co-op Bots）的选择没有任何可视化
+
+- **用户原话**：「bot 似乎在休息处不会行动」。
+- **实测结论：它是行动的，只是完全看不见**。marker r148 第一幕整局的 **4 个休息区**都有
+  `[RestSiteSynchronizer] Rest site option index N chosen for player 12716757972810793218 with success True. Option: MEND|HEAL|SMITH`
+  \+ `Clearing all remaining rest site options` + `Completing rest site`（选择各不相同、全部生效）。
+- **为什么看不见**：CB 在 `RestSiteSynchronizer.BeginRestSite` 那一刻就把该席位的 `PlayerChoice` 答了
+  （`Reserved choice id 4` → 选完 → 房间节点**随后**才加载：`Preloading 'RestSite Room'` 在选完之后）
+  ⇒ 没有选中动画、没有角色气泡；而我方气泡驱动只覆盖**瓦库席位**
+  （实证：`[气泡诊断] SetSelecting` 的 owner 只有真人 46 次 + 瓦库 18 次，**Bot 0 次**）。
+- **可选改进（纯展示、不改行为，待拍板）**：房间加载完成后，对「本地会话席位里 drive=Co-op Bots」的那几个席位，
+  按其在 `RestSiteSynchronizer` 里的**已选项**补画气泡/选中态（复用 `LocalWakuuRestAutoChoice.ShowCharacterBubble`
+  的现有节点与诊断）。代价约 1 轮，需要下次实机确认一眼。
+- **不做的部分**：让 Bot "像人一样慢慢思考再选" 属于 CB 自己的行为，我们不改（也不该改）。
 
 ---
 
