@@ -20,6 +20,10 @@
      新增 / 消失都报 WARN 并列出明细 —— 这样**在不需要游戏安装的 CI 上**也能看到
      "这个改动动了哪些运行期目标"（游戏更新断档 / 静默改名最容易从这里暴露）。
      基线文件 `Scripts/Tools/baselines/targets.baseline.txt`；**缺失 = FAIL**（不允许跳过即绿）。
+  S8 源码编码卫生：`.cs` / `.ps1` / `.py` 必须是**合法 UTF-8**，且**不得出现「UTF-8 字节被当 GBK 解码」
+     产生的乱码串**（判据 = 片段 GBK→UTF-8 严格往返可还原 + 还原结果字符白名单 ⇒ 误报率极低）。
+     背景：`LocalSelfCoopContext.cs` 曾有 10 处此类乱码日志串 —— 能编译、能跑，但实机日志里就是乱码，
+     日志锚点**无法 grep**（我们的排查全靠锚点计数），属"看起来没事、实则毁掉诊断能力"的坑。
 
 用法:
   python Scripts/Tools/static_checks.py --repo .
@@ -283,6 +287,102 @@ def check_target_baseline(repo: Path) -> Check:
                  f"（人审确认无误后跑 --update-baseline 刷新基线）" + summary, info)
 
 
+# ------------------------------------------------------------------ S8
+# 源码编码卫生：排除产物与**反编译参考树**（src/ sts2src/ 是只读参考，不属我们的源码）
+ENCODING_SKIP_DIRS = SKIP_DIRS | {"src", "sts2src", "release", ".vs"}
+ENCODING_MAX_WINDOW = 60  # 单个乱码片段的最大字符数（够覆盖日志串；再长会拖慢滑窗）
+
+
+def _restore_gbk_mojibake(frag: str):
+    """把「UTF-8 字节被当 GBK 解码」的片段还原回中文；不可还原返回 None。
+
+    这是判定乱码的**黄金判据**：正常中文片段极少能通过「GBK 编码 → UTF-8 严格解码」这一往返。
+    """
+    try:
+        raw = frag.encode("gbk")
+    except (UnicodeEncodeError, LookupError):
+        return None
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def _restored_cjk_count(text: str) -> int:
+    """还原结果只允许「汉字 / ASCII / 全角与中文标点」，否则判为误报（返回 0）。
+
+    真正的乱码还原出来是干净中文；正常中文侥幸往返通常夹杂变音符 / 音标 / 西里尔字母。
+    """
+    cjk = 0
+    for ch in text:
+        code = ord(ch)
+        if 0x4E00 <= code <= 0x9FFF:
+            cjk += 1
+        elif 0x20 <= code < 0x7F:
+            continue
+        elif 0x3000 <= code <= 0x303F or 0xFF00 <= code <= 0xFFEF:
+            continue
+        elif ch in "\u2018\u2019\u201C\u201D\u2026\u2014\u2500\u2502":
+            continue
+        else:
+            return 0
+    return cjk
+
+
+def find_mojibake_segments(line: str):
+    """滑窗找出该行里的乱码片段，返回 [(原片段, 还原结果)]。
+
+    用滑窗（而不是只看连续非 ASCII 段）是因为乱码**会吃掉紧邻的 ASCII 字母**
+    （中文的字节流会把紧邻的 ASCII 字母一并吞掉，因此片段里必须允许出现 ASCII 字符），所以不能只看连续非 ASCII 段。
+    """
+    found = []
+    total, index = len(line), 0
+    while index < total:
+        if ord(line[index]) < 128:
+            index += 1
+            continue
+        hit = None
+        for length in range(min(ENCODING_MAX_WINDOW, total - index), 2, -1):
+            frag = line[index:index + length]
+            restored = _restore_gbk_mojibake(frag)
+            if restored and _restored_cjk_count(restored) >= 2:
+                hit = (length, frag, restored)
+                break
+        if hit:
+            found.append((hit[1], hit[2]))
+            index += hit[0]
+        else:
+            index += 1
+    return found
+
+
+def check_source_encoding(repo: Path) -> Check:
+    name = "源码编码（非法 UTF-8 / GBK 误解码乱码）"
+    bad_utf8, bad_mojibake, checked = [], [], 0
+    for pattern in ("*.cs", "*.ps1", "*.py"):
+        for p in sorted(repo.rglob(pattern)):
+            if any(part in ENCODING_SKIP_DIRS for part in p.parts) or not p.is_file():
+                continue
+            checked += 1
+            rel = str(p.relative_to(repo)).replace("\\", "/")
+            try:
+                text = p.read_text(encoding="utf-8")
+            except UnicodeDecodeError as exc:
+                bad_utf8.append(f"{rel}（{exc.reason} @ byte {exc.start}）")
+                continue
+            for lineno, line in enumerate(text.splitlines(), 1):
+                for frag, restored in find_mojibake_segments(line):
+                    bad_mojibake.append(f"{rel}:{lineno}: {frag} -> {restored}")
+
+    info = {"checked": checked, "invalid_utf8": bad_utf8, "mojibake": bad_mojibake}
+    if bad_utf8 or bad_mojibake:
+        return Check("S8", name, FAIL,
+                     f"{len(bad_utf8)} 个非法 UTF-8 文件 / {len(bad_mojibake)} 处 GBK 误解码乱码"
+                     "（乱码会让实机日志锚点无法 grep；按 `->` 右侧还原成正确中文）",
+                     {"files": bad_utf8 + bad_mojibake})
+    return Check("S8", name, PASS, f"{checked} 个源码/脚本：UTF-8 合法、无 GBK 误解码乱码", info)
+
+
 # ------------------------------------------------------------------ main
 CHECKS = (
     ("S1", "产物/反编译源码入库", check_artifacts_tracked),
@@ -292,6 +392,7 @@ CHECKS = (
     ("S5", "csproj 源码隔离", check_source_isolation),
     ("S6", "BuildMarker 身份", check_build_marker),
     ("S7", "运行期目标基线（新增/消失可见）", check_target_baseline),
+    ("S8", "源码编码（非法 UTF-8 / GBK 误解码乱码）", check_source_encoding),
 )
 
 

@@ -4,7 +4,8 @@
 # 分层（默认最轻，逐级加重）：
 #
 #   默认（静态层，秒级、零副作用）
-#     G1 离线静态自检      static_checks.py          产物入库 / ps1 BOM / 元数据 version / 补丁类级 / 源码隔离 / marker
+#     G1 离线静态自检      static_checks.py          产物入库 / ps1 BOM / 版本一致 / 补丁类级 / 源码隔离 /
+#                                                     marker / 运行期目标基线 / 源码编码（S1~S8）
 #     G2 字符串/反射目标核对 check_string_targets.py  需反编译源码（..\sts2src\src）；缺则 SKIP，明细写临时文件
 #     G3 diff 预审(可选)    ..\tools\diff_lint.py     需 -Lint；只标疑似（其自身文档写明"不进 CI"）
 #

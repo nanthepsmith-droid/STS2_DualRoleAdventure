@@ -72,7 +72,7 @@ internal static class LocalSelfCoopContext
 
         List<ulong> ids = BuildSequentialPlayerIds(localPlatformPlayerId, _desiredLocalPlayerCount);
         ApplyLocalPlayerIds(ids);
-        LocalMultiControlLogger.Info($"鏈湴澶氭帶鐜╁ID宸茶В鏋? {string.Join(",", _localPlayerIds)}");
+        LocalMultiControlLogger.Info($"本地多控玩家ID已解析: {string.Join(",", _localPlayerIds)}");
         return PrimaryPlayerId;
     }
 
@@ -86,14 +86,14 @@ internal static class LocalSelfCoopContext
         List<ulong> normalized = NormalizePlayerIds(playerIds, fallbackPrimaryId: PrimaryPlayerId);
         if (normalized.Count < MinLocalPlayerCount)
         {
-            LocalMultiControlLogger.Warn($"蹇界暐鏃犳晥瀛樻。鐜╁ID鍒楄〃: {string.Join(",", playerIds)}");
+            LocalMultiControlLogger.Warn($"忽略无效存档玩家ID列表: {string.Join(",", playerIds)}");
             return;
         }
 
         _desiredLocalPlayerCount = Math.Clamp(normalized.Count, MinLocalPlayerCount, MaxLocalPlayerCount);
         ApplyLocalPlayerIds(normalized);
         CurrentLobbyEditingPlayerId = PrimaryPlayerId;
-        LocalMultiControlLogger.Info($"宸蹭粠瀛樻。鎭㈠鏈湴澶氭帶鐜╁ID: {string.Join(",", _localPlayerIds)}");
+        LocalMultiControlLogger.Info($"已从存档恢复本地多控玩家ID: {string.Join(",", _localPlayerIds)}");
     }
 
     public static void UseSavedWakuuPlayerIds(IReadOnlyList<ulong> playerIds)
@@ -288,7 +288,7 @@ internal static class LocalSelfCoopContext
         ActiveCharacterSelectScreen = null;
         netService.SetCurrentSenderId(CurrentLobbyEditingPlayerId);
         LocalContext.NetId = CurrentLobbyEditingPlayerId;
-        LocalMultiControlLogger.Info($"鏈湴澶氭帶妯″紡宸插惎鐢紝鐩爣鐜╁鏁?{_desiredLocalPlayerCount}");
+        LocalMultiControlLogger.Info($"本地多控模式已启用，目标玩家数: {_desiredLocalPlayerCount}");
     }
 
     public static void Disable(string reason)
@@ -304,7 +304,7 @@ internal static class LocalSelfCoopContext
         ActiveCharacterSelectScreen = null;
         _pendingEventAutoSwitchPlayerId = null;
         _eventAutoSwitchPending = false;
-        LocalMultiControlLogger.Info($"鏈湴澶氭帶妯″紡宸插叧闂紝鍘熷洜: {reason}");
+        LocalMultiControlLogger.Info($"本地多控模式已关闭，原因: {reason}");
     }
 
     public static bool SwitchLobbyEditingPlayer(bool next)
@@ -387,7 +387,7 @@ internal static class LocalSelfCoopContext
         bool reconciled = ReconcileStartRunLobbyPlayerCount(source);
         if (!reconciled)
         {
-            LocalMultiControlLogger.Info($"宸叉洿鏂扮洰鏍囨湰鍦扮帺瀹舵暟: {oldCount} -> {targetCount}");
+            LocalMultiControlLogger.Info($"已更新目标本地玩家数: {oldCount} -> {targetCount}");
         }
 
         MarkCurrentProfileTag();
@@ -417,7 +417,7 @@ internal static class LocalSelfCoopContext
         EnsureLobbyEditingPlayerIsValid();
         NetService.SetCurrentSenderId(CurrentLobbyEditingPlayerId);
         LocalContext.NetId = CurrentLobbyEditingPlayerId;
-        LocalMultiControlLogger.Info($"澶у巺鎺у埗涓婁笅鏂囧悓姝? player={CurrentLobbyEditingPlayerId}, source={source}");
+        LocalMultiControlLogger.Info($"大厅控制上下文同步: player={CurrentLobbyEditingPlayerId}, source={source}");
         return true;
     }
 
@@ -527,7 +527,7 @@ internal static class LocalSelfCoopContext
         StartRunLobby? lobby = AccessTools.Field(typeof(NCharacterSelectScreen), "_lobby")?.GetValue(screen) as StartRunLobby;
         if (lobby == null)
         {
-            LocalMultiControlLogger.Warn($"澶у巺鐜╁鍚屾璺宠繃锛歀obby灏氭湭鍒濆鍖栵紝source={source}");
+            LocalMultiControlLogger.Warn($"大厅玩家同步跳过：Lobby尚未初始化，source={source}");
             return false;
         }
 
@@ -603,7 +603,7 @@ internal static class LocalSelfCoopContext
         EnsureLobbyAscensionCapacity(lobby, source);
 
         LocalMultiControlLogger.Info(
-            $"澶у巺鏈湴鐜╁鏁板凡鍚屾: target={targetCount}, actual={GetActiveLobbyLocalPlayerIds().Count}, source={source}");
+            $"大厅本地玩家数已同步: target={targetCount}, actual={GetActiveLobbyLocalPlayerIds().Count}, source={source}");
         return true;
     }
 
@@ -773,7 +773,7 @@ internal static class LocalSelfCoopContext
         }
         catch (Exception exception)
         {
-            LocalMultiControlLogger.Warn($"鍚屾瑙掕壊閫夋嫨楂樹寒澶辫触: {exception.Message}");
+            LocalMultiControlLogger.Warn($"同步角色选择高亮失败: {exception.Message}");
         }
         finally
         {

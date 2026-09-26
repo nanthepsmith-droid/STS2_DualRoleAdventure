@@ -50,7 +50,7 @@ dotnet format LocalMultiControl.csproj --verify-no-changes
 Then the gates that must pass before any deploy (see §9 for the full list):
 
 ```bash
-python Scripts/Tools/static_checks.py --repo .                             # 离线静态 6 项（不需要游戏安装）
+python Scripts/Tools/static_checks.py --repo .                             # 离线静态 8 项（不需要游戏安装）
 python Scripts/Tools/clr_compat_check.py --mod-dll DualRoleAdventure.dll   # PE/CLR/ABI 结构校验
 dotnet test tests/LocalMultiControl.Tests/LocalMultiControl.Tests.csproj   # 纯逻辑 + 程序集 ABI
 ```
@@ -238,7 +238,8 @@ Notes:
 - **离线静态层（唯一能在托管 CI 上跑的门禁）**：`python Scripts/Tools/static_checks.py --repo .`
   —— 产物/反编译源码入库、`.ps1` 编码（含中文必须 UTF-8 BOM）、三处元数据 `version` 一致、
   补丁类级 `[HarmonyPatch]`（`patch_coverage` 口径，方法级-only 必须为 0）、csproj 源码隔离、
-  `Entry.cs` `BuildMarker`、**运行期目标基线比对**。由 `.github/workflows/static-checks.yml` 在 push / PR 上执行。
+  `Entry.cs` `BuildMarker`、**运行期目标基线比对**、**源码编码卫生（S8：非法 UTF-8 / GBK 误解码乱码）**。
+  由 `.github/workflows/static-checks.yml` 在 push / PR 上执行。
   **门禁 1~5/7/10 需要本机游戏安装，不要指望 CI 跑它们。**
 - **改动过运行期目标（补丁类 / 字符串与反射目标）后**：静态层会打 WARN 并列出"新增/消失"明细 ——
   人审确认无误再 `python Scripts/Tools/static_checks.py --repo . --update-baseline` 刷新基线
