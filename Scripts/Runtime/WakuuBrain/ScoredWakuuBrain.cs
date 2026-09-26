@@ -54,6 +54,10 @@ internal sealed class ScoredWakuuBrain : IWakuuCombatBrain
                 return true;
             }
 
+            // M1 知识层：对本回合手牌做**只读**抽样（不改决策、不写游戏状态），
+            // 只打 `[瓦库评价]` 诊断日志；刻意只在评分档接入，保证默认（启发式）档日志逐字不变。
+            WakuuKnowledgeSampler.ObserveHand(ctx.Hand, ctx.Wakuu, "scored-brain");
+
             List<WakuuScoreInput> inputs = new(playable.Count);
             foreach (CardModel card in playable)
             {
