@@ -59,6 +59,11 @@ dotnet test tests/LocalMultiControl.Tests/LocalMultiControl.Tests.csproj   # 纯
 `log_parser.py`（门禁 9）从仓库外的 `..\tools\` 迁入，因此 `git clone` 后门禁链是自包含的。
 只有「不随仓库」的交互式/LLM 工具才留在仓库外的 `..\tools\`（见 §9 Notes）。
 
+`Scripts/Tools/thirdparty_patch_overlap.py` 是**按需工具、不在门禁链**（它要读仓库外的第三方源码目录，
+自包含性不成立）：按「双方 Harmony 声明的目标」交叉出与某个第三方 mod 的**同方法补丁叠加点**，
+用于 Co-op Bots 这类版本锁定依赖的回归与更新对账（用法与逐条判据见
+`maintenance-docs/decision-records/Co-op_Bots联机队友兼容可行性分析.md` §R2）。
+
 `Scripts/Tools/build_all_mods.ps1` runs build → tests → clr_compat_check → deploy → SHA256 in one shot.
 **One command for the whole gate chain**: `.\Scripts\Tools\preflight.ps1 [-Build] [-Deploy] [-WithLogs] [-Lint]`
 （静态层默认秒级；`-Deploy` 才碰游戏槽位）。

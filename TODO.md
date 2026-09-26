@@ -47,7 +47,7 @@
 | `本地多角色扩展到Daily模式可行性分析.md` | **拍板·未动工**：已拍板「Daily 禁止上传排行榜分数」；Custom ✅ 既有已实现、**Daily ❌ 未实现**（日志锚点 `DAILY_SCORE_SKIP` 已设计未实现） | 是否投入做 Daily 支持，待拍板 | 本表（待拍板） |
 | `瓦库四功能-可行性核验报告.md` | **待拍板**（结论已出）：四功能均无架构级死路；功能一难度下调为「中」 | 按建议顺序（净化 → 我们联合 → 炼化 → 地狱战神）逐级动工，动工前需用户拍板 | 本表 + 提案 §7 |
 | `瓦库炼化净化联合地狱战神-功能提案与可行性分析.md` | **未动工**（仅提案；已被 09-22 核验报告逐条核验） | 同上（以核验报告的顺序与难度为准） | 本表 |
-| `Co-op_Bots联机队友兼容可行性分析.md` | **部分落地 + 实机进行中（r144 POC → r145 回合死锁 → r146 席位隔离 → r147「幽灵弹层 + 镜像来源席位」）**：r144~r146 已提交并 `--ff-only` 合回 master（`50bff2b` 代码 / `25077d1` 文档），r147 在分支 `fix/r147-phantom-overlay-mirror`（**未 commit / 未 push**）。落地 = ① `CoopBotsAdapter` 反射适配器（探测 / `AutoPilot.Set` 逐席接管与释放 / 未装即优雅降级）② 席位驱动**三态互斥**（`CoopBotsSeatPlan` + `LocalSelfCoopContext`，POC 配置键 `coopBotsSeats`）③ **R1 商店 ACK 旁路补丁** `CoopBotsShopAckPatch`（**装了 CB 就要挂**，与其 Bot 是否被我们接管无关）④ **r145**：3 席"回合结束不了"（就绪补齐改成"只补本地席位 + 走真实方法调用"）⑤ **r146**：第三方席位隔离（`LocalSelfCoopContext.IsLocalSessionSeat`）⑥ **r147**：r146 实机暴露的两类新问题 —— **幽灵弹层**（`CardRewardPatch` 不再为第三方席位钉 `LocalContext`；`NOverlayStackPhantomGuardPatch` + `LocalOverlayPhantomGuard` 自愈）与**镜像来源席位**（`MirrorSeatPolicy`：金币/遗物/药水/藏宝图/水晶球卡牌五条链「两头都要是自己的席位」）。**未做**：12 席三态 UI / 持久化、Phase 3 补丁面回归、**被接管的本地席位**的奖励归驱动方分流、**BUG-17**（事件末页牌组选牌推不动，r147 只加诊断）。**实机待验**：r147 全部改动（幽灵弹层自愈 / 三条镜像链的来源过滤 / BUG-17 诊断锚点）、R1 商店未单独复验、R2 其余 10 个同方法叠加点 | ① 下一局**进一次商店**验 R1 与「点商人能不能开面板」；② 打完一局确认：全程 0 条 `add_child() failed`、0 条 `幽灵弹层已自愈`、0 条 `本地多控共享遗物同步: <Bot id> -> …`、0 条 `owner=<Bot id>` 的金币镜像；③ 事件末页选牌复现后按 BUG-17 的三条锚点分流；④ 按 r144 的 R2 清单（**9 类型 11 个同方法**）逐条实测；⑤ 之后再谈 Phase 1 的选人屏三态钮与 save tag v4 | 本表 + §BUG-17 |
+| `Co-op_Bots联机队友兼容可行性分析.md` | **部分落地 + 实机进行中（r144 POC → r145 回合死锁 → r146 席位隔离 → r147「幽灵弹层 + 镜像来源席位」→ r148 商店 R1 通过）**：r144~r146 已提交并 `--ff-only` 合回 master（`50bff2b` 代码 / `25077d1` 文档）；r147+r148 已提交为 `1eefef7`，仍在分支 `fix/r147-phantom-overlay-mirror`（**未合回 master、未 push**）。落地 = ① `CoopBotsAdapter` 反射适配器（探测 / `AutoPilot.Set` 逐席接管与释放 / 未装即优雅降级）② 席位驱动**三态互斥**（`CoopBotsSeatPlan` + `LocalSelfCoopContext`，POC 配置键 `coopBotsSeats`）③ **R1 商店 ACK 旁路补丁** `CoopBotsShopAckPatch`（**装了 CB 就要挂**，与其 Bot 是否被我们接管无关）④ **r145**：3 席「回合结束不了」（就绪补齐改成「只补本地席位 + 走真实方法调用」）⑤ **r146**：第三方席位隔离（`LocalSelfCoopContext.IsLocalSessionSeat`）⑥ **r147**：**幽灵弹层**根治 + 自愈，以及 `MirrorSeatPolicy` 五条镜像链的来源席位过滤。**实机已验**：r147 全部改动通过（0 条 add_child failed / 0 条幽灵弹层自愈 / 0 条 bot 奖励镜像）；**R1 于 r148 通过**（Bot 删牌服务→药水，两次旁路均 `count=1,seats=[]`，最终 `done=1`，正常离店并进入下一战斗）。**未做**：12 席三态 UI / 持久化、Phase 3 补丁面回归、**被接管的本地席位**的奖励归驱动方分流、**BUG-17** 根因。**仍待验**：BUG-17 诊断锚点与 R2 其余 10 个同方法叠加点 | ① 按 r144 的 R2 清单（**9 类型 11 个同方法**）逐条实测 —— **清单已固化**：`Scripts/Tools/thirdparty_patch_overlap.py`（口径与命令见 `Co-op_Bots联机队友兼容可行性分析.md` §R2；逐条判据表同节，产物 `decision-records/第三方补丁目标交叉分析-CoopBots.md`）；② 事件末页选牌复现后按 BUG-17 的三条锚点分流；③ 之后再谈 Phase 1 的选人屏三态钮与 save tag v4 | 本表 + §BUG-17 |
 | `局内加人与战斗临时玩家-可行性分析.md` | **未动工**（调研结论稿）：需求 A 局内加正式玩家 = 有条件可行但风险高；需求 B 战斗中临时玩家（召唤型）= 可行且有现成抓手 | 2026-09-25 **已归位**到 `maintenance-docs/decision-records/`（原先错放在 `maintenance-docs/` 根）；是否排期待拍板 | 本表（待拍板） |
 | `原版药水一览表.md` / `原版附魔一览表.md` | **参考数据表**（非提案）；药水表已随 r136 校正"当前 mod 行为"列 | 改规则表时同步这两张表；附魔侧"优先选哪类牌"待用户填期望 | **§改进-4** |
 
@@ -1388,6 +1388,36 @@
      —— `inTree=False` ⇒ 仍是幽灵弹层（回到 r147 那条）；`screenCount=0` ⇒ 事件状态机自身问题。
 - **下一步**：复现一局 → 用上面三条锚点分流 → 再决定是补 `NEventRoom` 的推进兜底，还是回到
   `EventRoom` + `NDeckCardSelectScreen` 的完成链。
+- 📌 **2026-09-25 归档日志复盘（不需要实机，纯读 `logs-archive/godot__20260925-151258__r146.log`）**
+  —— 三条**订正**（原先的描述有三处不准确，按证据改口径）：
+  1. **末页效果不是「牌组变形选牌」**：两个卡死窗口里，窗口 3 的末页效果实证是**从牌组移除一张牌**
+     （`L16064 Player …326 chose cards [WATCHER-DEFEND_WATCHER]` +
+     `L16065 个人记录-删牌钩子命中: prompt=TO_REMOVE, 选中=1, 记录`）；窗口 2 则**没有任何**真人选牌日志
+     （无 `chose cards`）。全文 3 次 `本地多控下强制牌组选牌弹出背包`（L15576 / L15978 / L16464）
+     **全部是 CB Bot 自己的 deck edit**（紧跟 `CoopBots build: edit purpose=FromDeckForTransformation bot=…`），
+     与真人末页无关 ⇒ 「末页是牌组变形」这个定性作废。
+  2. **`optionCount=1` 不能当「已 SetEventFinished」的证据**：那是第三方事件（IntegratedStrategyEvents）
+     自己布局里的选项计数，可能只是"下一页只剩一个继续选项"；同理
+     `记录事件自动切换请求` 只证明"本地玩家刚选了一个选项"（`ChooseLocalOption` 后缀触发），
+     不证明事件已完成。**这两条都不能再用来判断 `IsFinished`。**
+  3. **幽灵弹层与本次卡死无关**（原先怀疑的那条链不成立）：L14946 那条 `add_child() failed` 属于**上一个房间**的
+     卡牌奖励（紧接着 `Player 127167579810… selected card reward`，事件房 L15057 才开始），
+     两个卡死窗口所在的房间访问内**一条 `add_child() failed` 都没有**。
+- ✅ **本轮新增的两条硬事实（这才是下次复现时的抓手）**：
+  - **卡死在"事件房 → 地图"这一段，不是事件内部**：两次卡死访问里
+    `地图自动跟投` / `MoveToMapCoordAction` **0 条**（整局只在**第 4 次**访问成功时出现
+    `L16573 地图自动跟投: vote=MapVote (gen: 1 coord: (6, 5)), filled=3/3` → L16579 触发推进 → L16644 换节点）
+    ⇒ 用户当时**根本没走到地图**（Proceed 没被点成 / 没出现），最后靠 ESC「重启房间」重开（11 次）。
+  - **不是我方的 Proceed 守卫**：全文 `检测到另一名角色尚未完成事件，拦截 Proceed` **0 条**；
+    同窗口那 4 次来回切人日志写的是 `source=hotkey:Tab/]/R` = **用户自己按热键自救**，不是我方自动乒乓。
+- **结论（2026-09-25）**：r147 起 3 份日志（41 MB r147 + 2 份 r148）**零复现**，
+  且 `非共享事件房间已按当前角色重建` 的 `isFinished=True, overlay=screenCount=0` 全部干净
+  ⇒ **本轮不为它写修复代码**。若再次出现，按下面顺序取证（比原来的三条锚点更准）：
+  ① 先看这一段的 `弹层栈快照`（`overlay=screenCount=N, top=Type[inTree=…]`）——
+  若 `top=NDeckCardSelectScreen` / `NCardRewardSelectionScreen` 仍在栈里 ⇒ 是选牌屏没关；
+  ② 再看有没有 `地图自动跟投` —— 0 条说明卡在"点 Proceed 之前"；
+  ③ 若前两条都干净 ⇒ 才需要补「事件选项处理任务结束后采样 `IsFinished`」的新诊断
+  （挂 `EventSynchronizer` 的 `_pendingOptionTasks`，注意必须在 Godot 主线程上采样）。
 
 ---
 
@@ -1420,37 +1450,12 @@
     （费用不够，原版只把牌拖回手牌）—— 说明这个埋点能把"真·被吞"和"本来就出不了"分开。
   - ⚠ 测试强度：本次只打了 **1 场战斗（3 个回合）** 就退出；r147 那次现象出现在"打到中段、机器人被打死之后"
     ⇒ "未复现"是**弱信号**。埋点零副作用（只在真被忽略/真出不了时才打，10 秒节流），建议**保留**观察。
-- **下一步**：等下次自然复现（或专门打一局"机器人死后多轮"）再看 `手牌点击被忽略` 的 reason；
-  若长期 0 命中，可把本补丁降级为 `-`/或只在设置页开关下启用。
-
----
-
-### BUG-19 通过 wtw mod 的额外第四幕后：BOSS 战打完黑屏、只剩部分 UI（2026-09-25 实机，**第三方 mod 冲突，非本 mod**）
-
-- **现象（用户原话）**：「通过 wtw mod 的额外的第四幕 BOSS 战后黑屏仅有部分 UI」。
-- **日志定性（marker r147 那局）**：异常栈里**只有游戏 + `IntegratedStrategyEvents` + `MomoLib`**，本 mod 一帧都没有：
-  ```
-  [WARN] [IntegratedStrategyEvents][Presentation] refresh temporary map: RoomSet.Ancient not set! You must call GenerateRooms
-  [INFO] [IntegratedStrategyEvents] Entering 渴欲大厅 finale act.
-  ERROR: System.InvalidOperationException: RoomSet.Ancient not set! You must call GenerateRooms
-     at MegaCrit.Sts2.Core.Rooms.RoomSet.get_Ancient()
-     at MomoLib.Abstracts.MomoAncientModel.AncientMapIconColorPatch.Postfix(NMapPoint, Color&)
-     at NMapPoint.get_TargetColor_Patch1(...)   →   NAncientMapPoint.RefreshColorInstantly_Patch1
-     →   NMapScreen.RecalculateTravelability_Patch3   →   NMapScreen.Open_Patch3   →   NMapRoom._Ready
-  ```
-  外加同一根因在 `NMapScreen.SetMap_Patch3` 的 `AddChildSafely` → `NAncientMapPoint._Ready()` 上再抛一次
-  （`NMapRoom._Ready` 中途抛 → `NMapScreen` 只建了一半 ⇒ **黑屏 + 只剩部分 UI**），
-  最后 `IntegratedStrategyTemporaryMapAction … SpecialFinale DesireHall / completed with exception`（共 6 条 `RoomSet.Ancient not set`，L304829~305010）。
-- **判据**：本 mod **不 patch `NMapScreen`**（只读 `NMapScreen.Instance`），异常链里没有我们的类型；
-  触发点是 `IntegratedStrategyEvents` 的"渴欲大厅/SpecialFinale 临时地图"流程在 **wtw 那个幕**里访问了
-  未生成的 `RoomSet.Ancient`（wtw 幕没有 Ancient 房间集），而 `MomoLib` 的 `AncientMapIconColorPatch` 直接取的它。
-- **可行处置（待用户拍板，按既有规矩"第三方的问题不塞进主 mod"）**：
-  ① 先做**最小验证**：不加载本 mod 跑同一路径（或只留 wtw + IntegratedStrategyEvents + MomoLib）看是否同样黑屏；
-  ② 确认是它们之间的问题后，二选一 —— 上报上游，或按模板 `D:\Download\pain\YuWanCardWhiteScarfFix\`
-     另开**独立补丁 mod**（把 `RoomSet.Ancient` 缺失时的取色/地图点 `_Ready` 兜住）。
-- **r148 复现确认（2026-09-25 17:26，`logs-archive/godot2026-09-25T17.26.16__20260925-172616__r148.log`）**：
-  载入 floor 52（`WTW_ENCOUNTER_SUKUNA_BOSS` 的 FinishedCombat 存档）后**每次都撞同一条异常**
-  （L8025/L8095/L8171 三处 `RoomSet.Ancient not set`，栈里同样是
-  `IntegratedStrategyEvents.TreeHoles.SpecialFinaleCoordinator.EnterSpecialFinale`），随后用户 `NGame.Quit` 退出。
-  ⇒ **该存档上的黑屏是必然的第三方问题**。
-- **用户决定（2026-09-25）**：**不管它**（不做卫星补丁 mod、不上报）；本条目只作记录，除非用户改口。
+- **r148 强化复测（2026-09-25 22:33，marker r148，已归档 `logs-archive/godot__20260925-223324__r148.log`）：仍未复现**。
+  - Bot 本局触发死亡处理 **3 次**（L9081 / L12643 / L15771），覆盖了「Bot 死亡后继续战斗」场景；
+    `让真人插队` **5 次**（L9303 / L14201 / L14442 / L14520 / L15548），其中 **4 次在第二次死亡处理之后**。
+  - `手牌点击被忽略` **0 条**；仅 2 条 `手牌点击已受理但出不了牌`，均为正常的 `EnergyCostTooHigh`
+    （L10415 `DEFEND_SILENT` / L15021 `STRIKE_SILENT`）。本局 `Parent node is busy` / `幽灵弹层已自愈` 也均为 0。
+  - 同局商店 R1 顺利通过（Bot 完成删牌服务与药水购买、ACK 旁路两次命中、最终 `done=1` 并正常离店）。
+- **结论 / 下一步**：两次测试（首测 + 本次强化复测）都未复现，且本次插队链有实际成功证据；作为**更强负样本**
+  记录，但不据此宣称根因已消失。保留 r148 零副作用诊断，等自然复现时读取 `手牌点击被忽略: reason=…`；
+  若长期 0 命中，再评估降级为 `-` 或设置页开关。
