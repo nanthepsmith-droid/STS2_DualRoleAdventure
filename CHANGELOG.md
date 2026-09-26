@@ -102,6 +102,23 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     `瓦库奖励已全部自动领取，不再弹奖励界面: player=…, 原奖励数=N`（旧行为下都不会出现）。
 
 ### Added
+- **第三方席位（Co-op Bots）休息区的选择现在会显示出来 + 有日志（r149，2026-09-26）**：
+  玩家反馈「bot 似乎在休息处不会行动」。日志实证这是**看得见的问题，不是功能问题**：
+  非本地席位的休息区选择在 `RestSiteSynchronizer.BeginRestSite` 那一刻就被索取并**当场作答**
+  （实测该局 6 个休息区全部 `Rest site option index N chosen … success True. Option: MEND|HEAL|SMITH`），
+  而休息区**房间节点是之后才实例化**的（`Preloading 'RestSite Room'` 排在其后）
+  ⇒ 全程没有选中动画、也没有角色气泡（实证 `[气泡诊断] SetSelecting` 的 owner 只有真人 / 瓦库，**Bot 0 条**）。
+  - 新增 `LocalRestSiteSeatBubble`（**纯表现**）：订阅游戏自己的公开事件
+    `RestSiteSynchronizer.AfterPlayerOptionChosen`（**不新增 Harmony 目标**），把第三方席位的已选项记下来，
+    房间就绪后补画「已选」气泡，并把「它选了什么 / 游戏是否判定成功」写进日志；
+  - 判据抽为纯函数 `RestSeatBubblePolicy`（+5 单测）：只有「本地多控已启用 + 该席位不属于本地会话」才补画；
+    `success == false`（例如 `MEND` 没拿到目标）**只记 WARN、不画「已选」** —— 避免把没生效的选择显示成生效；
+  - 新增日志锚点：`第三方席位休息区选择已记录（将补画气泡）: player=…, option=…, success=…` /
+    `第三方席位休息区气泡已补画: source=…, player=…, option=…` /
+    `第三方席位休息区选项执行失败（游戏返回 false，本次未生效）: player=…, option=…`；
+  - 顺带记录（**不是**我们的问题）：`MEND` 是**指定一名玩家**回 30% 最大生命（`MendRestSiteOption`），
+    `HEAL` 才是自己回 30%；该局 Bot 在 6 个休息区里 3 次选回血（MEND/HEAL/HEAL）、3 次选锻造（SMITH）——
+    选什么是 Co-op Bots 自己的决策（它自己的日志里 `kernel=Fallback` + 215 条 `CanonicalModelException`）。
 - **第三方补丁目标交叉分析工具（2026-09-25，开发工具）**：新增
   `Scripts/Tools/thirdparty_patch_overlap.py` —— 按「双方 Harmony 声明的目标」交叉出**同方法叠加点**：
   我方取自 `baselines/targets.baseline.txt` 的 `P` 行，第三方取自其源码里的 `[HarmonyPatch(...)]`。

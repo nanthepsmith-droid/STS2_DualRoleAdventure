@@ -147,6 +147,7 @@ internal static class LocalMultiControlRuntime
         _watchdogScheduleLastRound = -1;
         _watchdogScheduleLastSource = "run-cleanup";
         LocalMerchantInventoryRuntime.Clear();
+        LocalRestSiteSeatBubble.Reset("run-cleanup");
         LocalWakuuRelicRuntime.ProbeAndRecoverSelectorStack("run-cleanup", allowRecover: true);
         // 联机机器人席位：退局释放（只放本 mod 接管过的那些；CB 的接管集合是进程内静态的，不清会跨局残留）。
         CoopBotsSeatRuntime.ReleaseOnRunCleanup();

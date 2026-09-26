@@ -346,6 +346,9 @@ internal static class NRestSiteRoomReadyPatch
         {
             LocalMultiControlLogger.Info(
                 $"休息区进入后选项检查: attempt={attempt}, options={optionCount}, localOptions={localOptionCount}, switchedToPrimary={switchedToPrimary}");
+
+            // 房间已就绪：第三方席位在 BeginRestSite 当场答完的选择这时才画得出来（纯表现兜底）。
+            LocalRestSiteSeatBubble.TryApplyPending($"rest-site-ready-{attempt}");
             return;
         }
 

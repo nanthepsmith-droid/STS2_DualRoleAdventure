@@ -1429,19 +1429,36 @@
 
 ---
 
-### 待拍板（2026-09-26 实机观察）：休息区里第三方席位（Co-op Bots）的选择没有任何可视化
+### r149（2026-09-26）：休息区里第三方席位（Co-op Bots）的选择现在会显示出来 —— 原「待拍板」项已实现
 
-- **用户原话**：「bot 似乎在休息处不会行动」。
-- **实测结论：它是行动的，只是完全看不见**。marker r148 第一幕整局的 **4 个休息区**都有
+- **用户原话**：「bot 似乎在休息处不会行动」，补充「bot 每次残血了都不回血，合理怀疑选项没生效，或者每次都选锻造」。
+- **实测结论：它是行动的，只是完全看不见**。marker r148 第一幕整局的 **6 个休息区**（L27368 / 28302 / 33900 / 38098 / 43845 / 48672）都有
   `[RestSiteSynchronizer] Rest site option index N chosen for player 12716757972810793218 with success True. Option: MEND|HEAL|SMITH`
   \+ `Clearing all remaining rest site options` + `Completing rest site`（选择各不相同、全部生效）。
 - **为什么看不见**：CB 在 `RestSiteSynchronizer.BeginRestSite` 那一刻就把该席位的 `PlayerChoice` 答了
   （`Reserved choice id 4` → 选完 → 房间节点**随后**才加载：`Preloading 'RestSite Room'` 在选完之后）
   ⇒ 没有选中动画、没有角色气泡；而我方气泡驱动只覆盖**瓦库席位**
   （实证：`[气泡诊断] SetSelecting` 的 owner 只有真人 46 次 + 瓦库 18 次，**Bot 0 次**）。
-- **可选改进（纯展示、不改行为，待拍板）**：房间加载完成后，对「本地会话席位里 drive=Co-op Bots」的那几个席位，
-  按其在 `RestSiteSynchronizer` 里的**已选项**补画气泡/选中态（复用 `LocalWakuuRestAutoChoice.ShowCharacterBubble`
-  的现有节点与诊断）。代价约 1 轮，需要下次实机确认一眼。
+- **「回血」这条也查实了（用户补充的怀疑）**：`MEND` 不是"自己回血"，它是**指定一名玩家**回
+  30% 最大生命（`MendRestSiteOption.OnSelect` → 要么开目标选择 UI，要么 `WaitForRemoteChoice` 拿目标；
+  **拿不到目标就 `return false`、一点血都不回**）；`HEAL` 才是自己回 30%。该局 Bot 在 6 个休息区里
+  **3 次选回血**（MEND / HEAL / HEAL）、**3 次选锻造**（SMITH）⇒ 「残血不回血」的直接原因是
+  **它一半时间在锻造**，加上它的选择没有任何可视化（既看不到选了什么，也看不到血是它加的）。
+  选什么是 CB 自己的策略（它自己的日志里 `idle: kernel=Fallback` + 215 条 `tournament: falling back… CanonicalModelException`），
+  我们**不干预**；我们只负责把它选了什么显示出来。
+- ✅ **已实现（r149，2026-09-26）**：新增 `LocalRestSiteSeatBubble`（纯表现）+ 纯判据 `RestSeatBubblePolicy`（+5 单测）：
+  订阅游戏公开事件 `RestSiteSynchronizer.AfterPlayerOptionChosen`（**不新增 Harmony 目标**）→ 记下第三方席位的已选项 →
+  房间就绪后补画「已选」气泡；`success == false` 只记 WARN、**不画"已选"**（避免把没生效的显示成生效）。
+  接入点两处：`RestSiteSynchronizerBeginRestSitePatch`（订阅 + 清旧记录）、
+  `NRestSiteRoomReadyPatch.EnsurePrimaryPlayerOptionsVisible`（房间就绪后补画）；退局在 `RunCleanup` 里 `Reset`。
+  门禁：构建 **0 警告 0 错误**（205 .cs）、**602 单测全绿**、`static_checks` 7 PASS、`clr_compat_check` PASS、
+  `preflight.ps1 -Deploy` **4 PASS / 3 SKIP**、marker **`2026-09-26-r149`**、`dll_check --deployed` 全绿
+  （`LocalRestSiteSeatBubble` / `RestSeatBubblePolicy` / 三条新锚点在、`__runOriginal` 不在、部署位与仓库根字节一致）。
+- **验证方法（下次实机顺带看）**：任意休息区应出现
+  `第三方席位休息区选择已记录（将补画气泡）: player=<Bot>, option=…, success=True`
+  → 紧跟 `第三方席位休息区气泡已补画: source=rest-site-ready-0, player=<Bot>, option=…`，
+  并且**画面上该席位的角色头顶出现它选的选项图标**（这是本轮唯一要肉眼确认的东西）。
+  若出现 `第三方席位休息区选项执行失败（游戏返回 false，本次未生效）` ⇒ 说明那次选择真的没生效（那就是另一个问题了，把日志发我）。
 - **不做的部分**：让 Bot "像人一样慢慢思考再选" 属于 CB 自己的行为，我们不改（也不该改）。
 
 ---

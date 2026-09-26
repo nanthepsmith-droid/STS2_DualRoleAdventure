@@ -12,7 +12,7 @@ namespace LocalMultiControl.Scripts.Patch;
 internal static class RestSiteSynchronizerBeginRestSitePatch
 {
     [HarmonyPostfix]
-    private static void Postfix()
+    private static void Postfix(RestSiteSynchronizer __instance)
     {
         try
         {
@@ -22,5 +22,9 @@ internal static class RestSiteSynchronizerBeginRestSitePatch
         {
             LocalMultiControlLogger.Warn($"扫描瓦库休息区失败: {exception.Message}");
         }
+
+        // 第三方席位（Co-op Bots 合成 Bot）在同一时刻就被索取并作答，而房间节点还没建出来
+        // ⇒ 订阅它的选择事件，等房间就绪后补画气泡（纯表现，见 LocalRestSiteSeatBubble）。
+        LocalRestSiteSeatBubble.OnRestSiteBegun(__instance);
     }
 }
