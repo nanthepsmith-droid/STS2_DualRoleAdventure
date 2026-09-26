@@ -16,7 +16,7 @@ namespace LocalMultiControl.Scripts.Runtime;
 ///
 /// 分类（维护口径）：
 /// <list type="bullet">
-/// <item><c>ownerAware</c>：入口前缀会写入归属者（<c>CardSelectForegroundSwitchPatch</c> 的 6 个 From* 前缀）；</item>
+/// <item><c>ownerAware</c>：入口前缀会写入归属者（<c>CardSelectForegroundSwitchPatch</c> 的 From* 前缀，当前 7 个）；</item>
 /// <item><c>legacyFallback</c>：会读 <c>CardSelectCmd.Selector</c> 但入口本身不写归属者，
 ///   依赖异步链上继承的值 / 注册表命中；已知且在册，不算告警；</item>
 /// <item><c>ignored</c>：方法体**不读** <c>Selector</c>（栈上压了也不会被自动作答），无需归属者；</item>
@@ -39,14 +39,25 @@ internal static class WakuuSelectorRouteAudit
         "FromHandForDiscard",
         "FromHandForUpgrade",
         "FromSimpleGrid",
+
+        // r154（BUG-19）：奖励式三选一网格。原先漏补 ⇒ 真人打「类猪体」时被栈上的瓦库选择器抢答。
+        "FromSimpleGridForRewards",
+
         "FromChooseACardScreen",
         "FromCombatPile",
     };
 
-    /// <summary>会读 Selector、但入口自身不写归属者的既有入口（依赖栈顶语义 / 注册表命中）。</summary>
+    /// <summary>
+    /// 会读 Selector、但入口自身不写归属者的既有入口（依赖栈顶语义 / 注册表命中）。
+    ///
+    /// ⚠ **同类风险仍在**（r154 结论）：这些入口在「归属者未知」时会落回 `KeepTop`，
+    /// 于是**若此时栈上正压着瓦库的托管选择器**，请求就会被瓦库的选择器作答。
+    /// 本轮只修了有实机证据的那一个（`FromSimpleGridForRewards`）；
+    /// 其余 `FromDeck*` 先不动的原因：它们有人工兜底链（`本地多控下强制牌组选牌弹出背包`）
+    /// 且牵涉火堆 / 商店 / 第三方（Co-op Bots）的既有链路，改动面大、需单独取证与回归。
+    /// </summary>
     private static readonly HashSet<string> LegacyFallbackEntries = new(StringComparer.Ordinal)
     {
-        "FromSimpleGridForRewards",
         "FromDeckForUpgrade",
         "FromDeckForTransformation",
         "FromDeckForEnchantment",

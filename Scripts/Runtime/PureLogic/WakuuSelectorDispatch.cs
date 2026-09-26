@@ -35,6 +35,13 @@ internal enum SelectorDispatchDecision
 ///
 /// 不变式：**先判「是不是瓦库」再判「查表是否命中」**——真人无论查表命中与否都必须走 UI，
 /// 否则会重演「真人的选择被静默吃掉」（r106 工具箱的教训）。
+///
+/// ⚠ **`hasChooser=false ⇒ KeepTop` 是这套路由唯一的软肋**（r154 / BUG-19 实锤）：
+/// 归属者没被写下来时"栈顶是谁就谁作答"——**如果那一刻栈上正压着瓦库的托管选择器，
+/// 真人的选牌请求就会被瓦库替答**（且整条路径**一条日志都不打**，极难发现）。
+/// 所以：**任何会读取 `CardSelectCmd.Selector` 的新选牌入口，都必须先在
+/// `CardSelectForegroundSwitchPatch` 里补上写归属者的前缀**；
+/// 入口清单与补丁的一致由 `WakuuSelectorRouteAudit` + 单测哨兵（归属者清单必须与补丁前缀一一对应）钉住。
 /// </summary>
 internal static class WakuuSelectorDispatch
 {

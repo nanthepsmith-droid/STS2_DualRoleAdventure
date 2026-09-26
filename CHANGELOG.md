@@ -4,6 +4,30 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+### Added
+- **瓦库托管最终阶段 M1「知识层」落地（r153，2026-09-26）**：按《AI 总规范 v2》§6~§19/§20~§45 与
+  实施草案 §7 的 M1 定义新增**纯知识层**。定位是"**先有认识、再有决策**"（v2 §84）：
+  本轮**不做任何决策接入**，默认（启发式）档行为与日志逐字不变。
+  - **效果事实层** `WakuuEffectFeature` / `WakuuGenericBehavior` / `WakuuEffectSource`（v2 §6/§8/§9/§74）：
+    只保存"这张卡执行了什么动作"，并保留未知事实 —— 读不懂的效果进 `UnknownPotential`（**恒正**），
+    绝不判 0（v2 §5/§19/§78 的毒牌反例）。
+  - **静态语义表** `WakuuStaticEffectTable`：**31 条**最小语义集（拍板上限 50），只收"看名字即可确定
+    粗语义"的原版状态/持续伤害/增减益（毒→DamageOverTime、力量→Scaling、虚弱→Debuff…）；
+    mod 自定义状态一律落到 `Unknown` 由未知潜能承接（v2 §60：不为每个 MOD 写专属适配）。
+  - **端口模型 + 基线** `WakuuPortProfile` / `WakuuCardBaseline`（v2 §20~§22/§27）：能力端口（攻/防/抽/能/
+    成长/控/群/堆/资源）代替流派识别；基线锚点**可核对**（原版基础打击 1 费 6 伤、基础防御 1 费 5 挡，
+    健康线 1 费 14 伤 = v2 §21），所有折算系数集中一处，不散落魔法数字。
+  - **置信度** `WakuuConfidence`（v2 §14/§62/§73）：单次观测 0.25、多重证据取折扣和、含安全兜底阈值。
+  - **牌组层**：`WakuuDeckAssessment`（均卡度 = `avg(质量) × avg(可靠) × (1 − avg(条件))`，v2 §24/§25）、
+    `WakuuOpportunityCost`（牌组越大越健康 ⇒ 再加一张越贵，v2 §42/§43）、
+    `WakuuSynergyEstimator`（`SynergyEV = P(条件上线) × 收益`，来源为 0 时归 0 并标记孤儿组件，v2 §37~§40）。
+  - **抽取器** `WakuuEffectExtractor`（Runtime、只读）：有限元（`DynamicVars`）+ 静态语义表 + 低置信度推断；
+    全程 `ContainsKey` 取值（缺键属性会抛 `KeyNotFoundException`），异常退化为保守特征，
+    **知识层出问题永远不会变成瓦库不出牌**（v2 §82）。
+  - **只读抽样日志**：评分档大脑决策前对手牌抽样，输出 `[瓦库评价]` 锚点（读不懂的卡按 id 去重上报，
+    每 40 张一条累计）——便于核对"知识层这一局到底读懂了多少"（v2 §67 `UnknownCardRate` 雏形）。
+  - **单测 +43 → 653 全绿**（基线/置信度/静态表哨兵/卡特征/牌组评估/机会成本/协同）。
+
 ### Changed
 - **方案 D 两档转正：`vakuuPlayQueue`（队列出牌）+ `vakuuPlayOverlap`（并发出牌）默认改为开（r152，2026-09-26）**：
   依据 = 14 份归档会话的量化判定（方案 §12.15；工具 `Scripts/Tools/play_path_bench.py`，
@@ -27,6 +51,31 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   - 离线静态层自此 **8 项（S1~S8）**；`preflight.ps1` 的 G1 描述与 `maintenance-docs/` 同步说明。
 
 ### Fixed
+- **瓦库出牌期间，真人打「奖励式三选一」类卡牌会被瓦库替他把牌选掉（r154，2026-09-26）**：
+  玩家报「瓦库打牌时我打出自己的**类猪体**（YuWanCard），瓦库会替我选牌；瓦库打完了我再打就不会」。
+  - **根因（有实机证据链）**：`类猪体` 的效果走 `CardSelectCmd.FromSimpleGridForRewards`
+    （3 张候选挑 1 张），而 `CardSelectForegroundSwitchPatch` 的归属者前缀**只补了 `FromSimpleGrid`**、
+    **漏了 `FromSimpleGridForRewards`**（两者是不同方法）⇒ 该入口选牌时"选牌归属者"是空的 ⇒
+    选择器守卫只能走 `KeepTop`（"信息不足不动"）⇒ 此刻栈上正压着**瓦库的托管选择器**
+    （瓦库出牌管线在飞）⇒ 瓦库的选择器替真人作答。整条路径**一条日志都不打**，所以一直没被发现。
+    瓦库打完后选择器栈是空的 ⇒ 守卫直接返回、真人正常看到选牌界面 ⇒ 正好解释"只在瓦库打牌时出现"。
+  - **证据**：归档日志 `logs-archive/godot__20260926-203939__r153.log` —— 真人打出 `YUWANCARD-LEI_ZHU_TI`
+    到 `chose cards [...]` 之间没有任何选牌日志，而紧邻的看门狗统计写着
+    `selectorStackCount=1, selectorStackTop=LocalWakuuStrategySelector`；启动自检
+    `SELECTOR_ROUTE … legacyFallback=[…,FromSimpleGridForRewards]` 也点明了这个入口没有归属者。
+    卡牌源码（反编译 `YuWanCard.Content.dll`）确认 `LeiZhuTi.OnPlay` 调用的就是 `FromSimpleGridForRewards`。
+  - **修法**：给该入口补上与其余 6 个入口同款的归属者前缀（`FromSimpleGridForRewards` → 写
+    `CurrentChoicePlayerId`）⇒ 真人选牌被判为"真人"⇒ 摘掉托管选择器、走正常 UI；瓦库自己的选牌照旧自动作答。
+    `WakuuSelectorRouteAudit` 的分类同步（ownerAware 由 6 → 7），并**新增单测哨兵**
+    「归属者清单必须与补丁前缀一一对应」（防"清单说已接入、实际没补丁"这类静默漂移再次发生）。
+  - **同类残留（本轮未动，已记录）**：`FromDeckFor{Upgrade,Transformation,Enchantment,Removal}` 与
+    `FromDeckGeneric` 仍是 `legacyFallback`（有人工兜底链、且牵涉火堆/商店/Co-op Bots，需单独取证）。
+  - **回归**：`WakuuSelectorRouteAuditTests` 的"无未分类新入口"哨兵保持通过（入口数 13 不变）。
+  - ✅ **2026-09-26 实机确认**：真人打「类猪体」时走"等人选"的 UI 路径
+    （`source=combat-choice-FromSimpleGridForRewards` + 游戏侧 `Pausing action … for player choice`），
+    日志出现 9 条 `检测到真人选牌请求…: chooser=<真人>`（修前恒 0、且无任何痕迹）；
+    瓦库自己打同类卡仍自动作答，其余守卫项全 0。
+
 - **瓦库不自动领取「特殊卡牌奖励」⇒ 被跳虫偷走的牌永远拿不回来（r150，2026-09-26）**：
   玩家报「瓦库似乎不会取回自己被偷走的牌」。查证结论 = 原版把"夺回被偷走的牌"做成一条
   `SpecialCardReward`（源码注释点名 `ThievingHopper`：`SwipePower.BeforeDeath` →

@@ -35,7 +35,7 @@
 
 | 提案 | 现状（2026-09-25） | 下一步 | 落在哪 |
 |---|---|---|---|
-| `瓦库托管最终阶段-实施草案.md`（M1~M4） | **拍板·未动工**：Q1~Q5 已拍板（新开关默认关 / Skip 跟随 `deckAwareDraft` / 静态效果表 ≤50 条 / 日志 `[瓦库评价]` / `AnyAlly` 自用优先）；**未建分支、未写代码** | 拆 M1 知识层 → M2 智能抓牌 → M3 智能打牌 → M4 学真人；建议在方案 D 转正判定之后推进 | 本表 + `STS2…AI总规范_Final_v2.md`（总约束） |
+| `瓦库托管最终阶段-实施草案.md`（M1~M4） | **动工中（M1 已落地）**：Q1~Q5 已拍板（新开关默认关 / Skip 跟随 `deckAwareDraft` / 静态效果表 ≤50 条 / 日志 `[瓦库评价]` / `AnyAlly` 自用优先）；**M1 知识层已于 2026-09-26 实现（r153）** —— 纯逻辑知识层（效果事实 / 静态语义表 31 条 / 端口与基线 / 置信度 / 牌组评估 / 机会成本 / 协同估计）+ 只读抽取器 `WakuuEffectExtractor` + `[瓦库评价]` 只读抽样日志；**不做决策接入、默认（启发式）档零变化**，+43 单测（653 全绿）；分支 `feat/m1-knowledge-layer`（**未合回 master、未 push**） | 上一局实机顺带看 `[瓦库评价]` 锚点（读不懂的卡按 id 去重上报）→ 再开 **M2 智能抓牌**（`deckAwareDraft` 默认关：抓牌评分 + Skip，复用本层 `WakuuDeckAssessment`/`WakuuOpportunityCost`） | 本表 + `STS2…AI总规范_Final_v2.md`（总约束） |
 | `STS2…瓦库托管最终阶段_AI总规范_Final_v2.md` | **规范稿**（无落地） | 作为 M1~M4 的总设计约束，不单独动工 | 本表 |
 | `瓦库托管基础收口草案-最终阶段前置G0.md` | **部分落地**：**G0.1**（B1 买遗物 / B2 买药水 / B3 删牌服务）**已被 §改进-5 吃掉**（r137/r139，已实机确认）；**G0.2**（B4 恋降级逃生门 / B5 回归清单固化）**未做** | 只做 G0.2 两个子项（范围小，差两项） | **§改进-5** |
 | `多瓦库并行托管可行性与方案.md` | **部分落地**：Phase 0（r107~r110）/ Phase 1（r113）/ 方案 D（r121~r134）均已实机确认；三层档位：队列 / 并发**已于 2026-09-26 转正为默认开**，加速档默认关（用户自选） | **转正判定已完成（2026-09-26，方案 §12.15，14 会话含 1 真人+3 瓦库对照局）**：① **并发档收益已证实** —— 同回合三瓦库 `delayMs` 增量中位 **14ms**（inline 基线是秒级 494→6297→9724），第 3 位瓦库启动 **9.7s → 95ms**；② 出牌总时延 —— 队列单张中位 1143ms（2 席）/ 1674ms（3 瓦库，排队所致），但 pass 相当 ⇒ **不提速也不劣化**；③ 回归 —— `收回滞留节点` / `幽灵弹层` / `add_child failed` **14 会话全 0**。⇒ ✅ **已于 2026-09-26 转正落地（r152）**：两档默认值改 `true`，设置页/玩家指南/单测/CHANGELOG 同步；`fastVakuuPlay` 仍为独立项（用户当前关着） | **§改进-2** |
@@ -44,7 +44,7 @@
 | `键盘手柄双输入本地双控可行性分析.md`（L1 档） | **待拍板**：结论已出（L1 轮流操作可行 / L2·L3 真正同时不可行）；**未实现** | 备选线索：`LocalDeviceSplitRouter` + patch `NControllerManager` 模式抢占 + 秒切防抖（仅认确认性输入），默认关 | 本表（备选） |
 | `本地LLM辅助开发可行性分析.md` | **部分落地**：P0 冒烟 / P1 索引 / P2 日志分诊 / P3 双语 + diff 预审 / T2 NUnit 草稿**均已完成**；**P4 经实测改换做法**（明细当优先级清单 + 自写抽取器）；`functiongemma` 工具路由未动 | P4 若要继续：先写自己的 `sts2src` 逐卡效果抽取器 → 人审 → 固化 `PureLogic` 表，**默认关**且须过 §21.4.2 回归清单 | 本表 |
 | `开发环境迁移Linux可行性分析.md` | **未动工**（纯调研，未动 U 盘/分区） | 推荐路线：先 Phase 0、再 Phase 1（两步没跑完前不要动 U 盘与分区） | 本表（待拍板） |
-| `本地多角色扩展到Daily模式可行性分析.md` | **拍板·未动工**：已拍板「Daily 禁止上传排行榜分数」；Custom ✅ 既有已实现、**Daily ❌ 未实现**（日志锚点 `DAILY_SCORE_SKIP` 已设计未实现） | 是否投入做 Daily 支持，待拍板 | 本表（待拍板） |
+| `本地多角色扩展到Daily模式可行性分析.md` | **拍板·未动工**：已拍板「Daily 禁止上传排行榜分数」；Custom ✅ 既有已实现、**Daily ❌ 未实现**（日志锚点 `DAILY_SCORE_SKIP` 已设计未实现）。**2026-09-26：用户指定为「下一轮主攻方向」**（本轮收工时口头拍板，尚未建分支/未动代码） | 重读提案 → 按提案分档定范围（先做 `DAILY_SCORE_SKIP` 锚点落地还是全量 Daily 托管）→ 建 `feat/*` 分支动工 | 本表（**下一轮**） |
 | `瓦库四功能-可行性核验报告.md` | **待拍板**（结论已出）：四功能均无架构级死路；功能一难度下调为「中」 | 按建议顺序（净化 → 我们联合 → 炼化 → 地狱战神）逐级动工，动工前需用户拍板 | 本表 + 提案 §7 |
 | `瓦库炼化净化联合地狱战神-功能提案与可行性分析.md` | **未动工**（仅提案；已被 09-22 核验报告逐条核验） | 同上（以核验报告的顺序与难度为准） | 本表 |
 | `Co-op_Bots联机队友兼容可行性分析.md` | **部分落地 + 实机进行中（r144 POC → r145 回合死锁 → r146 席位隔离 → r147「幽灵弹层 + 镜像来源席位」→ r148 商店 R1 通过）**：r144~r146 已提交并 `--ff-only` 合回 master（`50bff2b` 代码 / `25077d1` 文档）；r147+r148 已提交为 `1eefef7`，仍在分支 `fix/r147-phantom-overlay-mirror`（**未合回 master、未 push**）。落地 = ① `CoopBotsAdapter` 反射适配器（探测 / `AutoPilot.Set` 逐席接管与释放 / 未装即优雅降级）② 席位驱动**三态互斥**（`CoopBotsSeatPlan` + `LocalSelfCoopContext`，POC 配置键 `coopBotsSeats`）③ **R1 商店 ACK 旁路补丁** `CoopBotsShopAckPatch`（**装了 CB 就要挂**，与其 Bot 是否被我们接管无关）④ **r145**：3 席「回合结束不了」（就绪补齐改成「只补本地席位 + 走真实方法调用」）⑤ **r146**：第三方席位隔离（`LocalSelfCoopContext.IsLocalSessionSeat`）⑥ **r147**：**幽灵弹层**根治 + 自愈，以及 `MirrorSeatPolicy` 五条镜像链的来源席位过滤。**实机已验**：r147 全部改动通过（0 条 add_child failed / 0 条幽灵弹层自愈 / 0 条 bot 奖励镜像）；**R1 于 r148 通过**（Bot 删牌服务→药水，两次旁路均 `count=1,seats=[]`，最终 `done=1`，正常离店并进入下一战斗）。**未做**：12 席三态 UI / 持久化、Phase 3 补丁面回归、**被接管的本地席位**的奖励归驱动方分流、**BUG-17** 根因。**2026-09-26 逐条实测（marker r148，第一幕整局；配置 `coopBotsSeats` 为空 ⇒ 本局 Bot 是 CB **自己的合成 Bot**、非我方 POC 接管）**：§R2 **11 点全部通过** —— #1 `地图自动跟投 … filled=3/3` **54 次 / 0 失败**（含 Bot 全票、随后均触发推进）；#2 `本地多控自动补齐敌方回合就绪 … mirrored=` **从不含 Bot id**（41 次）；#5 `RequestEnqueue 空引用已拦截` **0**；#7 `事件/流程金币已同步到其余角色` **0**；#8 `角色独立奖励已生成(Offer): player=<Bot>` **0** + `第三方席位卡牌奖励交回原版远端作答` 24；#9 `打开奖励界面: player=<瓦库>` **0**；#11 `瓦库火堆已自动选择 … success=True` 6 / `扫描瓦库休息区失败` 0；#6 `瓦库火堆队友选择已自动指定` 4；#3/#4 选人屏 **弱覆盖**（`角色选择页已创建本地人数 +/- 实体按钮` 4 次，无错位/残留）。同局 `add_child() failed` / `幽灵弹层已自愈` / `弹层阻挡自动流程` **全 0**（r147 稳定）。**仍待验**：**我方 POC 接管席位**路径下的 R2 回归（本局未接管）、BUG-17 诊断锚点 | ✅ ① R2 逐条实测**已完成（2026-09-26）** —— **清单已固化**：`Scripts/Tools/thirdparty_patch_overlap.py`（口径与命令见 `Co-op_Bots联机队友兼容可行性分析.md` §R2；逐条判据表同节，产物 `decision-records/第三方补丁目标交叉分析-CoopBots.md`）；② 事件末页选牌复现后按 BUG-17 的三条锚点分流；③ 之后再谈 Phase 1 的选人屏三态钮与 save tag v4 | 本表 + §BUG-17 |
@@ -1567,3 +1567,55 @@
 - **结论 / 下一步**：两次测试（首测 + 本次强化复测）都未复现，且本次插队链有实际成功证据；作为**更强负样本**
   记录，但不据此宣称根因已消失。保留 r148 零副作用诊断，等自然复现时读取 `手牌点击被忽略: reason=…`；
   若长期 0 命中，再评估降级为 `-` 或设置页开关。
+
+### BUG-19 瓦库出牌期间，真人打「奖励式三选一」类卡牌被瓦库替答（2026-09-26 用户反馈；**r154 已修 → ✅ 2026-09-26 实机确认，关单**）
+
+- **现象（用户原话）**：「瓦库打牌时我打出自己的**类猪体**（猪猪 mod / YuWanCard 的牌），瓦库会替我选牌；
+  瓦库打完了我再打就不会出现这个 bug」。
+- **定性（先量后猜 + 反编译对照，证据链完整）**：
+  1. 归档 `logs-archive/godot__20260926-203939__r153.log`：真人 `Player …326 playing card YUWANCARD-LEI_ZHU_TI`（L12584）
+     → 12 行后 `Player …326 chose cards [YUWANCARD-PIG_STAY_UP_LATE]`（L12596），
+     **中间没有任何选牌日志**（全文 `检测到真人选牌请求` = **0**、`选牌选择器按归属分发` = **0**）；
+  2. 同一时刻的看门狗统计（L12595）写着
+     `selectorStackCount=1, selectorStackTop=LocalWakuuStrategySelector` ⇒ **瓦库的托管选择器正压在全局栈上**；
+  3. 启动自检（L1056）`SELECTOR_ROUTE from=13 … legacyFallback=[…,FromSimpleGridForRewards] …` ⇒
+     该入口**没有**归属者前缀；
+  4. 反编译 `YuWanCard.Content.dll` 的 `YuWanCard.Cards.Event.LeiZhuTi.OnPlay` ⇒ 选牌走
+     **`CardSelectCmd.FromSimpleGridForRewards`**（3 张候选挑 1 张，再给一张免费复制）。
+- **根因**：`CardSelectForegroundSwitchPatch` 的"写选牌归属者"前缀**只补了 `FromSimpleGrid`**，
+  漏了同族的 `FromSimpleGridForRewards`（**两个不同方法**）⇒ 该入口选牌时 `CurrentChoicePlayerId` 为空
+  ⇒ 选择器守卫落回 `WakuuSelectorDispatch` 的 **`KeepTop`（"信息不足一律不动"）**
+  ⇒ **栈顶的瓦库选择器替真人作答**（且这条分支一条日志都不打）。
+  瓦库打完 ⇒ 选择器栈已被清空 ⇒ 守卫 `top == null` 直接返回 ⇒ 真人看到正常选牌界面
+  ⇒ 正好解释用户观察到的"只在瓦库打牌时出现"。
+- **修法（r154）**：补 `[HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromSimpleGridForRewards))]`
+  前缀写归属者（与其余 6 个入口同款）；`WakuuSelectorRouteAudit` 分类同步（ownerAware 6 → 7）；
+  **新增单测哨兵**「归属者清单必须与补丁前缀一一对应」（反射核对，防"清单说已接入、实际漏补丁"再发生）；
+  `WakuuSelectorDispatch` 类注释补上这条软肋的警示。
+- **同类残留（本轮**未动**，留档）**：`FromDeckForUpgrade` / `FromDeckForTransformation` /
+  `FromDeckForEnchantment` / `FromDeckForRemoval` / `FromDeckGeneric` 仍是 `legacyFallback`
+  ⇒ 理论上同样会被栈上的瓦库选择器抢答。未动原因：它们有人工兜底链（`本地多控下强制牌组选牌弹出背包`），
+  且牵涉火堆/商店/Co-op Bots 的既有链路（CB 的 deck edit 就走 `FromDeckForTransformation`），
+  需要单独取证 + 回归。**复现任一"真人选牌被替答"再按本条修法接入。**
+- **验证契约（请实机复测）**：
+  ```
+  改动:        选牌归属者漏补 FromSimpleGridForRewards（r154 / BUG-19）
+  EXPECTED:    瓦库出牌期间真人打「类猪体」等三选一卡 → 真人自己选；日志出现"检测到真人选牌请求"
+  SETUP:       本地多控（瓦库在场上）+ 装 YuWanCard；**建议把「瓦库并发出牌」保持默认开**（复现前提）
+  ACTION:      1. 让瓦库开始连续出牌 2. 瓦库还没打完时，真人打出「类猪体」
+  OBSERVE:     是否弹出三选一界面由真人点；日志 [LocalMultiControl] 行
+  PASS:        真人能自己选；日志有 `检测到真人选牌请求，本次跳过瓦库选择器改走正常UI: chooser=<真人id>`
+  FAIL:        仍被自动选掉（没有任何选牌界面）；或该行 chooser 是瓦库 id
+  LOG ANCHORS: INIT_OK / SELECTOR_ROUTE / 检测到真人选牌请求 / chose cards
+  ```
+- **回归要求**：瓦库自己打同类卡（三选一）仍应**自动作答**（它的选择器照常生效）；
+  真人普通选牌（手牌/弃牌/战斗堆）行为不变；`瓦库选择器作用域异常退出` 仍为 0。
+- ✅ **2026-09-26 实机确认通过（marker r154，归档 `logs-archive/godot__20260926-211038__r154.log`）**：
+  - 修复点实证：真人打「类猪体」时出现 `自动切前台延后（…）: source=combat-choice-FromSimpleGridForRewards`（新补的前缀生效）
+    → 游戏自己 `Pausing action … for player choice`→`paused execution` ⇒ **走"等人选"的 UI 路径**；
+    全文 **9 条** `检测到真人选牌请求…: chooser=…326`（**修前恒 0**，chooser 全为真人）；
+    另有 `弹层阻挡自动流程: top=NSimpleCardSelectScreen[inTree=True]` = 真人的选牌界面确实在栈上、瓦库自动出牌被正确挡住。
+  - 回归：9 条里**没有一条** chooser 是瓦库 ⇒ 瓦库自己的同类选牌仍自动作答；
+    `选择器作用域异常退出`/看门狗重启失败/`Couldn't get hand node`/队列空引用/`保留为人工领取` **全 0**。
+  - ⚠ **口径订正**：`检测到真人选牌请求` 自此**不再是"期望 0"**（它是修好后的正常锚点）；
+    `tools/log_scan.py` 的 health 预设已同步，并把"chooser 不是真人 ⇒ 归属者写错"写成判据。**本节关单。**

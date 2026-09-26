@@ -2,8 +2,8 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-09-25 17:09  HEAD=25077d1
-# 统计: patch_classes=176 patch_rows=200 string_targets=190 descriptors=341
+# 生成时间=2026-09-26 20:45  HEAD=b5ae822
+# 统计: patch_classes=176 patch_rows=201 string_targets=190 descriptors=342
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	CardManualPlayContextPatch	CardModel	EnqueueManualPlay	string
@@ -22,6 +22,7 @@ P	CardSelectForegroundSwitchPatch	CardSelectCmd	FromHand	nameof
 P	CardSelectForegroundSwitchPatch	CardSelectCmd	FromHandForDiscard	nameof
 P	CardSelectForegroundSwitchPatch	CardSelectCmd	FromHandForUpgrade	nameof
 P	CardSelectForegroundSwitchPatch	CardSelectCmd	FromSimpleGrid	nameof
+P	CardSelectForegroundSwitchPatch	CardSelectCmd	FromSimpleGridForRewards	nameof
 P	CardSelectHandScenarioPatch	CardSelectCmd	FromHand	nameof
 P	CardSelectManualConfirmationPatch	CardSelectCmd	FromDeckForTransformation	nameof
 P	CardSelectManualConfirmationPatch	CardSelectCmd	FromDeckForUpgrade	nameof

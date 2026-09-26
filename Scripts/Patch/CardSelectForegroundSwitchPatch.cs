@@ -93,6 +93,22 @@ internal static class CardSelectForegroundSwitchPatch
         EnsureForegroundForCombatChoice(player, "FromChooseACardScreen");
     }
 
+    /// <summary>
+    /// 「奖励式三选一」网格入口（如 YuWanCard 的「类猪体」：造 3 张无色猪牌让选择者挑 1 张）。
+    ///
+    /// 为什么必须在这里写归属者（r154 修的 bug，证据见 §BUG-19）：
+    /// 本入口与 <see cref="CardSelectCmd.FromSimpleGrid"/> 是**两个不同的方法**，原先只补了后者
+    /// ⇒ 本入口选牌时 `CurrentChoicePlayerId` 是空的 ⇒ 守卫只能走
+    /// <see cref="SelectorDispatchDecision.KeepTop"/>（「信息不足一律不动」）⇒
+    /// **真人打牌时会被栈上残留的瓦库选择器替他把牌选掉**（瓦库正在出牌时必现，瓦库打完就不出现）。
+    /// </summary>
+    [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromSimpleGridForRewards))]
+    [HarmonyPrefix]
+    private static void FromSimpleGridForRewardsPrefix(Player player)
+    {
+        EnsureForegroundForCombatChoice(player, "FromSimpleGridForRewards");
+    }
+
     [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromCombatPile), new Type[]
     {
         typeof(PlayerChoiceContext),
