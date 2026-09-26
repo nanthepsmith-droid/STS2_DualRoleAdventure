@@ -110,24 +110,27 @@ internal static class LocalWakuuRewardAutoClaim
 
     private static bool ShouldAutoClaim(Reward reward, Player owner)
     {
-        if (!LocalWakuuRelicRuntime.IsVakuuFormMode(owner))
-        {
-            return false; // 非瓦库角色的奖励保持人工领取
-        }
+        return WakuuRewardClaimPolicy.ShouldAutoClaim(
+            ClassifyReward(reward),
+            LocalWakuuRelicRuntime.IsVakuuFormMode(owner),
+            LocalWakuuAutopilotConfig.AutoClaimCards,
+            LocalWakuuAutopilotConfig.AutoClaimGoldRelics,
+            LocalWakuuAutopilotConfig.AutoClaimPotions);
+    }
 
-        switch (reward)
+    /// <summary>把具体奖励实例映射到策略层的种类（判定表见 <see cref="WakuuRewardClaimPolicy"/>）。</summary>
+    private static WakuuRewardKind ClassifyReward(Reward reward)
+    {
+        return reward switch
         {
-            case CardReward:
-                return LocalWakuuAutopilotConfig.AutoClaimCards;
-            case GoldReward:
-            case RelicReward:
-                return LocalWakuuAutopilotConfig.AutoClaimGoldRelics;
-            case PotionReward:
-                return LocalWakuuAutopilotConfig.AutoClaimPotions;
-            default:
-                // 删牌/特殊奖励等保持人工
-                return false;
-        }
+            CardReward => WakuuRewardKind.Card,
+            GoldReward => WakuuRewardKind.Gold,
+            RelicReward => WakuuRewardKind.Relic,
+            PotionReward => WakuuRewardKind.Potion,
+            // r150：取回被跳虫偷走的牌 / 事件给指定任务牌，都走这一个类型。
+            SpecialCardReward => WakuuRewardKind.SpecialCard,
+            _ => WakuuRewardKind.Other,
+        };
     }
 
     /// <summary>供 RewardsCmdOfferCustomPatch 判定单个奖励是否可自动领取。</summary>
@@ -231,6 +234,19 @@ internal static class LocalWakuuRewardAutoClaim
 
                 case PotionReward potionReward:
                     return await TrySettlePotionRewardAsync(potionReward, owner);
+
+                case SpecialCardReward specialCardReward:
+                    // r150「取回被偷走的牌」：`SpecialCardReward.OnSelect` 只是把那张卡
+                    // `CardPileCmd.Add(card, PileType.Deck)` 加回牌组，**不读** `CardSelectCmd.Selector`、
+                    // 也不弹选牌界面 ⇒ 不需要压选择器作用域/抑制弹屏，上下文对齐到归属者即可（本方法已做）。
+                    // 不领 = 牌永远拿不回来（`OnSkipped` 只记 wasPicked:false），所以必须自动领。
+                    await reward.SelectUnsynchronized();
+                    // 牌名不用我们抠：原版 `SpecialCardReward.OnSelect` 自己会打
+                    // `Player <id> obtained CARD.X from special card reward`，与本行配对即可核对。
+                    LocalMultiControlLogger.Info(
+                        $"瓦库特殊卡牌奖励已自动领取（取回被偷走的牌/指定卡牌）: "
+                        + $"player={owner.NetId}, reward={specialCardReward.GetType().Name}");
+                    return true;
 
                 default:
                     return false;

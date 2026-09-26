@@ -5,6 +5,23 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 ## [Unreleased]
 
 ### Fixed
+- **瓦库不自动领取「特殊卡牌奖励」⇒ 被跳虫偷走的牌永远拿不回来（r150，2026-09-26）**：
+  玩家报「瓦库似乎不会取回自己被偷走的牌」。查证结论 = 原版把"夺回被偷走的牌"做成一条
+  `SpecialCardReward`（源码注释点名 `ThievingHopper`：`SwipePower.BeforeDeath` →
+  `new SpecialCardReward(StolenCard.DeckVersion, 失主)` → `AddExtraReward` 作为战后额外奖励发回），
+  而这张卡**在领取之前不在牌组里**（`OnSelect` 才 `CardPileCmd.Add(card, PileType.Deck)`；
+  `OnSkipped` 只记 `wasPicked:false`）⇒ **不领 = 牌就没了**。
+  我们此前的自动领取把它归到 `default: return false`（注释写着"删牌/特殊奖励等保持人工"），
+  于是瓦库的那一条只能等真人在合并奖励屏上手动点，容易漏。
+  - **修法**：把「特定卡牌」纳入自动领取，**与卡牌奖励共用开关 `autoClaimCards`** ——
+    新增纯判据 `WakuuRewardClaimPolicy`（+8 单测）、`TrySettleAsync` 增 `case SpecialCardReward`；
+    该奖励不读 `CardSelectCmd.Selector`、也不弹选牌界面，所以**不需要**压选择器作用域/抑制弹屏。
+  - **新日志**：`瓦库特殊卡牌奖励已自动领取（取回被偷走的牌/指定卡牌）: player=…, reward=SpecialCardReward`
+    （牌名由原版自带的 `Player <id> obtained CARD.X from special card reward` 给出，本 mod 不另做反射）。
+  - **口径不变**：`CardRemovalReward`（删牌奖励）仍保持人工 —— 它要走瓦库的 Remove 选牌规则，属另一条链。
+  - 顺带记录（不是本轮目标）：该局共 3 条 `SpecialCardReward`（合成 Bot 白噪声 / 真人精准切割 / 瓦库战斗恍惚），
+    此前都靠真人手点；且最近 31 份归档日志里**没有** `ThievingHopper`（原版唯一偷牌怪）出没
+    ⇒ 玩家看到的"被偷走的牌"更可能是特殊精英/事件发的同类奖励。**两种来源修好后都会自动取回。**
 - **屏幕变暗且点不动 / 战斗里出不了牌（只有 bot 能出）/ 商店点不开商人 / 火堆锻造卡住 —— 只能退出重进（r147，2026-09-25）**：
   玩家实测第一幕反馈「事件获得卡牌奖励、战斗中暂停继续、火堆锻造导致屏幕变暗且无法继续（可退出重进恢复）」
   与「有时候战斗开始时无法出牌（不止我不能出牌，瓦库也不能，只有 bot 出牌）」「有时候进商店不能点击商人交易，

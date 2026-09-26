@@ -1460,6 +1460,41 @@
   并且**画面上该席位的角色头顶出现它选的选项图标**（这是本轮唯一要肉眼确认的东西）。
   若出现 `第三方席位休息区选项执行失败（游戏返回 false，本次未生效）` ⇒ 说明那次选择真的没生效（那就是另一个问题了，把日志发我）。
 - **不做的部分**：让 Bot "像人一样慢慢思考再选" 属于 CB 自己的行为，我们不改（也不该改）。
+- ✅ **2026-09-26 实机确认（marker r149，第二幕整局）**：4 个休息区**全部**成对出现
+  `第三方席位休息区选择已记录（将补画气泡）: player=<Bot>, option=…, success=True` →
+  `第三方席位休息区气泡已补画: source=rest-site-ready-0, player=<Bot>, option=…`；
+  `第三方席位休息区选项执行失败` **0 条** ⇒ 记录与补画链路都按设计工作（画面上的气泡以用户肉眼为准）。
+
+---
+
+### BUG-20 瓦库不自动领取「特殊卡牌奖励」= 取回被跳虫偷走的牌（2026-09-26 用户报，**r150 已修并部署**）
+
+- **用户原话**：「瓦库似乎不会取回自己被偷走的牌」。
+- **机制查证（st2src 源码）**：原版**唯一**会偷牌的怪是 `ThievingHopper`（跳虫：`ThieveryMove` 按稀有度优先级
+  从 Draw/Discard 抽一张 `CardPileCmd.RemoveFromCombat` + `SwipePower.Steal`）；打死它时
+  `SwipePower.BeforeDeath` 用 `new SpecialCardReward(StolenCard.DeckVersion, 失主)` + `AddExtraReward`
+  把牌**作为该玩家的额外战后奖励**还回来（`MarkLootReturned`）。`SpecialCardReward` 的类注释自己就写着
+  "like `ThievingHopper` giving you your stolen card back as a reward"。
+- **为什么瓦库拿不回来**：`SpecialCardReward.OnSelect` 才 `CardPileCmd.Add(card, PileType.Deck)`
+  （**领取之前这张卡不在牌组里**），`OnSkipped` 只记 `wasPicked:false` ⇒ **不领 = 牌就没了**；
+  而我们的 `LocalWakuuRewardAutoClaim.ShouldAutoClaim` 把它落在 `default: return false`
+  （注释"删牌/特殊奖励等保持人工"）⇒ 瓦库那条只能等真人在合并奖励屏上手动点，容易漏。
+- **实机旁证（marker r149 第二幕那局）**：该局 3 条 `SpecialCardReward`（合成 Bot 白噪声 / 真人精准切割 /
+  瓦库战斗恍惚），瓦库那条确实落在了真人的展示集里被手点掉；另外**最近 31 份归档日志里没有任何
+  `ThievingHopper` 出没**（`Thieving` / `跳虫` / `HOPPER` 全 0）⇒ 用户看到的"被偷走的牌"更可能是
+  特殊精英/事件发的同类奖励 —— 但**两条来源共用同一个奖励类型**，修一处即覆盖。
+- **r150 修法（已部署）**：新增纯判据 `WakuuRewardClaimPolicy`（+8 单测）把「特定卡牌」归到与卡牌奖励
+  **同一个开关 `autoClaimCards`**；`TrySettleAsync` 增 `case SpecialCardReward`（它不读 `CardSelectCmd.Selector`、
+  不弹选牌屏 ⇒ **不需要**压选择器作用域）；新日志
+  `瓦库特殊卡牌奖励已自动领取（取回被偷走的牌/指定卡牌）: player=…, reward=SpecialCardReward`。
+  `CardRemovalReward`（删牌奖励）**仍保持人工**（要走瓦库的 Remove 选牌规则，属另一条链）。
+  门禁：构建 **0 警告 0 错误**（206 .cs）、**610 单测全绿**（602 → +8）、`static_checks` 7 PASS（S7 目标集合未变）、
+  `clr_compat_check` PASS、`preflight.ps1 -Deploy` **4 PASS / 3 SKIP**、marker **`2026-09-26-r150`**、
+  `dll_check --deployed` 全绿（`WakuuRewardClaimPolicy` / `WakuuRewardKind` / 新锚点在、`__runOriginal` 不在、字节一致）。
+- **验证方法（下次遇到"给特定卡牌"的奖励时顺带看）**：期望
+  `Player <瓦库id> obtained CARD.X from special card reward` **紧跟着**
+  `瓦库特殊卡牌奖励已自动领取（取回被偷走的牌/指定卡牌）: player=<瓦库id>, reward=SpecialCardReward`，
+  并且真人奖励屏上**不再**出现瓦库那一条；反例（正常）：关掉「卡牌奖励自动领取」后照旧要真人点。
 
 ---
 
