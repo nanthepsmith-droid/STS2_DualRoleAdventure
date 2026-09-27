@@ -68,6 +68,17 @@ internal sealed partial class LocalSelfCoopSessionGuard : Node
             return;
         }
 
+        // ⚠ 顺序有讲究：**先进局判定、再判读档窗口**（r168 订正）。
+        // 若把窗口判定放前面，进局后窗口只会在"超时那一刻"才被关掉（r167 实测 `时长=180000ms`），
+        // 意味着进局后最长 3 分钟内本守卫都不干活 —— 玩家此时退回主菜单就会留下会话残留。
+        if (RunManager.Instance?.IsInProgress == true)
+        {
+            // 进局了 = 读档已落地：立刻收掉读档窗口（窗口只负责覆盖"还没进局"的那段）。
+            LocalSelfCoopContext.CloseLoadReplayWindow("run-in-progress");
+            _idleSeconds = 0;
+            return;
+        }
+
         // r167（BUG-22 第二颗雷）：**读档窗口内绝不下手**。
         // 读档时 `RunManager.IsInProgress` 还是 false，载入界面也不在大厅白名单里 ⇒ 本守卫会在约 1 秒后
         // 把会话 `Disable` 掉；而 `GrantWakuuRelicsAsync` 首行就是 `if (!IsEnabled) return;`
@@ -76,14 +87,6 @@ internal sealed partial class LocalSelfCoopSessionGuard : Node
         // 窗口带超时（见 LoadReplayWindowPolicy）：读档被取消时，守卫仍会在超时后收拾残留会话。
         if (LocalSelfCoopContext.IsLoadReplayWindowActive)
         {
-            _idleSeconds = 0;
-            return;
-        }
-
-        if (RunManager.Instance?.IsInProgress == true)
-        {
-            // 进局了 = 读档已落地：自动收掉读档窗口（窗口只负责覆盖"还没进局"的那段）。
-            LocalSelfCoopContext.CloseLoadReplayWindow("run-in-progress");
             _idleSeconds = 0;
             return;
         }
