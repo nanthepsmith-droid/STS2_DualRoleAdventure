@@ -119,12 +119,12 @@ internal static class LocalSelfCoopContext
     public static void UseSavedWakuuPlayerIds(IReadOnlyList<ulong> playerIds)
     {
         _wakuuPlayerIds.Clear();
-        foreach (ulong playerId in playerIds.Where((id) => id != 0))
+        // 过滤规则抽成纯函数（r166）：只认本地席位表里的 id、丢占位 0、去重 —— 可单测。
+        foreach (ulong playerId in WakuuSeatRestorePolicy.FilterToLocalSeats(
+                     _localPlayerIds.ToList(),
+                     playerIds))
         {
-            if (_localPlayerIds.Contains(playerId))
-            {
-                _wakuuPlayerIds.Add(playerId);
-            }
+            _wakuuPlayerIds.Add(playerId);
         }
 
         LocalMultiControlLogger.Info($"已恢复瓦库勾选玩家: {string.Join(",", _wakuuPlayerIds)}");
@@ -908,9 +908,18 @@ internal static class LocalSelfCoopContext
     private static void TrimWakuuPlayerIdsToConfiguredPlayers()
     {
         HashSet<ulong> activeSet = _localPlayerIds.Take(_desiredLocalPlayerCount).ToHashSet();
-        _wakuuPlayerIds.RemoveWhere((playerId) => !activeSet.Contains(playerId));
+        int removedWakuu = _wakuuPlayerIds.RemoveWhere((playerId) => !activeSet.Contains(playerId));
         // 联机机器人席位同口径收敛（本地玩家数下调后，超出的席位不再接管）。
         _coopBotsPlayerIds.RemoveWhere((playerId) => !activeSet.Contains(playerId));
+
+        // r166：真丢席位才留痕。读档后「瓦库不出牌/不自动选事件」这类问题
+        // 全是"席位被悄悄清空"造成的，有此锚点下次一眼可辨（此前完全静默）。
+        if (removedWakuu > 0)
+        {
+            LocalMultiControlLogger.Warn(
+                $"瓦库席位被收敛剔除 {removedWakuu} 个: active={string.Join(",", activeSet)}, "
+                + $"剩余wakuu={string.Join(",", _wakuuPlayerIds)}");
+        }
     }
 
     private static void MarkCurrentProfileTag()
