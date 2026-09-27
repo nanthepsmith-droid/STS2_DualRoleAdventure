@@ -68,8 +68,22 @@ internal sealed partial class LocalSelfCoopSessionGuard : Node
             return;
         }
 
+        // r167（BUG-22 第二颗雷）：**读档窗口内绝不下手**。
+        // 读档时 `RunManager.IsInProgress` 还是 false，载入界面也不在大厅白名单里 ⇒ 本守卫会在约 1 秒后
+        // 把会话 `Disable` 掉；而 `GrantWakuuRelicsAsync` 首行就是 `if (!IsEnabled) return;`
+        // ⇒ 托管遗物不发 ⇒ 瓦库整局不出牌 / 不自动选事件；同时所有门控在 `IsEnabled` 上的归属守卫一起失效
+        // ⇒ 事件卡牌奖励归属断档、点的人与奖励主人不匹配（软锁）。r166 日志：5 次读档 5 次复现。
+        // 窗口带超时（见 LoadReplayWindowPolicy）：读档被取消时，守卫仍会在超时后收拾残留会话。
+        if (LocalSelfCoopContext.IsLoadReplayWindowActive)
+        {
+            _idleSeconds = 0;
+            return;
+        }
+
         if (RunManager.Instance?.IsInProgress == true)
         {
+            // 进局了 = 读档已落地：自动收掉读档窗口（窗口只负责覆盖"还没进局"的那段）。
+            LocalSelfCoopContext.CloseLoadReplayWindow("run-in-progress");
             _idleSeconds = 0;
             return;
         }

@@ -15,6 +15,12 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     `读档已恢复瓦库席位` / `快速重启已恢复瓦库席位`；过滤规则抽成纯函数 `WakuuSeatRestorePolicy`（+7 单测）；
     席位被收敛剔除时补 WARN（此前完全静默，是这个问题难定位的直接原因）。
   - **为什么以前没发现**：有读档的会话在会话守卫（r158）之前，席位是内存静态字段、没被清；r161 两次实机的读档数都是 0。
+- **读档时会话被守卫误关 ⇒ 瓦库整局停摆 + 事件卡牌奖励归属软锁（r167，同一 BUG-22 的第二层）**：
+  r166 实测 5 次读档 5 次复现：读档中途（`IsInProgress` 仍为 false、载入界面不在大厅白名单里）会话守卫把会话
+  `Disable("no-local-lobby-screen")`，于是 `GrantWakuuRelicsAsync` 首行的 `if (!IsEnabled) return;` 直接返回
+  ⇒ 托管遗物不发 ⇒ 瓦库不出牌 / 不自动选事件；同时所有门控在 `IsEnabled` 上的归属守卫一起失效
+  ⇒ 事件卡牌奖励归属断档（实测 3 条游戏侧 `SelectLocalReward … non-local` 报错，表现为点的人与奖励主人不匹配）。
+  修法：新增「读档窗口」（读档入口开窗、进局/清理/关会话自动关窗，180 秒超时安全阀），窗口内守卫不下手。
 
 ## [1.43.0] - 2026-09-27
 

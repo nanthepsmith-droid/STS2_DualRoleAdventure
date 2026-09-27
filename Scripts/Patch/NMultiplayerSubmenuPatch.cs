@@ -24,6 +24,10 @@ internal static class NMultiplayerSubmenuPatch
 
         ulong primaryPlayerId = playerIds[0];
         LocalMultiControlLogger.Info($"检测到本地多控存档标记，尝试继续游戏: {string.Join(",", playerIds)}");
+
+        // r167（BUG-22）：读档全程开「读档窗口」——否则会话守卫会在读档中途
+        // `Disable("no-local-lobby-screen")`，把托管遗物发放与归属守卫一起关掉（瓦库停摆 + 奖励归属软锁）。
+        LocalSelfCoopContext.OpenLoadReplayWindow("continue-game");
         LocalSelfCoopContext.UseSavedPlayerIds(playerIds);
 
         // r166 修（BUG-22）：读档必须**同时恢复瓦库席位**。

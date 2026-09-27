@@ -127,6 +127,8 @@ internal static class LocalMultiControlRuntime
 
     public static void OnRunCleanup()
     {
+        // 局都清了，读档窗口没有存在的理由（防止它遮住守卫后续的清理职责）。
+        LocalSelfCoopContext.CloseLoadReplayWindow("run-cleanup");
         Session.Reset("RunManager.CleanUp");
         _wakuuAutoEndIssued.Clear();
         _allPlayersAutoEndedRounds.Clear();

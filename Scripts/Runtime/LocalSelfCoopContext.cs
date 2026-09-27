@@ -28,6 +28,14 @@ internal static class LocalSelfCoopContext
     private static readonly HashSet<ulong> _wakuuPlayerIds = new();
 
     /// <summary>
+    /// 「读档窗口」开启时刻（单调时钟毫秒，0 = 未开启）。见 <see cref="LoadReplayWindowPolicy"/>：
+    /// 读档期间会话守卫**不得**清会话 —— 否则 `GrantWakuuRelicsAsync` 等门控在 `IsEnabled` 上的逻辑全部失效
+    /// ⇒ 瓦库不出牌 / 不自动选事件，且事件卡牌奖励归属断档导致点的人与奖励主人不匹配（软锁）。
+    /// r166 日志实证：5 次读档 5 次复现（`本地多控模式已关闭，原因: no-local-lobby-screen` 紧跟读档就绪）。
+    /// </summary>
+    private static long _loadReplayWindowOpenedAtMs;
+
+    /// <summary>
     /// 由第三方 mod「Co-op Bots」接管的本地席位（POC）。与 <see cref="_wakuuPlayerIds"/> **互斥**：
     /// 同一席位同时只能有一种驱动（真人 / 瓦库 / 联机机器人），见 <see cref="CoopBotsSeatPlan"/>。
     /// </summary>
@@ -314,8 +322,38 @@ internal static class LocalSelfCoopContext
         LocalMultiControlLogger.Info($"本地多控模式已启用，目标玩家数: {_desiredLocalPlayerCount}");
     }
 
+    /// <summary>读档窗口是否仍在有效期内（守卫据此不下手）。详见 <see cref="LoadReplayWindowPolicy"/>。</summary>
+    public static bool IsLoadReplayWindowActive =>
+        LoadReplayWindowPolicy.IsActive(_loadReplayWindowOpenedAtMs, System.Environment.TickCount64);
+
+    /// <summary>
+    /// 打开「读档窗口」（继续游戏 / ESC 快速重启 的读档入口调用）。
+    /// 有超时安全阀：万一读档被取消，守卫仍会在超时后收拾残留会话（不退化成 r158 的老问题）。
+    /// </summary>
+    public static void OpenLoadReplayWindow(string source)
+    {
+        _loadReplayWindowOpenedAtMs = System.Environment.TickCount64;
+        LocalMultiControlLogger.Info($"读档窗口已开启: source={source}（窗口内会话守卫不下手，最长 180 秒）");
+    }
+
+    /// <summary>关闭「读档窗口」（进局 / 清理 / 会话关闭时调用）。</summary>
+    public static void CloseLoadReplayWindow(string source)
+    {
+        if (_loadReplayWindowOpenedAtMs <= 0)
+        {
+            return;
+        }
+
+        long elapsedMs = System.Environment.TickCount64 - _loadReplayWindowOpenedAtMs;
+        _loadReplayWindowOpenedAtMs = 0;
+        LocalMultiControlLogger.Info($"读档窗口已关闭: source={source}, 时长={elapsedMs}ms");
+    }
+
     public static void Disable(string reason)
     {
+        // 会话都关了就不该再留着窗口（否则会遮住守卫后续的清理职责）。
+        CloseLoadReplayWindow($"disable:{reason}");
+
         if (!IsEnabled && NetService == null)
         {
             return;

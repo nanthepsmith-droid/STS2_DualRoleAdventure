@@ -28,6 +28,8 @@ internal static class LocalQuickRestartLoader
             }
 
             ulong primaryPlayerId = playerIds[0];
+            // r167（BUG-22）：快速重启同样是读档流程，窗口内守卫不得清会话（否则瓦库停摆、奖励归属软锁）。
+            LocalSelfCoopContext.OpenLoadReplayWindow("quick-restart");
             LocalSelfCoopContext.UseSavedPlayerIds(playerIds);
             // r166 修（BUG-22）：ESC 快速重启读档同样要恢复瓦库席位（否则重启后瓦库不出牌/不选事件）。
             LocalSelfCoopContext.UseSavedWakuuPlayerIds(wakuuPlayerIds);
