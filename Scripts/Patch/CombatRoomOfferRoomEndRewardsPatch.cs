@@ -101,10 +101,12 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
     /// </summary>
     private static async Task OfferThirdPartySeatsRewardsAsync(CombatRoom combatRoom, List<Player> allPlayers)
     {
-        bool shouldGiveRewards = combatRoom.Encounter == null || combatRoom.Encounter.ShouldGiveRewards;
+        bool shouldGiveRewards = CombatRewardMergePolicy.ShouldGiveRewards(combatRoom.Encounter?.ShouldGiveRewards);
         foreach (Player player in allPlayers)
         {
-            if (player.Creature?.IsDead == true || LocalSelfCoopContext.IsLocalSessionSeat(player.NetId))
+            if (!CombatRewardMergePolicy.ShouldOfferBackToVanilla(
+                    player.Creature?.IsDead == true,
+                    LocalSelfCoopContext.IsLocalSessionSeat(player.NetId)))
             {
                 continue;
             }
@@ -136,18 +138,15 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
 
     private static async Task OfferMergedCore(CombatRoom combatRoom, List<Player> allPlayers)
     {
-        bool shouldGiveRewards = combatRoom.Encounter == null || combatRoom.Encounter.ShouldGiveRewards;
+        bool shouldGiveRewards = CombatRewardMergePolicy.ShouldGiveRewards(combatRoom.Encounter?.ShouldGiveRewards);
         List<RewardsSet> generatedSets = new();
 
         foreach (Player player in allPlayers)
         {
-            if (player.Creature?.IsDead == true)
-            {
-                continue;
-            }
-
             // 第三方席位在上面已经单独交回原版流程（这里再兜一道，防止将来有人只改一处）。
-            if (!LocalSelfCoopContext.IsLocalSessionSeat(player.NetId))
+            if (!CombatRewardMergePolicy.ShouldIncludeInMergedSet(
+                    player.Creature?.IsDead == true,
+                    LocalSelfCoopContext.IsLocalSessionSeat(player.NetId)))
             {
                 continue;
             }
@@ -240,8 +239,9 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
             mergedRewards.AddRange(perPlayerSet.Rewards);
         }
 
-        // 切换到第一个存活角色的控制上下文来展示奖励界面
-        Player? displayPlayer = allPlayers.FirstOrDefault((p) => p.Creature?.IsDead != true) ?? allPlayers[0];
+        // 切换到第一个存活角色的控制上下文来展示奖励界面（判定走纯函数，R1b）
+        Player displayPlayer = allPlayers[CombatRewardMergePolicy.SelectDisplayPlayerIndex(
+            allPlayers.Select((p) => p.Creature?.IsDead == true).ToList())];
 
         // 瓦库角色的卡牌（最左）/金币/遗物奖励先自动结算并从展示列表移除（Phase 2），
         // 失败或非瓦库奖励原样保留给真人。须在 Enter() 生效期间调用以抑制镜像复制。
@@ -297,11 +297,18 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
         foreach (RewardsSet perPlayerSet in generatedSets)
         {
             Player player = perPlayerSet.Player;
-            List<CardPoolModel> otherPools = allPlayers
-                .Where((candidate) => candidate.NetId != player.NetId && candidate.Creature?.IsDead != true && candidate.Character != null)
-                // 只取本地席位的卡池：第三方席位（Co-op Bots 的 Bot）不是我们的队友选择，别把它的角色池混进来。
-                .Where((candidate) => LocalSelfCoopContext.IsLocalSessionSeat(candidate.NetId))
-                .Select((candidate) => candidate.Character!.CardPool)
+            // 判定走纯函数（R1b）；只取本地席位的卡池：第三方席位（Co-op Bots 的 Bot）
+            // 不是我们的队友选择，别把它的角色池混进来。
+            List<int> poolOwnerIndices = CombatRewardMergePolicy.SelectCrossCharacterPoolCandidateIndices(
+                allPlayers
+                    .Select((candidate) => (
+                        IsSelf: candidate.NetId == player.NetId,
+                        IsDead: candidate.Creature?.IsDead == true,
+                        IsLocalSeat: LocalSelfCoopContext.IsLocalSessionSeat(candidate.NetId),
+                        HasPool: candidate.Character != null))
+                    .ToList());
+            List<CardPoolModel> otherPools = poolOwnerIndices
+                .Select((index) => allPlayers[index].Character!.CardPool)
                 .Distinct()
                 .ToList();
             if (otherPools.Count == 0)
