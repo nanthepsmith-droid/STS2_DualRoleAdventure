@@ -1619,3 +1619,56 @@
     `选择器作用域异常退出`/看门狗重启失败/`Couldn't get hand node`/队列空引用/`保留为人工领取` **全 0**。
   - ⚠ **口径订正**：`检测到真人选牌请求` 自此**不再是"期望 0"**（它是修好后的正常锚点）；
     `tools/log_scan.py` 的 health 预设已同步，并把"chooser 不是真人 ⇒ 归属者写错"写成判据。**本节关单。**
+
+### BUG-20 游戏结束后结算页没有结束按钮（2026-09-27 用户反馈；**r155 已修 → 待实机确认**）
+
+- **现象（用户原话）**：「游戏结束后没有结束按钮」—— 结算第一页（战绩页）的「继续」按钮还在，
+  点进第二页（战绩明细 / 徽章页）后**没有「返回主菜单」按钮，卡死出不去**。
+- **定性（先量后猜 + 反编译 + 存档三方对照，证据链完整；归档 `logs-archive/godot__20260927-113416__r154.log`）**：
+  1. `[WARN] Local player with net id 1 not found in run! Progress will not be updated`（L73782）——
+     紧接着 `Saved run history`（L73791），随后就是本局的结算动画；
+  2. `[ERROR] KeyNotFoundException: The given key 'CHARACTER.WTW_CHARACTER_GOJO_SATORU' was not present
+     in the dictionary`（L73852），栈顶 `NGameOverScreen.SaveBadgesToProgress ← AnimateBadges ← AnimateRunSummary`；
+     主玩家 326 的角色就是 wtw 五条悟（L24065 / L73301 `character=WTW_CHARACTER_GOJO_SATORU`）；
+  3. 存档核对 `modded\profile2\saves\progress.save`：`character_stats` **22 条里有 LEX_NINJA2 / WINE_FOX /
+     KOISHI / PIG / SLUGCAT / SAKUYA 等一堆 mod 角色，唯独没有 `CHARACTER.WTW_CHARACTER_GOJO_SATORU`**。
+- **根因（两层，第一层是我们的）**：
+  1. **进度整局不写入（我们的锅）**：本 mod 的回环 host 服务
+     `LocalLoopbackHostGameService.Platform => PlatformType.None`，而 run 存档的 `platform_type` 取自
+     `RunManager.ToSave()` 的 `NetService.Platform` ⇒ 也是 `None`；`None` 平台的本地玩家 id 是占位值
+     **1**（游戏 `NullPlatformUtilStrategy.LocalPlayerId = 1`），而 run 里的玩家 NetId 是本机 Steam ID
+     ⇒ `ProgressSaveManager.UpdateWithRunData`（`ProgressSaveManager.cs:204-210`）里
+     `FirstOrDefault(p => p.NetId == 1)` 落空 ⇒ **直接 return，本局胜场/败场/时长/卡牌与遗物统计/
+     epoch 解锁一条都不写**（用户本局是 Act4 通关也一样没记）；
+  2. **结算页崩在缺角色统计上（游戏对 mod 角色不健壮 + 第一层的连带）**：
+     `NGameOverScreen.SaveBadgesToProgress` 用**索引器**取 `Progress.CharacterStats[_localPlayer.Character.Id]`
+     （`NGameOverScreen.cs:407`，游戏在同文件里明明有 `GetOrCreateCharacterStats` 可用却没用）⇒
+     新角色的条目从没被创建（因为第一层）⇒ 抛 `KeyNotFoundException` ⇒ `AnimateRunSummary` 在
+     `_mainMenuButton.Visible/Enable`（`NGameOverScreen.cs:350-351`）**之前**中断 ⇒ 第二页没有按钮。
+- **修法（r155，两层）**：
+  1. `ProgressSaveManagerUpdateWithRunDataPatch`（Core 域，新文件 `Scripts/Patch/ProgressSaveManagerPatch.cs`）：
+     进 `UpdateWithRunData` 前判定「按 run 记的平台认不到本地玩家、按 `PlatformUtil.PrimaryPlatform` 能认到」
+     ⇒ 临时把 `serializableRun.PlatformType` 换成主平台，finalizer 立刻还原（不影响 RunHistory / 每日榜 /
+     读档对同一 run 对象的读取）；判据抽成纯函数 `RunProgressLocalPlayerPolicy.Decide`（+6 条单测），
+     单人局与正常平台局一律不动。**顺带修好"整局进度不写入"这个更大的隐性损坏。**
+  2. `NGameOverScreenSaveBadgesToProgressPatch`（Ui 域，新文件 `Scripts/Patch/NGameOverScreenPatch.cs`）：
+     原方法前置兜底 —— 进度里缺该角色统计条目时用游戏自己的 `GetOrCreateCharacterStats` 补建，
+     保证索引必中（第三方 mod 角色 / 任何遗漏路径都不会再锁死结算页）。
+  3. 两个补丁都登记进 `PatchDomainMap` 与启动自检 `OptionalPatchTargets`，S7 目标基线已刷新
+     （179 补丁类 / 203 目标行 / 语义标识 346）。
+- **验证契约（请实机复测）**：
+  ```
+  改动:        整局进度写入按真实平台认本地玩家 + 结算页徽章保存兜底（r155 / BUG-20）
+  EXPECTED:    用第三方角色（如 wtw 五条悟）打完一局 → 结算第二页出现「返回主菜单」按钮，能正常退出
+  SETUP:       本地多控 2~3 席；主玩家角色 = 任意"进度里还没有 CharacterStats 条目"的角色（新 mod 角色最容易命中）
+  ACTION:      1. 打完整局（通关或死亡）2. 进结算第一页，点「继续」看第二页（战绩/徽章）
+  OBSERVE:     第二页是否有「返回主菜单」按钮并可点；`progress.save` 的角色统计是否新增该角色
+  PASS:        按钮在、能回主菜单；日志有 `整局进度写入已校正本地玩家识别: platform=None -> Steam, netId=76561…`
+              且该局不再出现 `Local player with net id 1 not found in run!`
+  FAIL:        仍无按钮；或仍出现 `not found in run` / `KeyNotFoundException`
+  LOG ANCHORS: INIT_OK / BUILD_ID(marker=2026-09-27-r155) / 整局进度写入已校正本地玩家识别 /
+               结算页徽章保存兜底 / Local player with net id 1 not found in run（期望 0）
+  ```
+- **回归要求**：单人对局（`Players.Count == 1`）与非回环平台对局行为**逐字不变**（补丁 Keep 分支直接放过）；
+  结算第一页/`ViewRun`/`ReturnToMainMenu` 按钮行为不变；
+  存档里的 `platform_type` 字段**不被改动**（只在 `UpdateWithRunData` 调用期间临时替换并还原）。

@@ -93,6 +93,8 @@ internal static class PatchDomainMap
             ["HookEnqueueForegroundPatch"] = PatchDomain.Core,
             ["ActionQueueSynchronizerRequestEnqueueFailSafePatch"] = PatchDomain.Core,
             ["MoveToMapCoordRestSiteCompletionPatch"] = PatchDomain.Core, // 火堆后出发黑屏（同步补完）
+            // 整局进度写入：本地多控回环平台（None）下按真实平台重新认本地玩家（r155，BUG-20）
+            ["ProgressSaveManagerUpdateWithRunDataPatch"] = PatchDomain.Core,
 
             // ============ Lobby：大厅 / 创建 / 角色选择 / 地图 ============
             ["LoadRunLobbyPatch"] = PatchDomain.Lobby,
@@ -232,6 +234,8 @@ internal static class PatchDomainMap
             ["StatBadgeMerchantPatch"] = PatchDomain.Ui,
             ["StatBadgeMerchantFillSlotPatch"] = PatchDomain.Ui,
             ["StatBadgeEventPatch"] = PatchDomain.Ui,
+            // 结算页徽章保存兜底（r155，BUG-20）：缺角色统计条目时补建，防结算页无按钮卡死
+            ["NGameOverScreenSaveBadgesToProgressPatch"] = PatchDomain.Ui,
 
             // ============ ThirdParty：第三方 mod 适配（反射字符串目标） ============
             ["IdAfterCardDrawnOwnerGuardPatch"] = PatchDomain.ThirdParty,

@@ -14,7 +14,7 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    private const string BuildMarker = "Revival v1.42.0 (game v0.111.0, marker=2026-09-26-r154)";
+    private const string BuildMarker = "Revival v1.42.0 (game v0.111.0, marker=2026-09-27-r155)";
 
     private static Harmony? _harmony;
 
@@ -119,6 +119,10 @@ public partial class Entry
         "MegaCrit.Sts2.Core.Commands.CardSelectCmd.Reset",
         // 改进-2 / 方案 D 队列路径出牌加速：瓦库队列出牌强制跳过卡牌堆演出（缺了只是少一份提速）
         "MegaCrit.Sts2.Core.Models.CardModel.OnPlayWrapper",
+        // BUG-20（r155）：整局进度写入的本地玩家识别校正（缺了 → 进度不写入 + 结算页无按钮）
+        "MegaCrit.Sts2.Core.Saves.Managers.ProgressSaveManager.UpdateWithRunData",
+        // BUG-20（r155）：结算页徽章保存兜底（缺了 → 结算页无按钮卡死）
+        "MegaCrit.Sts2.Core.Nodes.Screens.GameOverScreen.NGameOverScreen.SaveBadgesToProgress",
     };
 
     /// <summary>

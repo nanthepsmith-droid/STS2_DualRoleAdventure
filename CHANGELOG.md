@@ -51,6 +51,24 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   - 离线静态层自此 **8 项（S1~S8）**；`preflight.ps1` 的 G1 描述与 `maintenance-docs/` 同步说明。
 
 ### Fixed
+- **整局结束后结算页没有「返回主菜单」按钮，卡死在战绩明细页（BUG-20，r155，2026-09-27）**：
+  玩家报「游戏结束后没有结束按钮」。通关（Act4）那一局的日志证据链：`Local player with net id 1 not
+  found in run! Progress will not be updated` → `KeyNotFoundException: … 'CHARACTER.WTW_CHARACTER_GOJO_SATORU'
+  was not present` at `NGameOverScreen.SaveBadgesToProgress ← AnimateBadges ← AnimateRunSummary`
+  → 第二页的 `_mainMenuButton.Visible/Enable` 从未执行。
+  - **根因 ①（我们的）**：回环 host 服务把平台报成 `PlatformType.None`，run 存档的 `platform_type` 随之是
+    `None`，而 None 平台的本地玩家 id 是占位值 `1`、run 里却是本机 Steam ID ⇒
+    `ProgressSaveManager.UpdateWithRunData` 认不到本地玩家就**直接 return** ——
+    **本地多控下整局进度（胜场/时长/卡牌与遗物统计/epoch 解锁）一直一条都没写入**。
+  - **根因 ②**：该局主玩家角色是第三方 mod 角色（wtw 五条悟），其 `CharacterStats` 条目因 ① 从未创建，
+    而游戏 `SaveBadgesToProgress` 用**索引器**取该角色统计（同文件里有 `GetOrCreateCharacterStats` 却没用）
+    ⇒ 抛异常 ⇒ 结算动画中断 ⇒ 没有按钮。
+  - **修法（两层）**：① 新增 `ProgressSaveManagerUpdateWithRunDataPatch`：仅当「按 run 记的平台认不到、
+    按 `PlatformUtil.PrimaryPlatform` 能认到」时，临时把 run 的 `PlatformType` 换成主平台让游戏原逻辑跑完，
+    finalizer 立刻还原（判据为纯函数 `RunProgressLocalPlayerPolicy.Decide`，单人局/正常平台局一律不动）——
+    **顺带恢复了整局进度写入**；② 新增 `NGameOverScreenSaveBadgesToProgressPatch`：缺角色统计条目时用
+    游戏自己的 `GetOrCreateCharacterStats` 补建，任何第三方角色都不会再锁死结算页。
+  - 单测 +6 → 660 全绿；S7 目标基线刷新（179 补丁类 / 203 目标行）。
 - **瓦库出牌期间，真人打「奖励式三选一」类卡牌会被瓦库替他把牌选掉（r154，2026-09-26）**：
   玩家报「瓦库打牌时我打出自己的**类猪体**（YuWanCard），瓦库会替我选牌；瓦库打完了我再打就不会」。
   - **根因（有实机证据链）**：`类猪体` 的效果走 `CardSelectCmd.FromSimpleGridForRewards`
