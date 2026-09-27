@@ -38,10 +38,6 @@ internal static class LocalRemoteLobbyPlayerSwitchUi
     private const string GlobalWakuuPlusName = "LocalLobbyGlobalWakuuPlus";
     private const string GlobalWakuuYIconName = "LocalLobbyGlobalWakuuYIcon";
 
-    private const float ColumnMergeTolerance = 40f;
-    private const float MinColumnGap = 140f;
-    private const float ColumnRightShift = 18f;
-
     private static readonly Vector2 SelectorButtonSize = new(52f, 28f);
     private static readonly Vector2 WakuuToggleSize = new(30f, 28f);
     private static readonly Vector2 GlobalToggleSize = new(44f, 28f);
@@ -389,94 +385,27 @@ internal static class LocalRemoteLobbyPlayerSwitchUi
         Rect2 currentAnchorRect = ResolveIdAnchorRect(playerNode);
         if (localNodes.Count == 0)
         {
-            return new AnchorLayout(currentAnchorRect, currentAnchorRect.Position.X + ColumnRightShift);
+            return new AnchorLayout(
+                currentAnchorRect,
+                currentAnchorRect.Position.X + LobbyCardLayoutPolicy.ColumnRightShift);
         }
 
-        List<float> columns = BuildColumns(localNodes.Select((node) => node.GlobalPosition.X).ToList());
-        int columnIndex = ResolveColumnIndex(columns, playerNode.GlobalPosition.X);
-        float step = ResolveColumnStep(columns);
+        // 布局数学全部走纯函数（R1）：见 Scripts/Runtime/PureLogic/LobbyCardLayoutPolicy.cs
+        List<float> columns = LobbyCardLayoutPolicy.BuildColumns(
+            localNodes.Select((node) => node.GlobalPosition.X).ToList());
+        int columnIndex = LobbyCardLayoutPolicy.ResolveNearestColumnIndex(columns, playerNode.GlobalPosition.X);
+        float step = LobbyCardLayoutPolicy.ResolveColumnStep(columns);
 
-        float minX = columns.Min();
-        float firstColumnX = localNodes
-            .Where((node) => Mathf.Abs(node.GlobalPosition.X - minX) <= ColumnMergeTolerance)
-            .Select((node) => ResolveIdAnchorRect(node).Position.X)
-            .DefaultIfEmpty(currentAnchorRect.Position.X)
-            .Min();
+        List<(float NodeX, float AnchorX)> anchorPairs = localNodes
+            .Select((node) => (node.GlobalPosition.X, ResolveIdAnchorRect(node).Position.X))
+            .ToList();
+        float firstColumnX = LobbyCardLayoutPolicy.ResolveFirstColumnAnchor(
+            anchorPairs,
+            columns,
+            currentAnchorRect.Position.X);
 
-        float columnX = firstColumnX + ColumnRightShift + columnIndex * step;
+        float columnX = LobbyCardLayoutPolicy.ResolveColumnX(firstColumnX, columnIndex, step);
         return new AnchorLayout(currentAnchorRect, columnX);
-    }
-
-    private static List<float> BuildColumns(List<float> values)
-    {
-        values.Sort();
-        List<float> columns = new();
-        foreach (float value in values)
-        {
-            if (columns.Count == 0)
-            {
-                columns.Add(value);
-                continue;
-            }
-
-            if (Mathf.Abs(columns[^1] - value) <= ColumnMergeTolerance)
-            {
-                columns[^1] = (columns[^1] + value) * 0.5f;
-            }
-            else
-            {
-                columns.Add(value);
-            }
-        }
-
-        return columns;
-    }
-
-    private static int ResolveColumnIndex(List<float> columns, float x)
-    {
-        if (columns.Count == 0)
-        {
-            return 0;
-        }
-
-        int bestIndex = 0;
-        float bestDistance = float.MaxValue;
-        for (int i = 0; i < columns.Count; i++)
-        {
-            float distance = Mathf.Abs(columns[i] - x);
-            if (distance < bestDistance)
-            {
-                bestDistance = distance;
-                bestIndex = i;
-            }
-        }
-
-        return bestIndex;
-    }
-
-    private static float ResolveColumnStep(List<float> columns)
-    {
-        if (columns.Count <= 1)
-        {
-            return MinColumnGap;
-        }
-
-        List<float> gaps = new();
-        for (int i = 1; i < columns.Count; i++)
-        {
-            float gap = columns[i] - columns[i - 1];
-            if (gap > 1f)
-            {
-                gaps.Add(gap);
-            }
-        }
-
-        if (gaps.Count == 0)
-        {
-            return MinColumnGap;
-        }
-
-        return Mathf.Max(MinColumnGap, gaps.Average());
     }
 
     private static List<NRemoteLobbyPlayer> GetLocalLobbyNodes(Node screen)
