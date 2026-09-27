@@ -61,7 +61,10 @@ internal static class LocalCharacterSelectCountButtons
 
     public static void Sync(NCharacterSelectScreen screen)
     {
-        if (!LocalSelfCoopContext.IsEnabled)
+        // 官方联机也用 NCharacterSelectScreen：只有「本页正是我们入口打开的那一个」才挂面板（r159），
+        // 避免残留会话让官方联机角色选择页冒出我们的人数/切换按钮。
+        if (!LocalSelfCoopContext.IsEnabled
+            || !ReferenceEquals(LocalSelfCoopContext.ActiveCharacterSelectScreen, screen))
         {
             Remove(screen);
             return;

@@ -22,24 +22,26 @@ using MegaCrit.Sts2.Core.Unlocks;
 
 namespace LocalMultiControl.Scripts.Patch;
 
-[HarmonyPatch(typeof(NMultiplayerHostSubmenu), nameof(NMultiplayerHostSubmenu.StartHost))]
-internal static class NMultiplayerHostSubmenuCustomRunPatch
+/// <summary>
+/// 本地多角色「自定义模式」入口（r158）。
+///
+/// ⚠ 设计修正（2026-09-27 用户反馈「装了我们这个 mod 就不能玩原版联机自定模式」）：
+/// **不再劫持官方 `NMultiplayerHostSubmenu.StartHost(GameMode.Custom)`** —— 官方自定义多人入口还给玩家；
+/// 本机多角色改走联机菜单「单人多角色」卡片下方的小按钮（见 `LocalSelfCoopMenuButtons`）调用本入口。
+/// 与 Daily 同理：官方入口是玩家的正当用法，mod 只应"并存"，不应"接管"。
+/// </summary>
+internal static class LocalCustomSelfCoopEntry
 {
-    [HarmonyPrefix]
-    private static bool Prefix(NMultiplayerHostSubmenu __instance, GameMode gameMode)
+    internal static void Enter(NMultiplayerHostSubmenu submenu)
     {
-        if (gameMode != GameMode.Custom)
-        {
-            return true;
-        }
-
-        NSubmenuStack? stack = AccessTools.Field(typeof(NSubmenu), "_stack").GetValue(__instance) as NSubmenuStack;
+        NSubmenuStack? stack = AccessTools.Field(typeof(NSubmenu), "_stack").GetValue(submenu) as NSubmenuStack;
         if (stack == null)
         {
-            return true;
+            LocalMultiControlLogger.Warn("无法进入自定义模式：未找到 NSubmenuStack。");
+            return;
         }
 
-        LocalMultiControlLogger.Info("联机自定义模式改走本地多角色回环开局。");
+        LocalMultiControlLogger.Info("单人多角色自定义模式入口：改走本地回环开局。");
         LocalSelfCoopSaveTag.ClearCurrentProfile();
         SaveManager.Instance.DeleteCurrentMultiplayerRun();
 
@@ -55,7 +57,6 @@ internal static class NMultiplayerHostSubmenuCustomRunPatch
         customRunScreen.InitializeMultiplayerAsHost(netService, LocalSelfCoopContext.MaxLocalPlayerCount);
         stack.Push(customRunScreen);
         NGame.Instance?.AddChildSafely(NFullscreenTextVfx.Create(LocalModText.EnteredLocalSelfCoopHint));
-        return false;
     }
 }
 
@@ -83,8 +84,10 @@ internal static class NCustomRunScreenLocalPlayersPatch
             return;
         }
 
-        StartRunLobby lobby = screen.Lobby;
-        if (lobby.NetService is not LocalLoopbackHostGameService loopbackService)
+        // 判空（r159）：Custom 页的 `_lobby` 在「未建厅 / 已被清理」时是 null，
+        // 而 `_Process` 每帧都会进来 ⇒ 直接访问 `lobby.NetService` 会每帧抛 NullReferenceException。
+        StartRunLobby? lobby = screen.Lobby;
+        if (lobby?.NetService is not LocalLoopbackHostGameService loopbackService)
         {
             return;
         }
@@ -193,7 +196,8 @@ internal static class NCustomRunEmbarkGuardPatch
     [HarmonyPrefix]
     private static void Prefix(NCustomRunScreen __instance)
     {
-        if (!LocalSelfCoopContext.IsEnabled || __instance.Lobby.NetService is not LocalLoopbackHostGameService loopbackService)
+        if (!LocalSelfCoopContext.IsEnabled
+            || __instance.Lobby?.NetService is not LocalLoopbackHostGameService loopbackService)
         {
             return;
         }
@@ -248,7 +252,10 @@ internal static class LocalCustomRunCountButtons
 
     public static void Sync(NCustomRunScreen screen)
     {
-        if (!LocalSelfCoopContext.IsEnabled)
+        // 只在「本地多控开启 + 本页大厅确实是我们自己的回环服务」时才挂面板（r159）：
+        // 否则残留会话会让官方联机自定义页也冒出我们的席位/切人按钮。
+        if (!LocalSelfCoopContext.IsEnabled
+            || screen.Lobby?.NetService is not LocalLoopbackHostGameService)
         {
             Remove(screen);
             return;

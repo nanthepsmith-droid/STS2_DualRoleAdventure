@@ -95,6 +95,8 @@ internal static class PatchDomainMap
             ["MoveToMapCoordRestSiteCompletionPatch"] = PatchDomain.Core, // 火堆后出发黑屏（同步补完）
             // 整局进度写入：本地多控回环平台（None）下按真实平台重新认本地玩家（r155，BUG-20）
             ["ProgressSaveManagerUpdateWithRunDataPatch"] = PatchDomain.Core,
+            // 每日挑战（r156）：本地多控每日局禁止上传排行榜分数（伪玩家 id 会污染每日榜）
+            ["DailyRunUtilityUploadScorePatch"] = PatchDomain.Core,
 
             // ============ Lobby：大厅 / 创建 / 角色选择 / 地图 ============
             ["LoadRunLobbyPatch"] = PatchDomain.Lobby,
@@ -119,12 +121,20 @@ internal static class PatchDomainMap
             ["NCustomRunSelectionSyncOpenPatch"] = PatchDomain.Lobby,
             ["NCustomRunSelectionSyncPlayerChangedPatch"] = PatchDomain.Lobby,
             ["NCustomRunSelectionSyncProcessPatch"] = PatchDomain.Lobby,
-            ["NMultiplayerHostSubmenuCustomRunPatch"] = PatchDomain.Lobby,
+            // 联机菜单入口：注入「单人多角色」卡片 + 下方两个模式小按钮（r158 零劫持）
             ["NMultiplayerHostSubmenuPatch"] = PatchDomain.Lobby,
+            ["NMultiplayerHostSubmenuOfficialEntryGuardPatch"] = PatchDomain.Lobby,
             ["NMultiplayerLoadGameScreenPatch"] = PatchDomain.Lobby,
             ["NMultiplayerSubmenuHostRoutePatch"] = PatchDomain.Lobby,
             ["NMultiplayerSubmenuPatch"] = PatchDomain.Lobby,
             ["NRemoteLobbyPlayerReadyPatch"] = PatchDomain.Lobby,
+            // 每日挑战（Daily）本地多控接入（r156）：异步大厅 reconcile / 按日期种子分配角色 / 出征前校正。
+            // 入口不再是补丁：官方 Daily 按钮保持原样（还给玩家），本机多角色改由联机菜单注入的
+            // 「单人每日挑战」卡片调用 LocalDailySelfCoopEntry.Enter 进入。
+            ["NDailyRunScreenLocalPlayersOpenPatch"] = PatchDomain.Lobby,
+            ["NDailyRunScreenLocalPlayersProcessPatch"] = PatchDomain.Lobby,
+            ["NDailyRunScreenLocalPlayersClosePatch"] = PatchDomain.Lobby,
+            ["NDailyRunEmbarkGuardPatch"] = PatchDomain.Lobby,
 
             // ============ Combat：战斗流程 ============
             ["CardManualPlayContextPatch"] = PatchDomain.Combat,
@@ -236,6 +246,10 @@ internal static class PatchDomainMap
             ["StatBadgeEventPatch"] = PatchDomain.Ui,
             // 结算页徽章保存兜底（r155，BUG-20）：缺角色统计条目时补建，防结算页无按钮卡死
             ["NGameOverScreenSaveBadgesToProgressPatch"] = PatchDomain.Ui,
+            // 每日挑战人数面板（r156）：-/+ 调本地人数（上限 4）与切换编辑席位
+            ["NDailyRunLocalCountButtonsOpenPatch"] = PatchDomain.Ui,
+            ["NDailyRunLocalCountButtonsProcessPatch"] = PatchDomain.Ui,
+            ["NDailyRunLocalCountButtonsClosePatch"] = PatchDomain.Ui,
 
             // ============ ThirdParty：第三方 mod 适配（反射字符串目标） ============
             ["IdAfterCardDrawnOwnerGuardPatch"] = PatchDomain.ThirdParty,

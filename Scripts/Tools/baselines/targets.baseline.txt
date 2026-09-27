@@ -2,8 +2,8 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-09-27 11:44  HEAD=19ef765
-# 统计: patch_classes=179 patch_rows=203 string_targets=192 descriptors=346
+# 生成时间=2026-09-27 14:43  HEAD=c8f99a9
+# 统计: patch_classes=187 patch_rows=211 string_targets=198 descriptors=359
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	CardManualPlayContextPatch	CardModel	EnqueueManualPlay	string
@@ -43,6 +43,7 @@ P	CreatureCmdKillWinCheckPatch	CreatureCmd	Kill	nameof
 P	CrystalSphereMinigameProceedGuardPatch	NCrystalSphereScreen	OnProceedButtonPressed	string
 P	CrystalSpherePaymentPlanPatch	CrystalSphere	PaymentPlan	string
 P	CrystalSphereUncoverFuturePatch	CrystalSphere	UncoverFuture	string
+P	DailyRunUtilityUploadScorePatch	DailyRunUtility	UploadScore	nameof
 P	EndPlayerTurnActionPatch	EndPlayerTurnAction	ExecuteAction	string
 P	EntropyPowerPatch	EntropyPower	AfterPlayerTurnStart	nameof
 P	EventSynchronizerBeginEventPatch	EventSynchronizer	BeginEvent	nameof
@@ -102,6 +103,13 @@ P	NCustomRunScreenLocalPlayersProcessPatch	NCustomRunScreen	_Process	nameof
 P	NCustomRunSelectionSyncOpenPatch	NCustomRunScreen	OnSubmenuOpened	nameof
 P	NCustomRunSelectionSyncPlayerChangedPatch	NCustomRunScreen	PlayerChanged	nameof
 P	NCustomRunSelectionSyncProcessPatch	NCustomRunScreen	_Process	nameof
+P	NDailyRunEmbarkGuardPatch	NDailyRunScreen	OnEmbarkPressed	string
+P	NDailyRunLocalCountButtonsClosePatch	NDailyRunScreen	OnSubmenuClosed	nameof
+P	NDailyRunLocalCountButtonsOpenPatch	NDailyRunScreen	OnSubmenuOpened	nameof
+P	NDailyRunLocalCountButtonsProcessPatch	NDailyRunScreen	_Process	nameof
+P	NDailyRunScreenLocalPlayersClosePatch	NDailyRunScreen	OnSubmenuClosed	nameof
+P	NDailyRunScreenLocalPlayersOpenPatch	NDailyRunScreen	OnSubmenuOpened	nameof
+P	NDailyRunScreenLocalPlayersProcessPatch	NDailyRunScreen	_Process	nameof
 P	NEndTurnButtonLifecyclePatch	CombatManager	AfterAllPlayersReadyToBeginEnemyTurn	string
 P	NEndTurnButtonLifecyclePatch	NCombatUi	Activate	string
 P	NEndTurnButtonLifecyclePatch	NEndTurnButton	OnAboutToSwitchToEnemyTurn	string
@@ -115,7 +123,7 @@ P	NGameOverScreenSaveBadgesToProgressPatch	NGameOverScreen	SaveBadgesToProgress	
 P	NHandImageCollectionUpdateVisibilityPatch	NHandImageCollection	UpdateHandVisibility	string
 P	NInputManagerPatch	NInputManager	_UnhandledInput	nameof
 P	NMerchantInventoryPatch	NMerchantInventory	Initialize	nameof
-P	NMultiplayerHostSubmenuCustomRunPatch	NMultiplayerHostSubmenu	StartHost	nameof
+P	NMultiplayerHostSubmenuOfficialEntryGuardPatch	NMultiplayerHostSubmenu	StartHost	nameof
 P	NMultiplayerHostSubmenuPatch	NMultiplayerHostSubmenu	_Ready	nameof
 P	NMultiplayerLoadGameScreenPatch	NMultiplayerLoadGameScreen	ShouldAllowRunToBegin	nameof
 P	NMultiplayerPlayerIntentHandlerPatch	NMultiplayerPlayerIntentHandler	Create	nameof
@@ -238,6 +246,10 @@ S	accesstools	NCombatCardPile	RemoveCard	method
 S	accesstools	NCombatCardPile	_pile	field
 S	accesstools	NCustomRunScreen	_charButtonContainer	field
 S	accesstools	NCustomRunScreen	_selectedButton	field
+S	accesstools	NDailyRunScreen	InitializeDisplay	method
+S	accesstools	NDailyRunScreen	SetupLobbyParams	method
+S	accesstools	NDailyRunScreen	_lobby	field
+S	accesstools	NDailyRunScreen	_remotePlayerContainer	field
 S	accesstools	NEndTurnButton	_combatState	field
 S	accesstools	NEndTurnButton	_state	field
 S	accesstools	NEventRoom	_event	field
@@ -323,6 +335,7 @@ S	harmony	NCombatRoom	_Ready	method
 S	harmony	NCombatUi	Activate	method
 S	harmony	NCrystalSphereScreen	OnProceedButtonPressed	method
 S	harmony	NCustomRunScreen	OnEmbarkPressed	method
+S	harmony	NDailyRunScreen	OnEmbarkPressed	method
 S	harmony	NEndTurnButton	CallReleaseLogic	method
 S	harmony	NEndTurnButton	OnAboutToSwitchToEnemyTurn	method
 S	harmony	NEndTurnButton	OnTurnStarted	method

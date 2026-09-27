@@ -44,7 +44,7 @@
 | `键盘手柄双输入本地双控可行性分析.md`（L1 档） | **待拍板**：结论已出（L1 轮流操作可行 / L2·L3 真正同时不可行）；**未实现** | 备选线索：`LocalDeviceSplitRouter` + patch `NControllerManager` 模式抢占 + 秒切防抖（仅认确认性输入），默认关 | 本表（备选） |
 | `本地LLM辅助开发可行性分析.md` | **部分落地**：P0 冒烟 / P1 索引 / P2 日志分诊 / P3 双语 + diff 预审 / T2 NUnit 草稿**均已完成**；**P4 经实测改换做法**（明细当优先级清单 + 自写抽取器）；`functiongemma` 工具路由未动 | P4 若要继续：先写自己的 `sts2src` 逐卡效果抽取器 → 人审 → 固化 `PureLogic` 表，**默认关**且须过 §21.4.2 回归清单 | 本表 |
 | `开发环境迁移Linux可行性分析.md` | **未动工**（纯调研，未动 U 盘/分区） | 推荐路线：先 Phase 0、再 Phase 1（两步没跑完前不要动 U 盘与分区） | 本表（待拍板） |
-| `本地多角色扩展到Daily模式可行性分析.md` | **拍板·未动工**：已拍板「Daily 禁止上传排行榜分数」；Custom ✅ 既有已实现、**Daily ❌ 未实现**（日志锚点 `DAILY_SCORE_SKIP` 已设计未实现）。**2026-09-26：用户指定为「下一轮主攻方向」**（本轮收工时口头拍板，尚未建分支/未动代码） | 重读提案 → 按提案分档定范围（先做 `DAILY_SCORE_SKIP` 锚点落地还是全量 Daily 托管）→ 建 `feat/*` 分支动工 | 本表（**下一轮**） |
+| `本地多角色扩展到Daily模式可行性分析.md` | **POC 已实现（r156）+ 首轮实机修正（r157，2026-09-27）待第二轮实机**：按提案 §五/§六 落地 ① 独立卡片入口（**不劫持官方 Daily**）② 异步大厅 reconcile（clamp 4）③ 按日期种子分配角色 ④ `DAILY_SCORE_SKIP` 禁止上传 ⑤ 每日页人数面板 ⑥ 每日页瓦库勾选/切换编辑席位；分支 `feat/daily-local-selfcoop`（**未合回 master、未 push**） | 实机两局（联网 / 断网各一）按 `TODO.md §Daily 本地多控` 验证契约核对；通过后再评估「只让 primary 上传 1p 榜」等增强 | 本表 + 仓库 `TODO.md §Daily 本地多控` |
 | `瓦库四功能-可行性核验报告.md` | **待拍板**（结论已出）：四功能均无架构级死路；功能一难度下调为「中」 | 按建议顺序（净化 → 我们联合 → 炼化 → 地狱战神）逐级动工，动工前需用户拍板 | 本表 + 提案 §7 |
 | `瓦库炼化净化联合地狱战神-功能提案与可行性分析.md` | **未动工**（仅提案；已被 09-22 核验报告逐条核验） | 同上（以核验报告的顺序与难度为准） | 本表 |
 | `Co-op_Bots联机队友兼容可行性分析.md` | **部分落地 + 实机进行中（r144 POC → r145 回合死锁 → r146 席位隔离 → r147「幽灵弹层 + 镜像来源席位」→ r148 商店 R1 通过）**：r144~r146 已提交并 `--ff-only` 合回 master（`50bff2b` 代码 / `25077d1` 文档）；r147+r148 已提交为 `1eefef7`，仍在分支 `fix/r147-phantom-overlay-mirror`（**未合回 master、未 push**）。落地 = ① `CoopBotsAdapter` 反射适配器（探测 / `AutoPilot.Set` 逐席接管与释放 / 未装即优雅降级）② 席位驱动**三态互斥**（`CoopBotsSeatPlan` + `LocalSelfCoopContext`，POC 配置键 `coopBotsSeats`）③ **R1 商店 ACK 旁路补丁** `CoopBotsShopAckPatch`（**装了 CB 就要挂**，与其 Bot 是否被我们接管无关）④ **r145**：3 席「回合结束不了」（就绪补齐改成「只补本地席位 + 走真实方法调用」）⑤ **r146**：第三方席位隔离（`LocalSelfCoopContext.IsLocalSessionSeat`）⑥ **r147**：**幽灵弹层**根治 + 自愈，以及 `MirrorSeatPolicy` 五条镜像链的来源席位过滤。**实机已验**：r147 全部改动通过（0 条 add_child failed / 0 条幽灵弹层自愈 / 0 条 bot 奖励镜像）；**R1 于 r148 通过**（Bot 删牌服务→药水，两次旁路均 `count=1,seats=[]`，最终 `done=1`，正常离店并进入下一战斗）。**未做**：12 席三态 UI / 持久化、Phase 3 补丁面回归、**被接管的本地席位**的奖励归驱动方分流、**BUG-17** 根因。**2026-09-26 逐条实测（marker r148，第一幕整局；配置 `coopBotsSeats` 为空 ⇒ 本局 Bot 是 CB **自己的合成 Bot**、非我方 POC 接管）**：§R2 **11 点全部通过** —— #1 `地图自动跟投 … filled=3/3` **54 次 / 0 失败**（含 Bot 全票、随后均触发推进）；#2 `本地多控自动补齐敌方回合就绪 … mirrored=` **从不含 Bot id**（41 次）；#5 `RequestEnqueue 空引用已拦截` **0**；#7 `事件/流程金币已同步到其余角色` **0**；#8 `角色独立奖励已生成(Offer): player=<Bot>` **0** + `第三方席位卡牌奖励交回原版远端作答` 24；#9 `打开奖励界面: player=<瓦库>` **0**；#11 `瓦库火堆已自动选择 … success=True` 6 / `扫描瓦库休息区失败` 0；#6 `瓦库火堆队友选择已自动指定` 4；#3/#4 选人屏 **弱覆盖**（`角色选择页已创建本地人数 +/- 实体按钮` 4 次，无错位/残留）。同局 `add_child() failed` / `幽灵弹层已自愈` / `弹层阻挡自动流程` **全 0**（r147 稳定）。**仍待验**：**我方 POC 接管席位**路径下的 R2 回归（本局未接管）、BUG-17 诊断锚点 | ✅ ① R2 逐条实测**已完成（2026-09-26）** —— **清单已固化**：`Scripts/Tools/thirdparty_patch_overlap.py`（口径与命令见 `Co-op_Bots联机队友兼容可行性分析.md` §R2；逐条判据表同节，产物 `decision-records/第三方补丁目标交叉分析-CoopBots.md`）；② 事件末页选牌复现后按 BUG-17 的三条锚点分流；③ 之后再谈 Phase 1 的选人屏三态钮与 save tag v4 | 本表 + §BUG-17 |
@@ -1672,3 +1672,125 @@
 - **回归要求**：单人对局（`Players.Count == 1`）与非回环平台对局行为**逐字不变**（补丁 Keep 分支直接放过）；
   结算第一页/`ViewRun`/`ReturnToMainMenu` 按钮行为不变；
   存档里的 `platform_type` 字段**不被改动**（只在 `UpdateWithRunData` 调用期间临时替换并还原）。
+
+### Daily 本地多控（r156 起，r157 修正；**POC 已实现，待第二轮实机**）
+
+提案：`maintenance-docs/decision-records/本地多角色扩展到Daily模式可行性分析.md`（§五 实施建议、§六 结论口径）。
+
+**2026-09-27 首轮实机（r156，联网一局）用户反馈与修正（r157）**：
+1. ❌ **「不能玩原版多人联机每日游戏」** —— r156 把入口做成了**劫持** `StartHost(GameMode.Daily)`，
+   把官方「每日挑战」按钮整个占掉了。**修正：还给玩家** —— 官方 Daily 按钮完全走原版流程，
+   本地多角色改走联机菜单新增的第 5 张卡「单人每日挑战」（`LocalDailySelfCoopEntry.Enter`）。
+   *教训：Custom 可以劫持（它原本没有正当的官方多人用法），Daily 有（最多 4 人 + 按人数分榜），不能一刀切。*
+2. ❌ **「不能选瓦库托管」** —— `LocalRemoteLobbyPlayerSwitchUi.TryGetLobbyScreen` 的页面白名单只有
+   `NCharacterSelectScreen` / `NCustomRunScreen`，**每日页不在其中** ⇒ 席位卡上的瓦库勾选框、
+   切换席位按钮、左上角「全瓦库」总开关都不显示。**修正：把 `NDailyRunScreen` 纳入白名单。**
+
+**本轮做了**：独立卡片入口（不劫持官方）/ 异步大厅 reconcile（clamp 4）/ 按日期种子分配角色 /
+每日榜分数禁止上传 / 每日页人数面板 / 每日页瓦库勾选与切换席位。
+
+**⚠ 2026-09-27 第二轮实机（r157）用户反馈与 r158「零劫持」改造**（用户拍板方案 A：mod 与官方联机并存）：
+用户报 4 条：① 每日页**仍没有瓦库勾选框**；② 先点我们的卡再点官方卡，官方页也冒出我们的席位/切人按钮；
+③ 单人每日页**切席位角色卡不跟随**（切谁都显示同一角色，进游戏后正常）；
+④ 连**原版联机自定义**也玩不了（Custom 劫持自 2026-03-25 起）。
+（另有"官方多人每日不联机进不去"—— 用户已澄清是没好友联机的正常现象，**不修**。）
+- **根因 ②/④**：mod 仍在**接管**官方入口（Custom 劫持 + r156 的 Daily 劫持是同一类错误），
+  且大厅页退回主菜单时会话状态**残留**（`Disable` 只在进局结束 / ESC 重启房间时调）。
+- **根因 ①**：每日页 `displayLocalPlayer: false`，而加伪席位时我们把回环 sender 切到该席位 ⇒
+  游戏 `NRemoteLobbyPlayerContainer.OnPlayerConnected` 的过滤 `player.id != LocalPlayer.id || _displayLocalPlayer`
+  把伪席位当成"本地玩家自己"⇒ **压根不建卡片**（所以 r157 加白名单没用，勾选框的宿主都不存在）。
+- **根因 ③**：角色卡由游戏 `InitializeDisplay()` 渲染 `_lobby.LocalPlayer.character`，我们切 sender 后没人触发重绘。
+- **r158 修法（零劫持）**：
+  1. 官方标准/每日/自定义三张卡**全部还给原版**；本机多角色只走「单人多角色」卡片 + 其下方两个小按钮
+     （`本地·自定义模式` / `本地·每日挑战`），入口改为 `LocalCustomSelfCoopEntry` / `LocalDailySelfCoopEntry`（非补丁）。
+  2. 新增 `NMultiplayerHostSubmenuOfficialEntryGuardPatch`（点官方入口前清残留会话）
+     + `LocalSelfCoopSessionGuard`（未进局且无回环大厅页约 1 秒 ⇒ 自动清理，兜底根治残留）。
+  3. 每日页席位稳定后补调 `screen.PlayerConnected(player)` 补建席位卡（瓦库勾选框宿主）。
+  4. 每日页 `_Process` 检测 sender 变化后重调 `InitializeDisplay()`（角色卡跟随当前席位）。
+- **r158 门禁**：构建 0 警告 0 错误（224 .cs）；**671 单测全绿**；`static_checks` 8 PASS
+  （S7：187 补丁类 / 211 目标行 / 198 字符串目标 / 语义标识 359）；`preflight -Deploy` 4 PASS / 3 SKIP；
+  `dll_check --deployed --marker 2026-09-27-r158` 全绿（`LocalCustomSelfCoopEntry` / `LocalDailySelfCoopEntry` /
+  `NMultiplayerHostSubmenuOfficialEntryGuardPatch` / `LocalSelfCoopSessionGuard` 在；
+  `NMultiplayerHostSubmenuCustomRunPatch` 与 `NMultiplayerHostSubmenuDailyRunPatch` **均已消失**）。
+- **r159（2026-09-27，r158 日志复查后的收尾修复）**：日志 `godot__20260927-151337__r158.log` 里发现
+  `NCustomRunScreen._Process` **每帧抛 `NullReferenceException`**（栈顶 `NCustomRunScreenLocalPlayersPatch.TryReconcileLocalPlayers`）
+  —— `screen.Lobby`（`_lobby`）在「未建厅 / 已被清理」时为 null，而代码直接访问 `lobby.NetService`。
+  修法：Custom reconcile 与 Custom 出征守卫全部改成 `lobby?.NetService is ...` 判空；
+  并给**三个大厅页的人数面板加严**（`本地多控开启 && 本页大厅就是我们的回环服务` 才挂），
+  官方联机（自定义/每日/标准）页面不再出现我们的席位/切人按钮。
+  r159 门禁：构建 0 警告 0 错误；**671 单测全绿**；`static_checks` 8 PASS（S7：187 补丁类 / 211 目标行 /
+  199 字符串目标 / 语义标识 359）；`preflight -Deploy` 4 PASS / 3 SKIP；
+  `dll_check --deployed --marker 2026-09-27-r159` 字节一致（sha256 `67af4000b36e…`）。
+- **r158 实机结论（第三轮，用户「没什么问题」）**：日志 `godot__20260927-151337__r158.log`（44229 行，INIT_OK）验证契约全过 ——
+  `联机菜单卡片已重排: count=4, cardWidth=330, gap=26, startX=261`；
+  三个入口（单人多角色 / 本地·自定义模式 / 本地·每日挑战）都走通；
+  `进入官方联机入口前已清理残留的本地多控会话: gameMode=Daily`（清理生效）；
+  `每日挑战席位卡已补建: added=3`（瓦库勾选框宿主已生成）；
+  `每日挑战角色已按日期种子分配: seats=326:WINE_FOX, 327:WATCHER, 328:PIG, 329:REGENT`（各席位角色不同）；
+  `本地多控会话已自动结束：当前没有本地多角色大厅页面，且未进局`（守卫多次生效 ⇒ 残留根治）。
+**本轮没做**：① 超过 4 席（游戏 `StartRunLobby._maxPlayers` 是 readonly，只能 ≤4）；
+② 「只让 primary 上传 1p 榜」增强（提案备选方案 2，仍搁置）；③ 每日页 UI 精修（面板位置先放左侧中部，实机若遮挡再挪）；
+④ 每日读档重连页（`NDailyRunLoadScreen`）未单独适配。
+
+实现（3 个新文件 + 4 处扩展）：
+- `Scripts/Patch/NDailyRunLocalSelfCoopPatch.cs`：`LocalDailySelfCoopEntry`（**独立入口**，由联机菜单第 5 张卡调用，
+  不是补丁类）、`NDailyRunScreenLocalPlayers{Open,Process,Close}Patch`（席位 reconcile + 角色分配，Lobby 域）、
+  `NDailyRunEmbarkGuardPatch`（出征前强制校正席位/角色/sender，Lobby 域）、
+  `NDailyRunLocalCountButtons{Open,Process,Close}Patch` + `LocalDailyRunCountButtons`（Ui 域）。
+- `Scripts/Patch/NMultiplayerHostSubmenuPatch.cs`（扩展）：注入第 5 张卡「单人每日挑战」；排列改为
+  5 张一行自适应间距（6~26px）+ 重排日志；**官方 Daily 按钮不再被劫持**。
+- `Scripts/Patch/NRemoteLobbyPlayerSwitchPatch.cs`（扩展）：页面白名单加 `NDailyRunScreen` ⇒
+  每日页恢复「瓦库托管」勾选框 / 切换编辑席位按钮 / 左上角「全瓦库」总开关。
+- `Scripts/Patch/DailyRunUtilityPatch.cs`：`DailyRunUtilityUploadScorePatch`（Core 域）。
+- `Scripts/Runtime/PureLogic/DailyLobbyPolicy.cs`：判定纯函数（要不要 reconcile / 席位指纹 / clamp 4）。
+- `Scripts/Runtime/LocalSelfCoopContext.cs`：新增 `LobbyLocalPlayerLimit`（页面级席位上限）+
+  `Set/ResetLobbyLocalPlayerLimit`；`AdjustDesiredLocalPlayerCount` 的上限改取「全局 12」与「页面上限」的较小值
+  （默认行为不变，只有进 Daily 页才被收到 4）。
+
+日志锚点（实机核对用）：`单人多角色每日挑战入口：改走本地回环开局` /
+`联机菜单卡片已重排: count=5, cardWidth=…, gap=…, startX=…, viewport=…` /
+`每日挑战大厅本地人数已同步: target=…, actual=…, added=…, removed=…, readyChanged=…` /
+`每日挑战角色已按日期种子分配: seats=<id:角色>…, signature=…` / `每日挑战人数面板已注入: viewport=…, position=…` /
+`DAILY_SCORE_SKIP 本地多控每日局跳过排行榜分数上传: …`。
+
+已知风险（实机重点看）：
+1. **时间服务器**：每日大厅要 await 时间服务器；断网时回落本地时间（流程可用，但当日关卡可能与官方不一致）。
+2. **角色分配依赖大厅顺序**：游戏按 `lobby.Players` 顺序 roll 角色；若某席位 sender 切换失败或不在大厅，
+   分配会整体跳过并打 WARN（保持游戏默认角色，不崩）—— 实机若看到 WARN 请回报。
+3. **reconcile 幂等性**：`_Process` 每帧调用，判定为「无变化即返回」；若看到同步日志每帧刷屏 = 判定失效，需回报。
+4. **出征就绪**：非主席位的 ready 由我们补齐；若出征点不动，先看是否卡在 `IsAboutToBeginGame()` 之前。
+
+验证契约（请实机两局：联网 / 断网各一）：
+```
+改动:        Daily 本地多控 + 零劫持改造（r158，《本地多角色扩展到Daily模式可行性分析》§五）
+EXPECTED:    ① 官方「标准 / 每日 / 自定义」三张卡**全部是原版行为**（联机每日仍要真好友才能开始，属正常）；
+             ② 官方卡那一行最左是我们的「单人多角色」卡；该行下方居中有一行小按钮
+                （`本地·自定义模式` / `本地·每日挑战`），点它们才进本机多角色；
+             ③ 每日大厅里**能看到席位卡并勾「瓦库托管」**（左上角另有「全瓦库」总开关）；
+             ④ 用 ◀/▶ 切席位时，中央角色卡**跟着变**；2~4 个席位角色各不同、能直接出征；
+             ⑤ 打完一局正常结算且不上传每日榜
+SETUP:       本地多控；首局联网（拿官方每日关卡），第二局可断网复测回落路径
+ACTION:      1. 主菜单「联机」→ 确认 4 张大卡 + 下方 2 个小按钮（不重叠）
+             2. 点官方「每日挑战」→ 进原版多人联机每日 → 返回（验证 ①）
+             3. 点官方「自定义」→ 进原版自定义多人 → 返回（验证 ①）
+             4. 点「本地·每日挑战」→ 面板调到 3~4 人 → 看席位卡 + 勾「瓦库托管」（或「全瓦库」）
+             5. 用 ◀/▶ 切席位，观察中央角色卡是否跟随；出征 → 打完一局 → 回主菜单
+             6. 回主菜单后（**不要**点任何官方入口）等 2 秒，日志应出现会话自动结束
+OBSERVE:     卡片/按钮布局；大厅日志的席位数 / 角色 / 瓦库勾选 / 会话清理 / 分数锚点
+PASS:        ① 官方「每日挑战」「自定义」都进原版联机界面（日志**没有**我们的入口行）
+             ② 点「本地·每日挑战」后日志有「单人多角色每日挑战入口：改走本地回环开局」+「联机菜单卡片已重排: count=4」
+             ③ 「每日挑战大厅本地人数已同步: target=N, actual=N」且 N == 面板人数
+             ④ 有「每日挑战席位卡已补建: added=…」（= 瓦库勾选框的宿主存在了）
+             ⑤ 「每日挑战角色已按日期种子分配: seats=…」每席位角色非空；切席位时角色卡跟随变化
+             ⑥ 出征后能正常开局，无 "Random character is not currently allowed in daily!"
+             ⑦ 结束局有 `DAILY_SCORE_SKIP`，且没有真实上传
+             ⑧ 从我们的大厅页退回主菜单后，日志出现「本地多控会话已自动结束：当前没有本地多角色大厅页面」（守卫生效）
+FAIL:        官方入口仍进本地多角色（劫持没还回去）／小按钮缺失或与卡片重叠／
+             席位卡不出现（瓦库勾不上）／切席位角色卡不变／席位不足或角色为空／
+             出征卡在大厅／出现随机角色异常／出现真实上传／回主菜单后日志无会话清理（残留）
+LOG ANCHORS: INIT_OK / BUILD_ID(marker=2026-09-27-r158) / 联机菜单卡片已重排 / 单人多角色每日挑战入口 /
+             每日挑战大厅本地人数已同步 / 每日挑战席位卡已补建 / 每日挑战角色已按日期种子分配 /
+             本地多控会话已自动结束 / 进入官方联机入口前已清理残留的本地多控会话 / DAILY_SCORE_SKIP
+```
+回归要求：Standard / Custom 两档入口与人数上限行为**逐字不变**（页面上限默认 12，只有进 Daily 才收 4）；
+`LobbyLocalPlayerLimit` 在离开每日页时恢复；非回环 NetService 一律放行分数上传。

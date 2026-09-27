@@ -33,6 +33,16 @@ internal static class LocalModText
         "已进入本地多角色：按 +/- 调整人数（2~12）",
         "Local multi-control enabled: use +/- to set player count (2-12)");
 
+    /// <summary>联机菜单「单人多角色」卡片下方的小按钮：本地多角色自定义模式（官方自定义入口保持原样）。</summary>
+    public static string LocalCustomSelfCoopButton => Select("本地·自定义模式", "Local Custom Run");
+
+    /// <summary>联机菜单「单人多角色」卡片下方的小按钮：本地多角色每日挑战（官方每日入口保持原样）。</summary>
+    public static string LocalDailySelfCoopButton => Select("本地·每日挑战", "Local Daily Run");
+
+    public static string EnteredDailySelfCoopHint => Select(
+        "已进入本地多角色每日挑战：按 +/- 调整人数（2~4）",
+        "Local daily run enabled: use +/- to set player count (2-4)");
+
     public static string GhostHandsOn => Select(
         "队友手牌已显示（Ctrl+方向键 调整位置，F8 关闭）",
         "Teammate hands shown (Ctrl+Arrows to move, F8 to hide)");

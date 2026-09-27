@@ -46,6 +46,14 @@ internal static class LocalSelfCoopContext
 
     public static int DesiredLocalPlayerCount => _desiredLocalPlayerCount;
 
+    /// <summary>
+    /// 当前大厅页面的本地席位上限（默认 <see cref="MaxLocalPlayerCount"/>）。
+    /// 每日挑战页固定为 4：游戏 `NDailyRunScreen` 建厅时写死 `new StartRunLobby(..., 4)`，
+    /// 且 `StartRunLobby._maxPlayers` 是 readonly ⇒ 超过 4 的本地席位根本加不进大厅。
+    /// 进 Daily 页时设置、离开时恢复。
+    /// </summary>
+    public static int LobbyLocalPlayerLimit { get; private set; } = MaxLocalPlayerCount;
+
     public static IReadOnlyList<ulong> LocalPlayerIds => _localPlayerIds;
     public static IReadOnlyCollection<ulong> WakuuPlayerIds => _wakuuPlayerIds;
     public static IReadOnlyCollection<ulong> CoopBotsPlayerIds => _coopBotsPlayerIds;
@@ -288,6 +296,8 @@ internal static class LocalSelfCoopContext
         ActiveCharacterSelectScreen = null;
         netService.SetCurrentSenderId(CurrentLobbyEditingPlayerId);
         LocalContext.NetId = CurrentLobbyEditingPlayerId;
+        // 会话守卫：玩家从大厅页直接退回主菜单时，兜底把残留会话清掉（r158）
+        LocalSelfCoopSessionGuard.EnsureAttached();
         LocalMultiControlLogger.Info($"本地多控模式已启用，目标玩家数: {_desiredLocalPlayerCount}");
     }
 
@@ -304,6 +314,9 @@ internal static class LocalSelfCoopContext
         ActiveCharacterSelectScreen = null;
         _pendingEventAutoSwitchPlayerId = null;
         _eventAutoSwitchPending = false;
+        // 会话结束：把页面级席位上限复位（否则从每日页直接退出会把上限留在 4，
+        // 之后再开 Standard/Custom 就只能选到 2~4 人）。
+        LobbyLocalPlayerLimit = MaxLocalPlayerCount;
         LocalMultiControlLogger.Info($"本地多控模式已关闭，原因: {reason}");
     }
 
@@ -374,7 +387,9 @@ internal static class LocalSelfCoopContext
     public static bool AdjustDesiredLocalPlayerCount(int delta, string source)
     {
         int oldCount = _desiredLocalPlayerCount;
-        int targetCount = Math.Clamp(oldCount + delta, MinLocalPlayerCount, MaxLocalPlayerCount);
+        // 上限取「全局上限」与「当前页面上限」的较小值（Daily 页 = 4）
+        int maximum = Math.Min(MaxLocalPlayerCount, LobbyLocalPlayerLimit);
+        int targetCount = Math.Clamp(oldCount + delta, MinLocalPlayerCount, maximum);
         if (targetCount == oldCount)
         {
             return false;
@@ -392,6 +407,39 @@ internal static class LocalSelfCoopContext
 
         MarkCurrentProfileTag();
         return true;
+    }
+
+    /// <summary>
+    /// 设置当前大厅页面的本地席位上限（每日挑战页 = 4）。若已选人数超过新上限，一并收下来并同步大厅。
+    /// </summary>
+    public static void SetLobbyLocalPlayerLimit(int limit, string source)
+    {
+        int clamped = Math.Clamp(limit, MinLocalPlayerCount, MaxLocalPlayerCount);
+        if (LobbyLocalPlayerLimit == clamped)
+        {
+            return;
+        }
+
+        LobbyLocalPlayerLimit = clamped;
+        LocalMultiControlLogger.Info($"大厅本地席位上限已设置: {clamped}, source={source}");
+
+        if (_desiredLocalPlayerCount <= clamped)
+        {
+            return;
+        }
+
+        int oldCount = _desiredLocalPlayerCount;
+        _desiredLocalPlayerCount = clamped;
+        EnsureLocalPlayerIdCapacity(clamped);
+        TrimWakuuPlayerIdsToConfiguredPlayers();
+        ReconcileStartRunLobbyPlayerCount($"{source}:limit-clamp");
+        LocalMultiControlLogger.Info($"本地人数超过当前大厅上限，已下调: {oldCount} -> {clamped}, source={source}");
+    }
+
+    /// <summary>恢复默认席位上限（离开受限页面时调用；不会把已选人数改回去）。</summary>
+    public static void ResetLobbyLocalPlayerLimit(string source)
+    {
+        SetLobbyLocalPlayerLimit(MaxLocalPlayerCount, source);
     }
 
     public static bool TryGetSlotIndex(ulong playerId, out int slotIndex)

@@ -8,6 +8,7 @@ using MegaCrit.Sts2.Core.ControllerInput;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.Multiplayer;
+using MegaCrit.Sts2.Core.Nodes.Screens.DailyRun;
 using MegaCrit.Sts2.Core.Nodes.Screens.CustomRun;
 using MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect;
 using MegaCrit.Sts2.Core.Runs;
@@ -370,7 +371,10 @@ internal static class LocalRemoteLobbyPlayerSwitchUi
     {
         for (Node? current = node; current != null; current = current.GetParent())
         {
-            if (current is NCharacterSelectScreen || current is NCustomRunScreen)
+            // Daily 页也认（r156 修正）：每日大厅同样有 %RemotePlayerContainer（NRemoteLobbyPlayer），
+            // 但其父链上没有 NCharacterSelectScreen / NCustomRunScreen —— 之前不在白名单里，
+            // 导致每日页既不显示「切换编辑席位」按钮也不显示「瓦库托管」勾选框。
+            if (current is NCharacterSelectScreen || current is NCustomRunScreen || current is NDailyRunScreen)
             {
                 return current;
             }

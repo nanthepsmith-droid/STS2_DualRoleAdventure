@@ -14,7 +14,7 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    private const string BuildMarker = "Revival v1.42.0 (game v0.111.0, marker=2026-09-27-r155)";
+    private const string BuildMarker = "Revival v1.42.0 (game v0.111.0, marker=2026-09-27-r159)";
 
     private static Harmony? _harmony;
 
@@ -123,6 +123,10 @@ public partial class Entry
         "MegaCrit.Sts2.Core.Saves.Managers.ProgressSaveManager.UpdateWithRunData",
         // BUG-20（r155）：结算页徽章保存兜底（缺了 → 结算页无按钮卡死）
         "MegaCrit.Sts2.Core.Nodes.Screens.GameOverScreen.NGameOverScreen.SaveBadgesToProgress",
+        // 每日挑战（r156）：本地多控每日局禁止上传排行榜分数
+        "MegaCrit.Sts2.Core.Daily.DailyRunUtility.UploadScore",
+        // 每日挑战（r156）：出征前强制校正席位/角色/sender
+        "MegaCrit.Sts2.Core.Nodes.Screens.DailyRun.NDailyRunScreen.OnEmbarkPressed",
     };
 
     /// <summary>
