@@ -44,6 +44,16 @@ AGENTS.md, CHANGELOG.md, README*.md, PLAYER_GUIDE*.md, TODO.md
   `StartRunLobby? x`；会话守卫的「页面判据」必须是 `IsInsideTree() **&& Visible**`（`NSubmenuStack.Pop` 只隐藏不出树）。
   症状、模板与同族坑见 `maintenance-docs/references/local-multicontrol-pitfalls.md` 坑 I；
   离线防回归门禁 = **S10 大厅访问点判空检查**。
+- 🧱 **架构边界四条硬规则**（2026-09-27 起；背景与证据见
+  `maintenance-docs/decision-records/runtime架构分层重构评估.md`）：
+  目的是**停止"加护栏"式维护**，改为"收敛入口 + 结构约束"：
+  1. **身份只能问 Seat**：谁在操作 / 某座位是谁 / 某玩家是不是我们的 —— 一律走身份入口
+     （现有 `TryGetForegroundPlayer()`，R3 落的 `SeatRegistry` 收编）；**新代码禁止裸写 `NetId ==` / `NetId !=`**
+     （现存 40 处 / 30 文件，R3 逐批收编）。
+  2. **`PureLogic/` 只放纯逻辑**：不得引用 Godot 与游戏运行时类型（当前 0 个 `using Godot`，保持住）。
+  3. **Patch 只做「翻译 + 转发」**：把游戏回调转成领域调用，**判定不写在补丁里**（判定进 `PureLogic` 或 Seat）。
+  4. **新护栏优先"唯一入口 + 编译器"，扫描器只做棘轮**：不再用新增 S 项承担架构职责；
+     S 项只在「编译器管不到 + 真的会出事故」时补，且必须写明失效判据。
 - Language: **Chinese** for all new code comments, commits, logs, and documentation. Original Chinese documents are preserved under `docs/archive/`.
 
 ## 2. Build, format, deploy
