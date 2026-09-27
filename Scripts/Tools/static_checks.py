@@ -29,6 +29,11 @@
     （Custom 自 2026-03-25、Daily 在 r156 都这么干过，2026-09-27 用户点名要求"零劫持"）。
     放行式补丁（如"进官方入口前先清会话"的守卫）允许；规则与模板见
     `maintenance-docs/references/official-entry-coexistence.md`；可选扩展清单 `Scripts/Tools/official_entries.txt`。
+  S10 大厅访问点判空：每日/自定义页的大厅（`NDailyRunScreen._lobby` / `NCustomRunScreen.Lobby`）在
+    「未建厅 / 已被清理 / 还在异步建（每日页先 await 时间服务器）」时**就是 null**，而访问点大多挂在
+    `_Process` 后置补丁上每帧跑 ⇒ 非空访问 = 每帧 NRE（日志被淹、真异常看不见）。
+    判据两条：`.Lobby.NetService`（缺 `?`）、非空 `StartRunLobby x = …` 之后的 `x.NetService`。
+    背景：2026-09-27 前后连踩四次（r157/r158 → r159 只修 4 处里的 3 处 → r161 漏的那处一局 981 条 NRE）。
 
 用法:
   python Scripts/Tools/static_checks.py --repo .
@@ -485,6 +490,58 @@ def check_official_entry_hijack(repo: Path) -> Check:
     return Check("S9", name, PASS, detail, info)
 
 
+# ------------------------------------------------------------------ S10
+# 大厅访问点判空（r161：BUG-21 的防回归）。同类坑 2026-09-27 前后连踩四次：
+# r157/r158 的 `TryReconcileLocalPlayers` 每帧 NRE、r159 修了 4 处里的 3 处、
+# r161 又在 `LocalCustomRunSelectionSync.TrySync` 漏掉第 4 处（一局 981 条 NRE）。
+# 根因是同一个：每日/自定义页的大厅（`NDailyRunScreen._lobby` / `NCustomRunScreen.Lobby`）
+# 在「未建厅 / 已被清理 / 还在异步建（每日页先 await 时间服务器）」时**就是 null**，
+# 而这些访问点大多挂在 `_Process` 后置补丁上 ⇒ 每帧抛、日志被淹、真异常看不见。
+# 两条判据（都是"编译期零提示、运行期每帧抛"的写法）：
+#   A. 非空条件访问 `.Lobby.NetService`（应写 `.Lobby?.NetService`）；
+#   B. `StartRunLobby <ident> = <来源>;`（非空声明）之后又裸访问 `<ident>.NetService`
+#      （应声明 `StartRunLobby? <ident>` 并写 `<ident>?.NetService`）。
+# 规则与模板见 `maintenance-docs/references/local-multicontrol-pitfalls.md` 坑 I。
+RE_NONNULL_LOBBY_DECL = re.compile(r"\bStartRunLobby\s+(\w+)\s*=(?!=)")
+RE_BARE_LOBBY_NETSERVICE = re.compile(r"\.Lobby\.NetService\b")
+
+
+def check_lobby_null_guard(repo: Path) -> Check:
+    name = "大厅访问点判空（_lobby 可能为 null）"
+    offenders = []
+    checked = 0
+    for path in sorted((repo / "Scripts").rglob("*.cs")):
+        if any(part in SKIP_DIRS for part in path.parts) or not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        rel = str(path.relative_to(repo)).replace("\\", "/")
+        checked += 1
+
+        for match in RE_BARE_LOBBY_NETSERVICE.finditer(text):
+            lineno = text.count("\n", 0, match.start()) + 1
+            offenders.append(
+                f"{rel}:{lineno} 非空条件访问 `.Lobby.NetService`"
+                " —— 未建厅/已清理时为 null，请写 `.Lobby?.NetService`")
+
+        for match in RE_NONNULL_LOBBY_DECL.finditer(text):
+            ident = match.group(1)
+            if not re.search(r"(?<![?\w])" + re.escape(ident) + r"\.NetService\b", text):
+                continue
+            lineno = text.count("\n", 0, match.start()) + 1
+            offenders.append(
+                f"{rel}:{lineno} `StartRunLobby {ident} = …`（非空声明）后又裸访问"
+                f" `{ident}.NetService` —— 请改写为 `StartRunLobby? {ident}` + `{ident}?.NetService`")
+
+    info = {"scanned_files": checked, "offenders": offenders}
+    if offenders:
+        return Check(
+            "S10", name, FAIL,
+            f"{len(offenders)} 处大厅访问点未判空（每帧 NRE 的来源；修法见 references 坑 I）",
+            info,
+        )
+    return Check("S10", name, PASS, f"{checked} 个源文件：大厅访问点均已判空 / 空条件访问", info)
+
+
 # ------------------------------------------------------------------ main
 CHECKS = (
     ("S1", "产物/反编译源码入库", check_artifacts_tracked),
@@ -496,6 +553,7 @@ CHECKS = (
     ("S7", "运行期目标基线（新增/消失可见）", check_target_baseline),
     ("S8", "源码编码（非法 UTF-8 / GBK 误解码乱码）", check_source_encoding),
     ("S9", "官方入口劫持（官方联机入口必须保持原版）", check_official_entry_hijack),
+    ("S10", "大厅访问点判空（_lobby 可能为 null）", check_lobby_null_guard),
 )
 
 

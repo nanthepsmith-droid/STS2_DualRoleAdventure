@@ -37,6 +37,13 @@ AGENTS.md, CHANGELOG.md, README*.md, PLAYER_GUIDE*.md, TODO.md
   lobby screens and the official host can inherit a rebound `LocalContext.NetId` / stale loopback net service).
   规则模板、症状表、验证锚点见 `maintenance-docs/references/official-entry-coexistence.md`；
   离线防回归门禁 = `Scripts/Tools/static_checks.py` 的 **S9 官方入口劫持检查**。
+- 🚫 **大厅访问点必须判空**：每日 / 自定义页的大厅（`NDailyRunScreen._lobby` / `NCustomRunScreen.Lobby`）在
+  「未建厅 / 已被清理 / **还在异步建**（每日页先 `await` 时间服务器）」时**就是 null**，而这些访问点大多挂在
+  `_Process` 上每帧跑 —— 裸访问 = 每帧 `NullReferenceException`（日志被淹、真异常看不见）。
+  一律写 `screen.Lobby?.NetService`（或先用 `is not StartRunLobby x` 把 null 过滤掉），本地变量声明成
+  `StartRunLobby? x`；会话守卫的「页面判据」必须是 `IsInsideTree() **&& Visible**`（`NSubmenuStack.Pop` 只隐藏不出树）。
+  症状、模板与同族坑见 `maintenance-docs/references/local-multicontrol-pitfalls.md` 坑 I；
+  离线防回归门禁 = **S10 大厅访问点判空检查**。
 - Language: **Chinese** for all new code comments, commits, logs, and documentation. Original Chinese documents are preserved under `docs/archive/`.
 
 ## 2. Build, format, deploy
@@ -56,7 +63,7 @@ dotnet format LocalMultiControl.csproj --verify-no-changes
 Then the gates that must pass before any deploy (see §9 for the full list):
 
 ```bash
-python Scripts/Tools/static_checks.py --repo .                             # 离线静态 8 项（不需要游戏安装）
+python Scripts/Tools/static_checks.py --repo .                             # 离线静态 10 项（不需要游戏安装）
 python Scripts/Tools/clr_compat_check.py --mod-dll DualRoleAdventure.dll   # PE/CLR/ABI 结构校验
 dotnet test tests/LocalMultiControl.Tests/LocalMultiControl.Tests.csproj   # 纯逻辑 + 程序集 ABI
 ```

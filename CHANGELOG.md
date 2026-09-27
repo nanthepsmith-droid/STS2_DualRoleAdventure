@@ -5,6 +5,22 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 ## [Unreleased]
 
 ### Added
+- **防回归门禁 S10（大厅访问点判空）+ 两件日志小工具（r162，2026-09-27）**：
+  `static_checks.py` 新增 **S10**：扫 `Scripts/**/*.cs`，命中
+  `.Lobby.NetService`（缺 `?`）或非空 `StartRunLobby x = …` 之后的 `x.NetService` 即 FAIL，并列出
+  `文件:行` 与修法 —— 这两条正是 2026-09-27 前后**连踩四次**的每帧 NRE 写法
+  （r157/r158 → r159 只修了 4 处里的 3 处 → r161 漏掉的那处一局 **981 条**）。离线静态层自此 **10 项（S1~S10）**；
+  自测已验：造假样本 → S10 `FAIL`（列出 2 处）✓、真实仓库 → `PASS`（224 文件）✓。
+  - `log_archive.py`：判重跳过时**点名"与哪一份归档内容相同"**（此前只写"已归档过（sha256 相同）"，
+    容易被误判成"日志丢了" —— Godot 轮转文件 `godot<轮转时刻>.log` 的内容就是它之前那个会话）。
+  - `log_scan.py`：新增 **`--preset daily`**，把每日挑战本地多控的实机契约变成一条命令
+    （入口 / 卡片重排 / 大厅人数同步 / 席位卡补建 / 人数面板注入 / 角色分配 / 出征 / 跳上传
+    + 两条**期望 0** 回归哨兵：`!Custom每帧NRE` / `!裸异常块`）。
+  - **经验固化**：`AGENTS.md §1` 新增「大厅访问点必须判空」硬约束（指向 S10 + 坑 I）；
+    `references/local-multicontrol-pitfalls.md` 坑 I 补门禁指路；
+    `references/logging-and-marker.md` 新增「归档副本的两个坑」（`logs-archive/` 被 gitignore ⇒
+    rg/search_content 恒 0 命中；轮转副本 == 上一会话，判重跳过属正常）；`references/tools.md` 同步 S10 与 `--preset daily`；
+    skill 侧 `SKILL.md` 硬规矩由三条扩为**四条**。references 两侧 10 份逐字节一致（`tools/sync_references.py`）。
 - **「零劫持」经验固化 + 防回归门禁 S9 + references 同步工具（r160，2026-09-27）**：
   把「mod 不得劫持官方联机入口」这条**跨会话约定**从 agent 记忆搬进**仓库文档**（任何工具 / 人都能读到）：
   - 新增 `maintenance-docs/references/official-entry-coexistence.md`：规则、为什么（Custom 2026-03-25 / Daily r156

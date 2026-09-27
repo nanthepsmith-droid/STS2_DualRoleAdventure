@@ -1954,3 +1954,28 @@ LOG ANCHORS: (期望 0) LocalCustomRunSelectionSync / ### Exception ###；INIT_O
   （仓库 `maintenance-docs/references` ↔ skill 侧副本）比对与同步；`--check` 不一致退出码 1（可进门禁）、
   默认「仓库 → skill」、`--reverse` 反向。本轮用它发现并修掉一处历史漂移
   （`local-multicontrol-pitfalls.md` 仓库侧比 skill 侧新，已同步）。
+
+### 维护：防回归门禁 S10 + 两件日志小工具（r162，2026-09-27）
+
+用户口径：「该沉淀的沉淀、该搓小工具的小工具」。本轮 **零 mod 代码改动**（marker 仍 `2026-09-27-r161`；
+与 r160 同例：门禁 / 工具 / 文档不进 dll 身份，所以不升 marker、不需要重新部署）。
+
+- **门禁 S10（离线、防回归）**：`Scripts/Tools/static_checks.py` 新增「大厅访问点判空检查」——
+  扫 `Scripts/**/*.cs`，命中下面任一条即 FAIL，并列出 `文件:行` 与修法：
+  ① 非空条件访问 `.Lobby.NetService`（缺 `?`）；② 非空声明 `StartRunLobby x = …` 之后的裸访问 `x.NetService`。
+  这正是 **BUG-21 的写法**（也是 r157/r158 → r159 只修 3/4 → r161 漏网 这四次同族坑的第 4 次）。
+  离线静态层自此 **10 项（S1~S10）**。
+  **自测**：临时造 `Scripts/Patch/S10SelfTestFake.cs`（两条违规各一处）⇒ S10 `FAIL`、退出码 1，
+  正确报出 `S10SelfTestFake.cs:8` / `:9` ✓；删掉假样本 ⇒ 真实仓库 `PASS`（224 文件）、退出码 0 ✓。
+- **`tools/log_archive.py`**：判重跳过原因从「已归档过（sha256 相同）」改为
+  「已归档过：与 `<归档名>` 内容完全相同」—— 2026-09-27 分析 r161 时一度误以为"丢掉一份会话"，
+  实际是 Godot 轮转副本（`godot<轮转时刻>.log` 的内容 == 它**之前**那个会话）；语义已写进脚本 docstring。
+- **`tools/log_scan.py`**：新增 **`--preset daily`**（每日挑战本地多控契约：8 条锚点 + 2 条期望 0 哨兵）。
+  自测：对 r161 断网 / 联网两份日志各跑一次 —— 锚点齐全、哨兵均 0 ✓。
+- **沉淀**：`AGENTS.md §1` 新增「大厅访问点必须判空」硬约束（指向 S10 + 坑 I）；
+  `AGENTS.md §2` 静态层计数订正 **8 → 10 项**（此前漏更两次）；
+  `references/local-multicontrol-pitfalls.md` 坑 I 补「已固化为 S10」；
+  `references/logging-and-marker.md` 新增「归档副本的两个坑」（`logs-archive/` 被 `.gitignore` ⇒
+  `rg`/`search_content` 恒 0 命中，别据此判"证据丢了"；轮转副本 == 上一会话）；
+  `references/tools.md` 同步 S10 / `--preset daily` / 归档跳过语义；
+  skill 侧 `SKILL.md` 硬规矩 **三条 → 四条**（新增第 4 条判空规矩）。references 两侧 10 份逐字节一致。
