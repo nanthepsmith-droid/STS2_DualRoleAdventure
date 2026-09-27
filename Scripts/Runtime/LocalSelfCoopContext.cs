@@ -70,6 +70,18 @@ internal static class LocalSelfCoopContext
 
     public static NCharacterSelectScreen? ActiveCharacterSelectScreen { get; set; }
 
+    /// <summary>
+    /// 本轮会话「我们自己 push 的那个大厅页」（自定义 / 每日；角色选择页另有 <see cref="ActiveCharacterSelectScreen"/>）。
+    ///
+    /// 谁在用：会话守卫判断"是否还停在自建大厅页上"。为什么不能只看大厅的 `NetService`（r161）：
+    /// **每日页的大厅是异步建的**（先 await 时间服务器，`_lobby` 会长时间为 null）——
+    /// 断网时 DNS 失败还要重试两回，此时页面开着但 `_lobby` 一直是 null ⇒ 守卫误判"没有大厅页"，
+    /// 约 1 秒就把会话清掉（实机表现 = 断网进「本地·每日挑战」只有单人、连加人按钮都没有）。
+    /// 记页面本身即可：`IsInsideTree() && Visible` 就说明玩家正停在这一页（`NSubmenuStack.Pop` 只把页面
+    /// `Visible = false`，并不出树，所以必须带上 `Visible` 判据，否则退回主菜单后会残留会话）。
+    /// </summary>
+    public static CanvasItem? ActiveSelfCoopLobbyScreen { get; set; }
+
     public static ulong ResolvePrimaryPlayerId()
     {
         ulong localPlatformPlayerId = PlatformUtil.GetLocalPlayerId(PlatformUtil.PrimaryPlatform);
@@ -294,6 +306,7 @@ internal static class LocalSelfCoopContext
         NetService = netService;
         CurrentLobbyEditingPlayerId = PrimaryPlayerId;
         ActiveCharacterSelectScreen = null;
+        ActiveSelfCoopLobbyScreen = null;
         netService.SetCurrentSenderId(CurrentLobbyEditingPlayerId);
         LocalContext.NetId = CurrentLobbyEditingPlayerId;
         // 会话守卫：玩家从大厅页直接退回主菜单时，兜底把残留会话清掉（r158）
@@ -312,6 +325,7 @@ internal static class LocalSelfCoopContext
         NetService = null;
         CurrentLobbyEditingPlayerId = PrimaryPlayerId;
         ActiveCharacterSelectScreen = null;
+        ActiveSelfCoopLobbyScreen = null;
         _pendingEventAutoSwitchPlayerId = null;
         _eventAutoSwitchPending = false;
         // 会话结束：把页面级席位上限复位（否则从每日页直接退出会把上限留在 4，

@@ -80,6 +80,9 @@ internal static class LocalDailySelfCoopEntry
         // Daily 的 InitializeMultiplayerAsHost 没有人数参数（上限在建厅时写死）
         dailyRunScreen.InitializeMultiplayerAsHost(netService);
         stack.Push(dailyRunScreen);
+        // 会话守卫据此判断"还停在我们自己的大厅页上"（r161）：每日大厅是异步建的，
+        // `_lobby` 在时间服务器返回前一直是 null，只按大厅判据会把会话误清掉（断网时必现）。
+        LocalSelfCoopContext.ActiveSelfCoopLobbyScreen = dailyRunScreen;
         NGame.Instance?.AddChildSafely(NFullscreenTextVfx.Create(LocalModText.EnteredDailySelfCoopHint));
     }
 }

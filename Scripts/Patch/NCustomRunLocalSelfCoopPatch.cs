@@ -56,6 +56,8 @@ internal static class LocalCustomSelfCoopEntry
         NCustomRunScreen customRunScreen = stack.GetSubmenuType<NCustomRunScreen>();
         customRunScreen.InitializeMultiplayerAsHost(netService, LocalSelfCoopContext.MaxLocalPlayerCount);
         stack.Push(customRunScreen);
+        // 与每日页同一套会话守卫判据（r161）：页面在（且可见）就不算"没有大厅页面"。
+        LocalSelfCoopContext.ActiveSelfCoopLobbyScreen = customRunScreen;
         NGame.Instance?.AddChildSafely(NFullscreenTextVfx.Create(LocalModText.EnteredLocalSelfCoopHint));
     }
 }
@@ -408,8 +410,13 @@ internal static class LocalCustomRunSelectionSync
             return;
         }
 
-        StartRunLobby lobby = screen.Lobby;
-        if (lobby.NetService is not LocalLoopbackHostGameService)
+        // 判空（r161 / BUG-21）：与上面三处是同一个坑 —— Custom 页的 `_lobby` 在「未建厅 / 已被清理」时是 null，
+        // 而主菜单里这个子屏常驻、`_Process` 每帧都会进来 ⇒ 直接访问 `lobby.NetService` 会每帧抛
+        // NullReferenceException。r159 只补了 `TryReconcileLocalPlayers` / `NCustomRunEmbarkGuardPatch` /
+        // `LocalCustomRunCountButtons.Sync` 三处，**漏了这里**；r161 实机日志（联网局 981 条 / 断网局 304 条 NRE）
+        // 全部来自本行。
+        StartRunLobby? lobby = screen.Lobby;
+        if (lobby?.NetService is not LocalLoopbackHostGameService)
         {
             return;
         }

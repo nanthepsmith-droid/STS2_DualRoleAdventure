@@ -23,6 +23,8 @@ namespace LocalMultiControl.Scripts.Runtime;
 /// 判据（保守、只在确认"没有我们的页面、也没进局"时才关）：
 /// - 未进局（`!RunManager.IsInProgress`）；
 /// - 且树里**没有**任何仍挂在本地回环 `NetService` 上的大厅页（角色选择页 / 自定义页 / 每日页）；
+/// - r161 再加一档：**我们自己 push 的那个大厅页还开着**（`IsInsideTree() &amp;&amp; Visible`）也算在流程中
+///   —— 每日大厅是异步建的，`_lobby` 就绪之前不能清会话（断网时必现，见 `HasLocalLobbyScreen` 注释）；
 /// - 连续满足约 1 秒（跨过"页面切换的一帧空窗"）。
 /// </summary>
 internal sealed partial class LocalSelfCoopSessionGuard : Node
@@ -98,6 +100,21 @@ internal sealed partial class LocalSelfCoopSessionGuard : Node
 
     private static bool HasLocalLobbyScreen()
     {
+        // r161：我们自己 push 的大厅页**还开着（且可见）**就算"在流程中"。
+        // 为什么需要：每日页的大厅是**异步**建的（先 await 时间服务器，断网时 DNS 失败还要重试两回），
+        // 这段窗口里 `_lobby` 一直是 null ⇒ 只看大厅判据会误判"没有大厅页"并把会话清掉，
+        // 实机表现 = 断网进「本地·每日挑战」只有单人、连加人按钮都没有（r159 断网局实测）。
+        // ⚠ 判据必须带 `Visible`：`NSubmenuStack.Pop` 只把页面 `Visible = false`、**并不移出树**，
+        // 少了这一条就退回 r158 要修的老问题（从大厅页退回主菜单后会话残留、官方页冒出我们的按钮）。
+        CanvasItem? activeLobbyScreen = LocalSelfCoopContext.ActiveSelfCoopLobbyScreen;
+        if (activeLobbyScreen != null
+            && GodotObject.IsInstanceValid(activeLobbyScreen)
+            && LocalSelfCoopLobbyScreenPolicy.IsPageOpen(
+                activeLobbyScreen.IsInsideTree(), activeLobbyScreen.Visible))
+        {
+            return true;
+        }
+
         NCharacterSelectScreen? characterSelect = LocalSelfCoopContext.ActiveCharacterSelectScreen;
         if (characterSelect != null
             && GodotObject.IsInstanceValid(characterSelect)
