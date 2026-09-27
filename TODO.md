@@ -44,7 +44,7 @@
 | `键盘手柄双输入本地双控可行性分析.md`（L1 档） | **待拍板**：结论已出（L1 轮流操作可行 / L2·L3 真正同时不可行）；**未实现** | 备选线索：`LocalDeviceSplitRouter` + patch `NControllerManager` 模式抢占 + 秒切防抖（仅认确认性输入），默认关 | 本表（备选） |
 | `本地LLM辅助开发可行性分析.md` | **部分落地**：P0 冒烟 / P1 索引 / P2 日志分诊 / P3 双语 + diff 预审 / T2 NUnit 草稿**均已完成**；**P4 经实测改换做法**（明细当优先级清单 + 自写抽取器）；`functiongemma` 工具路由未动 | P4 若要继续：先写自己的 `sts2src` 逐卡效果抽取器 → 人审 → 固化 `PureLogic` 表，**默认关**且须过 §21.4.2 回归清单 | 本表 |
 | `开发环境迁移Linux可行性分析.md` | **未动工**（纯调研，未动 U 盘/分区） | 推荐路线：先 Phase 0、再 Phase 1（两步没跑完前不要动 U 盘与分区） | 本表（待拍板） |
-| `本地多角色扩展到Daily模式可行性分析.md` | **POC 已实现（r156）+ 首轮实机修正（r157，2026-09-27）待第二轮实机**：按提案 §五/§六 落地 ① 独立卡片入口（**不劫持官方 Daily**）② 异步大厅 reconcile（clamp 4）③ 按日期种子分配角色 ④ `DAILY_SCORE_SKIP` 禁止上传 ⑤ 每日页人数面板 ⑥ 每日页瓦库勾选/切换编辑席位；分支 `feat/daily-local-selfcoop`（**未合回 master、未 push**） | 实机两局（联网 / 断网各一）按 `TODO.md §Daily 本地多控` 验证契约核对；通过后再评估「只让 primary 上传 1p 榜」等增强 | 本表 + 仓库 `TODO.md §Daily 本地多控` |
+| `本地多角色扩展到Daily模式可行性分析.md` | **实机进行中（联网一局已通过，2026-09-27）**：按提案 §五/§六 落地 ① 独立卡片入口（**不劫持官方 Daily**）② 异步大厅 reconcile（clamp 4）③ 按日期种子分配角色 ④ `DAILY_SCORE_SKIP` 禁止上传 ⑤ 每日页人数面板 ⑥ 每日页瓦库勾选/切换编辑席位；r156（POC）→ r157（入口改独立卡 + 每日页白名单）→ r158（**零劫持**：三个官方入口全部还给原版）→ r159（lobby 判空修每帧 NRE + 面板加严）；代码已提交并合回 master（`a2dc84b`，r160 经验固化 `c3db47c`，**未 push**）。**联网一局（marker r159，2 席 WineFox+Watcher，第一幕阵亡）契约 ②~⑧ 全过**，详见 `§Daily 本地多控` | ① **断网一局**（回落本地时间路径）按同一批锚点核对；② 修实机新发现的 **BUG-21**（`LocalCustomRunSelectionSync.TrySync` 漏判空 ⇒ 981 次 NRE）；③ 用官方单机每日对照 3 条 `NDailyRunLeaderboard` 的 `ObjectDisposedException`；通过后再评估「只让 primary 上传 1p 榜」等增强 | 本表 + 仓库 `TODO.md §Daily 本地多控` / `§BUG-21` |
 | `瓦库四功能-可行性核验报告.md` | **待拍板**（结论已出）：四功能均无架构级死路；功能一难度下调为「中」 | 按建议顺序（净化 → 我们联合 → 炼化 → 地狱战神）逐级动工，动工前需用户拍板 | 本表 + 提案 §7 |
 | `瓦库炼化净化联合地狱战神-功能提案与可行性分析.md` | **未动工**（仅提案；已被 09-22 核验报告逐条核验） | 同上（以核验报告的顺序与难度为准） | 本表 |
 | `Co-op_Bots联机队友兼容可行性分析.md` | **部分落地 + 实机进行中（r144 POC → r145 回合死锁 → r146 席位隔离 → r147「幽灵弹层 + 镜像来源席位」→ r148 商店 R1 通过）**：r144~r146 已提交并 `--ff-only` 合回 master（`50bff2b` 代码 / `25077d1` 文档）；r147+r148 已提交为 `1eefef7`，仍在分支 `fix/r147-phantom-overlay-mirror`（**未合回 master、未 push**）。落地 = ① `CoopBotsAdapter` 反射适配器（探测 / `AutoPilot.Set` 逐席接管与释放 / 未装即优雅降级）② 席位驱动**三态互斥**（`CoopBotsSeatPlan` + `LocalSelfCoopContext`，POC 配置键 `coopBotsSeats`）③ **R1 商店 ACK 旁路补丁** `CoopBotsShopAckPatch`（**装了 CB 就要挂**，与其 Bot 是否被我们接管无关）④ **r145**：3 席「回合结束不了」（就绪补齐改成「只补本地席位 + 走真实方法调用」）⑤ **r146**：第三方席位隔离（`LocalSelfCoopContext.IsLocalSessionSeat`）⑥ **r147**：**幽灵弹层**根治 + 自愈，以及 `MirrorSeatPolicy` 五条镜像链的来源席位过滤。**实机已验**：r147 全部改动通过（0 条 add_child failed / 0 条幽灵弹层自愈 / 0 条 bot 奖励镜像）；**R1 于 r148 通过**（Bot 删牌服务→药水，两次旁路均 `count=1,seats=[]`，最终 `done=1`，正常离店并进入下一战斗）。**未做**：12 席三态 UI / 持久化、Phase 3 补丁面回归、**被接管的本地席位**的奖励归驱动方分流、**BUG-17** 根因。**2026-09-26 逐条实测（marker r148，第一幕整局；配置 `coopBotsSeats` 为空 ⇒ 本局 Bot 是 CB **自己的合成 Bot**、非我方 POC 接管）**：§R2 **11 点全部通过** —— #1 `地图自动跟投 … filled=3/3` **54 次 / 0 失败**（含 Bot 全票、随后均触发推进）；#2 `本地多控自动补齐敌方回合就绪 … mirrored=` **从不含 Bot id**（41 次）；#5 `RequestEnqueue 空引用已拦截` **0**；#7 `事件/流程金币已同步到其余角色` **0**；#8 `角色独立奖励已生成(Offer): player=<Bot>` **0** + `第三方席位卡牌奖励交回原版远端作答` 24；#9 `打开奖励界面: player=<瓦库>` **0**；#11 `瓦库火堆已自动选择 … success=True` 6 / `扫描瓦库休息区失败` 0；#6 `瓦库火堆队友选择已自动指定` 4；#3/#4 选人屏 **弱覆盖**（`角色选择页已创建本地人数 +/- 实体按钮` 4 次，无错位/残留）。同局 `add_child() failed` / `幽灵弹层已自愈` / `弹层阻挡自动流程` **全 0**（r147 稳定）。**仍待验**：**我方 POC 接管席位**路径下的 R2 回归（本局未接管）、BUG-17 诊断锚点 | ✅ ① R2 逐条实测**已完成（2026-09-26）** —— **清单已固化**：`Scripts/Tools/thirdparty_patch_overlap.py`（口径与命令见 `Co-op_Bots联机队友兼容可行性分析.md` §R2；逐条判据表同节，产物 `decision-records/第三方补丁目标交叉分析-CoopBots.md`）；② 事件末页选牌复现后按 BUG-17 的三条锚点分流；③ 之后再谈 Phase 1 的选人屏三态钮与 save tag v4 | 本表 + §BUG-17 |
@@ -1673,7 +1673,7 @@
   结算第一页/`ViewRun`/`ReturnToMainMenu` 按钮行为不变；
   存档里的 `platform_type` 字段**不被改动**（只在 `UpdateWithRunData` 调用期间临时替换并还原）。
 
-### Daily 本地多控（r156 起，r157 修正；**POC 已实现，待第二轮实机**）
+### Daily 本地多控（r156 起，r157 修正，r158 零劫持 / r159 收尾 / **r161 断网可玩**；**联网局、断网局均已通过（2026-09-27）**）
 
 提案：`maintenance-docs/decision-records/本地多角色扩展到Daily模式可行性分析.md`（§五 实施建议、§六 结论口径）。
 
@@ -1728,6 +1728,70 @@
   `每日挑战席位卡已补建: added=3`（瓦库勾选框宿主已生成）；
   `每日挑战角色已按日期种子分配: seats=326:WINE_FOX, 327:WATCHER, 328:PIG, 329:REGENT`（各席位角色不同）；
   `本地多控会话已自动结束：当前没有本地多角色大厅页面，且未进局`（守卫多次生效 ⇒ 残留根治）。
+- **r159 联网一局实机通过（2026-09-27，marker r159）**：留档日志 `logs-archive/godot__20260927-154423__r159.log`
+  （3.84 MB / 33291 行，`INIT_OK`、`PATCH_RESULT critical=25/25 optional=15/15`、`COMPAT_RESULT PASS`）。
+  一次启动里进厅 7 次（每日 ×4 / 自定义 ×3，前几次"进厅即退"均留下会话自动结束），**出征 2 局**：
+  局 1 = 用户所指"联网一局"（2 席 WineFox + Watcher、`Seed: 27_09_2026_2P`、**第一幕阵亡 `result=loss`**）；
+  局 2 = 出征后主动弃局（`run was abandoned`）。契约核对结果：
+  ②`联机菜单卡片已重排: count=4`+小按钮注入 ✅ ③大厅人数 `target=actual=2/3`（10 条）✅ ④席位卡 `added=1`（7 条）✅
+  ⑤角色按日期种子分配（11 条），signature 同日同人数可复现（2 席 `1404169136`、3 席 `1026103217`）✅
+  ⑥出征正常开局、`Random character is not currently allowed in daily` 0 ✅ ⑦`DAILY_SCORE_SKIP` ×2 且无真实上传 ✅
+  ⑧会话自动结束 ×5 + `RunManager.CleanUp` 清理 ✅；①官方入口本份日志无守卫行（该行**条件打印**，不作为判据）。
+  顺带：`整局进度写入已校正本地玩家识别` ×2（r155 在 Daily 路径同样生效）、`Local player with net id 1 not found` 0 条。
+  ⚠ **新记录的设计事实**：大厅种子 `27_09_2026_**1P**`、出征种子 `27_09_2026_**2P**`
+  ⇒ 每日种子带人数后缀，本机 2 人多控**不是**官方 1P 每日那张图。
+  ⚠ **新发现缺陷：BUG-21**（`LocalCustomRunSelectionSync.TrySync` 漏判空 ⇒ 本局 981 次 NRE，详见 §BUG-21）。
+  ⚠ **新观察（游戏侧）**：3 条 `NDailyRunLeaderboard` 的 `ObjectDisposedException`（本份首现），
+  待用官方单机每日对照定性（见 §BUG-21 末尾）。
+- **r159 断网一局已试（2026-09-27，marker r159）**：留档 `logs-archive/godot__20260927-160114__r159.log`
+  （1.47 MB / 13460 行，`INIT_OK`）。用户三条现象 → 逐条定性：
+  ①「官方多人每日点不进去」= **正常**（离线无 Steam 联机会话）。
+  ②「本地多人每日能进页，但只有单人、没有加人按钮」= **我方链路离线完全没跑起来**（可修，本轮不修）：
+  `每日挑战大厅本地人数已同步` / `席位卡已补建` / `人数面板已注入` / `角色已按日期种子分配` **全 0**
+  （对照联网局 10 / 7 / 3 / 11），每次都是 `席位上限 4 → 模式已启用 → 本地多控会话已自动结束 → 模式已关闭: no-local-lobby-screen`。
+  根因链：断网 ⇒ `NDailyRunScreen.GetTimeServerTime()` 打 `time.megacrit.com:443` DNS 失败并重试
+  （`Gave up trying to retrieve server time` ×5 / `Couldn't retrieve time from time server, using local time` ×5）
+  ⇒ 每日大厅迟迟不就绪 ⇒ 我们「反射 `_lobby`、**就绪才动手**」的 reconcile 永不触发
+  ⇒ 且 `LocalSelfCoopSessionGuard` 约 1 秒即判「无回环大厅页 + 未进局」清会话。
+  **可选修法**：①guard 把「当前停在每日页」视为在流程中、不按 1 秒清理；②或入口不等时间服务器也能建厅。
+  **用户判定「断网玩不了每日属正常现象」⇒ 当时记为已知限制**，随后用户 2026-09-27 拍板做掉它
+  ⇒ **r161 已按方案 ① 修**：`LocalSelfCoopContext.ActiveSelfCoopLobbyScreen`（入口 push 页面时记录）
+  + 会话守卫新增「页面开着（`IsInsideTree() && Visible`）即算在流程中」判据
+  （纯逻辑 `LocalSelfCoopLobbyScreenPolicy` + 4 单测；`Visible` 判据不可省，否则退回 r158 的会话残留问题）。
+  ✅ **2026-09-27 断网局实机通过**（`logs-archive/godot__20260927-161701__r161.log`）：
+  时间服务器照旧失败（游戏回落本地时间）的前提下，`每日挑战大厅本地人数已同步: target=2, actual=2, added=1`
+  → `每日挑战席位卡已补建: added=1` → `每日挑战人数面板已注入` → 角色按日期种子分配（signature `1404169136`，
+  与联网局同值）→ `Embarking on a DAILY multiplayer run … Seed: 27_09_2026_2P` + `本地回环 Lobby 开局流程完成，玩家数=2`
+  ⇒ **能出征、能打完、能结算**（`DAILY_SCORE_SKIP`）；且 `本地多控会话已自动结束` **0 条**（修前 4 条）。
+  **用户口述确认**：「断网能进本地多人每日」。
+- **r161 联网复测通过（2026-09-27）**：留档 `logs-archive/godot__20260927-163842__r161.log`
+  （4.40 MB / 32675 行，`INIT_OK`、`COMPAT_RESULT PASS`）。本次用户**直接开 4 席**：
+  `每日挑战大厅本地人数已同步: target=2 → 3 → 4`、`席位卡已补建: added=1` ×3、`人数面板已注入`、
+  `角色已按日期种子分配` ×4（各席位角色互不相同）→ `Embarking on a DAILY multiplayer run`（4 人，`Seed: 27_09_2026_4P`）
+  + `本地回环 Lobby 开局流程完成，玩家数=4` → 打完一局（`result=loss`）→ `DAILY_SCORE_SKIP`（4 players）
+  ⇒ **4 席路径首次实测全通**（此前联网局都只开 2 席）。联网侧 `LocalCustomRunSelectionSync` / `### Exception ###` **均 0 条**
+  ⇒ **BUG-21 两侧都归零**。回归面 `收回滞留节点` / `幽灵弹层已自愈` / `add_child() failed` 全 0。
+- ✅ **r161 反面判据也已实机验证（2026-09-27，进每日大厅后不进游戏直接返回）**：
+  留档 `logs-archive/godot__20260927-164433__r161.log`（8005 行，`INIT_OK`）。两次进「本地·每日挑战」都先正常建厅
+  （`Successfully queried time server` + 席位卡/人数面板/角色分配齐全），随后**直接返回主菜单**时：
+  `本地回环网络断开: reason=Quit` → **`本地多控会话已自动结束：当前没有本地多角色大厅页面，且未进局`** →
+  `本地多控模式已关闭，原因: no-local-lobby-screen`（×2 各一组）⇒ **页面被 `Pop`（`Visible=false`）后照旧清理，
+  没有退回 r158 的会话残留**；`LocalCustomRunSelectionSync` / `### Exception ###` / `ObjectDisposedException` 均 0 条，
+  `[ERROR]` 7 条全是既有项（Manosaba/ddu ×2、BetterModMenu ×1、游戏侧删 `current_run_mp.save(.backup)` ×4）⇒ **我方 0 条**。
+  ③「官方单机每日能开始但黑屏」= **不是断网正常现象，是第三方 YuWanCard 在开局链抛异常**：
+  `Embarking on a DAILY … 1 players` 之后紧跟
+  `[ERROR] Exception starting daily singleplayer run : System.InvalidOperationException: Local player not found in player collection.`
+  栈 = `LocalContext.GetMe ← YuWanCard.Utils.CloudAnalyticsService.TryRegisterRunStart ← OnRunStarted ← RunState.CreateForNewRun_Patch6`
+  ⇒ 局建不出来 ⇒ 黑屏；**栈里我方帧 0 条**。
+  ✅ **已定性为偶发（2026-09-27 完成）**：后续 **3 次**官方单机每日（2 次离线 + 1 次联网）**全部正常开局**，
+  `Local player not found in player collection` 均 0 条 —— 其中离线那次跑的还是 **r159 旧 dll**
+  （`godot2026-09-27T16.12.57__…__r159.log`），联网那次见 `godot__20260927-163842__r161.log`
+  （`Successfully queried time server` + `Embarking on a DAILY … 1 players`，无异常）
+  ⇒ **4 次里只第一次黑屏 ⇒ 偶发，既非"断网必现"、也非 r161 修好的**。
+  若再现：按 `maintenance-docs/references/thirdparty-mod-conflicts.md` 定性后**另开独立补丁 mod**（主仓库不动）。
+  另保留推测：该异常可能与 r155 同源（`PlatformType.None` 下本地玩家 id 是占位 `1`，日志 `[StartRunLobby (1)]`），待更多样本区分。
+  回归面：BUG-21 本局复现 **304** 次（联网局 981；**r161 已修**，断网复测 0 条）。
+  ⏳ **仍待**：①现象 ③ 的在线对照与更多样本（离线本地每日 guard 放宽**已由 r161 落地并实机通过**）。
 **本轮没做**：① 超过 4 席（游戏 `StartRunLobby._maxPlayers` 是 readonly，只能 ≤4）；
 ② 「只让 primary 上传 1p 榜」增强（提案备选方案 2，仍搁置）；③ 每日页 UI 精修（面板位置先放左侧中部，实机若遮挡再挪）；
 ④ 每日读档重连页（`NDailyRunLoadScreen`）未单独适配。
@@ -1794,6 +1858,82 @@ LOG ANCHORS: INIT_OK / BUILD_ID(marker=2026-09-27-r158) / 联机菜单卡片已�
 ```
 回归要求：Standard / Custom 两档入口与人数上限行为**逐字不变**（页面上限默认 12，只有进 Daily 才收 4）；
 `LobbyLocalPlayerLimit` 在离开每日页时恢复；非回环 NetService 一律放行分数上传。
+
+### BUG-21 Custom 页 `_Process` 每帧 NRE（`LocalCustomRunSelectionSync.TrySync` 漏判空）（2026-09-27 r159 实机日志发现；**r161 已修 → ✅ 2026-09-27 断网局实机确认，关单**）
+
+问题：r159 联网一局日志 `logs-archive/godot__20260927-154423__r159.log` 里，我方代码抛
+**981 条 `System.NullReferenceException`**（`### Exception ###` 915 条），栈顶恒为
+`LocalMultiControl.Scripts.Patch.LocalCustomRunSelectionSync.TrySync(NCustomRunScreen screen)`，
+调用链是 `NCustomRunScreen.InvokeGodotClassMethod`（`_Process` / `OnSubmenuOpened` / `PlayerChanged` 三个 postfix 之一）。
+**无功能阻塞**（用户体感"没什么问题"），但它在日志里淹掉真异常，属每帧级噪音。
+
+根因（已定位到行）：`Scripts/Patch/NCustomRunLocalSelfCoopPatch.cs:411-412`
+
+```
+StartRunLobby lobby = screen.Lobby;
+if (lobby.NetService is not LocalLoopbackHostGameService)
+```
+
+只判了 `NetService`，**没判 `screen.Lobby` 本身为 null**。主菜单里 `NCustomRunScreen` 是常驻子屏，
+「未建厅 / 大厅已被清理」时 `_lobby` 为 null ⇒ `_Process` 每帧 NRE。
+
+与 r159 的关系：r159 修的正是**同一类**问题（`screen.Lobby` 未判空），4 个访问点补了 3 个
+（`NCustomRunScreenLocalPlayersPatch.TryReconcileLocalPlayers` L89-90 / `NCustomRunEmbarkGuardPatch` L200 /
+`LocalCustomRunCountButtons.Sync` L258），**漏掉第 4 处**。
+
+跨会话对照（说明为什么之前没看见）：
+
+| 日志 | marker | `TryReconcileLocalPlayers` 命中 | `LocalCustomRunSelectionSync` 命中 |
+|---|---|---|---|
+| `godot__20260927-143525__r157.log` | r157 | 3803 | 0 |
+| `godot__20260927-151337__r158.log` | r158 | 1917 | 0 |
+| `godot2026-09-27T15.37.04__20260927-153704__r159.log` | r159 | 0 | 57 |
+| `godot__20260927-154423__r159.log` | r159 | 0 | 981 |
+
+⇒ 与「同一 `_Process` 上更早注册的 postfix 抛异常会中断后面的 postfix」一致（r159 判空后 `TrySync` 才第一次真正跑起来）。
+**该机制是推断，本轮未单独做实验验证。**
+
+修法（**r161 已落地**，1 行判空）：
+
+```
+StartRunLobby? lobby = screen.Lobby;
+if (lobby?.NetService is not LocalLoopbackHostGameService)
+```
+
+**全仓库同类扫描结果（r161 一并做完，防止第 5 处漏网）**：`grep Lobby\.NetService` 共 11 处 ——
+`LocalCustomRunSelectionSync.TrySync`（**本次修**）；
+`NDailyRunLocalSelfCoopPatch` L137 / L234 / L495、`LocalSelfCoopSessionGuard` L129 均为
+`is not StartRunLobby lobby` / `?.` 已过滤 null ✅；`NMultiplayerLoadGameScreenPatch` L21 用 `runLobby?.NetService` ✅；
+其余 `.NetService` 命中都是 `__instance` / `RunManager.Instance` / `LocalSelfCoopContext` 这类非空实例属性，不涉及。
+⇒ 现在**没有**"`.Lobby` 之后直接点 `.NetService`"的裸访问点了。
+
+**r161 门禁（全实跑）**：构建 0 警告 0 错误（**225 .cs**）、**675 单测全绿**（671 → +4，`LocalSelfCoopLobbyScreenPolicyTests`）、
+`static_checks` **9 PASS / 0 WARN / 0 FAIL**（S7 基线不变 = 187 补丁类 / 211 目标行 / 199 字符串目标 / 359 语义标识）、
+`clr_compat` PASS、`preflight -Deploy` **4 PASS / 3 SKIP**、
+`dll_check --deployed --marker 2026-09-27-r161` 字节一致（sha256 `63aab3b00bb7…`，含新标识
+`LocalSelfCoopLobbyScreenPolicy` / `ActiveSelfCoopLobbyScreen`、无 `__runOriginal`）。
+
+**✅ 实机确认（2026-09-27 断网局，marker r161）**：`logs-archive/godot__20260927-161701__r161.log` 里
+`LocalCustomRunSelectionSync` 与 `### Exception ###` **均 0 条**（修前联网局 981 / 断网局 304）⇒ **关单**。
+
+验证契约：
+
+```
+改动:        BUG-21 —— LocalCustomRunSelectionSync.TrySync 补 lobby 判空
+EXPECTED:    `LocalCustomRunSelectionSync.TrySync` 在 godot.log 里 0 命中（含 Custom / Daily 两条流程）
+SETUP:       本地多控；① 进「本地·自定义模式」大厅 → 退出到主菜单 ② 再进「本地·每日挑战」出征一局
+ACTION:      按 SETUP 走完，回主菜单停 3 秒后关游戏
+OBSERVE:     log_scan.py --kw LocalCustomRunSelectionSync --kw "### Exception ###" --file <godot.log>
+PASS:        两条计数均为 0；INIT_OK；无新增 [ERROR]
+FAIL:        仍有 NRE（判空位置不对，或还有第 5 处访问点）
+LOG ANCHORS: (期望 0) LocalCustomRunSelectionSync / ### Exception ###；INIT_OK
+```
+
+**同日志的新观察（游戏侧，待定性）**：3 条 `ObjectDisposedException`
+（`NDailyRunLeaderboard.QueryFriendScores ← LoadLeaderboard ← TaskHelper.LogTaskExceptions`，
+被释放对象 `MegaText.MegaLabel` / `NDailyRunScoreWarning`）。跨会话核对 r156 / r157 / r158 / r159 短会话均 **0** 条，
+本份**首现**。判据：用**官方单机每日**打一局对照 —— 同样出现 ⇒ 游戏既有问题（不修）；
+只在本地多控下出现 ⇒ 再查是否与 `DAILY_SCORE_SKIP` 跳过上传导致排行榜查询链空转有关。
 
 ### 维护：经验固化 + 防回归门禁（r160，2026-09-27）
 

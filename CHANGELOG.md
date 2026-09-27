@@ -87,6 +87,16 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   - 离线静态层自此 **8 项（S1~S8）**；`preflight.ps1` 的 G1 描述与 `maintenance-docs/` 同步说明。
 
 ### Fixed
+- **断网时「本地·每日挑战」退化成单人、连加人按钮都没有（r161，2026-09-27）**：每日页的大厅是**异步**建的
+  （先 `await` 时间服务器；断网时 `time.megacrit.com` DNS 失败还要重试两回），这段时间 `_lobby` 一直是 null，
+  而会话守卫只看「大厅是否挂在回环服务上」⇒ 约 1 秒就判定"没有大厅页"把会话清掉，
+  页面上自然既没有席位卡、也没有 `-/+` 人数面板（只有单人，无法出征）。
+  现在守卫多一档判据：**我们自己 push 的那个大厅页还开着（在树上 + 可见）就算在流程中**
+  （抽成纯逻辑 `LocalSelfCoopLobbyScreenPolicy` + 4 条单测）。退回主菜单时 `NSubmenuStack.Pop` 会把页面
+  `Visible = false`（**不出树**）⇒ 仍然照旧清理，不会退回 r158 修过的"会话残留/官方页冒出我们的按钮"。
+- **自定义页 `_Process` 仍有一处每帧 `NullReferenceException`（r161，BUG-21）**：r159 给 4 个 lobby 访问点里的
+  3 个补了判空，**漏了 `LocalCustomRunSelectionSync.TrySync`** ⇒ 主菜单里常驻的自定义子屏每帧抛 NRE
+  （r159 联网一局实测 **981** 条、断网局 **304** 条）。已补 `lobby?.NetService` 判空。
 - **自定义页每帧刷 `NullReferenceException` + 官方联机页仍会冒出我们的人数面板（r159，2026-09-27）**：
   r158 收尾复查日志发现 `NCustomRunScreen._Process` 每帧抛 NRE —— `screen.Lobby`（私有 `_lobby`）在
   「未建厅 / 已被清理」时是 null，而 `TryReconcileLocalPlayers` 直接访问 `lobby.NetService`。
