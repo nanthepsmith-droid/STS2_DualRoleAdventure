@@ -9,6 +9,8 @@ A **Slay the Spire 2** mod that turns the official online multiplayer into a *lo
 ## Features
 
 - Local multiplayer party of 2–12 characters, started from the normal multiplayer menu (`Multiplayer → Host → Local Multi-Control`)
+- **Local multi-character Daily Climb** (v1.43): via the "Local Daily Run" button below the multiplayer card row — up to 4 seats, characters assigned from the date, never uploads to the Daily leaderboard
+- **Co-op Bots compatibility** (v1.43, optional): coexists with the online-AI-teammates mod; choose which seats the online bots take
 - Instant character switching in and out of combat: `Tab` / `Shift+Tab` (legacy `[` `]` `R` `T` `/` still work)
 - Per-character everything: decks, energy, gold, potions, relics, event choices, reward claims
 - Full run flow: lobby → combat → rewards → map → events → shops → rest sites → treasure → next act → save/continue

@@ -11,13 +11,32 @@ Control 2–12 characters by yourself in Slay the Spire 2's multiplayer mode, on
 
 ## Starting a run
 
-1. Main menu → **Multiplayer → Host**.
-2. Pick the **Local Multi-Control (单人多角色)** card (it sits next to Standard / Daily / Custom).
+1. Main menu → **Multiplayer → Host**. This page has 4 cards: **Local Multi-Control (单人多角色)** /
+   Standard / Daily / Custom. The last three are the **official online modes** and still work exactly as
+   vanilla when the mod is installed (the mod coexists — it never takes over an official entry).
+2. Three ways to start a local multi-character run (since v1.43):
+   - **"Local Multi-Control" (单人多角色) card** — a normal local run (2–12 characters);
+   - **"Local Custom Run" (本地·自定义模式) small button** below the card row — local run with seeds and custom rules;
+   - **"Local Daily Run" (本地·每日挑战) small button** — local multi-character Daily Climb (max 4 seats, see below).
 3. In character select:
    - **`+` / `-`** — add/remove local characters (2–12; duplicates allowed)
    - **`Tab` / `Shift+Tab`** — switch which character you're editing
    - Pick a character and ready-up for each slot, then start as usual.
-4. **Custom mode** also works: entering `Custom Mode` from the multiplayer menu keeps the local multi-control flow, so you can use seeds and custom rules with multiple characters.
+
+### Local multi-character Daily Climb (new in v1.43)
+
+Enter via the **"Local Daily Run"** button under the card row (the official "Daily" card above it keeps the
+vanilla online flow):
+
+- **Max 4 seats** — the Daily multiplayer mode itself caps at 4 players; extra seats are clamped back to 4.
+- **Characters come from the date** — Daily characters are assigned from a "date + player count" seed and
+  **cannot be picked or randomized** (same rule as vanilla).
+- **Never uploads to the Daily leaderboard** — local seats are fake local players and would pollute the
+  board, so the mod **skips the upload** in local multi-character Daily runs only (log anchor
+  `DAILY_SCORE_SKIP`); official online Daily and solo Daily behave exactly as before.
+- **Works online and offline** — online it uses the game's time server; offline it falls back to local
+  time (entering takes a little longer, which is normal).
+- The Daily screen supports Vakuu hosting checkboxes, the `-/+` player-count panel and seat switching.
 
 ## Vakuu (AI auto-play)
 
@@ -132,7 +151,7 @@ shopping can optionally be handed to Vakuu via "Auto-buy cards" (below).
   official spelling is Vakuu). **Old keys keep working** and are migrated on save; when both exist, the new
   key wins.
 
-### New in v1.43 (unreleased; same settings submenus, saved instantly)
+### New in v1.43 (same settings submenus, saved instantly)
 
 - **"Combat Decision Brain"** (inside "Vakuu autopilot", config key `vakuuBrain`, default **Heuristic**)
   decides **which card Vakuu plays and at whom** in combat.
@@ -149,6 +168,19 @@ shopping can optionally be handed to Vakuu via "Auto-buy cards" (below).
   - ⚠ Scoring uses a **rough estimate** (card values + Strength/Dexterity, no Vulnerable/Weak modifiers)
     and has **no cross-turn planning**; switch back to Heuristic anytime if it feels off. All three modes
     only affect in-combat plays — never card picks, events or shops.
+
+### Co-op Bots compatibility (new in v1.43, optional)
+
+When the third-party **Co-op Bots** mod (online AI teammates) is installed, this mod coexists with it:
+
+- **Not installed / not wanted**: zero impact — the mod probes for it and degrades gracefully.
+- **Handing seats to the online bots**: set `coopBotsSeats` in
+  `%APPDATA%\SlayTheSpire2\vakuu_autopilot.json` (comma-separated seat numbers, e.g. `"2,3"`). If a seat is
+  checked for both Vakuu and an online bot, **the online bot wins** and the log prints a WARN.
+- **If you run Co-op Bots, keep this mod enabled**: its own bots rely on our shop-ACK bypass to leave the shop.
+- Known issues (root cause still being investigated, see `TODO.md` BUG-17 / BUG-18): occasionally
+  "an event's last page card-pick cannot advance" and "your card clicks are ignored while Vakuu plays" —
+  diagnostics only so far.
 
 ## During a run
 

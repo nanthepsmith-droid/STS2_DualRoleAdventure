@@ -2,7 +2,11 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
-## [Unreleased]
+## [1.43.0] - 2026-09-27
+
+> 本轮 = r142 ~ r162（2026-09-20 ~ 2026-09-27），共 23 个提交。头牌是**每日挑战的本地多角色局**
+> （独立入口、零劫持、≤4 席、不上传每日榜）与**联机 AI 队友 Co-op Bots 兼容**；另有两项默认值变更
+> （队列出牌 / 并发出牌转正为默认开）与一批战斗、奖励、结算页修复。构建 marker：`2026-09-27-r163`。
 
 ### Added
 - **防回归门禁 S10（大厅访问点判空）+ 两件日志小工具（r162，2026-09-27）**：
@@ -56,7 +60,10 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   - **每日页人数面板**（`LocalDailyRunCountButtons`）：-/+ 调本地人数、◀/▶ 切换编辑席位；
     新增页面级席位上限 `LocalSelfCoopContext.LobbyLocalPlayerLimit`（Daily = 4，离开即恢复默认）。
   - 单测 **+11 → 671 全绿**（`DailyLobbyPolicy` 判定：不误删真联机玩家 / 指纹不变不重分配 / clamp 4）。
-  - ⚠ 仍待实机验证（联网 + 断网各一局），验证契约见仓库 `TODO.md §Daily 本地多控`。
+  - ✅ **2026-09-27 实机：联网、断网各一局均通过** —— 断网局 `logs-archive/godot__20260927-161701__r161.log`
+    （席位卡 / 人数面板 / 角色分配齐全，2 席出征）、联网局 `logs-archive/godot__20260927-163842__r161.log`
+    （4 席出征 `Seed: 27_09_2026_4P`，打完一局，`DAILY_SCORE_SKIP` ×2）；两局的
+    `本地多控会话已自动结束` 与 `LocalCustomRunSelectionSync` 相关异常均为 **0 条**。
 - **瓦库托管最终阶段 M1「知识层」落地（r153，2026-09-26）**：按《AI 总规范 v2》§6~§19/§20~§45 与
   实施草案 §7 的 M1 定义新增**纯知识层**。定位是"**先有认识、再有决策**"（v2 §84）：
   本轮**不做任何决策接入**，默认（启发式）档行为与日志逐字不变。
@@ -101,6 +108,9 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
     必须是合法 UTF-8，且不得出现「GBK 误解码」乱码串；判据 = 片段 `GBK→UTF-8` **严格往返可还原**
     且还原结果只含汉字/ASCII/中文标点（离线可跑、对正常中文零误报）。
   - 离线静态层自此 **8 项（S1~S8）**；`preflight.ps1` 的 G1 描述与 `maintenance-docs/` 同步说明。
+- **构建路径双平台化 + 日志目录 XDG 回退（2026-09-19，开发/工具向）**：`LocalMultiControl.csproj` 与单测
+  工程不再硬编码 Windows 路径，日志目录在非 Windows 上回退到 `$XDG_*`；README / README.zh-CN 同步补充
+  安装说明。**玩家可见行为零变化**。
 
 ### Fixed
 - **断网时「本地·每日挑战」退化成单人、连加人按钮都没有（r161，2026-09-27）**：每日页的大厅是**异步**建的
