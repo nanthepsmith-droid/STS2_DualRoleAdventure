@@ -31,6 +31,12 @@ AGENTS.md, CHANGELOG.md, README*.md, PLAYER_GUIDE*.md, TODO.md
   `git update-index --really-refresh` 也不清）。**判断"到底改了什么"请用
   `git diff HEAD --stat`**（或 `git hash-object -- <file>` 与 `git rev-parse HEAD:<file>` 对比），
   不要只看 `git status`，否则会以为有人在并行改代码。
+- 🚫 **Never hijack the game's official multiplayer entries** (Standard / Daily / Custom). The mod may only add
+  **its own** entries (injected cards/buttons + dedicated `Entry` methods) and must keep vanilla behaviour intact;
+  it must also **clean its session state up when leaving a lobby page** (otherwise mod UI leaks into official
+  lobby screens and the official host can inherit a rebound `LocalContext.NetId` / stale loopback net service).
+  规则模板、症状表、验证锚点见 `maintenance-docs/references/official-entry-coexistence.md`；
+  离线防回归门禁 = `Scripts/Tools/static_checks.py` 的 **S9 官方入口劫持检查**。
 - Language: **Chinese** for all new code comments, commits, logs, and documentation. Original Chinese documents are preserved under `docs/archive/`.
 
 ## 2. Build, format, deploy

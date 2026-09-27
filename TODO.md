@@ -1794,3 +1794,23 @@ LOG ANCHORS: INIT_OK / BUILD_ID(marker=2026-09-27-r158) / 联机菜单卡片已�
 ```
 回归要求：Standard / Custom 两档入口与人数上限行为**逐字不变**（页面上限默认 12，只有进 Daily 才收 4）；
 `LobbyLocalPlayerLimit` 在离开每日页时恢复；非回环 NetService 一律放行分数上传。
+
+### 维护：经验固化 + 防回归门禁（r160，2026-09-27）
+
+问题：「零劫持」是一条**跨会话必须遵守**的约定，但此前只写在 agent 记忆（`.codebuddy/.../memory`，换 harness 读不到）。
+用户要求：**写进 references（仓库侧，任何 harness 都能读）**，并给这类约定配上门禁与小工具。
+
+- **新增参考文档** `maintenance-docs/references/official-entry-coexistence.md`（权威源）：
+  零劫持规则、为什么（Custom 2026-03-25 / Daily r156 两次踩坑）、正确做法模板（自注入入口 + 会话生命周期三条铁律 +
+  UI 注入加严判据）、症状→病因→修法表（席位卡缺失 / 每帧 NRE / 角色卡不跟随 …）、验证锚点、配套文件表。
+  已同步 skill 侧副本（`references/` 两侧 10 份逐字节一致）。
+- **AGENTS.md §1 加硬约束**：官方联机入口不得劫持；离开大厅页必须清理会话；指向上述参考文档与 S9 门禁。
+- **门禁 S9（离线、防回归）**：`Scripts/Tools/static_checks.py` 新增「官方入口劫持检查」——
+  扫 `Scripts/**/*.cs`，只要 `NMultiplayerHostSubmenu.StartHost` / `OnStandardPressed` / `OnDailyPressed` /
+  `OnCustomPressed` 上出现「前缀 `return false`」即 FAIL；放行式补丁（如官方入口会话清理守卫）允许并列入备注。
+  可选扩展清单 `Scripts/Tools/official_entries.txt`。离线静态层自此 **9 项（S1~S9）**。
+  自测：临时造一个劫持式假补丁 ⇒ S9 `FAIL` ✓；真实仓库 ⇒ `PASS`（并列出"官方入口补丁均为放行式"）✓。
+- **小工具** `D:\Download\pain\tools\sync_references.py`：references 两侧
+  （仓库 `maintenance-docs/references` ↔ skill 侧副本）比对与同步；`--check` 不一致退出码 1（可进门禁）、
+  默认「仓库 → skill」、`--reverse` 反向。本轮用它发现并修掉一处历史漂移
+  （`local-multicontrol-pitfalls.md` 仓库侧比 skill 侧新，已同步）。

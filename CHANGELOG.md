@@ -5,6 +5,18 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 ## [Unreleased]
 
 ### Added
+- **「零劫持」经验固化 + 防回归门禁 S9 + references 同步工具（r160，2026-09-27）**：
+  把「mod 不得劫持官方联机入口」这条**跨会话约定**从 agent 记忆搬进**仓库文档**（任何工具 / 人都能读到）：
+  - 新增 `maintenance-docs/references/official-entry-coexistence.md`：规则、为什么（Custom 2026-03-25 / Daily r156
+    两次踩坑）、正确做法模板（自注入入口 + 会话生命周期三条铁律 + UI 注入加严判据）、
+    症状→病因→修法表（席位卡缺失 / 每帧 NRE / 角色卡不跟随 …）、验证锚点；`AGENTS.md §1` 加同名硬约束。
+  - 离线门禁 `static_checks.py` 新增 **S9 官方入口劫持检查**：`NMultiplayerHostSubmenu.StartHost` 与
+    `OnStandardPressed` / `OnDailyPressed` / `OnCustomPressed` 上出现「前缀 `return false`」即 FAIL
+    （放行式守卫允许，会列入备注）—— 离线静态层自此 **9 项（S1~S9）**。自测已验：
+    假劫持补丁 → FAIL；真实仓库 → PASS（"1 个官方入口补丁均为放行式"）。
+  - 新增小工具（本机层，不随仓库分发）`D:\Download\pain\tools\sync_references.py`：
+    仓库侧与 skill 侧 references 比对 / 同步，`--check` 不一致退出码 1（可进门禁）；
+    本轮用它发现并修掉一处历史漂移。详见 `TODO.md §维护：经验固化 + 防回归门禁（r160）`。
 - **每日挑战（Daily）本地多控接入 —— POC（r156，2026-09-27）**：联机菜单的 Daily 入口从「官方真联机」
   改成本地回环多角色开局，全程复用游戏自带的「每日多人」流程（最多 4 人、按人数分榜）。
   依据 `maintenance-docs/decision-records/本地多角色扩展到Daily模式可行性分析.md` §五/§六。

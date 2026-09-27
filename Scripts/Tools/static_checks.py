@@ -21,9 +21,14 @@
      "这个改动动了哪些运行期目标"（游戏更新断档 / 静默改名最容易从这里暴露）。
      基线文件 `Scripts/Tools/baselines/targets.baseline.txt`；**缺失 = FAIL**（不允许跳过即绿）。
   S8 源码编码卫生：`.cs` / `.ps1` / `.py` 必须是**合法 UTF-8**，且**不得出现「UTF-8 字节被当 GBK 解码」
-     产生的乱码串**（判据 = 片段 GBK→UTF-8 严格往返可还原 + 还原结果字符白名单 ⇒ 误报率极低）。
-     背景：`LocalSelfCoopContext.cs` 曾有 10 处此类乱码日志串 —— 能编译、能跑，但实机日志里就是乱码，
-     日志锚点**无法 grep**（我们的排查全靠锚点计数），属"看起来没事、实则毁掉诊断能力"的坑。
+    产生的乱码串**（判据 = 片段 GBK→UTF-8 严格往返可还原 + 还原结果字符白名单 ⇒ 误报率极低）。
+    背景：`LocalSelfCoopContext.cs` 曾有 10 处此类乱码日志串 —— 能编译、能跑，但实机日志里就是乱码，
+    日志锚点**无法 grep**（我们的排查全靠锚点计数），属"看起来没事、实则毁掉诊断能力"的坑。
+  S9 官方入口劫持：游戏官方联机入口（`NMultiplayerHostSubmenu.StartHost` 与三个 `On*Pressed`）
+    **不得**被 mod 的前缀 `return false` 接管 —— 那等于砍掉玩家的原版联机每日/自定义/标准入口
+    （Custom 自 2026-03-25、Daily 在 r156 都这么干过，2026-09-27 用户点名要求"零劫持"）。
+    放行式补丁（如"进官方入口前先清会话"的守卫）允许；规则与模板见
+    `maintenance-docs/references/official-entry-coexistence.md`；可选扩展清单 `Scripts/Tools/official_entries.txt`。
 
 用法:
   python Scripts/Tools/static_checks.py --repo .
@@ -383,6 +388,103 @@ def check_source_encoding(repo: Path) -> Check:
     return Check("S8", name, PASS, f"{checked} 个源码/脚本：UTF-8 合法、无 GBK 误解码乱码", info)
 
 
+# ------------------------------------------------------------------ S9
+# 官方入口劫持检查（AGENTS.md §1 硬约束；规则与模板见
+# `maintenance-docs/references/official-entry-coexistence.md`）：
+# 游戏的官方联机入口必须保持原版行为，mod 只能"并存"。历史上 Custom（2026-03-25）与
+# Daily（r156）都被 `[HarmonyPatch(... StartHost)]` 前缀 `return false` 接管过，直接砍掉玩家的
+# 原版联机功能（2026-09-27 用户点名要求零劫持）。这里做**离线防回归**：
+# 只要在官方入口方法上出现"前缀 return false"（= 阻断原实现）就判 FAIL；
+# 对官方入口的**放行式**补丁（如"进官方入口前先清会话"的守卫）是允许的，列入备注。
+OFFICIAL_ENTRY_METHODS = {
+    ("NMultiplayerHostSubmenu", "StartHost"),
+    ("NMultiplayerHostSubmenu", "OnStandardPressed"),
+    ("NMultiplayerHostSubmenu", "OnDailyPressed"),
+    ("NMultiplayerHostSubmenu", "OnCustomPressed"),
+}
+# 可选扩展清单（每行 `Type.Method`，`#` 后为注释）；文件存在时与内置清单合并。
+OFFICIAL_ENTRY_TARGETS_REL = "Scripts/Tools/official_entries.txt"
+# 前缀方法体的搜索窗口（字符数）：同一文件里 `[HarmonyPatch]` 之后的第一个方法体足够大，
+# 又不会跨到下一个类（本仓库单个补丁类都在数百字符内）。
+PREFIX_BODY_WINDOW = 4000
+RE_HARMONY_TARGET = re.compile(
+    r'\[HarmonyPatch\(\s*typeof\((\w+)\)\s*,\s*(?:nameof\(\s*\1\.(\w+)\s*\)|"(\w+)")'
+)
+RE_HARMONY_PREFIX = re.compile(r"\[HarmonyPrefix\]")
+
+
+def _load_official_entries(repo: Path):
+    entries = set(OFFICIAL_ENTRY_METHODS)
+    extra = repo / OFFICIAL_ENTRY_TARGETS_REL
+    if extra.is_file():
+        for raw in extra.read_text(encoding="utf-8").splitlines():
+            line = raw.split("#", 1)[0].strip()
+            if "." in line:
+                type_name, _, method_name = line.rpartition(".")
+                entries.add((type_name.strip(), method_name.strip()))
+    return entries
+
+
+def _braced_body(text: str, start: int) -> str:
+    """取 `start` 之后第一对花括号内的文本（简单配平，够用于启发式判定）。"""
+    open_index = text.find("{", start)
+    if open_index < 0:
+        return ""
+    depth = 0
+    for index in range(open_index, len(text)):
+        char = text[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_index:index + 1]
+    return text[open_index:]
+
+
+def check_official_entry_hijack(repo: Path) -> Check:
+    name = "官方入口劫持（官方联机入口必须保持原版）"
+    entries = _load_official_entries(repo)
+    hijacks, passthrough, checked = [], [], 0
+    for path in sorted((repo / "Scripts").rglob("*.cs")):
+        if any(part in SKIP_DIRS for part in path.parts) or not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        rel = str(path.relative_to(repo)).replace("\\", "/")
+        for target in RE_HARMONY_TARGET.finditer(text):
+            type_name = target.group(1)
+            method_name = target.group(2) or target.group(3)
+            if (type_name, method_name) not in entries:
+                continue
+            checked += 1
+            for prefix in RE_HARMONY_PREFIX.finditer(text, target.end()):
+                if prefix.start() - target.end() > PREFIX_BODY_WINDOW:
+                    break
+                lineno = text.count("\n", 0, prefix.start()) + 1
+                body = _braced_body(text, prefix.end())
+                where = f"{rel}:{lineno} {type_name}.{method_name}"
+                if "return false" in body:
+                    hijacks.append(f"{where} —— 前缀直接 return false（阻断官方原实现）")
+                else:
+                    passthrough.append(where)
+
+    info = {
+        "official_entry_methods": sorted(f"{t}.{m}" for t, m in entries),
+        "patched_official_entries": passthrough,
+        "hijacks": hijacks,
+    }
+    if hijacks:
+        return Check(
+            "S9", name, FAIL,
+            f"{len(hijacks)} 处官方入口被 mod 劫持（会砍掉玩家的原版联机功能；"
+            "请改为自注入入口，规则见 references/official-entry-coexistence.md）",
+            {"hijacks": hijacks},
+        )
+    detail = (f"{checked} 个官方入口补丁均为放行式（无 return false）"
+              if checked else "未发现针对官方入口的补丁")
+    return Check("S9", name, PASS, detail, info)
+
+
 # ------------------------------------------------------------------ main
 CHECKS = (
     ("S1", "产物/反编译源码入库", check_artifacts_tracked),
@@ -393,6 +495,7 @@ CHECKS = (
     ("S6", "BuildMarker 身份", check_build_marker),
     ("S7", "运行期目标基线（新增/消失可见）", check_target_baseline),
     ("S8", "源码编码（非法 UTF-8 / GBK 误解码乱码）", check_source_encoding),
+    ("S9", "官方入口劫持（官方联机入口必须保持原版）", check_official_entry_hijack),
 )
 
 
