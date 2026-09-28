@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -5,7 +6,9 @@ using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
 using MegaCrit.Sts2.Core.CardSelection;
 using MegaCrit.Sts2.Core.Commands;
+using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
 using MegaCrit.Sts2.Core.Runs;
@@ -124,6 +127,104 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// 手牌选牌入口：作用域外的「从手牌选一张」（**复制类遗物效果最典型** —— 例：猪猪 mod 的【重瞳】
+    /// 战斗开始时「选择一张牌复制」）。
+    /// 优先级低于 <see cref="CardSelectHandScenarioPatch"/>：作用域内（瓦库出牌中）由它按场景优先级作答；
+    /// 本前缀只在 <see cref="ShouldAutoAnswer"/> 成立（瓦库形态 + 后台托管 + 栈上无选择器）时接管。
+    /// </summary>
+    [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromHand), new[]
+    {
+        typeof(PlayerChoiceContext),
+        typeof(Player),
+        typeof(CardSelectorPrefs),
+        typeof(Func<CardModel, bool>),
+        typeof(AbstractModel),
+    })]
+    [HarmonyPriority(Priority.Low)]
+    [HarmonyPrefix]
+    private static bool FromHandPrefix(
+        Player player,
+        CardSelectorPrefs prefs,
+        Func<CardModel, bool>? filter,
+        AbstractModel source,
+        ref Task<IEnumerable<CardModel>> __result)
+    {
+        if (!ShouldAutoAnswer(player))
+        {
+            return true;
+        }
+
+        List<CardModel> candidates;
+        try
+        {
+            candidates = PileType.Hand.GetPile(player).Cards
+                .Where(filter ?? (_ => true))
+                .ToList();
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"瓦库作用域外手牌选牌取手牌失败，交回原流程: {exception.Message}");
+            return true;
+        }
+
+        if (candidates.Count == 0)
+        {
+            return true;
+        }
+
+        WakuuPickScenario scenario = WakuuPriorityPicking.ClassifyHandScenario(
+            source?.GetType().Name,
+            CardSelectHandScenarioPatch.BuildPrefsLocKey(prefs.Prompt));
+
+        LocalMultiControlLogger.Info(
+            $"瓦库作用域外手牌选牌自动作答: player={player.NetId}, options={candidates.Count}, "
+            + $"select={prefs.MinSelect}~{prefs.MaxSelect}, scenario={scenario}, source={source?.GetType().Name}, entry=FromHand");
+
+        __result = scenario == WakuuPickScenario.Unknown
+            ? new LocalWakuuStrategySelector().GetSelectedCards(candidates, prefs.MinSelect, prefs.MaxSelect)
+            : new LocalWakuuStrategySelector(scenario).GetSelectedCards(candidates, prefs.MinSelect, prefs.MaxSelect);
+        return false;
+    }
+
+    /// <summary>
+    /// 未适配入口探针（**只记日志、不改行为**）：门控成立（本该自动作答）但还没适配的选牌入口，
+    /// 复现日志里会直接点名 ⇒ 下次照它扩展，不用再猜第三方走了哪条路。
+    /// </summary>
+    [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromCombatPile), new[]
+    {
+        typeof(PlayerChoiceContext),
+        typeof(CardPile),
+        typeof(Player),
+        typeof(CardSelectorPrefs),
+    })]
+    [HarmonyPriority(Priority.Low)]
+    [HarmonyPrefix]
+    private static void FromCombatPileProbe(Player player)
+    {
+        ProbeUncoveredEntry(player, "FromCombatPile");
+    }
+
+    [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromHandForUpgrade))]
+    [HarmonyPriority(Priority.Low)]
+    [HarmonyPrefix]
+    private static void FromHandForUpgradeProbe(Player player)
+    {
+        ProbeUncoveredEntry(player, "FromHandForUpgrade");
+    }
+
+    internal static void ProbeUncoveredEntry(Player? player, string entry)
+    {
+        if (player == null || !ShouldAutoAnswer(player))
+        {
+            return;
+        }
+
+        LocalMultiControlLogger.Warn(
+            $"瓦库作用域外选牌入口未适配: entry={entry}, player={player.NetId} —— 本次不会自动作答"
+            + "（若该角色是后台托管的瓦库，界面会等真人点）。请把这条日志报给维护者以扩展适配。");
     }
 
     private static async Task<CardModel?> ComputeSingleAnswerAsync(IReadOnlyList<CardModel> cards)

@@ -14,8 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // R2 第二批：镜像五件套/藏宝图的共用判据与作用域收进 LocalRewardMirror（行为零变化）（分支 refactor/r2-dedup）
-    private const string BuildMarker = "Revival v1.43.0 (game v0.111.0, marker=2026-09-28-r172)";
+    // 修「瓦库不自动选战斗开始类手牌选牌（重瞳复制）」：作用域外自动作答扩展到 FromHand + 未适配入口探针（分支 fix/wakuu-turnstart-copy-pick）
+    private const string BuildMarker = "Revival v1.43.0 (game v0.111.0, marker=2026-09-28-r173)";
 
     private static Harmony? _harmony;
 
