@@ -410,8 +410,10 @@ internal static class LocalRemoteLobbyPlayerSwitchUi
 
     private static List<NRemoteLobbyPlayer> GetLocalLobbyNodes(Node screen)
     {
-        // R2：席位卡集合走共用缓存扫描（本方法在 _Process 上每帧调用，原本每帧全量遍历子树）
-        return LocalSubtreeScanCache.Scan<NRemoteLobbyPlayer>(screen)
+        // ⚠ 列布局必须**实时**：不能走缓存 —— 席位卡的位置在入场动画里逐帧变，
+        // 且与席位卡的增删同帧相关（R2 第一版用 TTL 缓存 ⇒ 布局抖到左边、按钮位置漂移）。
+        return LocalNodeTree.EnumerateDescendants(screen)
+            .OfType<NRemoteLobbyPlayer>()
             .Where((node) => LocalSelfCoopContext.LocalPlayerIds.Contains(node.PlayerId))
             .OrderBy((node) => node.GlobalPosition.X)
             .ThenBy((node) => node.GlobalPosition.Y)
@@ -463,35 +465,8 @@ internal static class LocalRemoteLobbyPlayerSwitchUi
 
     private static Label? TryFindIdLabel(NRemoteLobbyPlayer playerNode)
     {
-        // R2：子树遍历收到 LocalNodeTree + 短期缓存（本方法在 _Process 上每帧被调）
-        string playerIdText = playerNode.PlayerId.ToString();
-        foreach (Label label in LocalSubtreeScanCache.Scan<Label>(playerNode))
-        {
-            if (IsExcludedIdLabel(label))
-            {
-                continue;
-            }
-
-            if (LocalNodeTree.LooksLikeIdLabel(label, playerIdText))
-            {
-                return label;
-            }
-        }
-
-        return null;
-    }
-
-    private static bool IsExcludedIdLabel(Label label)
-    {
-        foreach (StringName excluded in IdLabelExclusions)
-        {
-            if (label.Name == excluded)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        // 缓存只用于「找稳定的节点引用」：命中后只做有效性校验，不再每帧全树遍历
+        return LocalIdLabelCache.Find(playerNode, playerNode.PlayerId.ToString(), IdLabelExclusions);
     }
 
     private readonly record struct AnchorLayout(Rect2 AnchorRect, float ColumnX);

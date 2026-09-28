@@ -244,17 +244,8 @@ internal static class LocalMultiplayerPlayerStateSwitchUi
 
     private static Label? TryFindIdLabel(NMultiplayerPlayerState state)
     {
-        // R2：子树遍历收到 LocalNodeTree + 短期缓存（本方法在 _Process 上每帧被调两次）
-        string playerIdText = state.Player.NetId.ToString();
-        foreach (Label label in LocalSubtreeScanCache.Scan<Label>(state))
-        {
-            if (LocalNodeTree.LooksLikeIdLabel(label, playerIdText))
-            {
-                return label;
-            }
-        }
-
-        return null;
+        // 缓存只用于「找稳定的节点引用」：命中后只做有效性校验，不再每帧全树遍历
+        return LocalIdLabelCache.Find(state, state.Player.NetId.ToString());
     }
 }
 

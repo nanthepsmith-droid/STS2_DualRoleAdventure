@@ -174,10 +174,16 @@ internal static class NDailyRunScreenLocalPlayersOpenPatch
             return;
         }
 
-        // R2：已有席位卡集合走共用缓存扫描（本方法挂在每日页 _Process 上每帧调用）
-        HashSet<ulong> existingSeatIds = LocalSubtreeScanCache.Scan<NRemoteLobbyPlayer>(container)
-            .Select((node) => node.PlayerId)
-            .ToHashSet();
+        // ⚠ 写后读必须**实时**：刚补建的席位卡要立刻被下一次「已存在」判定看到，否则会每帧重复补建
+        // （R2 第一版用 TTL 缓存踩过：一局 `席位卡已补建` 199 次、added 累计 342 张 ⇒ 选人界面「无限玩家」）
+        HashSet<ulong> existingSeatIds = new();
+        foreach (Node node in LocalNodeTree.EnumerateDescendants(container))
+        {
+            if (node is NRemoteLobbyPlayer playerNode)
+            {
+                existingSeatIds.Add(playerNode.PlayerId);
+            }
+        }
 
         int added = 0;
         foreach (ulong seatId in targetPlayerIds)

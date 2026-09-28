@@ -14,8 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // R2 第一批量（子树遍历单点化 + 人数面板共用组件）实机验证位（分支 refactor/r0-layering-boundary）
-    private const string BuildMarker = "Revival v1.43.0 (game v0.111.0, marker=2026-09-28-r169)";
+    // R2 第一批实机回归修复（席位卡重复补建 / 布局漂移）：缓存只留给"稳定节点引用"（分支 refactor/r0-layering-boundary）
+    private const string BuildMarker = "Revival v1.43.0 (game v0.111.0, marker=2026-09-28-r170)";
 
     private static Harmony? _harmony;
 
