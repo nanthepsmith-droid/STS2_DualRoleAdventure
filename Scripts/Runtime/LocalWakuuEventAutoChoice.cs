@@ -41,6 +41,14 @@ internal static class LocalWakuuEventAutoChoice
     /// <summary>首页选项就绪等待上限（毫秒）。</summary>
     private const int OptionsReadyTimeoutMs = 5000;
 
+    /// <summary>
+    /// 单个事件选项 <c>Chosen()</c> 的执行超时（BUG-26，r185）。
+    /// 取 6 秒：正常选项（含子选牌，由作用域内作答链路即时答完）远快于此；
+    /// 要比安全网的 8 秒（<c>LocalWakuuSafetyNet.EventStallTimeoutSec</c>）先到，
+    /// 让选择器随 using 干净弹栈、不留残留，安全网接手时是干净现场。
+    /// </summary>
+    private const int OptionChosenTimeoutMs = 6000;
+
     /// <summary>正在自动选择的事件归属者（按玩家去重，双瓦库局互不阻塞）。</summary>
     private static readonly HashSet<ulong> _inFlightOwners = new();
     private static readonly object _flightLock = new();
@@ -67,6 +75,8 @@ internal static class LocalWakuuEventAutoChoice
     /// <summary>是否正在为该玩家自动推进事件（供事件奖励自动领取判定）。</summary>
     internal static bool IsAutoChoosingFor(Player? player)
     {
+        // R3 B2 复核：与奖励自动领取同一类 —— 比的是「事件自动选择作用域是不是这一位的」，
+        // 不是席位身份判定 ⇒ 不走席位唯一入口。
         return player != null
                && InEventAutoChoiceScope.Value
                && AutoChoiceOwnerId.Value == player.NetId;
@@ -479,6 +489,9 @@ internal static class LocalWakuuEventAutoChoice
                                       ?? SelectByStrategy(safeCandidates);
                 if (option == null)
                 {
+                    // 理论不可达（三级链对非空候选恒有产出）；万一命中，别再静默退场。
+                    LocalMultiControlLogger.Warn(
+                        $"瓦库事件决策链没有给出选项，停住等真人处理: event={eventModel.Id.Entry}, page={page + 1}");
                     return;
                 }
 
@@ -511,7 +524,26 @@ internal static class LocalWakuuEventAutoChoice
                             InEventAutoChoiceScope.Value = true;
                             try
                             {
-                                await option.Chosen();
+                                // BUG-26 防御（r185）：Chosen() 内部可能走进第三方需要真人配合的子流程
+                                //（实证：TouhouAncients「离开梦境」转场在后台席位永久等待）。静默挂死的代价是
+                                // 8 秒后安全网只能对着残留选择器收拾现场、且无任何诊断。这里加超时：
+                                // 超时 = 放弃本页（选择器随 using 干净弹栈），剩余部分交真人，并点名 option，
+                                // 便于下一轮按「逐入口适配」把该子流程补进放行黑名单/作答链。
+                                Task chosenTask = option.Chosen();
+                                Task finishedTask = await Task.WhenAny(chosenTask, Task.Delay(OptionChosenTimeoutMs));
+                                if (finishedTask != chosenTask)
+                                {
+                                    // 观测被放弃任务的异常，避免 UnobservedTaskException 噪音。
+                                    _ = chosenTask.ContinueWith(
+                                        (t) => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+                                    LocalMultiControlLogger.Warn(
+                                        $"瓦库事件选项执行超时（疑似子流程无人应答），停住等真人处理: "
+                                        + $"event={eventModel.Id.Entry}, page={page + 1}, option={option.TextKey}, "
+                                        + $"timeoutMs={OptionChosenTimeoutMs}");
+                                    return;
+                                }
+
+                                await chosenTask;
                             }
                             finally
                             {
