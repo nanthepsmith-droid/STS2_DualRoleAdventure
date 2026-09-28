@@ -465,8 +465,10 @@ internal static class LocalRemoteLobbyPlayerSwitchUi
 
     private static Label? TryFindIdLabel(NRemoteLobbyPlayer playerNode)
     {
-        // 缓存只用于「找稳定的节点引用」：命中后只做有效性校验，不再每帧全树遍历
-        return LocalIdLabelCache.Find(playerNode, playerNode.PlayerId.ToString(), IdLabelExclusions);
+        // ⚠ 必须**实时**：标签订位不能缓存 —— 缓存会把「首次扫到的那一个」固定下来，
+        // 而页面布局稳定后真正该对齐的标签并不是它 ⇒ 按钮从头就偏左（r170 实机；r169 是"先正后偏"）。
+        // 见 references/local-multicontrol-pitfalls.md 坑 J。
+        return LocalNodeTree.FindIdLabel(playerNode, playerNode.PlayerId.ToString(), IdLabelExclusions);
     }
 
     private readonly record struct AnchorLayout(Rect2 AnchorRect, float ColumnX);

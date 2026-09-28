@@ -11,8 +11,9 @@ namespace LocalMultiControl.Scripts.Runtime;
 /// `RestSitePatch` / `NRemoteLobbyPlayerSwitchPatch` / `NMultiplayerPlayerStateSwitchPatch` /
 /// `NDailyRunLocalSelfCoopPatch`。其中三处还挂在 `_Process` 上每帧跑
 /// （战斗玩家状态条 / 大厅席位卡 / 每日页席位卡），于是「同一棵子树每帧全量扫描」被复制了三份。
-/// 这里收成一处实现；需要跨帧复用**稳定节点引用**的调用点走 <see cref="LocalIdLabelCache"/>。
-/// ⚠ 写后读（补建后立刻判「已存在吗」）与每帧布局**必须**调用这里的实时遍历 —— 不能套缓存。
+/// 这里收成一处实现，且**一律实时遍历**：R2 第一版曾给「找 id 标签 / 席位卡集合」套过 TTL 缓存，
+/// 代价是每帧重复补建席位卡（选人界面「无限玩家」）与标签订位偏左 —— 见
+/// `references/local-multicontrol-pitfalls.md` 坑 J。**不要再给这些调用点前面套缓存**。
 ///
 /// 注意：本文件依赖 Godot（`Node`），因此**不进 `PureLogic`** —— 按 ADR 的分层规则，
 /// `PureLogic` 只放零 Godot 依赖的纯函数。
@@ -35,7 +36,7 @@ internal static class LocalNodeTree
     /// <summary>
     /// 按玩家 id 文本在子树里找游戏原生「id 标签」（首个命中）；
     /// <paramref name="excludedNames"/> 里的节点跳过（大厅页要跳过我们自己注入的提示标签）。
-    /// 这是**实时**遍历；需要跨帧复用的调用点请走 <see cref="LocalIdLabelCache"/>。
+    /// 这是**实时**遍历（**不要**在前面套帧缓存 —— 标签订位必须逐帧重算，见坑 J）。
     /// </summary>
     internal static Label? FindIdLabel(Node root, string playerIdText, StringName[]? excludedNames = null)
     {

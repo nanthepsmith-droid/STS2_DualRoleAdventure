@@ -244,8 +244,8 @@ internal static class LocalMultiplayerPlayerStateSwitchUi
 
     private static Label? TryFindIdLabel(NMultiplayerPlayerState state)
     {
-        // 缓存只用于「找稳定的节点引用」：命中后只做有效性校验，不再每帧全树遍历
-        return LocalIdLabelCache.Find(state, state.Player.NetId.ToString());
+        // ⚠ 必须**实时**（理由同大厅席位卡：标签订位不能缓存），见 references 坑 J。
+        return LocalNodeTree.FindIdLabel(state, state.Player.NetId.ToString());
     }
 }
 
