@@ -32,7 +32,8 @@ internal static class ActChangeSynchronizerPatch
             return;
         }
 
-        ulong? localNetId = LocalContext.NetId;
+        // R3 B2b：读上下文走唯一取数入口（逐字等价；缓存命中校验是权威内容比对，不会读到旧值）。
+        ulong? localNetId = LocalSeatSource.ContextSeatId();
         if (!localNetId.HasValue)
         {
             return;

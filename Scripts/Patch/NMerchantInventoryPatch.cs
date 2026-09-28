@@ -26,7 +26,9 @@ internal static class NMerchantInventoryPatch
             return;
         }
 
-        ulong currentPlayerId = LocalContext.NetId ?? LocalSelfCoopContext.PrimaryPlayerId;
+        // R3 B2：商店库存要绑到「回环上下文当前对着的那位」，逐字等价于旧写法
+        // `LocalContext.NetId ?? PrimaryPlayerId`（不是前台口径）。
+        ulong currentPlayerId = LocalSeatSource.ContextSeatId() ?? LocalSelfCoopContext.PrimaryPlayerId;
         Player? currentPlayer = runState.GetPlayer(currentPlayerId) ?? LocalContext.GetMe(runState);
         if (currentPlayer == null)
         {

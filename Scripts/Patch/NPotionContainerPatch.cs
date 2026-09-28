@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
-using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Nodes.Potions;
@@ -25,7 +24,9 @@ internal static class NPotionContainerPatch
 
         try
         {
-            ulong targetPlayerId = LocalContext.NetId ?? LocalSelfCoopContext.PrimaryPlayerId;
+            // R3 B2：药水栏绑到「回环上下文当前对着的那位」，逐字等价于旧写法
+            // `LocalContext.NetId ?? PrimaryPlayerId`（不是前台口径）。
+            ulong targetPlayerId = LocalSeatSource.ContextSeatId() ?? LocalSelfCoopContext.PrimaryPlayerId;
             if (!TryBindPotionContainerToPlayer(__instance, runState, targetPlayerId))
             {
                 LocalMultiControlLogger.Warn($"药水栏初始化失败：未找到目标玩家 {targetPlayerId}。");

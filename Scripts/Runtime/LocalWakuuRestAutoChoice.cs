@@ -444,6 +444,9 @@ internal static class LocalWakuuRestAutoChoice
     /// <summary>
     /// 为瓦库的"选一个队友"类等待指定目标：优先另一个存活玩家（即真人）。
     /// 返回 null 表示没有可用队友（调用方可回退为无目标结果）。
+    ///
+    /// ⚠ R3 B2 复核：`p.NetId != owner.NetId` 是**两两比较**（owner 是入参），不是身份判定
+    /// ⇒ 不走席位唯一入口。
     /// </summary>
     internal static ulong? GetPreferredTeammateNetId(Player owner)
     {

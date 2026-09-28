@@ -125,9 +125,9 @@ internal static class CrystalSphereMinigameProceedGuardPatch
             return true;
         }
 
-        ulong currentPlayerId = LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId
-            ?? MegaCrit.Sts2.Core.Context.LocalContext.NetId
-            ?? 0UL;
+        // R3 B2：这里要的是「当前前台玩家」（受控位优先、其次回环上下文）—— 逐字等价于旧写法
+        // `SessionState.CurrentControlledPlayerId ?? LocalContext.NetId ?? 0UL`，改走席位唯一入口。
+        ulong currentPlayerId = LocalSeatSource.ForegroundSeatId();
         if (currentPlayerId == 0UL)
         {
             return true;

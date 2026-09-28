@@ -78,6 +78,8 @@ internal static class LocalWakuuRewardAutoClaim
     /// </summary>
     internal static bool IsAutoClaimingFor(Player player)
     {
+        // R3 B2 复核：这里比的是「本次操作是不是我为**这一位**开的自动化作用域」（AsyncLocal 归属），
+        // 不是"这个 id 是谁" ⇒ 不走席位唯一入口（作用域各自持有自己的 AsyncLocal 是本设计的一部分）。
         return player != null && _autoClaimScopeOwner.Value == player.NetId;
     }
 
@@ -154,7 +156,8 @@ internal static class LocalWakuuRewardAutoClaim
 
     private static async Task<bool> TrySettleAsync(Reward reward, Player owner)
     {
-        ulong? previousNetId = LocalContext.NetId;
+        // R3 B2：作用域进出时保存/还原的都是「回环上下文原值」（等价于旧写法 LocalContext.NetId）。
+        ulong? previousNetId = LocalSeatSource.ContextSeatId();
         ulong? previousScopeOwner = _autoClaimScopeOwner.Value;
         try
         {
@@ -267,7 +270,9 @@ internal static class LocalWakuuRewardAutoClaim
 
     private static void AlignLocalContext(ulong? playerId)
     {
-        if (playerId == null || LocalContext.NetId == playerId)
+        // R3 B2：写前判定「上下文是不是已经对着这一位」改问席位快照（等价于旧写法 LocalContext.NetId == playerId）；
+        // 写点（LocalContext.NetId = …）保持原样 —— 它写的就是这个来源，不能绕。
+        if (playerId == null || LocalSeatSource.IsContextSeat(playerId.Value))
         {
             return;
         }

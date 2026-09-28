@@ -49,7 +49,8 @@ internal static class CardRewardPatch
         }
 
         __state.IsPatched = true;
-        __state.PreviousContextNetId = LocalContext.NetId;
+        // R3 B2：保存的是「回环上下文原值」（等价于旧写法 LocalContext.NetId），写完在 Postfix 原样还原。
+        __state.PreviousContextNetId = LocalSeatSource.ContextSeatId();
         __state.PreviousSenderId = loopback.NetId;
 
         LocalContext.NetId = __instance.Player.NetId;

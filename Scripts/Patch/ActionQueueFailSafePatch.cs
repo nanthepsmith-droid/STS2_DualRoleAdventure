@@ -91,7 +91,8 @@ internal static class NCardPlayQueueOnActionEnqueuedFailSafePatch
             return;
         }
 
-        ulong playerId = LocalContext.NetId ?? LocalSelfCoopContext.PrimaryPlayerId;
+        // R3 B2b：`LocalContext.NetId ?? PrimaryPlayerId` 收编到唯一取数入口（逐字等价，见 ContextOrPrimarySeatId 注释）。
+        ulong playerId = LocalSeatSource.ContextOrPrimarySeatId();
         if (playerId == 0)
         {
             return;
@@ -128,7 +129,7 @@ internal static class ActionQueueSynchronizerRequestEnqueueFailSafePatch
         int round = NCombatRoom.Instance?.Ui != null
             ? (AccessTools.Field(typeof(NEndTurnButton), "_combatState")?.GetValue(NCombatRoom.Instance.Ui.EndTurnButton) as CombatState)?.RoundNumber ?? -1
             : -1;
-        ulong playerId = LocalContext.NetId ?? LocalSelfCoopContext.PrimaryPlayerId;
+        ulong playerId = LocalSeatSource.ContextOrPrimarySeatId();
         LocalMultiControlRuntime.RecordFlowBlockSignal(
             "deferred_play_detected_during_enemy_turn",
             syncState.ToString(),
@@ -153,7 +154,7 @@ internal static class ActionQueueSynchronizerRequestEnqueueFailSafePatch
                 $"RequestEnqueue 空引用已拦截，避免阻塞: action={action?.ToString() ?? "null"}, context={LocalContext.NetId?.ToString() ?? "null"}");
         }
 
-        ulong playerId = LocalContext.NetId ?? LocalSelfCoopContext.PrimaryPlayerId;
+        ulong playerId = LocalSeatSource.ContextOrPrimarySeatId();
         if (playerId != 0)
         {
             LocalMultiControlRuntime.AlignContextForActionOwner(playerId, "request-enqueue-failsafe");

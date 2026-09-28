@@ -76,6 +76,11 @@ internal static class CrystalSphereMirrorRuntime
         }
     }
 
+    /// <summary>
+    /// 「除 sourcePlayer 之外的所有角色」。
+    /// ⚠ R3 B2 复核：这是**两两比较**（"候选 ≠ 入参这个角色"），不是"我是谁"的身份判定
+    /// ⇒ 刻意不走席位唯一入口（下面把当前玩家/排除者当入参传进来，正是为了不让这里读全局身份）。
+    /// </summary>
     public static List<Player> GetOtherPlayers(Player sourcePlayer)
     {
         return sourcePlayer.RunState.Players
@@ -84,7 +89,9 @@ internal static class CrystalSphereMirrorRuntime
     }
 
     /// <summary>
-    /// 在非共享事件中查找还有水晶球事件未完成的其他角色（排除 excludeNetId）。
+    /// 在非共享事件中查找还有水晶球事件未完成的其他角色（排除 excludeNetId —— 由调用方传入的前台玩家）。
+    /// ⚠ R3 B2 复核：方法内只有"候选 ≠ excludeNetId / 候选 ≠ 我自己"的**两两比较**，
+    /// 「谁是前台」由调用方在入口处用席位快照算好传入，故本方法不读身份来源。
     /// </summary>
     public static Player? GetNextPendingCrystalSphereOwner(ulong excludeNetId)
     {

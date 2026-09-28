@@ -52,7 +52,8 @@ internal static class CardPileAddForegroundContextPinPatch
             return;
         }
 
-        __state = LocalContext.NetId;
+        // R3 B2b：钉扎前保存的"原值"读侧走唯一取数入口（逐字等价；写侧与还原照旧）。
+        __state = LocalSeatSource.ContextSeatId();
         LocalContext.NetId = controlledPlayerId.Value;
     }
 

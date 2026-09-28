@@ -46,8 +46,36 @@ internal static class LocalSeatSource
     /// <summary>当前前台席位（受控位优先、其次上下文；0 = 都没有）。</summary>
     internal static ulong ForegroundSeatId() => CurrentSeats().ForegroundSeatId;
 
+    /// <summary>
+    /// 回环 sender 上下文席位（等价于旧写法 `LocalContext.NetId`；null = 未设置）。
+    ///
+    /// ⚠ **不要用 <see cref="ForegroundSeatId"/> 顶替它**：前台口径是「受控位优先」，
+    /// 而我们的自动化作用域（奖励自动领取 / 商店自动采购 / 瓦库出牌看门狗）恰好是
+    /// **把上下文对齐到归属者、受控位仍停在真人** —— 两种口径在那时会给出不同的 id。
+    /// 旧代码写 `LocalContext.NetId` 的地方要的就是上下文值，这里必须逐字等价。
+    /// </summary>
+    internal static ulong? ContextSeatId() => CurrentSeats().ContextSeatId;
+
+    /// <summary>
+    /// 「上下文位 ?? 主席位」（等价于旧写法
+    /// `LocalContext.NetId ?? LocalSelfCoopContext.PrimaryPlayerId`；0 = 两者都没有）。
+    ///
+    /// ⚠ 刻意**不是** <see cref="ForegroundSeatId"/>：旧口径里**没有受控位**这一层，
+    /// 在「受控位已设、上下文未设」时两种口径会给出不同的 id（动作队列兜底要的就是旧口径，
+    /// 见 <see cref="ContextSeatId"/> 的口径坑注释）。
+    /// </summary>
+    internal static ulong ContextOrPrimarySeatId()
+        => CurrentSeats().ContextSeatId ?? CurrentSeats().PrimarySeatId;
+
     /// <summary>该席位是否前台（受控位优先、其次上下文）。</summary>
     internal static bool IsForegroundSeat(ulong seatId) => CurrentSeats().IsForeground(seatId);
+
+    /// <summary>
+    /// 该 id 是否就是回环 sender 上下文当前指向的席位（等价于旧写法
+    /// `LocalContext.NetId == id`，0 与 null 都恒 false）。用于"上下文是否已经是对着这个人"
+    /// 这类写前判定（奖励自动领取的作用域对齐）。
+    /// </summary>
+    internal static bool IsContextSeat(ulong seatId) => CurrentSeats().IsContext(seatId);
 
     /// <summary>该席位是否属于本地多控会话（第三方席位 / 0 都是 false）。</summary>
     internal static bool IsLocalSeat(ulong seatId) => CurrentSeats().IsLocalSeat(seatId);

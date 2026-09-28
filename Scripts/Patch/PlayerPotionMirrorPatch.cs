@@ -1,6 +1,5 @@
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
-using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
@@ -25,7 +24,9 @@ internal static class PotionManualUseTargetPatch
             return;
         }
 
-        ulong controlledPlayerId = LocalContext.NetId ?? __instance.Owner.NetId;
+        // R3 B2：问的是「回环上下文当前对着谁」，逐字等价于旧写法 `LocalContext.NetId ?? Owner.NetId`
+        // （注意不是前台口径 —— 自动化作用域里上下文会被对齐到归属者，两者会不同）。
+        ulong controlledPlayerId = LocalSeatSource.ContextSeatId() ?? __instance.Owner.NetId;
         Player? controlledPlayer = __instance.Owner.RunState.GetPlayer(controlledPlayerId);
         if (controlledPlayer == null || controlledPlayer.Creature == null || controlledPlayer == __instance.Owner)
         {

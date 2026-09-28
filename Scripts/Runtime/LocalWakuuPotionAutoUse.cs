@@ -651,6 +651,10 @@ internal static class LocalWakuuPotionAutoUse
         return ctx.Owner.Creature;
     }
 
+    /// <summary>
+    /// 「除 owner 以外的角色」。
+    /// ⚠ R3 B2 复核：两两比较（候选 ≠ 入参 owner），不是身份判定 ⇒ 不走席位唯一入口。
+    /// </summary>
     private static IEnumerable<Player> GetOtherPlayers(Player owner)
     {
         try

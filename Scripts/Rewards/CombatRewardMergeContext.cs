@@ -151,6 +151,8 @@ internal static class CombatRewardMergeContext
                 return;
             }
 
+            // ⚠ R3 B2 复核：这里的 `localPlayerId` 取自**同步器自己的 `_localPlayerId` 字段（反射）**，
+            // 不是席位身份来源 ⇒ 与本批无关，随「反射 `_localPlayerId` 统一读写入口」归 **B3**。
             ulong? localPlayerId = TryGetLocalPlayerId(synchronizer);
             bool needAlign = localPlayerId != displaySet.Player.NetId;
             if (needAlign)

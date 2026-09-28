@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
-using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
 using MegaCrit.Sts2.Core.Multiplayer.Game.PeerInput;
 using MegaCrit.Sts2.Core.Nodes;
@@ -31,7 +30,8 @@ internal static class NHandImageCollectionUpdateVisibilityPatch
             return false;
         }
 
-        bool hasLocalScreen = TryGetScreenType(synchronizer, LocalContext.NetId ?? 0UL, out NetScreenType localScreenType);
+        // R3 B2：「本机当前屏幕属于谁」= 回环上下文（逐字等价于旧写法 `LocalContext.NetId ?? 0UL`）。
+        bool hasLocalScreen = TryGetScreenType(synchronizer, LocalSeatSource.ContextSeatId() ?? 0UL, out NetScreenType localScreenType);
         foreach (NHandImage hand in hands)
         {
             NetScreenType handScreenType = default;

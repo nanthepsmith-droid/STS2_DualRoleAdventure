@@ -348,7 +348,8 @@ internal sealed partial class LocalGhostHandsOverlay : Control
         }
 
         RunState? runState = RunManager.Instance.DebugOnlyGetState();
-        ulong? localNetId = LocalContext.NetId;
+        // R3 B2b：读上下文走唯一取数入口（逐字等价）。
+        ulong? localNetId = LocalSeatSource.ContextSeatId();
         if (runState == null || !localNetId.HasValue)
         {
             ClearRows();

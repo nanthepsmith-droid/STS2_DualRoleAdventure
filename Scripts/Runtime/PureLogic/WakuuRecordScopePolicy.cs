@@ -36,6 +36,9 @@ public static class WakuuRecordScopePolicy
     /// <summary>
     /// 该自动化作用域是不是"这一位玩家自己的"（是 → 本次操作由瓦库自动化产生，不是真人决策，不该记）。
     /// 作用域为空（null）→ false：没有对应自动化在跑，正常记录。
+    ///
+    /// ⚠ R3 复核：这是**作用域归属**比较，不是席位身份判定 —— 身份（"这个 id 是谁"）一律走
+    /// <c>LocalSeatSource</c> / <c>SeatRegistry</c>；本类是纯逻辑层，刻意不依赖游戏类型。
     /// </summary>
     public static bool IsAutoScopeOwnedBy(ulong? scopeOwnerId, ulong playerId)
     {

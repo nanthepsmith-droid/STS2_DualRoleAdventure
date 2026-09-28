@@ -49,7 +49,8 @@ internal static class EventSynchronizerPatch
         }
 
         __state.IsPatched = true;
-        __state.PreviousContextNetId = LocalContext.NetId;
+        // R3 B2b：钉扎前保存的"原值"读侧走唯一取数入口（逐字等价；写侧与还原照旧）。
+        __state.PreviousContextNetId = LocalSeatSource.ContextSeatId();
         __state.PreviousSenderId = loopbackService.NetId;
 
         LocalContext.NetId = LocalSelfCoopContext.PrimaryPlayerId;
