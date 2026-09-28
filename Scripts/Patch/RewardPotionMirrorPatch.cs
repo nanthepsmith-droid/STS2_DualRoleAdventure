@@ -20,12 +20,12 @@ namespace LocalMultiControl.Scripts.Patch;
 [HarmonyPatch(typeof(RewardSynchronizer), nameof(RewardSynchronizer.SyncLocalObtainedPotion))]
 internal static class RewardPotionMirrorPatch
 {
-    private static readonly AsyncLocal<bool> IsMirroring = new();
+    private static readonly LocalRewardMirror.Scope MirrorScope = new();
 
     [HarmonyPostfix]
     private static void Postfix(RewardSynchronizer __instance, PotionModel potion)
     {
-        if (!LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.UseSingleAdventureMode || IsMirroring.Value)
+        if (!LocalRewardMirror.IsMirrorFeatureEnabled || MirrorScope.IsActive)
         {
             return;
         }
@@ -36,23 +36,20 @@ internal static class RewardPotionMirrorPatch
             return;
         }
 
-        Player? sourcePlayer = ResolveSourcePlayer(__instance);
+        Player? sourcePlayer = LocalRewardMirror.ResolveSynchronizerSource(__instance);
         if (sourcePlayer == null)
         {
             return;
         }
 
         // r147：**来源**也必须是本地席位（旧实现只过滤了"镜像给谁"）。
-        if (!MirrorSeatPolicy.IsMirrorableSource(sourcePlayer.NetId, LocalSelfCoopContext.LocalPlayerIds))
+        if (!LocalRewardMirror.IsMirrorableSource(sourcePlayer))
         {
             return;
         }
 
-        bool isCombatRewardContext = sourcePlayer.RunState.CurrentRoom is CombatRoom && !CombatManager.Instance.IsInProgress;
-        // 每角色独立结算：占卜药水奖励只归拾取者，不再镜像到其余角色
-        bool isCrystalSphereContext = CrystalSphereMirrorRuntime.CrossPlayerMirroringEnabled
-            && CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(sourcePlayer);
-        if (!isCombatRewardContext && !isCrystalSphereContext)
+        // 战斗结束奖励 或 水晶球事件（占卜药水奖励只归拾取者，靠这个判据排除）
+        if (!LocalRewardMirror.IsMirrorableRewardContext(sourcePlayer))
         {
             return;
         }
@@ -60,38 +57,19 @@ internal static class RewardPotionMirrorPatch
         TaskHelper.RunSafely(MirrorPotionToOtherPlayersAsync(sourcePlayer, potion));
     }
 
-    private static Player? ResolveSourcePlayer(RewardSynchronizer synchronizer)
-    {
-        ulong localPlayerId = AccessTools.Field(typeof(RewardSynchronizer), "_localPlayerId")?.GetValue(synchronizer) as ulong? ?? 0UL;
-        if (localPlayerId == 0UL)
-        {
-            return null;
-        }
-
-        IPlayerCollection? playerCollection = AccessTools.Field(typeof(RewardSynchronizer), "_playerCollection")
-            ?.GetValue(synchronizer) as IPlayerCollection;
-        return playerCollection?.GetPlayer(localPlayerId);
-    }
-
     private static async Task MirrorPotionToOtherPlayersAsync(Player sourcePlayer, PotionModel potion)
     {
-        IsMirroring.Value = true;
-        try
+        using (MirrorScope.Enter())
         {
             // 只镜像给**本地席位**（第三方席位如 Co-op Bots 的 Bot 由它自己那侧负责）；
             // 来源端同样必须是本地席位（r147，见 MirrorSeatPolicy）。
-            foreach (Player otherPlayer in sourcePlayer.RunState.Players
-                .Where((candidate) => MirrorSeatPolicy.ShouldMirrorTo(sourcePlayer.NetId, candidate.NetId, LocalSelfCoopContext.LocalPlayerIds)))
+            foreach (Player otherPlayer in LocalRewardMirror.SelectTargets(sourcePlayer))
             {
                 PotionModel mirroredPotion = PotionModel.FromSerializable(potion.ToSerializable(-1));
                 PotionProcureResult result = await PotionCmd.TryToProcure(mirroredPotion, otherPlayer);
                 LocalMultiControlLogger.Info(
                     $"战利品药水同步: source={sourcePlayer.NetId}, target={otherPlayer.NetId}, potion={mirroredPotion.Id.Entry}, success={result.success}");
             }
-        }
-        finally
-        {
-            IsMirroring.Value = false;
         }
     }
 }

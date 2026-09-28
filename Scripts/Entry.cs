@@ -14,8 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // R2 第一批实机回归修复续：标签订位也改回实时（去掉最后一处逐帧缓存）（分支 refactor/r0-layering-boundary）
-    private const string BuildMarker = "Revival v1.43.0 (game v0.111.0, marker=2026-09-28-r171)";
+    // R2 第二批：镜像五件套/藏宝图的共用判据与作用域收进 LocalRewardMirror（行为零变化）（分支 refactor/r2-dedup）
+    private const string BuildMarker = "Revival v1.43.0 (game v0.111.0, marker=2026-09-28-r172)";
 
     private static Harmony? _harmony;
 

@@ -19,7 +19,7 @@ internal static class SpoilsMapPatch
     [HarmonyPostfix]
     private static void Postfix(SpoilsMap __instance, ref Task<int> __result)
     {
-        if (!LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.UseSingleAdventureMode)
+        if (!LocalRewardMirror.IsMirrorFeatureEnabled)
         {
             return;
         }
@@ -44,8 +44,7 @@ internal static class SpoilsMapPatch
         }
 
         // r147：**来源**（藏宝图持有者）也必须是本地席位（旧实现只过滤了"同步给谁"）。
-        if (sourceOwner == null
-            || !MirrorSeatPolicy.IsMirrorableSource(sourceOwner.NetId, LocalSelfCoopContext.LocalPlayerIds))
+        if (sourceOwner == null || !LocalRewardMirror.IsMirrorableSource(sourceOwner))
         {
             return sourceGold;
         }
@@ -59,9 +58,7 @@ internal static class SpoilsMapPatch
         {
             // 只结算**本地席位**的藏宝图（第三方席位如 Co-op Bots 的 Bot 由它自己那侧结算）。
             // 来源端同样必须是本地席位（r147，见 MirrorSeatPolicy）。
-            foreach (Player otherPlayer in runState.Players.Where((candidate) =>
-                sourceOwner != null
-                && MirrorSeatPolicy.ShouldMirrorTo(sourceOwner.NetId, candidate.NetId, LocalSelfCoopContext.LocalPlayerIds)))
+            foreach (Player otherPlayer in LocalRewardMirror.SelectTargets(sourceOwner))
             {
                 CardPile deckPile = PileType.Deck.GetPile(otherPlayer);
                 List<SpoilsMap> pendingMaps = deckPile.Cards

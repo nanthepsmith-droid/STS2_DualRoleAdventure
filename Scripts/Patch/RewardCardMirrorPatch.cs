@@ -16,27 +16,25 @@ namespace LocalMultiControl.Scripts.Patch;
 [HarmonyPatch(typeof(RewardSynchronizer), nameof(RewardSynchronizer.SyncLocalObtainedCard))]
 internal static class RewardCardMirrorPatch
 {
-    private static readonly AsyncLocal<bool> IsMirroring = new();
+    private static readonly LocalRewardMirror.Scope MirrorScope = new();
 
     [HarmonyPostfix]
     private static void Postfix(RewardSynchronizer __instance, CardModel card)
     {
-        if (IsMirroring.Value || !LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.UseSingleAdventureMode)
+        if (MirrorScope.IsActive || !LocalRewardMirror.IsMirrorFeatureEnabled)
         {
             return;
         }
 
-        Player? sourcePlayer = ResolveSourcePlayer(__instance);
-        if (sourcePlayer == null
-            // 每角色独立结算：占卜卡牌奖励只归拾取者，不再镜像到其余角色
-            || !CrystalSphereMirrorRuntime.CrossPlayerMirroringEnabled
-            || !CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(sourcePlayer))
+        // 每角色独立结算：占卜卡牌奖励只归拾取者，不再镜像到其余角色
+        Player? sourcePlayer = LocalRewardMirror.ResolveSynchronizerSource(__instance);
+        if (sourcePlayer == null || !LocalRewardMirror.IsCrystalSphereRewardContext(sourcePlayer))
         {
             return;
         }
 
         // r147：**来源**也必须是本地席位（旧实现只过滤了"镜像给谁"）。
-        if (!MirrorSeatPolicy.IsMirrorableSource(sourcePlayer.NetId, LocalSelfCoopContext.LocalPlayerIds))
+        if (!LocalRewardMirror.IsMirrorableSource(sourcePlayer))
         {
             return;
         }
@@ -44,24 +42,11 @@ internal static class RewardCardMirrorPatch
         TaskHelper.RunSafely(MirrorCardToOtherPlayersAsync(sourcePlayer, card));
     }
 
-    private static Player? ResolveSourcePlayer(RewardSynchronizer synchronizer)
-    {
-        ulong localPlayerId = AccessTools.Field(typeof(RewardSynchronizer), "_localPlayerId")?.GetValue(synchronizer) as ulong? ?? 0UL;
-        if (localPlayerId == 0UL)
-        {
-            return null;
-        }
-
-        IPlayerCollection? playerCollection = AccessTools.Field(typeof(RewardSynchronizer), "_playerCollection")
-            ?.GetValue(synchronizer) as IPlayerCollection;
-        return playerCollection?.GetPlayer(localPlayerId);
-    }
-
     private static async Task MirrorCardToOtherPlayersAsync(Player sourcePlayer, CardModel card)
     {
-        IsMirroring.Value = true;
-        try
+        using (MirrorScope.Enter())
         {
+            // 目标席位沿用 CrystalSphereMirrorRuntime.GetOtherPlayers（本补丁原本就没走席位判据，保持不变）
             foreach (Player otherPlayer in CrystalSphereMirrorRuntime.GetOtherPlayers(sourcePlayer))
             {
                 CardModel mirroredCard = otherPlayer.RunState.CreateCard(card, otherPlayer);
@@ -69,10 +54,6 @@ internal static class RewardCardMirrorPatch
                 LocalMultiControlLogger.Info(
                     $"水晶球事件卡牌奖励同步: source={sourcePlayer.NetId}, target={otherPlayer.NetId}, card={mirroredCard.Id.Entry}");
             }
-        }
-        finally
-        {
-            IsMirroring.Value = false;
         }
     }
 }

@@ -70,7 +70,7 @@ internal static class RelicCmdObtainPatch
             relicEffectScope?.Dispose();
         }
 
-        if (!LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.UseSingleAdventureMode)
+        if (!LocalRewardMirror.IsMirrorFeatureEnabled)
         {
             return obtainedRelic;
         }
@@ -85,7 +85,7 @@ internal static class RelicCmdObtainPatch
         // （2026-09-25：GORGET / CANDELABRA / ODDLY_SMOOTH_STONE / PEAR / TROPICAL_FISH /
         // TRAVEL_PERMIT / LETTER_OPENER，以及第一幕 BOSS 的千咒卷轴 YUWANCARD-THOUSAND_CURSE_SCROLL，
         // 各 8 件 × 2 人，且是直接 AddRelicInternal ⇒ 真人连"要不要拿"都没得选）。
-        if (!MirrorSeatPolicy.IsMirrorableSource(player.NetId, LocalSelfCoopContext.LocalPlayerIds))
+        if (!LocalRewardMirror.IsMirrorableSource(player))
         {
             LocalMultiControlLogger.Info(
                 $"第三方席位获得的遗物不做共享镜像: relic={obtainedRelic.Id.Entry}, owner={player.NetId}");
@@ -99,11 +99,8 @@ internal static class RelicCmdObtainPatch
             return obtainedRelic;
         }
 
-        bool isCombatRewardContext = player.RunState.CurrentRoom is CombatRoom && !CombatManager.Instance.IsInProgress;
-        // 每角色独立结算：占卜遗物只归揭示者，不再镜像到其余角色
-        bool isCrystalSphereContext = CrystalSphereMirrorRuntime.CrossPlayerMirroringEnabled
-            && CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(player);
-        if (!isCombatRewardContext && !isCrystalSphereContext)
+        // 战斗结束奖励 或 水晶球事件（占卜遗物只归揭示者，靠这个判据排除）
+        if (!LocalRewardMirror.IsMirrorableRewardContext(player))
         {
             return obtainedRelic;
         }
@@ -124,8 +121,7 @@ internal static class RelicCmdObtainPatch
 
         // 只镜像给**本地席位**：第三方席位（Co-op Bots 的合成 Bot）是独立队友，不该跟着我们共享遗物
         // （它的遗物由它自己的奖励流程获得）。来源端同样必须是本地席位（r147，见 MirrorSeatPolicy）。
-        foreach (Player otherPlayer in player.RunState.Players.Where((candidate) =>
-            MirrorSeatPolicy.ShouldMirrorTo(player.NetId, candidate.NetId, LocalSelfCoopContext.LocalPlayerIds)))
+        foreach (Player otherPlayer in LocalRewardMirror.SelectTargets(player))
         {
             if (!obtainedRelic.IsStackable && otherPlayer.GetRelicById(obtainedRelic.Id) != null)
             {
@@ -188,11 +184,8 @@ internal static class RelicCmdRemovePatch
             return;
         }
 
-        bool isCombatRewardContext = removedRelic.Owner.RunState.CurrentRoom is CombatRoom && !CombatManager.Instance.IsInProgress;
-        // 每角色独立结算：占卜遗物移除同样只作用于本人
-        bool isCrystalSphereContext = CrystalSphereMirrorRuntime.CrossPlayerMirroringEnabled
-            && CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(removedRelic.Owner);
-        if (!isCombatRewardContext && !isCrystalSphereContext)
+        // 战斗结束奖励 或 水晶球事件（占卜遗物移除同样只作用于本人）
+        if (!LocalRewardMirror.IsMirrorableRewardContext(removedRelic.Owner))
         {
             return;
         }
@@ -204,14 +197,13 @@ internal static class RelicCmdRemovePatch
         }
 
         // r147：来源席位同样过滤（第三方席位的遗物我们从没镜像过，也不该跟着它一起移除）。
-        if (!MirrorSeatPolicy.IsMirrorableSource(removedRelic.Owner.NetId, LocalSelfCoopContext.LocalPlayerIds))
+        if (!LocalRewardMirror.IsMirrorableSource(removedRelic.Owner))
         {
             return;
         }
 
         // 同步移除同样只针对**本地席位**（第三方席位从没被我们镜像过遗物）。
-        foreach (Player otherPlayer in runState.Players.Where((candidate) =>
-            MirrorSeatPolicy.ShouldMirrorTo(removedRelic.Owner.NetId, candidate.NetId, LocalSelfCoopContext.LocalPlayerIds)))
+        foreach (Player otherPlayer in LocalRewardMirror.SelectTargets(removedRelic.Owner))
         {
             RelicModel? mirroredRelic = otherPlayer.GetRelicById(removedRelic.Id);
             if (mirroredRelic == null)

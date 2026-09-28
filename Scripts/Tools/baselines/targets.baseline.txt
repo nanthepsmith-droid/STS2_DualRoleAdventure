@@ -2,8 +2,8 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-09-27 14:43  HEAD=c8f99a9
-# 统计: patch_classes=187 patch_rows=211 string_targets=198 descriptors=359
+# 生成时间=2026-09-28 13:49  HEAD=08c9234
+# 统计: patch_classes=187 patch_rows=211 string_targets=195 descriptors=357
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	CardManualPlayContextPatch	CardModel	EnqueueManualPlay	string
@@ -292,8 +292,6 @@ S	accesstools	NSubmenu	_stack	field
 S	accesstools	PacketReader	ReadInt	method
 S	accesstools	PacketWriter	WriteInt	method
 S	accesstools	RestSiteSynchronizer	_localPlayerId	field
-S	accesstools	RewardSynchronizer	_localPlayerId	field
-S	accesstools	RewardSynchronizer	_playerCollection	field
 S	accesstools	RewardsSet	_allowEmptyRewards	field
 S	accesstools	RewardsSetSynchronizer	_localPlayerId	field
 S	accesstools	RunManager	_runHistoryWasUploaded	field

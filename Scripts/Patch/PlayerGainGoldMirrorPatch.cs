@@ -46,17 +46,17 @@ internal static class GoldMirrorSuppressionContext
 [HarmonyPatch(typeof(PlayerCmd), nameof(PlayerCmd.GainGold))]
 internal static class PlayerGainGoldMirrorPatch
 {
-    private static readonly AsyncLocal<bool> IsMirroring = new();
+    private static readonly LocalRewardMirror.Scope MirrorScope = new();
 
     [HarmonyPostfix]
     private static void Postfix(decimal amount, Player player, bool wasStolenBack, ref Task __result)
     {
-        if (!LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.UseSingleAdventureMode)
+        if (!LocalRewardMirror.IsMirrorFeatureEnabled)
         {
             return;
         }
 
-        if (amount <= 0m || IsMirroring.Value)
+        if (amount <= 0m || MirrorScope.IsActive)
         {
             return;
         }
@@ -65,7 +65,7 @@ internal static class PlayerGainGoldMirrorPatch
         // 合成 Bot）自己的奖励金币被当成"本地角色共享"复制给两个真人（2026-09-25 实机 12 条
         // `owner=12716757972810793218`）；而且 Co-op Bots 的金币作弊是 Prefix 把金额 ×3、
         // 我们的镜像 Postfix 拿到的是**已放大**的值 ⇒ 真人跟着拿 3 倍。
-        if (!MirrorSeatPolicy.IsMirrorableSource(player.NetId, LocalSelfCoopContext.LocalPlayerIds))
+        if (!LocalRewardMirror.IsMirrorableSource(player))
         {
             return;
         }
@@ -82,11 +82,8 @@ internal static class PlayerGainGoldMirrorPatch
             return;
         }
 
-        bool isCombatRewardContext = player.RunState.CurrentRoom is CombatRoom && !CombatManager.Instance.IsInProgress;
-        // 每角色独立结算：占卜奖励金币只归拾取者，不再镜像到其余角色
-        bool isCrystalSphereContext = CrystalSphereMirrorRuntime.CrossPlayerMirroringEnabled
-            && CrystalSphereMirrorRuntime.IsInCrystalSphereEventContext(player);
-        if (!isCombatRewardContext && !isCrystalSphereContext)
+        // 战斗结束奖励 或 水晶球事件（占卜奖励金币只归拾取者）
+        if (!LocalRewardMirror.IsMirrorableRewardContext(player))
         {
             return;
         }
@@ -101,16 +98,13 @@ internal static class PlayerGainGoldMirrorPatch
         // 只镜像给**本地席位**：第三方席位（Co-op Bots 的合成 Bot）是独立队友，不该拿我们的金币
         // （更严重的是会污染它的决策状态；r145 之前一律按"本地角色"处理）。
         // 来源端同样必须是本地席位（r147，见 MirrorSeatPolicy）。
-        var otherPlayers = sourcePlayer.RunState.Players
-            .Where((candidate) => MirrorSeatPolicy.ShouldMirrorTo(sourcePlayer.NetId, candidate.NetId, LocalSelfCoopContext.LocalPlayerIds))
-            .ToList();
+        var otherPlayers = LocalRewardMirror.SelectTargets(sourcePlayer).ToList();
         if (otherPlayers.Count == 0)
         {
             return;
         }
 
-        IsMirroring.Value = true;
-        try
+        using (MirrorScope.Enter())
         {
             foreach (Player otherPlayer in otherPlayers)
             {
@@ -119,10 +113,6 @@ internal static class PlayerGainGoldMirrorPatch
 
             LocalMultiControlLogger.Info(
                 $"事件/流程金币已同步到其余角色: amount={amount}, owner={sourcePlayer.NetId}, mirrored={string.Join(",", otherPlayers.Select((player) => player.NetId))}");
-        }
-        finally
-        {
-            IsMirroring.Value = false;
         }
     }
 }
