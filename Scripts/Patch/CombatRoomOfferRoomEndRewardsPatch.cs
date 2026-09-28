@@ -299,6 +299,8 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
             Player player = perPlayerSet.Player;
             // 判定走纯函数（R1b）；只取本地席位的卡池：第三方席位（Co-op Bots 的 Bot）
             // 不是我们的队友选择，别把它的角色池混进来。
+            // ⚠ R3 B2 复核：`IsSelf` 是「候选 vs 本次归属」的**两两比较**（不是"我是谁"），故不走席位入口；
+            // 真正需要身份的是 `IsLocalSeat` 那一项（已走 LocalSeatSource）。
             List<int> poolOwnerIndices = CombatRewardMergePolicy.SelectCrossCharacterPoolCandidateIndices(
                 allPlayers
                     .Select((candidate) => (
