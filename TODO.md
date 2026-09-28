@@ -2056,7 +2056,7 @@ LOG ANCHORS: (期望 0) LocalCustomRunSelectionSync / ### Exception ###；INIT_O
   r171 把标签订位也回退成逐帧实时 —— **位置始终没变**；现在原作者版本对照彻底确认非回归。
 - **处置**：**不是 bug ⇒ 不修、不排期、不再查**；本条目只作为"别再当新 bug 查"的档案。
 
-### 瓦库不自动选「战斗开始类手牌选牌」（猪猪 mod【重瞳】的"选择一张牌复制"）（2026-09-28 用户报；**r173 已修，待实机**）
+### 瓦库不自动选「从牌组选一张牌复制」类效果（猪猪 mod【重瞳】等遗物）（2026-09-28 用户报；**r175 已修 → ✅ 2026-09-28 实机确认，关单**）
 
 - **现象**：瓦库托管席位带着【重瞳】（`YUWANCARD-REINCARNATED_EYE`）进战斗，战斗开始时的「选择一张牌复制」
   界面没人自动点，得真人手选。
@@ -2087,6 +2087,10 @@ LOG ANCHORS: (期望 0) LocalCustomRunSelectionSync / ### Exception ###；INIT_O
      （候选与游戏原方法同口径：`PileType.Deck` + `filter` + `sortingOrder`，再用策略选择器按 min/max 作答），
      并顺带适配 `FromDeckForUpgrade`（火堆 / 事件升级类）；`FromDeckForTransformation` 仍只探针。
      marker `2026-09-28-r175`。
+     **✅ 2026-09-28 实机确认（关单）**（日志 `logs-archive/godot__20260928-185607__r175.log`）：
+     `瓦库作用域外牌组选牌自动作答: player=…327, options=10, select=1~1, mode=last, source=FromDeckGeneric`
+     命中（该效果唯一一次触发即被自动作答）；`瓦库作用域外选牌入口未适配` **0**、
+     `### Exception ###` / `add_child() failed` / `ObjectDisposedException` **全 0**。
 - **验证契约（请实机）**：
   ```
   改动:    作用域外选牌自动作答：判据放宽（不再要求栈空）+ 补 FromSimpleGridForRewards（r174，marker 2026-09-28-r174）
