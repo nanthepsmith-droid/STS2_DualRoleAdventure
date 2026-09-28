@@ -8,7 +8,9 @@ using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
+using MegaCrit.Sts2.Core.Nodes.Cards;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Random;
 using MegaCrit.Sts2.Core.Runs;
@@ -65,17 +67,19 @@ internal static class CardTransformNetIdPinPatch
             return;
         }
 
-        // 前台/后台 × NetId 是否已等于牌主人 → 用纯函数判定，避免逻辑散落（见 CardTransformNetIdPolicy 注释）。
+        // 前台/后台 × NetId 是否已等于牌主人 × 原牌节点是否存在 → 用纯函数判定，避免逻辑散落。
         // R3：受控位与上下文两个判定取自同一份席位快照
         SeatRegistry seats = LocalSeatSource.CurrentSeats();
         bool isOwnerForeground = seats.IsControlled(owner!.NetId);
         bool currentNetIdIsOwner = seats.IsContext(owner.NetId);
+        bool? handNodeExists = ProbeHandNodeExists(transformations, out CardModel? firstMissingOriginal);
 
-        switch (CardTransformNetIdPolicy.Decide(isOwnerLocal, isOwnerForeground, currentNetIdIsOwner))
+        switch (CardTransformNetIdPolicy.Decide(isOwnerLocal, isOwnerForeground, currentNetIdIsOwner, handNodeExists))
         {
             case CardTransformNetIdAction.PinToOwner:
                 // 只钉 NetId、不跳过原方法：保证其它 mod 在本方法上的 Prefix/__state 照常执行。
-                _previousNetId.Value = LocalContext.NetId;
+                // R3 B2b：钉扎前保存的"原值"读侧走唯一取数入口（逐字等价；写侧与还原照旧）。
+                _previousNetId.Value = LocalSeatSource.ContextSeatId();
                 LocalContext.NetId = owner.NetId;
                 _pinActive.Value = true;
 
@@ -85,26 +89,42 @@ internal static class CardTransformNetIdPinPatch
 
             case CardTransformNetIdAction.ShiftAwayFromOwner:
             {
-                // 后台角色的手牌变换：原版视觉分支会在**前台手牌**里找原卡节点，找到就等于抛
-                // "Couldn't get hand node for original card ..."（实机：瓦库打「数据链」/酒狐「不等价交换」，
-                // 异常抛穿异步链 → 出牌中断、牌停在屏幕中间不生效不消耗）。
-                // 自动出牌期间 NetId 已被 RunWatchdogAsync 钉在瓦库身上，所以 r59 的「跳过钉」不够，
-                // 必须显式把 NetId 让到当前前台玩家（一个合法的本地玩家），让 vanilla 按 IsMine=false 跳过视觉。
-                // 数据层在视觉分支之前就已生效，不受影响。
+                // 后台角色的手牌变换 / 原牌节点缺失（BUG-25）：原版视觉分支会在前台手牌里找原卡节点，
+                // 找不到就抛 "Couldn't get hand node for original card ..."（实机：瓦库打「数据链」/酒狐
+                // 「不等价交换」、回合结束触发「唯我」诅咒牌），异常抛穿异步链 → 出牌中断/回合循环死亡、
+                // 牌停在屏幕中间不生效不消耗。必须显式把 NetId 让开，让 vanilla 按 IsMine=false 跳过视觉。
+                // 数据层在视觉分支之前就已生效，不受影响；UI 由 RestoreNetIdAfterAsync 的顺序自愈兜底。
+                //
+                // ⚠ 安全值**不能**是牌主人自己：r185 实机（唯我）里 owner=前台=受控位，
+                // 旧实现取受控位会让 NetId 原地不动、IsMine 仍为 true ⇒ 照抛。所以受控位==主人时让到 null。
                 SeatRegistry seatsShifted = LocalSeatSource.CurrentSeats();
                 ulong? controlledId = seatsShifted.ControlledSeatId;
-                ulong? safeNetId = controlledId.HasValue && seatsShifted.IsLocalSeat(controlledId.Value)
+                ulong? safeNetId = controlledId.HasValue
+                    && controlledId.Value != owner.NetId
+                    && seatsShifted.IsLocalSeat(controlledId.Value)
                     ? controlledId
                     : null;
 
-                _previousNetId.Value = LocalContext.NetId;
+                _previousNetId.Value = LocalSeatSource.ContextSeatId();
                 LocalContext.NetId = safeNetId;
                 _pinActive.Value = true;
 
-                LocalMultiControlLogger.Info(
-                    $"[手牌同步修复] 后台角色手牌变换：临时让开 NetId 以跳过前台动画查找: owner={owner.NetId}, "
-                    + $"controlled={controlledId?.ToString() ?? "none"}, "
-                    + $"netId={_previousNetId.Value?.ToString() ?? "null"} -> {safeNetId?.ToString() ?? "null"}");
+                if (handNodeExists == false)
+                {
+                    // BUG-25 实机锚点：点名是"节点缺失"这一路，便于后续统计与回归。
+                    LocalMultiControlLogger.Info(
+                        $"[手牌同步修复] 变换原牌的手牌节点不存在，让开 NetId 跳过原版视觉（防回合结束软锁）: "
+                        + $"owner={owner.NetId}, original={firstMissingOriginal}, "
+                        + $"netId={_previousNetId.Value?.ToString() ?? "null"} -> {safeNetId?.ToString() ?? "null"}");
+                }
+                else
+                {
+                    LocalMultiControlLogger.Info(
+                        $"[手牌同步修复] 后台角色手牌变换：临时让开 NetId 以跳过前台动画查找: owner={owner.NetId}, "
+                        + $"controlled={controlledId?.ToString() ?? "none"}, "
+                        + $"netId={_previousNetId.Value?.ToString() ?? "null"} -> {safeNetId?.ToString() ?? "null"}");
+                }
+
                 break;
             }
 
@@ -118,6 +138,72 @@ internal static class CardTransformNetIdPinPatch
 
                 break;
         }
+    }
+
+    /// <summary>
+    /// 原牌的手牌节点探针（BUG-25，r185）：与原版视觉分支同一判定源
+    /// （<see cref="NCard.FindOnTable(CardModel, MegaCrit.Sts2.Core.Entities.Cards.PileType?)"/>，
+    /// 内部自带 TestMode / 非战斗 / UI 未建的 null 守卫，场外调用安全）。
+    /// 返回：null = 没有可探的原牌；false = **至少一张**原牌找不到手牌节点
+    /// （原版循环走到它就必然抛）；true = 全部都有。
+    /// </summary>
+    private static bool? ProbeHandNodeExists(IEnumerable<CardTransformation>? transformations, out CardModel? firstMissing)
+    {
+        firstMissing = null;
+        if (transformations == null)
+        {
+            return null;
+        }
+
+        bool any = false;
+        foreach (CardTransformation transformation in transformations)
+        {
+            CardModel? original = transformation.Original;
+            if (original == null)
+            {
+                continue;
+            }
+
+            any = true;
+            if (NCard.FindOnTable(original, MegaCrit.Sts2.Core.Entities.Cards.PileType.Hand) == null)
+            {
+                firstMissing = original;
+                return false;
+            }
+        }
+
+        return any ? true : null;
+    }
+
+    /// <summary>
+    /// 防泄漏兜底（BUG-25，r185）：原方法抛异常时 Postfix 不会执行，
+    /// Prefix 钉住/让开的 <c>LocalContext.NetId</c> 会沿这条（回合循环这类）长命异步链永久泄漏
+    /// ⇒ 后续所有 IsMine 判定级联错乱。这里在异常路径上把 NetId 恢复回去。
+    /// 正常路径上 Postfix 已恢复并清掉标记，本 Finalizer 是零操作。
+    /// </summary>
+    [HarmonyFinalizer]
+    private static Exception? Finalizer(Exception? __exception)
+    {
+        if (!_pinActive.Value)
+        {
+            return __exception;
+        }
+
+        ulong? previous = _previousNetId.Value;
+        _pinActive.Value = false;
+        _previousNetId.Value = null;
+        if (previous.HasValue)
+        {
+            LocalContext.NetId = previous.Value;
+        }
+
+        if (__exception != null)
+        {
+            LocalMultiControlLogger.Warn(
+                $"[手牌同步修复] CardCmd.Transform 抛异常，已恢复被钉住的 NetId（防异步链泄漏）: error={__exception.Message}");
+        }
+
+        return __exception;
     }
 
     [HarmonyPostfix]

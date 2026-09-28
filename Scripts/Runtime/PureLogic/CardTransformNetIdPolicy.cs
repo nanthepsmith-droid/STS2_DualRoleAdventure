@@ -33,6 +33,13 @@ internal enum CardTransformNetIdAction
 /// → 抛穿异步链 → 出牌中断、牌停在屏幕中间、效果没跑完、也没消耗。
 ///
 /// r59 的修法只覆盖了"要不要**钉** NetId"，没有覆盖"NetId **已经**是牌主人"的情形，所以这里补上。
+///
+/// r185（BUG-25）再补第三个维度「原牌的手牌节点是否存在」：回合结束在手里触发的变换
+/// （实机：AncientsAwakened「唯我」<c>Egocentrism.OnTurnEndInHand</c>）发生时前台刚切到该回合玩家、
+/// 手牌 UI 可能还没建好 —— 此时**即便** owner=前台且 NetId=owner（原判定=不动），
+/// 原版视觉分支也会因 <c>FindOnTable=null</c> 抛异常并**炸穿回合循环**（游戏侧原话
+/// "turn loop died … the combat is stuck" ⇒ 整场战斗软锁）。节点不存在时唯一安全的做法是
+/// 让 <c>IsMine=false</c> 跳过整段视觉：数据层照常完成，UI 由既有自愈链路重建。
 /// </summary>
 internal static class CardTransformNetIdPolicy
 {
@@ -42,14 +49,28 @@ internal static class CardTransformNetIdPolicy
     /// <param name="isOwnerLocal">牌主人是否是本地玩家（不是 → 原版自己会按 IsMine=false 跳过视觉）。</param>
     /// <param name="isOwnerForeground">牌主人是否就是当前前台（受控）角色。</param>
     /// <param name="currentNetIdIsOwner">当前 <c>LocalContext.NetId</c> 是否已等于牌主人。</param>
+    /// <param name="handNodeExists">
+    /// 原牌的手牌节点探针（<c>NCard.FindOnTable(original, PileType.Hand)</c>）：
+    /// <c>null</c> = 没探（不在战斗/没有变换牌），<c>true</c> = 全部原牌都有节点，<c>false</c> = 至少一张缺失。
+    /// </param>
     public static CardTransformNetIdAction Decide(
         bool isOwnerLocal,
         bool isOwnerForeground,
-        bool currentNetIdIsOwner)
+        bool currentNetIdIsOwner,
+        bool? handNodeExists)
     {
         if (!isOwnerLocal)
         {
             return CardTransformNetIdAction.None;
+        }
+
+        if (handNodeExists == false)
+        {
+            // BUG-25：节点不存在 ⇒ 原版视觉分支必然抛异常炸穿调用链（回合结束路径上=整场战斗卡死）。
+            // 无论前台后台都让 IsMine=false 跳过视觉；NetId 已经是主人时必须显式让开。
+            return currentNetIdIsOwner
+                ? CardTransformNetIdAction.ShiftAwayFromOwner
+                : CardTransformNetIdAction.None;
         }
 
         if (isOwnerForeground)
