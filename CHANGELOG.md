@@ -2,7 +2,11 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
-## [Unreleased]
+## [1.43.1] - 2026-09-28
+
+> 本轮 = r163 ~ r185（2026-09-27 ~ 09-28）。头牌是**读档后瓦库整局停摆修复（BUG-22 三层）**与
+> **第三方自绘选牌/回合结束变换两类软锁的修复（BUG-23 / BUG-25 / BUG-26）**；
+> 另含一批 R2/R3 内部重构（行为零变化）与构建 marker `2026-09-28-r186`。
 
 ### Fixed
 - **读档后瓦库整局失效：不出牌 / 不自动选事件 / 不自动领奖（BUG-22，r166，2026-09-27）**：
@@ -26,6 +30,48 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   同时订正 BUG-22 的验证契约 —— 去掉过严判据「`已为瓦库角色自动发放托管遗物` ≥1」：实测该行 0 条而瓦库工作正常
   （托管遗物本来就在存档里，`GrantWakuuRelicsAsync` 已有则跳过）；真判据 = `瓦库事件自动选择完成` +
   `瓦库选择器作用域进入` 的条数。一条命令判读：`tools/log_scan.py --preset load`。
+- **每日页选人界面出现无限玩家 / 席位卡按钮位置漂移（r170/r171，2026-09-28）**：
+  通用子树扫描缓存（TTL）被用在"写后读"（补建席位卡前查"已有哪些卡" ⇒ 每帧重复补建）与每帧列布局
+  （吃过期 `GlobalPosition`）。修法 = 删缓存、逐帧实时遍历；沉淀为新坑「UI 调用点不要套缓存」。
+  （按钮"偏左"经与原作者 mod 对照确认**原版即如此**，非 bug、不修。）
+- **瓦库对部分第三方"选一张牌"效果不自动作答（重瞳 / 复制牌，r173~r175，2026-09-28）**：
+  作用域外自动作答此前只挂了部分 `From*` 入口，且判据要求"选牌栈为空"——第三方（重瞳【战斗开始复制】）
+  走的是 `FromDeckGeneric`（牌组选牌）。修法 = 判据放宽为「栈顶不是我们的选择器」+ 补
+  `FromDeckGeneric` / `FromDeckForUpgrade` 自动作答 + 未适配入口探针（日志点名 `entry=`）。
+- **瓦库打出沙耶【色素细胞】后卡牌停屏、不选也不交真人（BUG-23 方案 A + B，r181/r183，2026-09-28）**：
+  第三方**自己实现选牌**（既不读 `CardSelectCmd.Selector` 也不走 `From*`）⇒ 我们的选牌三件套够不着，
+  单进程回环里 `WaitForRemoteChoice` 无人作答 ⇒ 死等。
+  - 方案 A（r181，防软锁）：对「本地席位 + 后台托管瓦库」的远端等待按**空结果**放行（该次选择被跳过），
+    异步状态机帧名还原成纯逻辑 `PlayerChoiceCallerClassifier`（+11 单测）。
+  - 方案 B（r182/r183，功能完整）：① 调用方是第三方 + 该席位正被我们自动化 + 原判 false 时，
+    `LocalContext.IsMe` 后缀放行 ⇒ 第三方弹它自己的选牌界面（**原版调用方语义一点不动**）；
+    ② 我们延迟 0.6s 驱动该界面按瓦库策略作答（走游戏自己的点击路径）⇒ 瓦库真的拿到牌。
+    实机：界面一闪而过、牌进瓦库手牌、下一回合被瓦库打出。判据收敛进纯逻辑 `WakuuSelfDrawnChoicePolicy`。
+- **回合结束时触发「唯我」（AncientsAwakened 诅咒牌）导致整场战斗软锁（BUG-25，r185，2026-09-28）**：
+  该牌在手里于回合结束时调 `CardCmd.Transform`，此刻前台刚切到该回合玩家、手牌 UI 尚未建好 ⇒
+  原版视觉分支抛 `Couldn't get hand node for original card …` 并**炸穿回合循环**（游戏侧原话
+  "turn loop died … the combat is stuck"）⇒ 牌停在屏幕中间、整场战斗无法继续。
+  修法：`CardTransformNetIdPolicy` 增加第三维度「原牌的手牌节点是否存在」（与原版同一判定源探针）——
+  节点缺失时让 `IsMine=false` 跳过整段视觉（数据层照常完成）；同时给补丁补 Finalizer，
+  防止异常路径上被钉住的 `NetId` 沿长命异步链泄漏（+新单测，共 762）。
+- **瓦库在事件里不再自动选择（BUG-26，r185，2026-09-28）**：
+  TouhouAncients 梦境事件选「离开梦境」后，`LeaveDreamReentry.OnChosen` 里的
+  `if (LocalContext.IsMe(player)) await LeaveDreamSequence.Play(...)`（对话序列）被 BUG-23 的放行口子
+  误放行 ⇒ 在后台席位上永久等待 ⇒ 事件自动选择卡死、选择器残留、8 秒后被安全网切人工。
+  修法：放行口子增加**调用方黑名单**（转场/对话类调用方不能替后台席位放行，命中打去重 INFO）；
+  并给事件选项执行加 6 秒超时（先于安全网的 8 秒），超时 = 干净放手交真人并点名 option，
+  把"静默挂死"变成可观测、可恢复。
+
+### Changed（内部重构，行为零变化）
+- **R2 去重 + R3 席位身份唯一取数入口（r164~r184，2026-09-27 ~ 09-28）**：
+  新增纯逻辑 `SeatRegistry` / `SeatIdentity` 与薄适配 `LocalSeatSource`（席位快照，内容校验缓存），
+  把「动作/前台归属（B1）」「席位归属判定（B1b）」「奖励/掉落/药水/商店归属（B2/B2b）」约 50 处
+  裸身份比较收编到唯一入口；镜像五件套判据收进 `LocalRewardMirror`；三份同构人数面板合成共用组件；
+  Daily/Custom 席位对齐收成一份共用实现。写入点未动、日志文案逐字保持；
+  新增实机锚点 `会话席位自检通过: seats=…, primary=…`。单测 654 → 762，静态层 S7 基线不变。
+- **工具层**：`log_scan.py --preset load` 的哨兵 `!守卫读档误关会话` 改**窗口限定**口径
+  （只计读档窗口内的 `no-local-lobby-screen`；窗口外命中照打「已排除」，老版本日志退回全量计数并打提示）
+  —— 修正"进厅后又退出"被误报为"读档期间误关会话"的假阳性（2026-09-28）。
 
 ## [1.43.0] - 2026-09-27
 

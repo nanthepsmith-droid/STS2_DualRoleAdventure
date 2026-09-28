@@ -14,8 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // R3 第三轮 B1b：席位归属判定统一到 LocalSeatSource.IsLocalSeat（16 文件 28 处，行为零变化；分支 refactor/r3-seat-identity）
-    private const string BuildMarker = "Revival v1.43.0 (game v0.111.0, marker=2026-09-28-r179)";
+    // BUG-23 方案 B 修正（r183）：候选 holder 改用 C# 类型遍历（FindChildren 的 type 过滤器匹配不到 C# 节点类）
+    private const string BuildMarker = "Revival v1.43.0 (game v0.111.0, marker=2026-09-28-r185)";
 
     private static Harmony? _harmony;
 
