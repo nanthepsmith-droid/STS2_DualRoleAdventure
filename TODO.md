@@ -40,7 +40,7 @@
 | `瓦库托管基础收口草案-最终阶段前置G0.md` | **部分落地**：**G0.1**（B1 买遗物 / B2 买药水 / B3 删牌服务）**已被 §改进-5 吃掉**（r137/r139，已实机确认）；**G0.2**（B4 恋降级逃生门 / B5 回归清单固化）**未做** | 只做 G0.2 两个子项（范围小，差两项） | **§改进-5** |
 | `多瓦库并行托管可行性与方案.md` | **部分落地**：Phase 0（r107~r110）/ Phase 1（r113）/ 方案 D（r121~r134）均已实机确认；三层档位：队列 / 并发**已于 2026-09-26 转正为默认开**，加速档默认关（用户自选） | **转正判定已完成（2026-09-26，方案 §12.15，14 会话含 1 真人+3 瓦库对照局）**：① **并发档收益已证实** —— 同回合三瓦库 `delayMs` 增量中位 **14ms**（inline 基线是秒级 494→6297→9724），第 3 位瓦库启动 **9.7s → 95ms**；② 出牌总时延 —— 队列单张中位 1143ms（2 席）/ 1674ms（3 瓦库，排队所致），但 pass 相当 ⇒ **不提速也不劣化**；③ 回归 —— `收回滞留节点` / `幽灵弹层` / `add_child failed` **14 会话全 0**。⇒ ✅ **已于 2026-09-26 转正落地（r152）**：两档默认值改 `true`，设置页/玩家指南/单测/CHANGELOG 同步；`fastVakuuPlay` 仍为独立项（用户当前关着） | **§改进-2** |
 | 改进-2 出牌加速二期（`CardModel.OnPlayWrapper` 前缀省两段固定等待） | **待拍板**：r128 已给估值（~0.35~0.5s/张），用户未拍 | 拍板后作为独立的出牌路径优化做 | **§改进-2 ⑱** |
-| `runtime架构分层重构评估.md`（#18） | **动工中：R0 / R1 / R2 第一批已落地（2026-09-27 ~ 09-28）** —— R0（ADR + `AGENTS.md §1` 四条架构边界硬规则）`0a740c0`；R1a 布局数学（`LobbyCardLayoutPolicy`，marker r164，实机确认选人界面一致）`72dcaf1` / R1b 奖励判定（`CombatRewardMergePolicy`，marker r165）`7f85d09`；**R2 第一批（2026-09-28）** = ① `EnumerateDescendants` 四份私有副本 → `LocalNodeTree` 单点化 ② 三份人数面板（标准/每日/自定义）→ `LocalPlayerCountPanel` 共用组件。**⚠ 实机回归与收口（r169 → r171）**：一度抽过的通用子树扫描缓存（TTL 500ms）被实机证明**不能**用于写后读（席位卡每帧重复补建 ⇒「无限玩家」）、每帧列布局与标签订位（漂移）⇒ **全部回退为实时遍历**，本批只剩「单点化 + 组件化」收益（详见 `references/local-multicontrol-pitfalls.md` 坑 J）。**R2 第二批（2026-09-28）** = ③ 镜像五件套（药水 / 卡牌 / 金币得失 / 遗物 Obtain+Remove）与藏宝图的**门控 + 上下文判据 + 目标枚举 + 镜像作用域**收进 `Scripts/Runtime/LocalRewardMirror.cs`（行为零变化；S7 因"-2 反射目标"预期刷新基线）；marker **`2026-09-28-r172`**（**待实机一局**）。**R2 第四批（2026-09-28，本轮）= ④ Daily/Custom 同构席位对齐与角色指派入口**：新增 `Scripts/Runtime/PureLogic/LocalLobbySeatPolicy.cs`（席位计划 / reconcile 判定 / 指纹，由 `DailyLobbyPolicy` 通用化而来 + 新增 `ResolveTargetSeats` / `OrderedLocalSeats`）与 `Scripts/Runtime/LocalLobbySeatReconciler.cs`（「加席位 / 删多余本地席位 / 标 ready」三步编排），两个页面补丁各减约 60 行（净 **-294 行**），Custom 内联的 reconcile 判定改为调用同一纯函数；**角色来源不合并**（Daily = 日期种子逐席位驱动 `SetupLobbyParams`、Custom = 真人点选后同步 UI，属语义差异）；日志文案逐字保持；单测 **721 → 726**；marker **`2026-09-28-r176`**（**待实机**）。分支：R0/R1/R2 第一二批**均已合回 `master`（`08c9234` / `fc542bd`）**；本轮在 **`refactor/r2-daily-custom-seat-assign`**（未合回、未推送）；同日修复分支 `fix/wakuu-turnstart-copy-pick`（r173~r175 复制牌作答）已 `--ff-only` 合回 `master`（`3ce43dc`）。门禁：单测 **726 全绿**、静态层 **10 PASS**、`preflight -Deploy` 4 PASS / 3 SKIP | **R2 四项全部收口** → 下一步 **R3（Seat 身份领域模型）** → R4（拆 God class） → R5（生命周期契约）；**R3/R4 期间冻结功能改动**（M2 智能抓牌须排在 R3/R4 之后）；每步一实机、行为零变化。⚠ 已知未收的两处同形代码（**非** R2 清单项，待拍板）：`LocalSelfCoopContext.ReconcileStartRunLobbyPlayerCount`（标准角色选择页）的加/删/ready 三段与本次编排同形但有三处差异（多余席位过滤掉主席位 / ready 只遍历目标席位 / 日志字段不同），未纳入本轮 | 本表 + `runtime架构分层重构评估.md` |
+| `runtime架构分层重构评估.md`（#18） | **动工中：R0 / R1 / R2 第一批已落地（2026-09-27 ~ 09-28）** —— R0（ADR + `AGENTS.md §1` 四条架构边界硬规则）`0a740c0`；R1a 布局数学（`LobbyCardLayoutPolicy`，marker r164，实机确认选人界面一致）`72dcaf1` / R1b 奖励判定（`CombatRewardMergePolicy`，marker r165）`7f85d09`；**R2 第一批（2026-09-28）** = ① `EnumerateDescendants` 四份私有副本 → `LocalNodeTree` 单点化 ② 三份人数面板（标准/每日/自定义）→ `LocalPlayerCountPanel` 共用组件。**⚠ 实机回归与收口（r169 → r171）**：一度抽过的通用子树扫描缓存（TTL 500ms）被实机证明**不能**用于写后读（席位卡每帧重复补建 ⇒「无限玩家」）、每帧列布局与标签订位（漂移）⇒ **全部回退为实时遍历**，本批只剩「单点化 + 组件化」收益（详见 `references/local-multicontrol-pitfalls.md` 坑 J）。**R2 第二批（2026-09-28）** = ③ 镜像五件套（药水 / 卡牌 / 金币得失 / 遗物 Obtain+Remove）与藏宝图的**门控 + 上下文判据 + 目标枚举 + 镜像作用域**收进 `Scripts/Runtime/LocalRewardMirror.cs`（行为零变化；S7 因"-2 反射目标"预期刷新基线）；marker **`2026-09-28-r172`**（**待实机一局**）。**R2 第四批（2026-09-28，本轮）= ④ Daily/Custom 同构席位对齐与角色指派入口**：新增 `Scripts/Runtime/PureLogic/LocalLobbySeatPolicy.cs`（席位计划 / reconcile 判定 / 指纹，由 `DailyLobbyPolicy` 通用化而来 + 新增 `ResolveTargetSeats` / `OrderedLocalSeats`）与 `Scripts/Runtime/LocalLobbySeatReconciler.cs`（「加席位 / 删多余本地席位 / 标 ready」三步编排），两个页面补丁各减约 60 行（净 **-294 行**），Custom 内联的 reconcile 判定改为调用同一纯函数；**角色来源不合并**（Daily = 日期种子逐席位驱动 `SetupLobbyParams`、Custom = 真人点选后同步 UI，属语义差异）；日志文案逐字保持；单测 **721 → 726**；marker **`2026-09-28-r176`**（**待实机**）。分支：R0/R1/R2 第一二批**均已合回 `master`（`08c9234` / `fc542bd`）**；本轮在 **`refactor/r2-daily-custom-seat-assign`**（未合回、未推送）；同日修复分支 `fix/wakuu-turnstart-copy-pick`（r173~r175 复制牌作答）已 `--ff-only` 合回 `master`（`3ce43dc`）。门禁：单测 **726 全绿**、静态层 **10 PASS**、`preflight -Deploy` 4 PASS / 3 SKIP | **R2 四项全部收口**；**R3 已动工**（2026-09-28 第一轮 = 席位身份唯一取数入口 `SeatRegistry` / `SeatIdentity` 纯逻辑 + 靶区清单，**一个调用点都没改**；单测 **744**、marker `2026-09-28-r177`；靶区与分批见 ADR §八 —— 实测裸身份比较 ≈48 处 / 28 文件、`CurrentControlledPlayerId` 读取点已从 13 涨到 **32**；**第二轮 B1 已落地** = 新增薄适配 `Scripts/Runtime/LocalSeatSource.cs`，**24 处**动作 / 前台读点改走它（写入点未动；动作/前台侧两路口径**各只剩 1 处**，都在奖励归属 ⇒ B2），marker `2026-09-28-r178`、单测 744、**待实机**，下一批 = **B1b 本地席位判定统一** + **B2 奖励归属**，契约见本文件 §R3）→ 之后 R4（拆 God class） → R5（生命周期契约）；**R3/R4 期间冻结功能改动**（M2 智能抓牌须排在 R3/R4 之后）；每步一实机、行为零变化。⚠ 已知未收的两处同形代码（**非** R2 清单项，待拍板）：`LocalSelfCoopContext.ReconcileStartRunLobbyPlayerCount`（标准角色选择页）的加/删/ready 三段与本次编排同形但有三处差异（多余席位过滤掉主席位 / ready 只遍历目标席位 / 日志字段不同），未纳入本轮 | 本表 + `runtime架构分层重构评估.md` |
 | `长期方向L1-L3规划.md` | **部分落地**：L1 接口层已落地（任务 2.2，r31）；L3 离线静态层 CI 已落地（2026-09-16）；**L2 已扩为 `runtime架构分层重构评估.md`（#18，R0 动工中）** | L2 走该提案的 R1~R4；L1 剩"反射面收敛" | 本表 |
 | `键盘手柄双输入本地双控可行性分析.md`（L1 档） | **待拍板**：结论已出（L1 轮流操作可行 / L2·L3 真正同时不可行）；**未实现** | 备选线索：`LocalDeviceSplitRouter` + patch `NControllerManager` 模式抢占 + 秒切防抖（仅认确认性输入），默认关 | 本表（备选） |
 | `本地LLM辅助开发可行性分析.md` | **部分落地**：P0 冒烟 / P1 索引 / P2 日志分诊 / P3 双语 + diff 预审 / T2 NUnit 草稿**均已完成**；**P4 经实测改换做法**（明细当优先级清单 + 自写抽取器）；`functiongemma` 工具路由未动 | P4 若要继续：先写自己的 `sts2src` 逐卡效果抽取器 → 人审 → 固化 `PureLogic` 表，**默认关**且须过 §21.4.2 回归清单 | 本表 |
@@ -2123,3 +2123,118 @@ LOG ANCHORS: (期望 0) LocalCustomRunSelectionSync / ### Exception ###；INIT_O
   期望 0： ### Exception ### / 进战斗黑屏 / add_child() failed
   ```
 - **经验**：见 `references/local-multicontrol-pitfalls.md` **坑 K**（作用域外作答的入口覆盖面 + 两条定位手段）。
+
+---
+
+## R3 身份收编（席位身份唯一取数入口 `SeatRegistry` / `LocalSeatSource`）
+
+> 提案：`maintenance-docs/decision-records/runtime架构分层重构评估.md` §四 R3 + **§八 靶区清单**（该文件在仓库外维护）。
+> 目标：把"这个 id 是谁"从四路各自猜（`LocalContext.NetId` / `Session.CurrentControlledPlayerId` /
+> 反射 `_localPlayerId` / 裸比 `player.NetId`）收成"问 `SeatRegistry`"。**每批行为零变化 + 一局实机。**
+
+**已落地**
+- **第一轮（r177）**：纯逻辑 `Scripts/Runtime/PureLogic/SeatIdentity.cs` + `SeatRegistry.cs`
+  （唯一取数入口 + 席位表自检），单测 **726 → 744**；**一个调用点都没改**（无需实机）。
+- **第二轮 B1（r178，本轮）**：薄适配 `Scripts/Runtime/LocalSeatSource.cs`（读席位表 / 受控位 / 回环上下文
+  → 不可变快照；**命中校验是权威内容比对**，所以"写后读"安全、无需手工失效），并把**动作 / 前台归属**的
+  读点全部改走它 —— `LocalMultiControlRuntime`（11 处，含 `TryGetForegroundPlayer` / 结束回合按钮自愈 /
+  回合开始抽牌判定 / peek 回切 / 自动切前台及其写后校验）、`CardTransformNetIdPinPatch`（3 处）、
+  `CardPileAddForegroundContextPinPatch`、`CardPileHandVisualOwnerGuardPatch`、`MapSelectionSynchronizerPatch`、
+  `HookPlayerChoiceContextLocalPatch`、`EventSynchronizerPatch`（2 处）、`CombatManagerTurnHookForegroundPatch`、
+  `ThievingHopperPatch`、`LocalWakuuRelicRuntime`、`LocalWakuuSafetyNet`；**写入点一个没动**
+  （`ApplyControlContext` / `AlignContextForActionOwner` / `AlignLocalContextToForegroundForEndTurn` 照旧）。
+  效果：动作 / 前台侧的 `LocalContext.NetId ==` 比较与 `SessionState.CurrentControlledPlayerId` 读取
+  **各只剩 1 处**（都在奖励归属 ⇒ 属下一批 B2）。
+- 进局新增锚点：`会话席位自检通过: seats=…, primary=…`（有问题则 `会话席位自检发现问题: …`）。
+- **第三轮 B1b（r179，本轮）：席位归属判定统一**——把 16 个文件 **28 处**裸写法
+  （`LocalSelfCoopContext.LocalPlayerIds.Contains(...)` 18 处 + `LocalSelfCoopContext.IsLocalSessionSeat(...)` 10 处）
+  全部改走 `LocalSeatSource.IsLocalSeat(...)`：`RewardsSetSynchronizerSelectLocalRewardPatch` /
+  `RewardsSetPatch` / `RewardsCmdPatch` / `CardRewardPatch` / `CardSelectCmdPatch`（2 处）/
+  `CardSelectWakuuTurnStartAutoAnswerPatch` / `CombatManagerReadyEnemyTurnPatch`（2 处）/
+  `CombatRoomOfferRoomEndRewardsPatch`（3 处）/ `OneOffSynchronizerSpoilsMapPatch` / `HookEnqueueForegroundPatch` /
+  `LoadRunLobbyPatch` / `NPlayerHandSelectCardsSerializationPatch`（2 处）/ `NRemoteLobbyPlayerSwitchPatch`（2 处）/
+  `LocalMultiControlRuntime`（6 处）/ `LocalMultiSessionState` / `LocalRestSiteSeatBubble`。
+  **判据逐字等价**（`IsLocalSeat` = `id != 0 && 席位表包含`，与 `IsLocalSessionSeat` 同义）。
+  `LocalSelfCoopContext.IsLocalSessionSeat` 保留为**席位表源级原语**并加注记（消费方一律走唯一入口），
+  B1b 后**外部调用点 = 0**；`LocalSelfCoopContext.LocalPlayerIds` 仍供大厅侧"取席位表"用（不是判定）。
+  复核：`grep 'LocalSelfCoopContext\.(LocalPlayerIds\.Contains|IsLocalSessionSeat)\('` 在 `Scripts/` **= 0**；
+  `LocalSeatSource` 调用点 24 → **53**；写入点仍 22 处未动。
+
+**验证契约（请实机，marker `2026-09-28-r178`）**
+```
+改动:    R3 B1 —— 动作/前台归属的身份读取改走 LocalSeatSource（行为零变化，marker 2026-09-28-r178）
+SETUP:   本地多控 2~4 席（真人 + 至少一个瓦库托管席位），打一场战斗 + 走一个事件/地图
+ACTION:  ① 战斗中切人、出牌、结束回合；② 让瓦库后台出牌（数据链 / 不等价交换这类手牌变换效果更好）；
+         ③ 地图选点投票；④ 事件里投票
+PASS:    `会话席位自检通过: seats=…`（进局 1 条）
+         战斗/前台锚点照旧出现：`瓦库自动操作前切换视角` / `检测到后台角色触发战斗效果/选牌，自动切换前台` /
+         `仅关键节点：瓦库回合开始已看过，自动切回原视角` / `已跳过非前台角色的进手牌视觉节点` /
+         `[手牌同步修复]` / `结束回合点击：上下文已校正到前台玩家` / `跳过结束回合后自动切人`
+         观感与 r176 一致：切谁就显示谁的手牌、结束回合点了就有反应、后台瓦库的牌不出现在前台手牌区
+FAIL:    `自动切前台失败，已回滚会话控制索引` / `检测到无效战斗角色ID` / `会话席位自检发现问题` 出现；
+         或切人后手牌不跟随、结束回合点了没反应
+期望 0： ### Exception ### / add_child() failed / 我方 NullReferenceException / 手牌串角色
+```
+
+**✅ 实机结论（2026-09-28，marker `2026-09-28-r178`，日志 `logs-archive/godot__20260928-193549__r178.log`）**
+一局覆盖「出征（3 席）→ 战斗切人 → 瓦库自动出牌 → 事件自动选择 → **读档（继续游戏）** → 读档后再战」，
+契约全过：
+- 新锚点 `会话席位自检通过: seats=…, primary=…` **2 条**（出征 + 读档各一次，3 席齐全）、
+  `会话席位自检发现问题` **0**；
+- 失败哨兵全 0：`自动切前台失败` / `控制上下文切换回滚` / `检测到无效战斗角色ID` / `检测到手动出牌上下文漂移`；
+- 正常路径照旧：`检测到后台角色触发战斗效果/选牌，自动切换前台` **2**、`切换操控角色` **9**、
+  `瓦库形态后台模式，跳过自动切换视角` **56**（本局瓦库走后台档 ⇒ 不切视角属预期）、
+  卡牌奖励自动领取 **4**、瓦库事件自动选择完成 **6**、`让真人插队` **3**、`熔断跳过` **6**（历史局 4~72，同量级）；
+- **读档后瓦库照常干活**（L13040 重新初始化 → L13192/L13523 事件自动选择完成、L14129/L15381 出牌统计）⇒
+  B1 的席位快照在"读档"这条历史盲区上同样正确重建；
+- 我方 `[ERROR]` / `[ERROR] [LocalMultiControl]` **0**、我方 NRE **0**、`add_child() failed` / 幽灵弹层 /
+  `ObjectDisposedException` / `裸异常块` / `Couldn't get hand node` / 看门狗重启失败 **全 0**；
+  `PATCH_RESULT critical=25/25 optional=15/15 total_patched=186` 与 r175/r176 **逐字相同**；
+- 我方 WARN 模板与 r176 对比：r178 多出的 6 个模板**全是既有的熔断 / 看门狗 / 药水动画族**
+  （r176 是只进厅的短局，本来打不到），**没有一条来自 B1 新代码**；`only in r176` = **0**（老告警一条没消失）。
+- 噪音（非我方，均为已知）：12 条 NRE 全是第三方 `RitsuLib` 反射注册（与 r173/r175/r176 同基线 12 条）；
+  5 条 `[ERROR]` = Manosaba/ddu 分支 2 + BetterModMenu 超时 1 + 游戏侧存档删除 2（前文已定性的噪音）。
+- 未覆盖（本局没走到，不算失败）：`仅关键节点` peek 回切、`已跳过回合开始抽牌演出`、`[手牌同步修复]`、
+  蝗虫偷牌收敛、次级资源归属校正。
+
+**验证契约（请实机，marker `2026-09-28-r179`）**
+```
+改动:    R3 B1b —— 席位归属判定统一到 LocalSeatSource.IsLocalSeat（16 文件 28 处，行为零变化）
+SETUP:   本地多控 2~4 席（真人 + 至少一个瓦库托管席位）；一局里尽量走到战斗 + 事件 + 休息区（+ 商店/宝箱）
+ACTION:  正常玩：战斗结束领奖励、瓦库自动出牌/自动选事件、休息区选择、必要时读档一次
+PASS:    `会话席位自检通过: seats=…` 照旧；奖励/事件/休息区行为与 r178 完全一致；
+         席位相关锚点照旧（`卡牌奖励已自动领取` / `瓦库事件自动选择完成` / `瓦库休息区…` / `共享遗物同步` 等）
+FAIL:    奖励发错人 / 瓦库该动的席位不动、不该动的动了；第三方席位（CB 合成 Bot）被我们代管
+期望 0： ### Exception ### / add_child() failed / 我方 NullReferenceException / 归属者残留
+```
+
+**✅ 实机结论（2026-09-28，marker `2026-09-28-r179`，日志 `logs-archive/godot__20260928-200133__r179.log`）**
+本局是**读档续玩**（`本地多控读档自动就绪` ×1，故无 `Embarking` 行），长局：席位自检通过 ×1（3 席齐全）/
+冲突 0、卡牌奖励自动领取 **20**、瓦库自动出牌 **35**、休息区 **33**、火堆自动指定 **4**、商店自动买药水 **1**、
+就绪补齐 **39**、`汇总奖励流程中跳过遗物镜像` **3** ⇒ 席位判定的主要消费面都走到了。
+- 失败判据全 0：`归属者残留已改写` / `保留为人工领取` / 第三方席位被代管的迹象 / 奖励发错人；
+- 我方 `[ERROR]` **0**、我方 NRE **0**、`add_child() failed` / 幽灵弹层 / `ObjectDisposedException` /
+  `InvalidOperationException` / 选择器作用域异常退出 / 看门狗重启失败 / `Couldn't get hand node` **全 0**；
+  `PATCH_RESULT` 与 r175/r176/r178 逐字相同；12 条 NRE 全是第三方 `RitsuLib`（同基线）；
+- **两条"哨兵命中"已定性为非异常（口径订正）**：
+  ① `检测到真人选牌请求` **16** —— 文案是「本次跳过瓦库选择器改走正常UI: chooser=…326」，
+  即模组检测到**真人**该选牌就让位 ⇒ 是**正向信号**；跨会话 r172 **28** / r167 **6** / r161 **12**（r178 为 0
+  只因那局没有真人选牌请求）。**今后不要再把它当"期望 0"**。
+  ② `手牌UI与数据存在差异但未处理（仅记录）` **6** —— 文案自带"仅记录"，是既有诊断；跨会话 r172 **23** /
+  r169 **1** / r161 **4**。
+- 我方 WARN 模板对比 r178：r179 多出的 20 个模板**全是既有族**（熔断 `overlay-open` / 看门狗 /
+  药水与遗物动画跳过 / 安全网事件滞留超时 / 藏宝图 quest 丢失兜底 / 弹层阻挡 / 手牌差异 / 手牌点击能量不足），
+  并逐族跨会话核对过（藏宝图 4 vs r172 9；安全网 2 vs 4；弹层 4 vs r172 3 / r161 8；看门狗 7 vs 12 / 5；
+  出不了牌 2 vs 5 / 11）⇒ **B1b 没有引入任何新告警来源**；`only in r178` 仅 1 条（同族的另一瓶药水 id）。
+
+**下一批（待拍板）**
+- **B1c（可选）**：驱动三态判定统一 —— `LocalSelfCoopContext.IsWakuuEnabled` / `IsCoopBotsDriven` 的调用点
+  改问 `SeatRegistry.DriverOf`。⚠ 需要先拍一个语义问题：两处命中时 `IsWakuuEnabled` 返回 true，
+  而 `SeatRegistry.IsWakuuDriven` 按三态互斥**以联机机器人为准**（返回 false）—— 现状靠写入侧保证互斥，
+  所以要在"逐字等价"（包一层集合判定）与"顺带把互斥判定拉齐"之间选一个。
+- **是否给"席位判定唯一入口"加棘轮**（防回头路）：ADR §五 曾定「不新增 S 项承担架构职责」，
+  所以本轮**没有**加门禁；若要，可加一条只查 diff/新增代码的棘轮（把裸 `LocalPlayerIds.Contains` 判 FAIL）。
+- **B2**：奖励 / 掉落归属（`CrystalSpherePatch:128`、`LocalWakuuRewardAutoClaim:270`、`CombatRewardMergeContext`、
+  `LocalWakuuRestAutoChoice`、`LocalWakuuPotionAutoUse`、`LocalWakuuEventAutoChoice` 等）。
+- **B3**：反射 `_localPlayerId`（`LocalMultiControlRuntime.TrySetLocalPlayerId` + 3 处读取）；
+  **B4** 选牌主人 / 手牌 owner；**B5** 存档身份。
