@@ -2030,3 +2030,17 @@ LOG ANCHORS: (期望 0) LocalCustomRunSelectionSync / ### Exception ###；INIT_O
   **修法**：新增「读档窗口」（`LoadReplayWindowPolicy` 纯函数 + 180 秒超时安全阀）：
   读档入口（继续游戏 / ESC 快速重启）开窗，守卫在窗口内不下手，进局（`IsInProgress`）/ `RunManager.CleanUp` / `Disable` 自动关窗。
   +7 条单测。**注意**：`_wakuuPlayerIds` 的恢复（r166）是必要条件但**不充分** —— 会话被关掉时名额恢复也没用。
+
+### Co-op Bots 在本地多控大厅「人数到 4 后加不了 Bot」（2026-09-28 用户实机反馈，**待定性**）
+
+- **现象（用户原话）**：本地多控大厅把玩家人数调到 4 ⇒ Co-op Bots 的「添加 Bot」不再可用；
+  **再把人数降到 4 以下也仍然不可用**；退回上一个界面再进来（页面重建）就恢复正常。
+- **已知**：本局日志（`logs-archive/godot__20260928-131003__r169.log`）里 CoopBots **0.39.1 加载正常**、
+  适配器就绪、`coopBotsSeats` 为空（本局不接管任何席位）；**我方异常 0 条**（`### Exception ###` 0 / `add_child() failed` 0）。
+- **待办（先判是不是我们的锅，流程见 `references/thirdparty-mod-conflicts.md`）**：
+  ① 官方联机大厅里把人数调到 4 再加 Bot —— 若同样复现 ⇒ CB 自身行为，与我们无关；
+  ② 纯自定义（不启用本地多控多席）下同样操作；
+  ③ 若只在我们的回环大厅复现，再查两件事：CB 的按钮状态是否只在
+  `PlayerConnected/Disconnected` 上刷新，而我们的 `AddLocalHostPlayerInternal` / 席位移除路径**是否广播**了该事件。
+- ⚠ **注意**：同一轮反馈里的「选人界面无限玩家」与「按钮位置漂移」**已由 r170 修掉**（references 坑 J），
+  本条是**独立**现象，别混在一起归因 —— 复测时若前两条已好、本条仍在，即可确认独立。
