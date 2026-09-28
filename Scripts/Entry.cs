@@ -14,8 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // R2 合并 master（含 BUG-22 三层修复）后沿用其部署位 marker；R2 收口部署时统一升到 2026-09-27-r169
-    private const string BuildMarker = "Revival v1.43.0 (game v0.111.0, marker=2026-09-27-r168)";
+    // R2 第一批量（子树遍历单点化 + 人数面板共用组件）实机验证位（分支 refactor/r0-layering-boundary）
+    private const string BuildMarker = "Revival v1.43.0 (game v0.111.0, marker=2026-09-28-r169)";
 
     private static Harmony? _harmony;
 

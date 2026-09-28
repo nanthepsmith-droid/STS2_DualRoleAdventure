@@ -5,6 +5,7 @@ using System.Reflection;
 using Godot;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
+using LocalMultiControl.Scripts.UI;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
 using MegaCrit.Sts2.Core.Helpers;
@@ -455,152 +456,50 @@ internal static class NDailyRunLocalCountButtonsClosePatch
 }
 
 /// <summary>
-/// 每日页的「本地人数 -/+ / 切换编辑席位」面板（与 Custom 页同款控件，但人数上限收到 4，
-/// 且位置按每日页布局放在屏幕左侧中部 —— 每日页右侧是排行榜、底部是出征/返回键）。
+/// 每日页的人数面板（R2：骨架搬进 <see cref="LocalPlayerCountPanel"/>）。
+/// 差异 = 人数 clamp 到 4、落点在屏幕左侧中部（右侧是排行榜、底部是出征/返回键）、首次注入打一条布局日志。
 /// </summary>
 internal static class LocalDailyRunCountButtons
 {
-    private const string PanelName = "LocalDailyRunCountPanel";
-    private const string MinusButtonName = "LocalDailyRunMinusButton";
-    private const string PlusButtonName = "LocalDailyRunPlusButton";
-    private const string PrevButtonName = "LocalDailyRunPrevButton";
-    private const string NextButtonName = "LocalDailyRunNextButton";
-    private static readonly Vector2 ButtonSize = new(140f, 32f);
-    private const float VerticalGapRatio = 0.5f;
-    private const float HorizontalGap = 44f;
-    private const float EdgeMargin = 18f;
-    private static bool _layoutLogged;
-
     private static readonly FieldInfo? LobbyField = AccessTools.Field(typeof(NDailyRunScreen), "_lobby");
+
+    private static readonly LocalPlayerCountPanel Panel = new(new LocalPlayerCountPanelOptions(
+        namePrefix: "LocalDailyRun",
+        sourcePrefix: "daily-ui-button",
+        successLogText: "通过每日挑战实体按钮调整本地人数成功",
+        resolvePosition: ResolveLeftMiddle)
+    {
+        ClampTargetCount = static count => Math.Min(count, DailyLobbyPolicy.MaxDailyLocalPlayerCount),
+        FirstLayoutLog = LogFirstLayout
+    });
 
     public static void Sync(NDailyRunScreen screen)
     {
         // 只在「本地多控开启 + 本页大厅确实是我们自己的回环服务」时才挂面板（r159）：
         // 官方联机每日页是同一个 NDailyRunScreen 类型，残留会话会让它也冒出我们的人数面板。
-        if (!LocalSelfCoopContext.IsEnabled
-            || LobbyField?.GetValue(screen) is not StartRunLobby lobby
-            || lobby.NetService is not LocalLoopbackHostGameService)
-        {
-            Remove(screen);
-            return;
-        }
-
-        Control panel = EnsurePanel(screen);
-        UpdateLayout(screen, panel);
+        bool shouldShow = LocalSelfCoopContext.IsEnabled
+            && LobbyField?.GetValue(screen) is StartRunLobby lobby
+            && lobby.NetService is LocalLoopbackHostGameService;
+        Panel.Sync(screen, shouldShow);
     }
 
     public static void Remove(NDailyRunScreen screen)
     {
-        Control? existingPanel = screen.GetNodeOrNull<Control>(PanelName);
-        existingPanel?.QueueFreeSafely();
-        _layoutLogged = false;
+        Panel.Remove(screen);
     }
 
-    private static Control EnsurePanel(NDailyRunScreen screen)
+    private static Vector2? ResolveLeftMiddle(Vector2 viewportSize, Vector2 panelSize, Node screen)
     {
-        Control? existingPanel = screen.GetNodeOrNull<Control>(PanelName);
-        if (existingPanel != null)
-        {
-            return existingPanel;
-        }
-
-        Control panel = new()
-        {
-            Name = PanelName,
-            MouseFilter = Control.MouseFilterEnum.Ignore,
-            ZIndex = 80
-        };
-
-        LocalSimpleTextButton minusButton = CreateButton(MinusButtonName, "-", false);
-        minusButton.Connect(NClickableControl.SignalName.Released,
-            Callable.From<NClickableControl>((_) => OnAdjustPlayerCount(-1)));
-        panel.AddChild(minusButton);
-
-        LocalSimpleTextButton plusButton = CreateButton(PlusButtonName, "+", true);
-        plusButton.Connect(NClickableControl.SignalName.Released,
-            Callable.From<NClickableControl>((_) => OnAdjustPlayerCount(1)));
-        panel.AddChild(plusButton);
-
-        LocalSimpleTextButton prevButton = CreateButton(PrevButtonName, string.Empty, false);
-        prevButton.Connect(NClickableControl.SignalName.Released,
-            Callable.From<NClickableControl>((_) => LocalSelfCoopContext.SwitchLobbyEditingPlayer(false)));
-        panel.AddChild(prevButton);
-
-        LocalSimpleTextButton nextButton = CreateButton(NextButtonName, string.Empty, true);
-        nextButton.Connect(NClickableControl.SignalName.Released,
-            Callable.From<NClickableControl>((_) => LocalSelfCoopContext.SwitchLobbyEditingPlayer(true)));
-        panel.AddChild(nextButton);
-
-        screen.AddChildSafely(panel);
-        return panel;
-    }
-
-    private static LocalSimpleTextButton CreateButton(string name, string text, bool mirrorX)
-    {
-        return new LocalSimpleTextButton
-        {
-            Name = name,
-            ButtonText = text,
-            FocusMode = Control.FocusModeEnum.None,
-            FontSize = 20,
-            Size = ButtonSize,
-            CustomMinimumSize = ButtonSize,
-            ImageScale = Vector2.One * 1.5f,
-            MirrorImageX = mirrorX
-        };
-    }
-
-    private static void UpdateLayout(NDailyRunScreen screen, Control panel)
-    {
-        Viewport? viewport = screen.GetViewport();
-        if (viewport == null)
-        {
-            return;
-        }
-
-        float verticalGap = ButtonSize.Y * VerticalGapRatio;
-        float secondColumnX = ButtonSize.X + HorizontalGap;
-        float secondRowY = ButtonSize.Y + verticalGap;
-        float panelWidth = secondColumnX + ButtonSize.X;
-        float panelHeight = secondRowY + ButtonSize.Y;
-        Vector2 viewportSize = viewport.GetVisibleRect().Size;
-
         // 每日页左侧中部：避开右侧排行榜 / 底部出征·返回键 / 顶部标题与倒计时
-        float x = EdgeMargin;
-        float y = Math.Max(EdgeMargin, (viewportSize.Y - panelHeight) * 0.5f);
-        panel.Position = new Vector2(x, y);
-
-        panel.GetNodeOrNull<LocalSimpleTextButton>(MinusButtonName)!.Position = Vector2.Zero;
-        panel.GetNodeOrNull<LocalSimpleTextButton>(PlusButtonName)!.Position = new Vector2(secondColumnX, 0f);
-        panel.GetNodeOrNull<LocalSimpleTextButton>(PrevButtonName)!.Position = new Vector2(0f, secondRowY);
-        panel.GetNodeOrNull<LocalSimpleTextButton>(NextButtonName)!.Position = new Vector2(secondColumnX, secondRowY);
-
-        if (!_layoutLogged)
-        {
-            _layoutLogged = true;
-            LocalMultiControlLogger.Info(
-                $"每日挑战人数面板已注入: viewport={viewportSize.X:0}x{viewportSize.Y:0}, position={x:0},{y:0}, "
-                + $"panel={panelWidth:0}x{panelHeight:0}");
-        }
+        return new Vector2(
+            LocalPlayerCountPanel.EdgeMargin,
+            Math.Max(LocalPlayerCountPanel.EdgeMargin, (viewportSize.Y - panelSize.Y) * 0.5f));
     }
 
-    private static void OnAdjustPlayerCount(int delta)
+    private static void LogFirstLayout(Vector2 viewportSize, Vector2 position, Vector2 panelSize)
     {
-        if (!LocalSelfCoopContext.IsEnabled)
-        {
-            return;
-        }
-
-        string source = delta > 0 ? "daily-ui-button:+" : "daily-ui-button:-";
-        if (!LocalSelfCoopContext.AdjustDesiredLocalPlayerCount(delta, source))
-        {
-            return;
-        }
-
-        int targetCount = Math.Min(
-            LocalSelfCoopContext.DesiredLocalPlayerCount,
-            DailyLobbyPolicy.MaxDailyLocalPlayerCount);
-        NGame.Instance?.AddChildSafely(NFullscreenTextVfx.Create(LocalModText.LocalPlayerCount(targetCount)));
-        LocalMultiControlLogger.Info($"通过每日挑战实体按钮调整本地人数成功: {targetCount}");
+        LocalMultiControlLogger.Info(
+            $"每日挑战人数面板已注入: viewport={viewportSize.X:0}x{viewportSize.Y:0}, position={position.X:0},{position.Y:0}, "
+            + $"panel={panelSize.X:0}x{panelSize.Y:0}");
     }
 }
