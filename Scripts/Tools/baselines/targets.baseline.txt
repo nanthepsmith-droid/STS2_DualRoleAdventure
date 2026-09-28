@@ -2,8 +2,8 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-09-28 18:52  HEAD=22e91f4
-# 统计: patch_classes=187 patch_rows=220 string_targets=195 descriptors=366
+# 生成时间=2026-09-28 20:55  HEAD=a643c26
+# 统计: patch_classes=190 patch_rows=223 string_targets=196 descriptors=370
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	CardManualPlayContextPatch	CardModel	EnqueueManualPlay	string
@@ -74,6 +74,7 @@ P	LobbyBeginRunDeserializePatch	LobbyBeginRunMessage	Deserialize	nameof
 P	LobbyBeginRunSerializePatch	LobbyBeginRunMessage	Serialize	nameof
 P	LobbyPlayerDeserializePatch	StartRunLobbyPlayer	Deserialize	nameof
 P	LobbyPlayerSerializePatch	StartRunLobbyPlayer	Serialize	nameof
+P	LocalContextThirdPartyIsMePatch	LocalContext	IsMe	nameof
 P	LocalMultiControlPatch	RunManager	CleanUp	nameof
 P	LocalMultiControlPatch	RunManager	Launch	nameof
 P	LocalPlayerLimitNetworkPatch	-	-	no-target
@@ -93,6 +94,7 @@ P	NCharacterSelectLocalCountButtonsProcessPatch	NCharacterSelectScreen	_Process	
 P	NCharacterSelectScreenOpenPatch	NCharacterSelectScreen	OnSubmenuOpened	nameof
 P	NCharacterSelectScreenPatch	NCharacterSelectScreen	PlayerChanged	nameof
 P	NCharacterSelectScreenSelectCharacterPatch	NCharacterSelectScreen	SelectCharacter	nameof
+P	NChooseACardSelectionScreenAutoAnswerPatch	NChooseACardSelectionScreen	ShowScreen	nameof
 P	NCombatCardPilePatch	NCombatCardPile	Initialize	nameof
 P	NCombatRoomGhostHandsPatch	NCombatRoom	_Ready	nameof
 P	NCombatRoomPatch	NCombatRoom	OnCombatSetUp	string
@@ -172,6 +174,7 @@ P	PersonalRunEndPatch	RunManager	OnEnded	nameof
 P	PersonalShopPurchasePatch	MerchantEntry	OnTryPurchaseWrapper	nameof
 P	PlatformUtilGetPlayerNamePatch	PlatformUtil	GetPlayerName	nameof
 P	PlayerChoiceSynchronizerPatch	PlayerChoiceSynchronizer	SyncLocalChoice	nameof
+P	PlayerChoiceSynchronizerRemoteChoiceFallbackPatch	PlayerChoiceSynchronizer	WaitForRemoteChoice	nameof
 P	PlayerChoiceSynchronizerWaitForRemoteChoicePatch	PlayerChoiceSynchronizer	WaitForRemoteChoice	nameof
 P	PlayerGainGoldMirrorPatch	PlayerCmd	GainGold	nameof
 P	PlayerLoseGoldMirrorPatch	PlayerCmd	LoseGold	nameof
@@ -251,6 +254,7 @@ S	accesstools	NCharacterSelectButton	_delegate	field
 S	accesstools	NCharacterSelectButton	_isSelected	field
 S	accesstools	NCharacterSelectScreen	_embarkButton	field
 S	accesstools	NCharacterSelectScreen	_randomCharacterButton	field
+S	accesstools	NChooseACardSelectionScreen	_cards	field
 S	accesstools	NCombatCardPile	RemoveCard	method
 S	accesstools	NCombatCardPile	_pile	field
 S	accesstools	NCustomRunScreen	_charButtonContainer	field

@@ -2036,8 +2036,10 @@ LOG ANCHORS: (期望 0) LocalCustomRunSelectionSync / ### Exception ###；INIT_O
   ⚠ 判据订正:  **不要**把 `已为瓦库角色自动发放托管遗物` 当通过条件 —— 遗物通常本来就在存档里
                （`GrantWakuuRelicsAsync` 已有则跳过），r167 实测该计数为 0 而瓦库工作正常；
                "瓦库活过来了"的真判据是 `瓦库事件自动选择完成` 与 `瓦库选择器作用域进入` 的条数。
-               一条命令判读：`python D:\Download\pain\tools\log_scan.py --preset load --file <日志>`（r167 新增）
-  ```
+               一条命令判读：`python D:\Download\pain\tools\log_scan.py --preset load --file <日志>`（r167 新增；
+               2026-09-28 起该哨兵已在工具侧**按"读档窗口"限定计数** —— 本契约写的"读档窗口内的"从此由工具自动执行，
+               窗口外命中照打「窗口外另有 N 条已排除」、老版本日志退回全量计数并打提示）
+               ```
 - **同窗口的第二颗雷 —— r167 已修（本轮真凶）**：会话守卫（r158/r161）在读档窗口会误判「没有大厅页 + 未进局」并在约 1 秒后
   `Disable("no-local-lobby-screen")`。r166 日志实证（**5 次读档 5 次复现**）：
   ```
@@ -2126,6 +2128,246 @@ LOG ANCHORS: (期望 0) LocalCustomRunSelectionSync / ### Exception ###；INIT_O
 
 ---
 
+### BUG-23 瓦库打出「第三方自绘选牌」类卡牌后卡死（2026-09-28 实机，沙耶 mod 色素细胞；**已定性，待拍板修法**）
+
+**现象**（用户 2026-09-28，marker `r180`，日志 `logs-archive/godot__20260928-202151__r180.log`）：
+瓦库打出沙耶 mod 的【色素细胞】`FIGURE_SAYA-PIGMENT_CELL_CARD`（千变万化词条，打出后从几张牌里选一张加入手牌）
+后**卡牌停屏、界面不弹、也没有交给真人**，整局卡死；行动队列一直停在 "waiting for player choice"。
+
+**日志实证（一条链定死根因）**：
+```
+[VERYDEBUG] [PlayerChoiceSynchronizer] Reserved choice id 6 for player 76561198422527327, next is 7
+[DEBUG] [ActionQueueSet] Pausing action PlayCardAction card: CARD.FIGURE_SAYA-PIGMENT_CELL_CARD … for player choice
+[DEBUG] [PlayerChoiceSynchronizer] Awaiting remote choice 6 for player 76561198422527327      ← 走了"远端等待"
+[VERYDEBUG] [ActionQueueSet] … at front of player queue … is waiting for player choice        ← 每秒刷，永不完成
+```
+我方看门狗同时报 `rejected=watchdog-in-flight:120+`、`selectorStackTop=LocalWakuuStrategySelector`
+⇒ 出牌作用域一直不退出（选牌链挂着），而我方选择器其实**已经压在栈上**。
+
+**根因（第三方代码，只读反编译证据）**：沙耶 mod 自己实现了选牌助手
+`figure_Saya…CommonActions.SelectCenteredBranchCards`，**既不读 `CardSelectCmd.Selector`、也不走 `CardSelectCmd.From*`**：
+```csharp
+uint choiceId = RunManager.Instance.PlayerChoiceSynchronizer.ReserveChoiceId(player);
+if (LocalContext.IsMe(player) && NetService.Type != Replay) {
+    NPlayerHand.Instance?.CancelAllCardPlay();
+    var screen = NChooseACardSelectionScreen.ShowScreen(choices, false);   // 它自己的 UI
+    result = (await screen.CardsSelected()).ToList();
+    RunManager.Instance.PlayerChoiceSynchronizer.SyncLocalChoice(player, choiceId, …);
+} else {
+    result = …(await …WaitForRemoteChoice(player, choiceId)).AsIndexes()…;  // ★ 我们的回环里永远没人回答
+}
+```
+而**并发出牌档（方案 D）刻意不钉全局上下文**（`LocalWakuuRelicRuntime`：`LocalContext.NetId = player.NetId`
+那一支只在非并发档执行）⇒ `LocalContext.IsMe(327)` 为 false ⇒ 第三方走 else 远端分支 ⇒ 死等。
+
+**为什么现有三件套都够不着**：① `CardSelectCmd.From*` 的 `Selector != null` 短路 —— 第三方根本不经过；
+② `CardSelectWakuuTurnStartAutoAnswerPatch`（作用域外作答）拦的是游戏入口，不是第三方方法体；
+③ `WakuuSelectorRegistry` + getter 守卫只管 `CardSelectCmd.Selector` 的读取者。
+
+⚠ **不能简单"空结果放行"**：`PlayerChoiceResult` 是**类型化**的（`AsIndex()` / `AsIndexes()` /
+`AsCombatCards()` / `AsDeckCards()` / `AsPlayerId()` 各自对错类型抛 `InvalidOperationException`），
+而 `WaitForRemoteChoice` 这一层**看不到调用方期望哪种类型** ⇒ 盲回一种类型会把"卡死"换成"异常"。
+（沙耶这条链要 index 类型；但 `FromCombatPile` 那条要 combat cards。）
+
+**修法决策（2026-09-28 用户拍板）**：**先做 A（解软锁），B 随后单独一轮**。
+
+**✅ A 已实现并部署（marker `2026-09-28-r181`，待实机）**：
+- 新增补丁 `Scripts/Patch/PlayerChoiceSynchronizerRemoteChoiceFallbackPatch.cs`
+  （`PlayerChoiceSynchronizer.WaitForRemoteChoice` 前缀）：**我们本地席位 + 后台托管瓦库**等待远端选择时，
+  直接以"空结果"放行并在日志里点名——
+  `瓦库远端选择无人作答，已按空结果放行（防软锁兜底，本次选择被跳过）: player=…, choiceId=…, 结果类型=…, 调用方=…`。
+  门控刻意收窄：本地多控 + 单人冒险 + 本地回环 + 我们的本地席位 + 瓦库形态；火堆"选一个队友"让路给既有补丁。
+- ⚠ **按调用方给对应类型的空结果**（`PlayerChoiceResult` 类型化，猜错 = 抛 `InvalidOperationException`）：
+  分类与映射表抽成纯逻辑 `Scripts/Runtime/PureLogic/PlayerChoiceCallerClassifier.cs`
+  （状态机帧名还原 + `CardSelectCmd.FromHand*/FromCombatPile*` → 战斗卡、`FromDeck*` → 牌组卡、
+  `FromSimpleGrid*`/`FromChooseACardScreen`/`RelicSelectCmd`/`CardReward` → 索引、`MendRestSiteOption` → 玩家、
+  **未知（含第三方自绘）默认索引**），单测 **744 → 755**（`PlayerChoiceCallerClassifierTests` 11 例：
+  映射表逐项 + 状态机帧还原 + 内部帧跳过 + 第三方默认）。
+- 门禁：构建 0 警告 0 错误（237 .cs / 306 源码）→ **755 单测全绿** → 静态层 **10 PASS**
+  （S7 基线刷新为 **188 补丁类 / 221 目标行 / 195 字符串 / 367 语义标识**；新补丁已登记 `PatchDomainMap`）
+  → `clr_compat` PASS → `preflight -Deploy` **4 PASS / 3 SKIP** → `preflight -Lint` **3 PASS / 3 SKIP**
+  → `dll_check --deployed` 字节一致（`87fde3fb205d…`）。**未提交**。
+- **验证契约（请实机，marker `2026-09-28-r181`）**：
+  ```
+  SETUP:   本地多控 2~4 席（瓦库开启【并发出牌】档，复现原路径）；让瓦库打出沙耶 mod【色素细胞】
+  ACTION:  等它打出后观察：卡牌是否还会停屏
+  PASS:    `瓦库远端选择无人作答，已按空结果放行（防软锁兜底，本次选择被跳过）: player=…, choiceId=…,
+           结果类型=index, 调用方=<第三方类型>.<方法>` 出现 1 条；卡牌**正常结算**（本次不拿牌）、
+           行动队列继续往下走、`waiting for player choice` 不再刷
+  FAIL:    仍卡在 "waiting for player choice"；或出现 `InvalidOperationException`（⇒ 说明调用方需要别的
+           结果类型，把日志那行的 `调用方=…` 发我，补 `PlayerChoiceCallerClassifier` 的映射表）
+  期望 0： ### Exception ### / 幽灵弹层 / 我方 NullReferenceException
+  ```
+
+**✅ 实机结论（2026-09-28，marker `2026-09-28-r181`，用户「现在确实没卡住」；
+日志 `logs-archive/godot__20260928-204536__r181.log`）**：
+- 兜底**精准命中一次**（L9117）：
+  `瓦库远端选择无人作答，已按空结果放行…: player=…327, choiceId=0, 结果类型=index, 调用方=CommonActions.SelectCenteredBranchCards`
+  ⇒ **调用方正是反编译定位到的第三方助手**（状态机帧名还原成功），`结果类型=index` 与它后面的 `AsIndexes()` 一致，
+  故**没有** `InvalidOperationException`（日志里该异常 0 条）⇒ "按类型给空结果"这条设计成立。
+- 放行后流程正常继续（游戏侧逐帧证据）：`Sending message to clients to resume action id 11` →
+  `Resuming action … PIGMENT_CELL_CARD` → `finished gathering player choice, and is assigned new id 12` →
+  `resumed execution` → 卡牌正常结算。
+- **原卡死锚点归零**：`waiting for player choice` **0**（r180 是每秒刷）、`Awaiting remote choice` **0**；
+  出牌作用域 **进 6 / 退 6 平衡**（r180 是 4/3 + 看门狗 `watchdog-in-flight` 涨到 120+，本局仅 8）。
+- 健康度：`INIT_STATUS=OK` / `FATAL=0`；期望 0 项**全 0**（选择器作用域异常退出 / 看门狗重启失败 /
+  `Couldn't get hand node` / 动作队列空引用 / 手牌差异 / 保留为人工领取 / 归属者残留）；我方 `[ERROR]` **0**；
+  全局 3 条 ERROR 仍是老噪音（Manosaba / ddu 分支、BetterModMenu 超时）；12 条 NRE 全是第三方 `STS2RitsuLib`（同基线）。
+- **WARN 模板对比**（新增的 `log_scan.py --warn-diff`，对比 r180）：本局独有 4 个 = 本轮那条兜底 WARN +
+  `流程阻塞看门狗统计`（既有族：r178 2 / r179 7）+ `本我牌守卫`/`本我解放修复`（第三方 Koishi 补丁**加载顺序**族，
+  历史 60+ 份日志都有）；参考局独有的 9 个全是 `关键目标 … 存在第三方补丁 owner`（同一件事的另一面）
+  ⇒ **A 没有引入任何新告警来源**。**BUG-23 方案 A 关单**。
+
+**✅ B 已实现并部署（marker `2026-09-28-r182`，待实机）——「功能完整」版：第三方自绘选牌由瓦库自动作答**
+
+用户 2026-09-28 拍板「A 先做、B 随后单独一轮」，故 B 单列本轮。**两半缺一不可**：
+
+1. **让第三方走它自己的本地分支**（新补丁 `Scripts/Patch/LocalContextThirdPartyIsMePatch.cs`，域 `ThirdParty`）：
+   `LocalContext.IsMe(Player)` 后缀 —— 只在①**调用方是第三方**（调用栈上 `LocalContext` 外第一个真实帧属于第三方程序集；
+   跳过 `LocalContext` 自身以覆盖 `IsMe(Creature)` / `IsMine(card)` / `ContainsMe(...)` 包装）②该席位在我们的
+   **自动化窗口**内（后台托管瓦库 + **此刻登记着托管选择器**，即正处一次自动出牌/遗物效果/事件作答作用域）
+   ③原本判 false —— 时改口为 true。⇒ 第三方弹它自己的界面，而不是走无人作答的远端等待。
+   ⚠ 这条刻意不动**原版**调用方语义 ⇒ 把 r109 那类"把别人的牌当本地牌做前台视觉"的风险面限制在第三方代码里；
+   真人亲自操作该席位时（无托管选择器）窗口不成立，**绝不**替真人做决定。改口会打一条去重 INFO 点名调用方。
+2. **我们驱动它的界面**（新补丁 `Scripts/Patch/NChooseACardSelectionScreenAutoAnswerPatch.cs`，域 `Wakuu`）：
+   `NChooseACardSelectionScreen.ShowScreen` 后缀 → 延迟 0.6s（避开屏幕自带的 **350ms 点击保护窗**、等 holder 建好）
+   → 按 `LocalWakuuStrategySelector.Shared` 在候选里选一张 → 对选中 holder 发 `NCardHolder.SignalName.Pressed`
+   （**走游戏自己的点击路径**，不碰私有方法）⇒ `await screen.CardsSelected()` 拿到牌、效果正常结算。
+   作答后 +1.2s 核对界面是否关闭；没关 ⇒ WARN"可能是多选/被第三方改写，交回真人"（下一轮适配的实证锚点）。
+   日志：`瓦库自绘选牌自动作答: chooser=…, options=…, picked=…, screen=NChooseACardSelectionScreen`。
+- 判据收敛在纯逻辑 `Scripts/Runtime/PureLogic/WakuuSelfDrawnChoicePolicy.cs`（`IsManagedWakuuSeat` /
+  `IsAutomatedSeatInPlay` / `ShouldWidenIsMe` / `ShouldAutoAnswerScreen`），单测 **755 → 759**
+  （`WakuuSelfDrawnChoicePolicyTests`）：既有「作用域外自动作答」的六项口径也改走同一个原语，避免口径漂移。
+- 门禁：构建 0 警告 0 错误（241 .cs / 310 源码）→ **759 单测全绿** → 静态层 **10 PASS**
+  （S7 基线刷新为 **190 补丁类 / 223 目标行 / 196 字符串 / 370 语义标识**）→ `clr_compat` PASS →
+  `preflight -Deploy` **4 PASS / 3 SKIP** → `preflight -Lint` **3 PASS / 3 SKIP** → `dll_check --deployed`
+  字节一致（`8bfc18f66efb…`）。**未提交**。
+- **验证契约（请实机，marker `2026-09-28-r182`）**：
+  ```
+  SETUP:   本地多控 2~4 席、瓦库开【后台托管】+【并发出牌】档（原来卡死的那套配置不用改）
+  ACTION:  让瓦库打出沙耶 mod【色素细胞】（或任一"打出后从几张牌选一张"的第三方卡）
+  PASS:    `瓦库自绘选牌自动作答: chooser=…, options=N, picked=…, screen=NChooseACardSelectionScreen` 1 条；
+           界面**一闪而过**、瓦库**拿到那张牌**（不再停屏、也不再出现"本次选择被跳过"那条 A 兜底 WARN）
+  FAIL:    仍停屏（⇒ 看有没有 `瓦库自绘选牌界面出现但本次不代答` / `单击后界面仍未关闭` /
+           `自动化作用域已结束` 三行之一，连同上下文发我）；或出现 `InvalidOperationException`
+  期望 0： ### Exception ### / 幽灵弹层 / 我方 NullReferenceException / `add_child() failed`
+  ```
+- ⚠ 遗留（不阻塞，已记录）：① 我们驱动不了的**其它界面类**（如遗物三选一 `NChooseARelicSelection`）在瓦库席位上
+  仍会停在屏幕上等真人点（比"无界面死等"好，但没有自动作答）；② 多选/被第三方改写过的自绘界面只作一答并 WARN；
+  ③ 「真人席位」在并发出牌期间撞上第三方自绘选牌仍可能卡（同源问题，遇到再按本节模板处理）。
+
+**🔍 r182 实机：B1 生效、B2 漏答（已由 r183 修正）** —— 日志 `logs-archive/godot__20260928-212922__r182.log`
+（用户「现在是弹给我选了」= 界面弹出来但没人自动选，真人只好自己点）：
+- ✅ **B1 生效实证**：`第三方询问本地玩家身份，已按「同机席位」放行: caller=figure_Saya.ModSupport.Utils.CommonActions+<SelectCenteredBranchCards>d__16, player=…327`
+  —— 正是那条第三方自绘选牌链（同局共 15 条，来自 6 个不同第三方 mod；原版调用方一条都没被放行）；`瓦库远端选择无人作答` **0**（没再走远端死等）。
+- ❌ **B2 漏答**：`[WARN] 瓦库自绘选牌界面无候选节点，本次不代答: chooser=…327` ⇒ 界面留给真人点。
+  **根因 = 我用 `Node.FindChildren("*", nameof(NGridCardHolder), …)` 找候选 holder** —— Godot 的 `type` 过滤器按
+  **原生 ClassDB 类名**匹配，`NGridCardHolder` 是 C# 脚本类（原生类是 `Control`）⇒ **恒返回空**。
+- 其余健康：`### Exception ###` / `add_child() failed` / 我方 `[ERROR]` **全 0**；12 条 NRE 仍是第三方 `RitsuLib`；
+  `弹层阻挡自动流程 … top=NChooseACardSelectionScreen[inTree=True]`（既有兜底，识别到界面挡着看门狗，正常）。
+
+**✅ r183 修正（marker `2026-09-28-r183`，待实机）**：
+- 候选改走我们自己的 `LocalNodeTree.EnumerateDescendants(screen).OfType<NGridCardHolder>()`（**C# 类型**遍历，
+  R2 的单点化设施正是为这类场景收的），不再用 `FindChildren` 的 type 过滤器；
+- 候选（holder）是屏幕在 `_Ready` 里建的，偶有晚半拍 ⇒ 加 **0.35s × 最多 3 次**重试后才判"交回真人"，
+  WARN 里带上 `attempt=`；
+- 门禁：构建 0 警告 0 错误 → **759 单测全绿** → 静态层 10 PASS（S7 基线不变）→ `clr_compat` PASS →
+  `preflight -Deploy` 4 PASS / 3 SKIP → `dll_check --deployed` 字节一致（`b3948defe2de…`）。**未提交**。
+- **验证契约（请实机，marker `2026-09-28-r183`）**：同 r182 的配置与动作（瓦库打【色素细胞】）：
+  PASS = `瓦库自绘选牌自动作答: chooser=…, options=N, picked=…` 1 条、界面**一闪而过**、瓦库**拿到那张牌**；
+  FAIL = 仍由真人点 ⇒ 看 WARN 里的 `attempt=`（=3 说明候选始终没建出来，需换更晚的时机/别的容器名）与
+  `无候选节点` 那行；期望 0 同 r182。
+
+**✅✅ r183 实机通过（2026-09-28 关单，用户「现在是弹出来一下就没了」= 界面被打完就关，
+日志 `logs-archive/godot__20260928-213917__r183.log`）** —— 全链闭环，四步实证：
+1. `L19992 瓦库自绘选牌自动作答: chooser=…327, options=3, picked=FIGURE_SAYA-ENZYME_CARD, mode=last, screen=NChooseACardSelectionScreen`
+   （前一行是 `第三方询问本地玩家身份… caller=…CommonActions+<SelectCenteredBranchCards>d__16` ⇒ 界面是 B1 打开的、由 B2 作答的）；
+2. `PlayerChoiceSynchronizer: Sending player choice id 1 for player …327, result indexes 2` →
+   `PlayerChoice sender/context 已恢复` → `ResumeActionAfterPlayerChoiceMessage` → 动作 `resumed`（归属正确）；
+3. **选中的牌真的进了瓦库手牌**：`已跳过非前台角色的进手牌视觉节点（防串手牌显示）: card=FIGURE_SAYA-ENZYME_CARD, owner=…327, foreground=…326`；
+4. **下一回合瓦库把它打了出来**（最强证据）：`瓦库评分出牌: player=…327, round=2, card=CARD.FIGURE_SAYA-ENZYME_CARD` →
+   `Player …327 playing card FIGURE_SAYA-ENZYME_CARD` 正常结算。
+- 健康：`### Exception ###` / `add_child() failed` / 我方 `[ERROR]` / `无候选节点` / `单击后界面仍未关闭` **全 0**；
+  出牌作用域 **进 34 / 退 34 平衡**；`弹层阻挡` 仅 1 条（本次作答期间，属预期）。
+- 两条**非我方噪音**（记录，不定性/不追）：① `InvalidOperationException: The type is not supported for conversion
+  to/from Variant: 'System.Threading.Tasks.Task'` **×2** —— 出现在控制台 loadout 指令
+  （`ConsoleCmdGameAction … __loadout_add_cards_v2`，真人发起）之后，且**我们仓库里没有任何 Func 式
+  `Callable.From<…,…>`**（grep 0 条）⇒ loadout/控制台那条第三方线；r179/r181/r182 该族均为 0，只在用了 loadout 的这局出现。
+  ② 13 条 NRE = `RitsuLib` 12（基线）+ **1 条游戏侧 `NCombatCardPile.OnRelease()`**（真人点战斗牌堆触发，
+  紧跟 `控制上下文已更新: …326 → …327, source=player-state-button`）⇒ 见下方候选 BUG-24。
+
+**候选 BUG-24（观察项，2026-09-28，仅见 1 次）**：手动切到瓦库角色后点战斗牌堆（抽/弃牌堆）⇒
+游戏侧 `NCombatCardPile.OnRelease()` 抛 NRE（栈内无我方/第三方帧，`NClickableControl.HandleMouseRelease` 触发）。
+我们只在该类的 `Initialize` 上挂了前缀（退订旧 `CardPile` 的增删监听），**不写 `_pile`**，理论上留不下空引用；
+历史 8 份日志该族为 0（本局是第一次点牌堆）。**待自然复现再定性**（若复现：记「切到瓦库后多久点的」「点的是抽牌堆还是弃牌堆」）。
+
+**临时绕过（A 时代留下，B 已实机通过，一般不再需要）**：把「瓦库并发出牌」档关掉 ⇒ 出牌走 inline 档、上下文被钉住
+⇒ 第三方走**本地分支**、界面弹出来真人可以直接点。
+
+**排查方法沉淀**：见 `references/local-multicontrol-pitfalls.md` **坑 M**（第三方自绘选牌家族 + 定位手段：
+先 `thirdparty_extract_embedded.ps1` 导出壳里的内嵌实现，再 `thirdparty_api_refs.ps1` / `decompile_mod.ps1`）。
+
+---
+
+## BUG-25：回合结束时触发「唯我」诅咒牌 ⇒ 牌停屏幕中间、整场战斗软锁（2026-09-28 实机报；**✅ 已修复 r185，待实机复测**）
+
+**现象**（用户原话）：回合结束时触发唯我（诅咒牌，来自 Ancients Awakened）会导致这张牌停在屏幕中间不生效，直接软锁死。
+
+**日志实证**（`logs-archive/godot__20260928-223037__r184.log`，本局 health 哨兵 `Couldn't get hand node` = 2）：
+```
+[ERROR] Combat #1 turn loop died while its combat is in progress; the combat is stuck until the room is restarted:
+  System.InvalidOperationException: Couldn't get hand node for original card CARD.YUI_SPIRE_EXPANSION_CARD_BAD_OMEN
+  at CardCmd+<Transform>d__13.MoveNext_Patch1
+  at AncientsAwakened…Mithrix.Egocentrism.OnTurnEndInHand(PlayerChoiceContext)
+  at CombatManager.ResolveTurnEndCardEffects → TweenTurnEndCardToResultPile → DoTurnEndCards
+```
+**根因**：`CardCmd.Transform` 视觉分支（`IsMine(cardAdded) && cardAdded.Pile.Type==Hand` ⇒
+`NCard.FindOnTable(original, Hand)`）在**回合结束在手里触发**的变换上必然踩空：此刻 `DoTurnEnd` 前缀刚把前台切到
+该回合玩家、手牌 UI 还没建好 ⇒ `FindOnTable=null` ⇒ 抛异常炸穿回合循环（游戏侧自己说 stuck）。
+我们 r109 的 `CardTransformNetIdPolicy` 只有「前台钉 / 后台让」两个维度，恰好判定 owner=前台 且 NetId=owner
+⇒ `None`（不动）⇒ 视觉照跑 ⇒ 照抛。另有一个实锤缺陷：补丁没有 Finalizer，异常路径上被钉住的
+`LocalContext.NetId` 会沿回合循环这条长命异步链**永久泄漏**。
+
+**修法（r185）**：
+1. `CardTransformNetIdPolicy` 加第三维度 `handNodeExists`（探针 = 与原版同一判定源 `NCard.FindOnTable(original, Hand)`，
+   场外调用安全）：**节点缺失时让 `IsMine=false` 跳过整段视觉**（数据层照常完成，UI 由既有自愈链路重建）；
+   `ShiftAwayFromOwner` 的安全值改为**不能是牌主人自己**（旧实现取受控位，前台场景下受控位=主人 ⇒ 等于没让开）。
+2. `CardTransformNetIdPinPatch` 补 `[HarmonyFinalizer]`：异常路径恢复被钉/让的 NetId 并清标记。
+3. 单测：策略三维度真值表逐格钉死（654→…→**762**）。
+**实机复测契约**：让瓦库/真人手里有「唯我」，回合结束触发变换 ⇒ 期望：不软锁、
+日志出现 `变换原牌的手牌节点不存在，让开 NetId 跳过原版视觉（防回合结束软锁）`、战斗正常结束；
+期望 0 = `Couldn't get hand node` / `turn loop died`。
+
+## BUG-26：瓦库在事件里不会自己选了（2026-09-28 实机报；**✅ 已修复 r185，待实机复测**）
+
+**现象**：r184 局里瓦库事件自动选择选完 page=1 后，page=2 评估完（4 选项）**静默挂死**，
+约 8 秒后被安全网切人工（用户观感 = "现在瓦库在事件里不会自己选了"）。
+
+**日志实证**（同局）：
+```
+L8615 瓦库事件已自动选择: … page=1, option=YUWANCARD-SEVEN_CURSES
+L8632 第三方询问本地玩家身份，已按「同机席位」放行: caller=TouhouAncients.Scripts.LeaveDreamReentry+<OnChosen>d__6, player=…327
+L8638 [安全网] 事件滞留超时，切前台交由人工处理: player=…327
+L8643 检测到瓦库选择器栈残留，已执行自恢复清理: … selectorStackTop=LocalWakuuStrategySelector
+```
+**根因**（反编译 TouhouAncients.dll 实锤）：`LeaveDreamReentry.OnChosen`（「离开梦境」转场）末尾
+`if (LocalContext.IsMe(player)) { await neow.AfterEventStarted(); await LeaveDreamSequence.Play(neow, player); }`
+—— BUG-23 的放行口子把它放行 ⇒ 后台瓦库席位走进**对话序列**（永远等不到推进）⇒ `option.Chosen()` 挂死。
+该 caller 历史日志从未出现（首次踩中），属放行口子的**潜在过宽**，不是当轮回归。
+`IsMe=false` 是原版联机的正常路径（转场由房间重建链路完成）。
+
+**修法（r185）**：
+1. 放行口子加**调用方黑名单**（`LocalContextThirdPartyIsMePatch.DenylistedCallerPrefixes`，首批
+   `TouhouAncients.Scripts.LeaveDreamReentry`；判据进 `WakuuSelfDrawnChoicePolicy.ShouldWidenIsMe(+callerDenylisted)`），
+   命中打去重 INFO「保持原判」⇒ 走回远端分支（方案 A 兜底）；
+2. `LocalWakuuEventAutoChoice` 给 `option.Chosen()` 加 **6 秒超时**（先于安全网 8 秒）：超时 = 选择器随 using
+   干净弹栈、停住交真人、WARN 点名 `event/page/option` —— 把未知子流程的"静默挂死"变成可观测可恢复；
+   决策链的静默 `option == null` 退场也补了日志。
+**实机复测契约**：瓦库在梦境类事件选「离开梦境」⇒ 期望自动选完（或 6 秒超时 WARN 后干净交真人），
+`选择器栈残留` 自愈清理 **0** 条；后续遇新挂死看 WARN 里的 option 名按逐入口适配补黑名单/作答链。
+
+---
+
 ## R3 身份收编（席位身份唯一取数入口 `SeatRegistry` / `LocalSeatSource`）
 
 > 提案：`maintenance-docs/decision-records/runtime架构分层重构评估.md` §四 R3 + **§八 靶区清单**（该文件在仓库外维护）。
@@ -2159,6 +2401,30 @@ LOG ANCHORS: (期望 0) LocalCustomRunSelectionSync / ### Exception ###；INIT_O
   B1b 后**外部调用点 = 0**；`LocalSelfCoopContext.LocalPlayerIds` 仍供大厅侧"取席位表"用（不是判定）。
   复核：`grep 'LocalSelfCoopContext\.(LocalPlayerIds\.Contains|IsLocalSessionSeat)\('` 在 `Scripts/` **= 0**；
   `LocalSeatSource` 调用点 24 → **53**；写入点仍 22 处未动。
+- **第四轮 B2（r180，本轮）：奖励 / 掉落 / 药水 / 商店归属的「当前归属者」读取收编**——
+  `LocalSeatSource` 新增 `ContextSeatId()`（= 旧 `LocalContext.NetId`，**可空**）与 `IsContextSeat(id)`；
+  **8 处**改走唯一入口（判据逐字等价）：`CrystalSpherePatch`（`CurrentControlledPlayerId ?? LocalContext.NetId ?? 0`
+  → `ForegroundSeatId()`，它本来就是"受控位优先"口径）、`LocalWakuuRewardAutoClaim`（作用域保存的上下文原值 +
+  `AlignLocalContext` 写前判定）、`CardRewardPatch`（钉扎前保存原值）、`PlayerPotionMirrorPatch`（药水默认目标）、
+  `NPotionContainerPatch`（药水栏绑人）、`NMerchantInventoryPatch`（商店库存绑人）、`NHandImageCollectionPatch`
+  （"本机当前屏幕属于谁"）。**写入点一个没动**；顺手删 3 个因此不再需要的 `using`。
+  ⚠ **口径坑**：route ①（`LocalContext.NetId`）的读取**不能**一律换成 `ForegroundSeatId()` —— 前台口径是
+  「受控位优先」，而自动化作用域（奖励自动领取 / 商店自动采购 / 瓦库出牌看门狗）恰好**把上下文对齐到归属者、
+  受控位仍停在真人**，两种口径在那时会给出不同的 id；只有原式本身就是"受控位优先"的那处才能换。
+  另把 8 处**不是**身份判定的点（作用域归属比较 ×3 / 两两比较 ×4 / 反射读取 ×1 → B3）就地加注释定性。
+  单测仍 **744**（改动全在 Godot 依赖层，靠实机 + grep 复核）。
+
+**验证契约（请实机，marker `2026-09-28-r180`）**
+```
+改动:    R3 B2 —— 奖励/掉落/药水/商店归属的「当前归属者」读取收编到 LocalSeatSource（8 处，行为零变化）
+SETUP:   本地多控 2~4 席（真人 + 至少一个瓦库托管席位）；一局里走到战斗奖励 + 事件 + 商店（+ 宝箱/水晶球更佳）
+ACTION:  正常玩：领战后奖励、瓦库自动领取卡牌奖励、进商店看库存/买卡、拿一瓶药水、必要时切人
+PASS:    行为与 r179 完全一致：`瓦库商店自动买…成功` / `卡牌奖励已自动领取` / 药水栏显示正确角色的药水 /
+         `瓦库奖励自动领取` / 商店库存绑定日志 `商店库存绑定到当前角色: player=…` 归属正确；
+         `会话席位自检通过: seats=…` 照旧
+FAIL:    药水栏/商店库存/药水默认目标跟随到错误角色；奖励归属错人或弹层错乱；切人后药水栏不跟随
+期望 0： ### Exception ### / add_child() failed / 我方 NullReferenceException / 幽灵弹层
+```
 
 **验证契约（请实机，marker `2026-09-28-r178`）**
 ```
@@ -2234,7 +2500,18 @@ FAIL:    奖励发错人 / 瓦库该动的席位不动、不该动的动了；�
   所以要在"逐字等价"（包一层集合判定）与"顺带把互斥判定拉齐"之间选一个。
 - **是否给"席位判定唯一入口"加棘轮**（防回头路）：ADR §五 曾定「不新增 S 项承担架构职责」，
   所以本轮**没有**加门禁；若要，可加一条只查 diff/新增代码的棘轮（把裸 `LocalPlayerIds.Contains` 判 FAIL）。
-- **B2**：奖励 / 掉落归属（`CrystalSpherePatch:128`、`LocalWakuuRewardAutoClaim:270`、`CombatRewardMergeContext`、
-  `LocalWakuuRestAutoChoice`、`LocalWakuuPotionAutoUse`、`LocalWakuuEventAutoChoice` 等）。
-- **B3**：反射 `_localPlayerId`（`LocalMultiControlRuntime.TrySetLocalPlayerId` + 3 处读取）；
+- **B2 ✅ 已落地并实机通过（r180；2026-09-28 第十四段按日志关单）**：奖励 / 掉落 / 药水 / 商店归属的
+  「当前归属者」读取收编（8 处，行为零变化）—— 见上方「第四轮 B2」与验证契约；
+  剩余 route ① 读取清单与"哪些点不是身份判定"已写进 ADR §八。
+- **B2b ✅ 已落地（r184，待实机；行为零变化，同批还含已实机关单的 BUG-23 A/B 与工具层哨兵口径修正）**：
+  剩余 route ① 读取收编 **10 处** —— 动作队列兜底 `ActionQueueFailSafePatch:94/131/156`
+  （`NetId ?? PrimaryPlayerId` → 新访问器 `LocalSeatSource.ContextOrPrimarySeatId()`，⚠ 刻意**不是**
+  `ForegroundOrPrimarySeatId`，旧口径没有受控位层）+ `ActChangeSynchronizerPatch:35` /
+  `LocalGhostHandsRuntime:351` / `CardTransformNetIdPinPatch:78/100` / `CardPileAddForegroundContextPinPatch:55` /
+  `EventSynchronizerPatch:52` / `PlayerChoiceContextPatch:37`（钉扎前保存原值的读侧；写侧与还原照旧）。
+  留原地：`SynchronizationOwnershipLogPatch:47` / `RestSitePatch:62` / `RewardsSetSynchronizerSelectLocalRewardPatch:87`
+  → **B3**；`NPlayerHandSelectCardsSerializationPatch:111` → **B4**；`NCustomRunLocalSelfCoopPatch:285` → 大厅线。
+- **B3**：反射 `_localPlayerId` 统一读写入口（`RewardsSetSynchronizerSelectLocalRewardPatch` 6 处 /
+  `HookPlayerChoiceContextLocalPatch` 5 处 / `LocalWakuuMerchantAuto` 5 处 / `LocalRewardMirror` 2 处 /
+  `CombatRewardMergeContext` 2 处 / `RestSitePatch:161` / `SynchronizationOwnershipLogPatch:47` 等）；
   **B4** 选牌主人 / 手牌 owner；**B5** 存档身份。
