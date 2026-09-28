@@ -2055,3 +2055,30 @@ LOG ANCHORS: (期望 0) LocalCustomRunSelectionSync / ### Exception ###；INIT_O
 - **排查轨迹（供参考，别重复走）**：r170 移除"写后读 / 每帧列布局"缓存（修掉「无限玩家」「漂移」）、
   r171 把标签订位也回退成逐帧实时 —— **位置始终没变**；现在原作者版本对照彻底确认非回归。
 - **处置**：**不是 bug ⇒ 不修、不排期、不再查**；本条目只作为"别再当新 bug 查"的档案。
+
+### 瓦库不自动选「战斗开始类手牌选牌」（猪猪 mod【重瞳】的"选择一张牌复制"）（2026-09-28 用户报；**r173 已修，待实机**）
+
+- **现象**：瓦库托管席位带着【重瞳】（`YUWANCARD-REINCARNATED_EYE`）进战斗，战斗开始时的「选择一张牌复制」
+  界面没人自动点，得真人手选。
+- **根因（日志 + 第三方 dll 的 IL 引用分析）**：我们的「作用域外选牌自动作答」
+  （`CardSelectWakuuTurnStartAutoAnswerPatch`，r107 为"回合开始类遗物"加的口子）**只挂了
+  `FromChooseACardScreen` 与 `FromSimpleGrid` 两个入口**（本局日志：自动作答 6 次**全部**是 `FromChooseACardScreen`）；
+  而 `YuWanCard.Content.dll` 还引用了 `CardSelectCmd.FromHand` / `FromHandForDiscard` / `FromSimpleGridForRewards` /
+  `FromDeckGeneric` / `FromDeckForUpgrade` / `FromDeckForRemoval` / `FromDeckForEnchantment`。重瞳走的是未覆盖入口
+  （最可能 `FromHand` —— 从 r6 起我们就规定「作用域外 `FromHand` 一律不代答」，防进战斗黑屏）。
+- **修法（r173）**：
+  1. 作用域外自动作答**扩展到 `FromHand`**（`Priority.Low`，作用域内仍由 `CardSelectHandScenarioPatch`
+     按场景优先级作答，两条件互斥不打架）；门控沿用同一套 `ShouldAutoAnswer`（本地多控 + 单人冒险 + 本地回环 +
+     本地席位 + **后台托管** + 瓦库形态 + 栈上无选择器），选牌用现成的场景表（Copy / Remove / Transform）。
+  2. 新增**未适配入口探针**（`FromCombatPile`、`FromHandForUpgrade`；只读不干预）：门控成立却没适配时打 WARN
+     `瓦库作用域外选牌入口未适配: entry=…` ⇒ 若重瞳其实走别的入口，复测日志会**直接点名**。
+- **验证契约（请实机）**：
+  ```
+  改动:    瓦库作用域外手牌选牌自动作答（r173，marker 2026-09-28-r173）
+  SETUP:   本地多控 2 席，其中瓦库托管那一席带【重瞳】等"战斗开始选牌"类遗物
+  ACTION:  进战斗，看战斗开始时的选牌界面是否被瓦库自动作答
+  PASS:    `瓦库作用域外手牌选牌自动作答: … entry=FromHand`（或其它入口的自动作答行）
+  FAIL:    界面停在原地等真人点；或出现 `瓦库作用域外选牌入口未适配: entry=…`（⇒ 把这行报给我，下一批扩展）
+  期望 0： ### Exception ### / 进战斗黑屏 / add_child() failed
+  ```
+- **经验**：见 `references/local-multicontrol-pitfalls.md` **坑 K**（作用域外作答的入口覆盖面 + 两条定位手段）。
