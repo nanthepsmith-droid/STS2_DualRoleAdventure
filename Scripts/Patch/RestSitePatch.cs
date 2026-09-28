@@ -510,7 +510,8 @@ internal static class RestSiteUiRefreshUtil
 
     private static Control? FindFirstFocusableRestSiteButton(Node root)
     {
-        foreach (Node node in EnumerateDescendants(root))
+        // R2：子树遍历收到 LocalNodeTree（原本这里有一份私有副本）
+        foreach (Node node in LocalNodeTree.EnumerateDescendants(root))
         {
             if (node is NRestSiteButton button &&
                 button.Visible &&
@@ -525,7 +526,7 @@ internal static class RestSiteUiRefreshUtil
 
     private static Control? FindFirstFocusableControl(Node root)
     {
-        foreach (Node node in EnumerateDescendants(root))
+        foreach (Node node in LocalNodeTree.EnumerateDescendants(root))
         {
             if (node is Control control &&
                 control.Visible &&
@@ -536,17 +537,5 @@ internal static class RestSiteUiRefreshUtil
         }
 
         return null;
-    }
-
-    private static IEnumerable<Node> EnumerateDescendants(Node root)
-    {
-        foreach (Node child in root.GetChildren())
-        {
-            yield return child;
-            foreach (Node nested in EnumerateDescendants(child))
-            {
-                yield return nested;
-            }
-        }
     }
 }

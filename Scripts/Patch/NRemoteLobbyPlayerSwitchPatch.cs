@@ -410,8 +410,8 @@ internal static class LocalRemoteLobbyPlayerSwitchUi
 
     private static List<NRemoteLobbyPlayer> GetLocalLobbyNodes(Node screen)
     {
-        return EnumerateDescendants(screen)
-            .OfType<NRemoteLobbyPlayer>()
+        // R2：席位卡集合走共用缓存扫描（本方法在 _Process 上每帧调用，原本每帧全量遍历子树）
+        return LocalSubtreeScanCache.Scan<NRemoteLobbyPlayer>(screen)
             .Where((node) => LocalSelfCoopContext.LocalPlayerIds.Contains(node.PlayerId))
             .OrderBy((node) => node.GlobalPosition.X)
             .ThenBy((node) => node.GlobalPosition.Y)
@@ -454,26 +454,25 @@ internal static class LocalRemoteLobbyPlayerSwitchUi
         }
     }
 
+    /// <summary>找 id 标签时跳过的我们自己的注入节点（R2：名单收在一处）。</summary>
+    private static readonly StringName[] IdLabelExclusions =
+    {
+        WakuuHintName,
+        GlobalWakuuLabelName
+    };
+
     private static Label? TryFindIdLabel(NRemoteLobbyPlayer playerNode)
     {
+        // R2：子树遍历收到 LocalNodeTree + 短期缓存（本方法在 _Process 上每帧被调）
         string playerIdText = playerNode.PlayerId.ToString();
-        foreach (Node child in EnumerateDescendants(playerNode))
+        foreach (Label label in LocalSubtreeScanCache.Scan<Label>(playerNode))
         {
-            if (child is not Label label)
+            if (IsExcludedIdLabel(label))
             {
                 continue;
             }
 
-            if (label.Name == WakuuHintName || label.Name == GlobalWakuuLabelName)
-            {
-                continue;
-            }
-
-            string name = label.Name.ToString();
-            string text = label.Text ?? string.Empty;
-            bool nameLooksLikeId = name.Contains("id", StringComparison.OrdinalIgnoreCase);
-            bool textContainsPlayerId = text.Contains(playerIdText, StringComparison.Ordinal);
-            if (nameLooksLikeId || textContainsPlayerId)
+            if (LocalNodeTree.LooksLikeIdLabel(label, playerIdText))
             {
                 return label;
             }
@@ -482,16 +481,17 @@ internal static class LocalRemoteLobbyPlayerSwitchUi
         return null;
     }
 
-    private static IEnumerable<Node> EnumerateDescendants(Node root)
+    private static bool IsExcludedIdLabel(Label label)
     {
-        foreach (Node child in root.GetChildren())
+        foreach (StringName excluded in IdLabelExclusions)
         {
-            yield return child;
-            foreach (Node nested in EnumerateDescendants(child))
+            if (label.Name == excluded)
             {
-                yield return nested;
+                return true;
             }
         }
+
+        return false;
     }
 
     private readonly record struct AnchorLayout(Rect2 AnchorRect, float ColumnX);

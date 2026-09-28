@@ -173,14 +173,10 @@ internal static class NDailyRunScreenLocalPlayersOpenPatch
             return;
         }
 
-        HashSet<ulong> existingSeatIds = new();
-        foreach (Node node in EnumerateDescendants(container))
-        {
-            if (node is NRemoteLobbyPlayer playerNode)
-            {
-                existingSeatIds.Add(playerNode.PlayerId);
-            }
-        }
+        // R2：已有席位卡集合走共用缓存扫描（本方法挂在每日页 _Process 上每帧调用）
+        HashSet<ulong> existingSeatIds = LocalSubtreeScanCache.Scan<NRemoteLobbyPlayer>(container)
+            .Select((node) => node.PlayerId)
+            .ToHashSet();
 
         int added = 0;
         foreach (ulong seatId in targetPlayerIds)
@@ -206,18 +202,6 @@ internal static class NDailyRunScreenLocalPlayersOpenPatch
         {
             LocalMultiControlLogger.Info(
                 $"每日挑战席位卡已补建: added={added}, seats={string.Join(",", targetPlayerIds)}");
-        }
-    }
-
-    private static IEnumerable<Node> EnumerateDescendants(Node root)
-    {
-        foreach (Node child in root.GetChildren())
-        {
-            yield return child;
-            foreach (Node nested in EnumerateDescendants(child))
-            {
-                yield return nested;
-            }
         }
     }
 
