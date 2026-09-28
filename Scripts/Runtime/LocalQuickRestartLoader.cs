@@ -20,14 +20,20 @@ internal static class LocalQuickRestartLoader
     {
         try
         {
-            if (!LocalSelfCoopSaveTag.TryReadCurrentProfile(out List<ulong> playerIds) || playerIds.Count < 2)
+            if (!LocalSelfCoopSaveTag.TryReadCurrentProfile(out List<ulong> playerIds, out List<ulong> wakuuPlayerIds)
+                || playerIds.Count < 2)
             {
                 LocalMultiControlLogger.Warn("快速重启失败：未找到有效本地多控玩家标记。");
                 return false;
             }
 
             ulong primaryPlayerId = playerIds[0];
+            // r167（BUG-22）：快速重启同样是读档流程，窗口内守卫不得清会话（否则瓦库停摆、奖励归属软锁）。
+            LocalSelfCoopContext.OpenLoadReplayWindow("quick-restart");
             LocalSelfCoopContext.UseSavedPlayerIds(playerIds);
+            // r166 修（BUG-22）：ESC 快速重启读档同样要恢复瓦库席位（否则重启后瓦库不出牌/不选事件）。
+            LocalSelfCoopContext.UseSavedWakuuPlayerIds(wakuuPlayerIds);
+            LocalMultiControlLogger.Info($"快速重启已恢复瓦库席位: {string.Join(",", wakuuPlayerIds)}");
 
             ReadSaveResult<SerializableRun> readSaveResult = SaveManager.Instance.LoadAndCanonicalizeMultiplayerRunSave(primaryPlayerId);
             if (!readSaveResult.Success || readSaveResult.SaveData == null)

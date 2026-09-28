@@ -1980,3 +1980,53 @@ LOG ANCHORS: (期望 0) LocalCustomRunSelectionSync / ### Exception ###；INIT_O
   `rg`/`search_content` 恒 0 命中，别据此判"证据丢了"；轮转副本 == 上一会话）；
   `references/tools.md` 同步 S10 / `--preset daily` / 归档跳过语义；
   skill 侧 `SKILL.md` 硬规矩 **三条 → 四条**（新增第 4 条判空规矩）。references 两侧 10 份逐字节一致。
+
+### BUG-22 读档后瓦库整局失效（不出牌 / 不自动选事件 / 不自动领奖）—— **r166 已修，待实机**
+
+- **现象（用户 2026-09-27 报）**：「打一半瓦库不会自己选事件选项了」。日志 `logs-archive\godot__20260927-185422__r165.log` 实证：
+  全 4 个事件房（`Beginning event`）里**只有读档前的那一个**被自动选（L18778），读档后两次同类事件（L19193 / L19634）**一条自动选择日志都没有**；
+  更硬的是**读档后的出牌作用域全为 0**（`瓦库选择器作用域进入` 最后一条在 L18463，两次读档在 L18905 / L19346）⇒ 瓦库不是"不选事件"，而是**整局停摆**。
+- **根因（读档路径，与 r156~r165 的功能改动无关）**：
+  1. **读档只恢复玩家 ID、从不恢复瓦库席位**：`NMultiplayerSubmenuPatch`（继续游戏）与 `LocalQuickRestartLoader`（ESC 快速重启）
+     都用 `TryReadCurrentProfile(out playerIds)`（**丢弃 `wakuu=` 段**），而 `LocalSelfCoopSaveTag` 其实写了 `v3:players=…;wakuu=…`（L7914 实证），
+     带 `out wakuuPlayerIds` 的重载**没有任何调用点**（死代码）；
+  2. 瓦库席位又会在**进我们自己的大厅入口时被显式清空**（`NMultiplayerHostSubmenuPatch:283` / `NDailyRunLocalSelfCoopPatch:72` /
+     `NCustomRunLocalSelfCoopPatch:49` 一律传 `Array.Empty<ulong>()`）⇒ 读档后 `IsWakuuEnabled(瓦库id)=false`；
+  3. 由此 `IsVakuuFormMode(...)=false`（缺【瓦库形态】遗物，且 `IsTakeoverPlayerFallback` 同样要求 `IsWakuuEnabled`）
+     ⇒ 托管遗物补发循环遍历空集合，出牌 / 事件 / 奖励三条链路**全部静默停摆**。
+- **为什么以前没暴露**：有读档的 r151/r154 会话都在**会话守卫（r158）之前**，席位是内存静态字段、没被清 ⇒ 照样工作；
+  r161 两次实机（联网 4 席 / 断网 2 席）**读档数 = 0**，这条路径根本没走到。
+- **修法（r166）**：
+  1. 两条读档路径改用 `TryReadCurrentProfile(out playerIds, out wakuuPlayerIds)`，在 `UseSavedPlayerIds` **之后**调
+     `UseSavedWakuuPlayerIds(wakuuPlayerIds)`（顺序有要求：恢复时按本地席位表过滤）；新增锚点 `读档已恢复瓦库席位` / `快速重启已恢复瓦库席位`；
+  2. 过滤规则抽成纯函数 `WakuuSeatRestorePolicy.FilterToLocalSeats`（只认本地席位、丢占位 0、去重、保持顺序）+ 7 条单测；
+  3. `TrimWakuuPlayerIdsToConfiguredPlayers` 真剔除席位时补 WARN（此前**完全静默**，是这类问题难定位的直接原因）。
+- **验证契约（请实机）**：
+  ```
+  改动:        读档（继续游戏 / ESC 快速重启）后恢复瓦库席位（r166 / BUG-22）
+  EXPECTED:    读档后瓦库照常自动出牌、自动选事件、自动领奖
+  SETUP:       本地多控 2 席，其中 1 席勾选瓦库托管；先玩一段（至少过一个事件房）再存档退出
+  ACTION:      主菜单 → 多人游戏 → 载入（继续游戏）→ 进事件房看瓦库是否自动选；再打一场战斗看是否自动出牌
+  PASS:        日志出现 `读档已恢复瓦库席位: <瓦库id>`；随后每个事件房都有 `瓦库事件自动选择完成`；战斗有 `瓦库选择器作用域进入`
+  FAIL:        `读档已恢复瓦库席位:` 为空 / 之后仍无自动选择与出牌作用域 / 仍有奖励归属报错
+  LOG ANCHORS: marker=2026-09-27-r168 / 读档窗口已开启 / 读档窗口已关闭: source=run-in-progress /
+               读档已恢复瓦库席位 / 瓦库事件自动选择完成 / 瓦库选择器作用域进入
+  期望 0：     读档窗口内的 `本地多控模式已关闭，原因: no-local-lobby-screen`；`SelectLocalReward called for reward`；
+               `瓦库席位被收敛剔除`；`瓦库事件自动选择异常`
+  ⚠ 判据订正:  **不要**把 `已为瓦库角色自动发放托管遗物` 当通过条件 —— 遗物通常本来就在存档里
+               （`GrantWakuuRelicsAsync` 已有则跳过），r167 实测该计数为 0 而瓦库工作正常；
+               "瓦库活过来了"的真判据是 `瓦库事件自动选择完成` 与 `瓦库选择器作用域进入` 的条数。
+               一条命令判读：`python D:\Download\pain\tools\log_scan.py --preset load --file <日志>`（r167 新增）
+  ```
+- **同窗口的第二颗雷 —— r167 已修（本轮真凶）**：会话守卫（r158/r161）在读档窗口会误判「没有大厅页 + 未进局」并在约 1 秒后
+  `Disable("no-local-lobby-screen")`。r166 日志实证（**5 次读档 5 次复现**）：
+  ```
+  8077 本地多控模式已启用 → 8110 会话已自动结束 → 8111 已关闭(no-local-lobby-screen) → 8179 会话已初始化（IsEnabled=false）
+  ```
+  而 `LocalMultiControlRuntime.GrantWakuuRelicsAsync` 首行就是 `if (!IsEnabled) return;`（`:527`）
+  ⇒ **托管遗物不发**（`已为瓦库角色自动发放托管遗物` = 0）⇒ 瓦库整局不出牌 / 不自动选事件；
+  同时所有门控在 `IsEnabled` 上的归属守卫一起失效 ⇒ 事件卡牌奖励归属断档（r166 出现 3 条游戏侧
+  `InvalidOperationException: SelectLocalReward called for reward CardReward with non-local…`）。
+  **修法**：新增「读档窗口」（`LoadReplayWindowPolicy` 纯函数 + 180 秒超时安全阀）：
+  读档入口（继续游戏 / ESC 快速重启）开窗，守卫在窗口内不下手，进局（`IsInProgress`）/ `RunManager.CleanUp` / `Disable` 自动关窗。
+  +7 条单测。**注意**：`_wakuuPlayerIds` 的恢复（r166）是必要条件但**不充分** —— 会话被关掉时名额恢复也没用。

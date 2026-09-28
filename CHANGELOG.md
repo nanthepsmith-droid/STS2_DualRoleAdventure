@@ -2,6 +2,31 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
+## [Unreleased]
+
+### Fixed
+- **读档后瓦库整局失效：不出牌 / 不自动选事件 / 不自动领奖（BUG-22，r166，2026-09-27）**：
+  用户报「打一半瓦库不会自己选事件选项了」。实测（`godot__20260927-185422__r165.log`）：全 4 个事件房只有读档前那个被自动选，
+  读档后的**出牌作用域直接归零** ⇒ 不是"不选事件"，而是整局停摆。
+  - **根因**：读档路径（`NMultiplayerSubmenuPatch` 继续游戏 / `LocalQuickRestartLoader` ESC 快速重启）只恢复玩家 ID、
+    **从不恢复 `wakuu=` 段**（带 `out wakuuPlayerIds` 的重载一直没人调用），而瓦库席位又会在进我们自己的大厅入口时被显式清空
+    ⇒ 读档后 `IsWakuuEnabled` 为空 ⇒ 缺【瓦库形态】遗物、`IsVakuuFormMode=false` ⇒ 出牌 / 事件 / 奖励三条链路静默停摆。
+  - **修法**：两条读档路径改为读取并恢复瓦库席位（在 `UseSavedPlayerIds` 之后，按本地席位表过滤），新增锚点
+    `读档已恢复瓦库席位` / `快速重启已恢复瓦库席位`；过滤规则抽成纯函数 `WakuuSeatRestorePolicy`（+7 单测）；
+    席位被收敛剔除时补 WARN（此前完全静默，是这个问题难定位的直接原因）。
+  - **为什么以前没发现**：有读档的会话在会话守卫（r158）之前，席位是内存静态字段、没被清；r161 两次实机的读档数都是 0。
+- **读档时会话被守卫误关 ⇒ 瓦库整局停摆 + 事件卡牌奖励归属软锁（r167，同一 BUG-22 的第二层）**：
+  r166 实测 5 次读档 5 次复现：读档中途（`IsInProgress` 仍为 false、载入界面不在大厅白名单里）会话守卫把会话
+  `Disable("no-local-lobby-screen")`，于是 `GrantWakuuRelicsAsync` 首行的 `if (!IsEnabled) return;` 直接返回
+  ⇒ 托管遗物不发 ⇒ 瓦库不出牌 / 不自动选事件；同时所有门控在 `IsEnabled` 上的归属守卫一起失效
+  ⇒ 事件卡牌奖励归属断档（实测 3 条游戏侧 `SelectLocalReward … non-local` 报错，表现为点的人与奖励主人不匹配）。
+  修法：新增「读档窗口」（读档入口开窗、进局/清理/关会话自动关窗，180 秒超时安全阀），窗口内守卫不下手。
+- **读档窗口关闭顺序修正 + BUG-22 验证契约订正（r168，2026-09-27）**：r167 实测发现窗口判定排在进局判定之前
+  ⇒ 进局后要等 180 秒超时才关窗；改为**进局立即关窗**（`读档窗口已关闭: source=run-in-progress`）。
+  同时订正 BUG-22 的验证契约 —— 去掉过严判据「`已为瓦库角色自动发放托管遗物` ≥1」：实测该行 0 条而瓦库工作正常
+  （托管遗物本来就在存档里，`GrantWakuuRelicsAsync` 已有则跳过）；真判据 = `瓦库事件自动选择完成` +
+  `瓦库选择器作用域进入` 的条数。一条命令判读：`tools/log_scan.py --preset load`。
+
 ## [1.43.0] - 2026-09-27
 
 > 本轮 = r142 ~ r162（2026-09-20 ~ 2026-09-27），共 23 个提交。头牌是**每日挑战的本地多角色局**
