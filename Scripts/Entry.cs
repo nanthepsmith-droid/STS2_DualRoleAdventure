@@ -14,8 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // 修「瓦库不自动选复制牌」定案：探针点名 FromDeckGeneric ⇒ 适配牌组选牌（含 FromDeckForUpgrade）+ 变化入口探针（分支 fix/wakuu-turnstart-copy-pick）
-    private const string BuildMarker = "Revival v1.43.0 (game v0.111.0, marker=2026-09-28-r175)";
+    // R2 第四项：Daily / Custom 的大厅席位判定与对齐编排收成一份（行为零变化，分支 refactor/r2-daily-custom-seat-assign）
+    private const string BuildMarker = "Revival v1.43.0 (game v0.111.0, marker=2026-09-28-r176)";
 
     private static Harmony? _harmony;
 

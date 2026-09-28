@@ -19,7 +19,6 @@ using MegaCrit.Sts2.Core.Nodes.Vfx;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves;
-using MegaCrit.Sts2.Core.Unlocks;
 
 namespace LocalMultiControl.Scripts.Patch;
 
@@ -66,7 +65,6 @@ internal static class LocalCustomSelfCoopEntry
 [HarmonyPatch(typeof(NCustomRunScreen), nameof(NCustomRunScreen.OnSubmenuOpened))]
 internal static class NCustomRunScreenLocalPlayersPatch
 {
-    private const int MaxLocalAscensionLevel = 10;
     private static bool _isReconciling;
 
     [HarmonyPostfix]
@@ -96,18 +94,18 @@ internal static class NCustomRunScreenLocalPlayersPatch
         }
 
         EnsureLobbyMaxCapacity(lobby);
-        List<ulong> targetPlayerIds = LocalSelfCoopContext.LocalPlayerIds
-            .Take(LocalSelfCoopContext.DesiredLocalPlayerCount)
-            .ToList();
+        List<ulong> targetPlayerIds = LocalLobbySeatPolicy.ResolveTargetSeats(
+            LocalSelfCoopContext.LocalPlayerIds,
+            LocalSelfCoopContext.DesiredLocalPlayerCount,
+            LocalSelfCoopContext.MaxLocalPlayerCount);
         if (targetPlayerIds.Count <= 1)
         {
             return;
         }
 
-        bool needsReconcile = targetPlayerIds.Any((id) => lobby.Players.All((player) => player.id != id))
-                              || lobby.Players.Any((player) =>
-                                  LocalSelfCoopContext.LocalPlayerIds.Contains(player.id) && !targetPlayerIds.Contains(player.id));
-        if (!needsReconcile)
+        // 判定与每日页共用一份纯函数（R2 第四项）：目标席位缺失 / 有多余的本地席位都要 reconcile
+        List<ulong> lobbySeatIds = lobby.Players.Select(player => player.id).ToList();
+        if (!LocalLobbySeatPolicy.NeedsReconcile(lobbySeatIds, targetPlayerIds, LocalSelfCoopContext.LocalPlayerIds))
         {
             return;
         }
@@ -115,60 +113,14 @@ internal static class NCustomRunScreenLocalPlayersPatch
         _isReconciling = true;
         try
         {
-            UnlockState unlockState = SaveManager.Instance.GenerateUnlockStateFromProgress();
-            SerializableUnlockState serializableUnlockState = unlockState.ToSerializable();
-
-            int added = 0;
-            foreach (ulong playerId in targetPlayerIds)
-            {
-                bool exists = lobby.Players.Any((player) => player.id == playerId);
-                if (exists)
-                {
-                    continue;
-                }
-
-                loopbackService.SetCurrentSenderId(playerId);
-                _ = lobby.AddLocalHostPlayerInternal(serializableUnlockState, MaxLocalAscensionLevel);
-                added++;
-            }
-
-            List<ulong> removablePlayerIds = LocalSelfCoopContext.LocalPlayerIds
-                .Skip(targetPlayerIds.Count)
-                .ToList();
-            int removed = 0;
-            foreach (ulong removableId in removablePlayerIds)
-            {
-                int playerIndex = lobby.Players.FindIndex((player) => player.id == removableId);
-                if (playerIndex < 0)
-                {
-                    continue;
-                }
-
-                StartRunLobbyPlayer removedPlayer = lobby.Players[playerIndex];
-                lobby.Players.RemoveAt(playerIndex);
-                lobby.InputSynchronizer.OnPlayerDisconnected(removedPlayer.id);
-                screen.RemotePlayerDisconnected(removedPlayer);
-                removed++;
-            }
-
-            bool readyChanged = false;
-            for (int i = 0; i < lobby.Players.Count; i++)
-            {
-                StartRunLobbyPlayer player = lobby.Players[i];
-                if (player.id == LocalSelfCoopContext.PrimaryPlayerId || player.isReady)
-                {
-                    continue;
-                }
-
-                player.isReady = true;
-                lobby.Players[i] = player;
-                screen.PlayerChanged(player, false);
-                readyChanged = true;
-            }
-
-            LocalSelfCoopContext.EnsureLobbySenderContext("custom-run-opened");
-            LocalMultiControlLogger.Info(
-                $"自定义模式大厅本地人数已同步: target={targetPlayerIds.Count}, actual={lobby.Players.Count}, added={added}, removed={removed}, readyChanged={readyChanged}");
+            // 席位对齐三步（加 / 删 / 标 ready）与每日页共用一份实现
+            LocalLobbySeatReconciler.Reconcile(
+                lobby,
+                loopbackService,
+                screen,
+                targetPlayerIds,
+                logPrefix: "自定义模式",
+                senderContextSource: "custom-run-opened");
         }
         finally
         {

@@ -20,7 +20,6 @@ using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Vfx;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves;
-using MegaCrit.Sts2.Core.Unlocks;
 
 namespace LocalMultiControl.Scripts.Patch;
 
@@ -67,7 +66,7 @@ internal static class LocalDailySelfCoopEntry
         SaveManager.Instance.DeleteCurrentMultiplayerRun();
 
         // Daily 页建厅时写死 4 人上限且不可扩容 ⇒ 进页前先把本地席位上限收到 4
-        LocalSelfCoopContext.SetLobbyLocalPlayerLimit(DailyLobbyPolicy.MaxDailyLocalPlayerCount, "daily-enter");
+        LocalSelfCoopContext.SetLobbyLocalPlayerLimit(LocalLobbySeatPolicy.MaxDailyLocalPlayerCount, "daily-enter");
 
         ulong primaryPlayerId = LocalSelfCoopContext.ResolvePrimaryPlayerId();
         LocalSelfCoopContext.UseSavedWakuuPlayerIds(Array.Empty<ulong>());
@@ -98,8 +97,6 @@ internal static class LocalDailySelfCoopEntry
 [HarmonyPatch(typeof(NDailyRunScreen), nameof(NDailyRunScreen.OnSubmenuOpened))]
 internal static class NDailyRunScreenLocalPlayersOpenPatch
 {
-    private const int MaxLocalAscensionLevel = 10;
-
     private static readonly FieldInfo? LobbyField = AccessTools.Field(typeof(NDailyRunScreen), "_lobby");
     private static readonly MethodInfo? SetupLobbyParamsMethod = AccessTools.Method(typeof(NDailyRunScreen), "SetupLobbyParams");
     private static readonly MethodInfo? InitializeDisplayMethod = AccessTools.Method(typeof(NDailyRunScreen), "InitializeDisplay");
@@ -230,76 +227,30 @@ internal static class NDailyRunScreenLocalPlayersOpenPatch
             return;
         }
 
-        int seatLimit = DailyLobbyPolicy.ClampSeatCount(LocalSelfCoopContext.LobbyLocalPlayerLimit);
-        List<ulong> targetPlayerIds = LocalSelfCoopContext.LocalPlayerIds
-            .Take(Math.Min(LocalSelfCoopContext.DesiredLocalPlayerCount, seatLimit))
-            .ToList();
+        int seatLimit = LocalLobbySeatPolicy.ClampSeatCount(LocalSelfCoopContext.LobbyLocalPlayerLimit);
+        List<ulong> targetPlayerIds = LocalLobbySeatPolicy.ResolveTargetSeats(
+            LocalSelfCoopContext.LocalPlayerIds,
+            LocalSelfCoopContext.DesiredLocalPlayerCount,
+            seatLimit);
         if (targetPlayerIds.Count <= 1)
         {
             return;
         }
 
         List<ulong> lobbySeatIds = lobby.Players.Select(player => player.id).ToList();
-        if (DailyLobbyPolicy.NeedsReconcile(lobbySeatIds, targetPlayerIds, LocalSelfCoopContext.LocalPlayerIds))
+        if (LocalLobbySeatPolicy.NeedsReconcile(lobbySeatIds, targetPlayerIds, LocalSelfCoopContext.LocalPlayerIds))
         {
             _isReconciling = true;
             try
             {
-                UnlockState unlockState = SaveManager.Instance.GenerateUnlockStateFromProgress();
-                SerializableUnlockState serializableUnlockState = unlockState.ToSerializable();
-
-                int added = 0;
-                foreach (ulong playerId in targetPlayerIds)
-                {
-                    if (lobby.Players.Any(player => player.id == playerId))
-                    {
-                        continue;
-                    }
-
-                    loopbackService.SetCurrentSenderId(playerId);
-                    _ = lobby.AddLocalHostPlayerInternal(serializableUnlockState, MaxLocalAscensionLevel);
-                    added++;
-                }
-
-                // Daily 页固定 4 席，超出的本地伪席位必须移除，否则会一直卡在「等待其他玩家」
-                List<ulong> removablePlayerIds = LocalSelfCoopContext.LocalPlayerIds
-                    .Skip(targetPlayerIds.Count)
-                    .ToList();
-                int removed = 0;
-                foreach (ulong removableId in removablePlayerIds)
-                {
-                    int playerIndex = lobby.Players.FindIndex(player => player.id == removableId);
-                    if (playerIndex < 0)
-                    {
-                        continue;
-                    }
-
-                    StartRunLobbyPlayer removedPlayer = lobby.Players[playerIndex];
-                    lobby.Players.RemoveAt(playerIndex);
-                    lobby.InputSynchronizer.OnPlayerDisconnected(removedPlayer.id);
-                    screen.RemotePlayerDisconnected(removedPlayer);
-                    removed++;
-                }
-
-                bool readyChanged = false;
-                for (int i = 0; i < lobby.Players.Count; i++)
-                {
-                    StartRunLobbyPlayer player = lobby.Players[i];
-                    if (player.id == LocalSelfCoopContext.PrimaryPlayerId || player.isReady)
-                    {
-                        continue;
-                    }
-
-                    player.isReady = true;
-                    lobby.Players[i] = player;
-                    screen.PlayerChanged(player, false);
-                    readyChanged = true;
-                }
-
-                LocalSelfCoopContext.EnsureLobbySenderContext("daily-run-opened");
-                LocalMultiControlLogger.Info(
-                    $"每日挑战大厅本地人数已同步: target={targetPlayerIds.Count}, actual={lobby.Players.Count}, "
-                    + $"added={added}, removed={removed}, readyChanged={readyChanged}");
+                // 席位对齐三步（加 / 删 / 标 ready）与自定义页共用一份实现（R2 第四项）
+                LocalLobbySeatReconciler.Reconcile(
+                    lobby,
+                    loopbackService,
+                    screen,
+                    targetPlayerIds,
+                    logPrefix: "每日挑战",
+                    senderContextSource: "daily-run-opened");
             }
             finally
             {
@@ -334,10 +285,9 @@ internal static class NDailyRunScreenLocalPlayersOpenPatch
         }
 
         // 只认「大厅里、顺序保持、且正好等于目标集合」的本地席位（顺序 = 游戏 roll 角色的顺序）
-        List<ulong> orderedSeats = lobby.Players
-            .Select(player => player.id)
-            .Where(id => LocalSelfCoopContext.LocalPlayerIds.Contains(id))
-            .ToList();
+        List<ulong> orderedSeats = LocalLobbySeatPolicy.OrderedLocalSeats(
+            lobby.Players.Select(player => player.id).ToList(),
+            LocalSelfCoopContext.LocalPlayerIds);
         if (orderedSeats.Count == 0
             || orderedSeats.Any(id => !targetPlayerIds.Contains(id))
             || targetPlayerIds.Any(id => !orderedSeats.Contains(id)))
@@ -345,7 +295,7 @@ internal static class NDailyRunScreenLocalPlayersOpenPatch
             return;
         }
 
-        if (!force && !DailyLobbyPolicy.NeedsCharacterAssignment(orderedSeats, _assignedSeatSignature))
+        if (!force && !LocalLobbySeatPolicy.NeedsCharacterAssignment(orderedSeats, _assignedSeatSignature))
         {
             return;
         }
@@ -369,7 +319,7 @@ internal static class NDailyRunScreenLocalPlayersOpenPatch
             LocalSelfCoopContext.EnsureLobbySenderContext("daily-characters-assigned");
         }
 
-        _assignedSeatSignature = DailyLobbyPolicy.ComputeSeatSignature(orderedSeats);
+        _assignedSeatSignature = LocalLobbySeatPolicy.ComputeSeatSignature(orderedSeats);
         LocalMultiControlLogger.Info(
             $"每日挑战角色已按日期种子分配: seats={DescribeSeats(lobby, orderedSeats)}, "
             + $"signature={_assignedSeatSignature}");
@@ -475,7 +425,7 @@ internal static class LocalDailyRunCountButtons
         successLogText: "通过每日挑战实体按钮调整本地人数成功",
         resolvePosition: ResolveLeftMiddle)
     {
-        ClampTargetCount = static count => Math.Min(count, DailyLobbyPolicy.MaxDailyLocalPlayerCount),
+        ClampTargetCount = static count => Math.Min(count, LocalLobbySeatPolicy.MaxDailyLocalPlayerCount),
         FirstLayoutLog = LogFirstLayout
     });
 
