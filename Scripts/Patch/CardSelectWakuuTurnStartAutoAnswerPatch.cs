@@ -132,23 +132,15 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
             return false;
         }
 
-        if (RunManager.Instance.NetService is not LocalLoopbackHostGameService)
-        {
-            return false;
-        }
-
-        if (!LocalSeatSource.IsLocalSeat(player.NetId))
-        {
-            return false;
-        }
-
-        // 仅后台托管模式：瓦库不应占用前台、也不需要真人接手。
-        if (!LocalWakuuAutopilotConfig.BackgroundMode)
-        {
-            return false;
-        }
-
-        if (!LocalWakuuRelicRuntime.IsVakuuFormMode(player))
+        // 席位口径收敛在纯逻辑（BUG-23 方案 B 起与「自绘选牌」两处共用同一原语，避免三处口径漂移）：
+        // 本地回环 + 本地席位 + 仅后台托管模式（瓦库不应占用前台、也不需要真人接手）+ 瓦库形态。
+        if (!WakuuSelfDrawnChoicePolicy.IsManagedWakuuSeat(
+                enabled: true,
+                singleAdventureMode: true,
+                loopbackSession: RunManager.Instance?.NetService is LocalLoopbackHostGameService,
+                isLocalSeat: LocalSeatSource.IsLocalSeat(player.NetId),
+                backgroundMode: LocalWakuuAutopilotConfig.BackgroundMode,
+                vakuuFormMode: LocalWakuuRelicRuntime.IsVakuuFormMode(player)))
         {
             return false;
         }

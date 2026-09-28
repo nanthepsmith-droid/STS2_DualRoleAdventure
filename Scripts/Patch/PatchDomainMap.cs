@@ -90,6 +90,8 @@ internal static class PatchDomainMap
             ["HookPlayerChoiceContextPatch"] = PatchDomain.Core,
             ["HookPlayerChoiceContextLocalPatch"] = PatchDomain.Core,
             ["PlayerChoiceSynchronizerWaitForRemoteChoicePatch"] = PatchDomain.Core,
+            // BUG-23 方案 A：瓦库席位的「远端选择」防软锁兜底（第三方自绘选牌不再卡死；该次选择被跳过）
+            ["PlayerChoiceSynchronizerRemoteChoiceFallbackPatch"] = PatchDomain.Core,
             ["HookEnqueueForegroundPatch"] = PatchDomain.Core,
             ["ActionQueueSynchronizerRequestEnqueueFailSafePatch"] = PatchDomain.Core,
             ["MoveToMapCoordRestSiteCompletionPatch"] = PatchDomain.Core, // 火堆后出发黑屏（同步补完）
@@ -186,6 +188,8 @@ internal static class PatchDomainMap
             // ============ Wakuu：瓦库托管 ============
             ["CardSelectHandScenarioPatch"] = PatchDomain.Wakuu,
             ["CardSelectWakuuTurnStartAutoAnswerPatch"] = PatchDomain.Wakuu,
+            // BUG-23 方案 B：第三方自绘选牌界面（NChooseACardSelectionScreen）由瓦库自动作答
+            ["NChooseACardSelectionScreenAutoAnswerPatch"] = PatchDomain.Wakuu,
             ["MerchantRoomEnterFoulThrowPatch"] = PatchDomain.Wakuu,
             ["PotionProcuredAutoDrinkPatch"] = PatchDomain.Wakuu,
             ["WakuuEventEnchantAutoAnswerPatch"] = PatchDomain.Wakuu,
@@ -257,6 +261,9 @@ internal static class PatchDomainMap
             ["IdLiberationBeforeHandDrawFixPatch"] = PatchDomain.ThirdParty,
             // Co-op Bots（联机机器人）：本地回环下的商店 ACK 死锁旁路（R1）
             ["CoopBotsShopAckPatch"] = PatchDomain.ThirdParty,
+            // BUG-23 方案 B：只在「我们正在为这一席自动化」的窗口内，让第三方把该席位当同机玩家
+            // （原版调用方语义不动 ⇒ 前台视觉那类风险面限制在第三方代码里）
+            ["LocalContextThirdPartyIsMePatch"] = PatchDomain.ThirdParty,
         };
 
     /// <summary>
