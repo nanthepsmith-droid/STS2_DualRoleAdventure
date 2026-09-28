@@ -70,7 +70,7 @@ internal static class LocalRemoteLobbyPlayerSwitchUi
         bool shouldShow = LocalSelfCoopContext.IsEnabled
                           && !RunManager.Instance.IsInProgress
                           && screen != null
-                          && LocalSelfCoopContext.LocalPlayerIds.Contains(playerNode.PlayerId);
+                          && LocalSeatSource.IsLocalSeat(playerNode.PlayerId);
         bool showControllerHints = NControllerManager.Instance?.InputType == InputType.Controller;
 
         button.Visible = shouldShow;
@@ -414,7 +414,7 @@ internal static class LocalRemoteLobbyPlayerSwitchUi
         // 且与席位卡的增删同帧相关（R2 第一版用 TTL 缓存 ⇒ 布局抖到左边、按钮位置漂移）。
         return LocalNodeTree.EnumerateDescendants(screen)
             .OfType<NRemoteLobbyPlayer>()
-            .Where((node) => LocalSelfCoopContext.LocalPlayerIds.Contains(node.PlayerId))
+            .Where((node) => LocalSeatSource.IsLocalSeat(node.PlayerId))
             .OrderBy((node) => node.GlobalPosition.X)
             .ThenBy((node) => node.GlobalPosition.Y)
             .ToList();

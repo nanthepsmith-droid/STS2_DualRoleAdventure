@@ -41,7 +41,8 @@ internal static class MapSelectionSynchronizerPatch
                 return;
             }
 
-            ulong currentControlledPlayerId = LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId ?? 0;
+            // R3：受控位取值走统一入口（下面的循环是"按 id 找玩家下标"，保持原样）
+            ulong currentControlledPlayerId = LocalSeatSource.CurrentSeats().ControlledSeatId ?? 0UL;
             int localIndex = -1;
             for (int i = 0; i < sharedCount; i++)
             {

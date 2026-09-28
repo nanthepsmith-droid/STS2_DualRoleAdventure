@@ -28,7 +28,7 @@ internal static class HookPlayerChoiceContextLocalPatch
         }
 
         Player? owner = context.Owner;
-        if (owner == null || !LocalSelfCoopContext.LocalPlayerIds.Contains(owner.NetId))
+        if (owner == null || !LocalSeatSource.IsLocalSeat(owner.NetId))
         {
             return;
         }

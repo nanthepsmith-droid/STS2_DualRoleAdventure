@@ -40,7 +40,7 @@ internal static class CardRewardPatch
         // `NOverlayStack.Push` 的 `add_child` 失败 → 名单里留下没有节点的「幽灵弹层」
         // → 共享背板变暗 + 吞掉全部输入（整局软锁，只能重开）。12 次失败里有 12 次都是 2 张卡牌奖励的第二张。
         // 本地席位的归属钉住（r134 修 BUG-13 的那条）保持不变。
-        if (!LocalSelfCoopContext.IsLocalSessionSeat(__instance.Player.NetId))
+        if (!LocalSeatSource.IsLocalSeat(__instance.Player.NetId))
         {
             LocalMultiControlLogger.Info(
                 $"第三方席位卡牌奖励交回原版远端作答（本 mod 不切上下文）: player={__instance.Player.NetId}, "

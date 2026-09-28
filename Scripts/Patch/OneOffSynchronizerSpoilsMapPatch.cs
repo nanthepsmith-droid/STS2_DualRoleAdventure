@@ -70,7 +70,7 @@ internal static class OneOffSynchronizerSpoilsMapPatch
 
             // 只批处理**本地席位**的藏宝图：第三方席位（Co-op Bots 的 Bot）由它自己那侧结算。
             List<Player> playersWithSpoilsMap = runState.Players
-                .Where((player) => LocalSelfCoopContext.IsLocalSessionSeat(player.NetId))
+                .Where((player) => LocalSeatSource.IsLocalSeat(player.NetId))
                 .Where((player) => player.Deck.Cards.OfType<SpoilsMap>().Any((map) => map.SpoilsActIndex == runState.CurrentActIndex))
                 .ToList();
             if (playersWithSpoilsMap.Count == 0)

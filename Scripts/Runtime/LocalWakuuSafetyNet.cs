@@ -208,8 +208,8 @@ internal static class LocalWakuuSafetyNet
 
     private static bool IsForeground(ulong playerId)
     {
-        ulong? current = LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId ?? LocalContext.NetId;
-        return current == playerId;
+        // R3：与 TryGetForegroundPlayer 同口径（受控位优先、其次上下文），取数走统一入口
+        return LocalSeatSource.IsForegroundSeat(playerId);
     }
 
     private static int ComputeHandSignature(Player player)

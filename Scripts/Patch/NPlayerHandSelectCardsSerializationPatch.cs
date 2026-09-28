@@ -168,12 +168,12 @@ internal static class NPlayerHandSelectCardsSerializationPatch
     private static ulong? ResolveSelectionOwnerId(AbstractModel? source)
     {
         ulong? ownerId = CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value;
-        if (!ownerId.HasValue || !LocalSelfCoopContext.LocalPlayerIds.Contains(ownerId.Value))
+        if (!ownerId.HasValue || !LocalSeatSource.IsLocalSeat(ownerId.Value))
         {
             ownerId = ResolveOwnerIdFromSource(source);
         }
 
-        if (ownerId.HasValue && LocalSelfCoopContext.LocalPlayerIds.Contains(ownerId.Value))
+        if (ownerId.HasValue && LocalSeatSource.IsLocalSeat(ownerId.Value))
         {
             return ownerId;
         }

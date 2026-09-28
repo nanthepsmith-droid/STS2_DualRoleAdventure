@@ -21,7 +21,7 @@ internal static class LoadRunLobbyPatch
 
         List<ulong> localPlayerIdsInRun = __instance.Run.Players
             .Select((player) => player.NetId)
-            .Where((id) => LocalSelfCoopContext.LocalPlayerIds.Contains(id))
+            .Where((id) => LocalSeatSource.IsLocalSeat(id))
             .Distinct()
             .ToList();
         if (localPlayerIdsInRun.Count <= 1)

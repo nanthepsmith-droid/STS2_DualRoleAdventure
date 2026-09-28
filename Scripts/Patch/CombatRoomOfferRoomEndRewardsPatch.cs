@@ -106,7 +106,7 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
         {
             if (!CombatRewardMergePolicy.ShouldOfferBackToVanilla(
                     player.Creature?.IsDead == true,
-                    LocalSelfCoopContext.IsLocalSessionSeat(player.NetId)))
+                    LocalSeatSource.IsLocalSeat(player.NetId)))
             {
                 continue;
             }
@@ -146,7 +146,7 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
             // 第三方席位在上面已经单独交回原版流程（这里再兜一道，防止将来有人只改一处）。
             if (!CombatRewardMergePolicy.ShouldIncludeInMergedSet(
                     player.Creature?.IsDead == true,
-                    LocalSelfCoopContext.IsLocalSessionSeat(player.NetId)))
+                    LocalSeatSource.IsLocalSeat(player.NetId)))
             {
                 continue;
             }
@@ -304,7 +304,7 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
                     .Select((candidate) => (
                         IsSelf: candidate.NetId == player.NetId,
                         IsDead: candidate.Creature?.IsDead == true,
-                        IsLocalSeat: LocalSelfCoopContext.IsLocalSessionSeat(candidate.NetId),
+                        IsLocalSeat: LocalSeatSource.IsLocalSeat(candidate.NetId),
                         HasPool: candidate.Character != null))
                     .ToList());
             List<CardPoolModel> otherPools = poolOwnerIndices

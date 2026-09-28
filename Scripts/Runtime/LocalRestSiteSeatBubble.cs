@@ -100,7 +100,7 @@ internal static class LocalRestSiteSeatBubble
     {
         try
         {
-            if (!RestSeatBubblePolicy.ShouldRecord(LocalSelfCoopContext.IsEnabled, LocalSelfCoopContext.IsLocalSessionSeat(playerId)))
+            if (!RestSeatBubblePolicy.ShouldRecord(LocalSelfCoopContext.IsEnabled, LocalSeatSource.IsLocalSeat(playerId)))
             {
                 return;
             }

@@ -24,7 +24,7 @@ internal static class CardSelectCmdPatch
             return true;
         }
 
-        if (!LocalSelfCoopContext.LocalPlayerIds.Contains(player.NetId))
+        if (!LocalSeatSource.IsLocalSeat(player.NetId))
         {
             return true;
         }
@@ -47,7 +47,7 @@ internal static class CardSelectCmdPatch
             return;
         }
 
-        if (!LocalSelfCoopContext.LocalPlayerIds.Contains(player.NetId))
+        if (!LocalSeatSource.IsLocalSeat(player.NetId))
         {
             return;
         }

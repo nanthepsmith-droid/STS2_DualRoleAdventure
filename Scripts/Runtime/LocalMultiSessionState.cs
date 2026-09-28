@@ -122,7 +122,7 @@ internal sealed class LocalMultiSessionState
             // 第三方席位（Co-op Bots 的合成 Bot 等）既不在会话里、也不该被切到：
             // 静默跳过（每个 id 只在首次记一条 Info），不要刷成"设置失败"告警 ——
             // 那会把"某处还在把第三方席位当自家席位"这种真问题淹没（r145 实机就刷过）。
-            if (!LocalSelfCoopContext.IsLocalSessionSeat(playerId))
+            if (!LocalSeatSource.IsLocalSeat(playerId))
             {
                 if (_thirdPartySkipLogged.Add(playerId))
                 {

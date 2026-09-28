@@ -89,7 +89,7 @@ internal static class EventSynchronizerPatch
         {
             ulong currentPlayerId =
                 AccessTools.Field(typeof(EventSynchronizer), "_localPlayerId")?.GetValue(synchronizer) as ulong?
-                ?? LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId
+                ?? LocalSeatSource.CurrentSeats().ControlledSeatId
                 ?? 0UL;
             if (currentPlayerId != 0)
             {
@@ -128,9 +128,8 @@ internal static class EventSynchronizerPatch
             }
 
             List<Player> players = playerCollection.Players.Take(sharedCount).ToList();
-            ulong localPlayerId = LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId
-                ?? LocalContext.NetId
-                ?? LocalSelfCoopContext.PrimaryPlayerId;
+            // R3：`受控位 ?? 上下文 ?? 主席位` 的口径收进快照
+            ulong localPlayerId = LocalSeatSource.CurrentSeats().ForegroundOrPrimarySeatId;
 
             int localSlot = players.FindIndex((player) => player.NetId == localPlayerId);
             if (localSlot < 0)

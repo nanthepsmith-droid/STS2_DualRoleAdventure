@@ -137,7 +137,7 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
             return false;
         }
 
-        if (!LocalSelfCoopContext.LocalPlayerIds.Contains(player.NetId))
+        if (!LocalSeatSource.IsLocalSeat(player.NetId))
         {
             return false;
         }

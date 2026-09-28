@@ -80,7 +80,7 @@ internal static class CombatManagerReadyEnemyTurnPatch
         }
 
         // 规矩 ②：触发者必须是我们自己的席位（第三方席位的就绪由第三方 mod 负责）。
-        if (!LocalSelfCoopContext.LocalPlayerIds.Contains(player.NetId))
+        if (!LocalSeatSource.IsLocalSeat(player.NetId))
         {
             return;
         }
@@ -100,7 +100,7 @@ internal static class CombatManagerReadyEnemyTurnPatch
         // 规矩 ①：只补我们自己的其他席位。
         List<Player> pendingPlayers = state.Players
             .Where((candidate) => candidate.NetId != player.NetId)
-            .Where((candidate) => LocalSelfCoopContext.LocalPlayerIds.Contains(candidate.NetId))
+            .Where((candidate) => LocalSeatSource.IsLocalSeat(candidate.NetId))
             .Where((candidate) => !readySet.Contains(candidate))
             .ToList();
         if (pendingPlayers.Count == 0)

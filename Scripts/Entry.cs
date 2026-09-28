@@ -14,8 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // R2 第四项：Daily / Custom 的大厅席位判定与对齐编排收成一份（行为零变化，分支 refactor/r2-daily-custom-seat-assign）
-    private const string BuildMarker = "Revival v1.43.0 (game v0.111.0, marker=2026-09-28-r176)";
+    // R3 第三轮 B1b：席位归属判定统一到 LocalSeatSource.IsLocalSeat（16 文件 28 处，行为零变化；分支 refactor/r3-seat-identity）
+    private const string BuildMarker = "Revival v1.43.0 (game v0.111.0, marker=2026-09-28-r179)";
 
     private static Harmony? _harmony;
 

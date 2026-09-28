@@ -174,6 +174,10 @@ internal static class LocalSelfCoopContext
     /// 一律不该由我们代它领奖励 / 镜像遗物金币药水 / 切前台 / 结束回合 / 报就绪。
     /// 判据只用本地席位表（**不**查 `IsCoopBotsDriven`）—— 因为「被 CB 接管的本地席位」仍然是我们自己的席位，
     /// 只是作答方换成了第三方（见《Co-op_Bots联机队友兼容可行性分析》§2.1 的三态模型）。
+    ///
+    /// R3（2026-09-28 B1b）：**消费方一律走唯一入口 <see cref="LocalSeatSource.IsLocalSeat"/>**
+    /// （薄适配 + 席位快照）。本方法保留为**席位表源级原语**（`LocalSelfCoopContext` 内部判据与将来的源级逻辑用）；
+    /// B1b 之后已无外部调用点 —— 不要再拿它发散判定逻辑，否则又回到"多路各自判身份"。
     /// </summary>
     public static bool IsLocalSessionSeat(ulong playerId)
     {

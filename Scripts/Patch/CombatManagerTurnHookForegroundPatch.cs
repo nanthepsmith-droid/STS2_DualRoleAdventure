@@ -58,9 +58,9 @@ internal static class CombatManagerSetupPlayerTurnForegroundPatch
             LocalWakuuAutopilotConfig.ViewMode,
             LocalWakuuAutopilotConfig.BackgroundMode,
             LocalWakuuRelicRuntime.IsVakuuFormMode(player));
-        ulong? previousForegroundId = peek
-            ? LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId ?? LocalContext.NetId
-            : null;
+        // R3：前台取值走统一入口；"两者都空 ⇒ null"（而不是 0）的语义保持不变
+        ulong foregroundSeatId = LocalSeatSource.ForegroundSeatId();
+        ulong? previousForegroundId = peek && foregroundSeatId != 0UL ? foregroundSeatId : null;
 
         if (LocalMultiControlRuntime.TryEnsureForegroundForPlayer(player, "turn-start-setup") && peek)
         {

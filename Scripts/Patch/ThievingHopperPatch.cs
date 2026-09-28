@@ -22,7 +22,8 @@ internal static class ThievingHopperPatch
         Creature? selectedTarget = LocalContext.GetMe(targets);
         if (selectedTarget == null)
         {
-            ulong? currentPlayerId = LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId;
+            // R3：受控位取值走统一入口
+            ulong? currentPlayerId = LocalSeatSource.CurrentSeats().ControlledSeatId;
             if (currentPlayerId.HasValue)
             {
                 selectedTarget = targets.FirstOrDefault(

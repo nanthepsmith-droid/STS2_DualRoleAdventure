@@ -89,6 +89,19 @@ internal static class LocalMultiControlRuntime
         // 必须在 GrantWakuuRelicsAsync 之前：冲突席位的瓦库登记要先摘掉，免得又发一次瓦库形态遗物。
         CoopBotsSeatRuntime.ApplyOnRunLaunch(runState);
 
+        // R3：席位身份统一入口的实时自检（三态互斥 / 孤儿驱动席位 / 重复 id / 主席位是否在表内）。
+        // 这条日志同时是"新入口确实在跑"的实机锚点。
+        SeatRegistry launchSeats = LocalSeatSource.CurrentSeats();
+        if (launchSeats.Conflicts.Count == 0)
+        {
+            LocalMultiControlLogger.Info(
+                $"会话席位自检通过: seats={string.Join(",", launchSeats.LocalSeatIds)}, primary={launchSeats.PrimarySeatId}");
+        }
+        else
+        {
+            LocalMultiControlLogger.Warn($"会话席位自检发现问题: {launchSeats.DescribeConflicts()}");
+        }
+
         // SL（读档重玩）造成的重复记录由「写时幂等」消除（r120，见 WakuuPersonalDedupe）——
         // 原来在进局时按"存档点 mtime"回滚的思路已废弃（读档动作本身会刷新 mtime，判据恒失效）。
 
@@ -682,7 +695,8 @@ internal static class LocalMultiControlRuntime
             return;
         }
 
-        if (LocalContext.NetId == playerId)
+        // R3：口径统一为「回环上下文是不是这个席位」（不再裸比 LocalContext.NetId）
+        if (LocalSeatSource.CurrentSeats().IsContext(playerId))
         {
             SyncRunSynchronizerLocalPlayerId(playerId);
             return;
@@ -738,7 +752,7 @@ internal static class LocalMultiControlRuntime
             return false;
         }
 
-        ulong foregroundPlayerId = Session.CurrentControlledPlayerId ?? LocalContext.NetId ?? 0UL;
+        ulong foregroundPlayerId = LocalSeatSource.ForegroundSeatId();
         if (!TurnStartDrawAnimPolicy.ShouldSkipSwitch(
                 toggleEnabled: LocalWakuuAutopilotConfig.SkipTurnStartDrawAnim,
                 localMultiControlEnabled: LocalSelfCoopContext.IsEnabled,
@@ -802,13 +816,13 @@ internal static class LocalMultiControlRuntime
                     return;
                 }
 
-                if (!LocalSelfCoopContext.LocalPlayerIds.Contains(returnPlayerId))
+                if (!LocalSeatSource.IsLocalSeat(returnPlayerId))
                 {
                     return;
                 }
 
                 // 用户已经手动切走（或又切回瓦库自己操作）→ 不抢视角。
-                if (Session.CurrentControlledPlayerId != peekPlayerId)
+                if (!LocalSeatSource.CurrentSeats().IsControlled(peekPlayerId))
                 {
                     return;
                 }
@@ -846,7 +860,7 @@ internal static class LocalMultiControlRuntime
             return false;
         }
 
-        if (!LocalSelfCoopContext.LocalPlayerIds.Contains(player.NetId))
+        if (!LocalSeatSource.IsLocalSeat(player.NetId))
         {
             return false;
         }
@@ -865,9 +879,9 @@ internal static class LocalMultiControlRuntime
             return false;
         }
 
-        ulong previousPlayerId = Session.CurrentControlledPlayerId
-            ?? LocalContext.NetId
-            ?? LocalSelfCoopContext.PrimaryPlayerId;
+        // R3：`受控位 ?? 上下文 ?? 主席位` 的拼法收进快照口径（ForegroundOrPrimarySeatId）
+        SeatRegistry seats = LocalSeatSource.CurrentSeats();
+        ulong previousPlayerId = seats.ForegroundOrPrimarySeatId;
         if (previousPlayerId == player.NetId)
         {
             return true;
@@ -883,7 +897,9 @@ internal static class LocalMultiControlRuntime
 
         ApplyControlContext($"auto-foreground-{source}");
 
-        bool switched = Session.CurrentControlledPlayerId == player.NetId && LocalContext.NetId == player.NetId;
+        // ⚠ 这里是"写后读"：ApplyControlContext 刚改过受控位与上下文，快照的权威命中校验会据此重建
+        SeatRegistry seatsAfterSwitch = LocalSeatSource.CurrentSeats();
+        bool switched = seatsAfterSwitch.IsControlled(player.NetId) && seatsAfterSwitch.IsContext(player.NetId);
         if (!switched)
         {
             LocalMultiControlLogger.Warn(
@@ -1055,7 +1071,7 @@ internal static class LocalMultiControlRuntime
     /// </summary>
     internal static Player? TryGetForegroundPlayer()
     {
-        ulong playerId = Session.CurrentControlledPlayerId ?? LocalContext.NetId ?? 0UL;
+        ulong playerId = LocalSeatSource.ForegroundSeatId();
         return playerId == 0UL ? null : TryGetCombatPlayer(playerId);
     }
 
@@ -1084,7 +1100,7 @@ internal static class LocalMultiControlRuntime
     /// </summary>
     private static bool IsLocalSessionPlayer(Player? player)
     {
-        return player != null && LocalSelfCoopContext.IsLocalSessionSeat(player.NetId);
+        return player != null && LocalSeatSource.IsLocalSeat(player.NetId);
     }
 
     /// <summary>
@@ -1098,7 +1114,8 @@ internal static class LocalMultiControlRuntime
             return false;
         }
 
-        if (!LocalSelfCoopContext.LocalPlayerIds.Contains(playerId))
+        // R3：本地席位判定走统一入口（不再裸比席位表）
+        if (!LocalSeatSource.IsLocalSeat(playerId))
         {
             return false;
         }
@@ -1141,10 +1158,11 @@ internal static class LocalMultiControlRuntime
         }
 
         bool matchedManualEndTurn = TryConsumeManualEndTurnIntent(endedPlayerId);
-        if (!matchedManualEndTurn && Session.CurrentControlledPlayerId != endedPlayerId)
+        SeatRegistry seats = LocalSeatSource.CurrentSeats();
+        if (!matchedManualEndTurn && !seats.IsControlled(endedPlayerId))
         {
             LocalMultiControlLogger.Info(
-                $"跳过结束回合后自动切人：ended={endedPlayerId}, controlled={Session.CurrentControlledPlayerId?.ToString() ?? "null"}, manualMatched={matchedManualEndTurn}");
+                $"跳过结束回合后自动切人：ended={endedPlayerId}, controlled={seats.ControlledSeatId?.ToString() ?? "null"}, manualMatched={matchedManualEndTurn}");
             return;
         }
 
@@ -1402,7 +1420,7 @@ internal static class LocalMultiControlRuntime
         // （r144 实机日志：`尝试设置当前操控角色失败：玩家 12716757972810793218 不在会话中`）。
         List<ulong> combatPlayerIds = combatState.Players
             .Select((player) => player.NetId)
-            .Where((playerId) => LocalSelfCoopContext.LocalPlayerIds.Contains(playerId))
+            .Where((playerId) => LocalSeatSource.IsLocalSeat(playerId))
             .Distinct()
             .ToList();
         if (combatPlayerIds.Count < 2)
@@ -1453,7 +1471,7 @@ internal static class LocalMultiControlRuntime
         // （r144 实机日志：`尝试设置当前操控角色失败：玩家 12716757972810793218 不在会话中`）。
         List<ulong> combatPlayerIds = combatState.Players
             .Select((player) => player.NetId)
-            .Where((playerId) => LocalSelfCoopContext.LocalPlayerIds.Contains(playerId))
+            .Where((playerId) => LocalSeatSource.IsLocalSeat(playerId))
             .Distinct()
             .ToList();
         if (combatPlayerIds.Count < 2)
@@ -1518,7 +1536,7 @@ internal static class LocalMultiControlRuntime
         // （r144 实机日志：`尝试设置当前操控角色失败：玩家 12716757972810793218 不在会话中`）。
         List<ulong> combatPlayerIds = combatState.Players
             .Select((player) => player.NetId)
-            .Where((playerId) => LocalSelfCoopContext.LocalPlayerIds.Contains(playerId))
+            .Where((playerId) => LocalSeatSource.IsLocalSeat(playerId))
             .Distinct()
             .ToList();
         if (combatPlayerIds.Count < 2)
@@ -2651,7 +2669,7 @@ internal static class LocalMultiControlRuntime
         }
 
         ulong playerId = foreground.NetId;
-        if (LocalContext.NetId == playerId)
+        if (LocalSeatSource.CurrentSeats().IsContext(playerId))
         {
             return playerId;
         }
@@ -2694,7 +2712,7 @@ internal static class LocalMultiControlRuntime
             return;
         }
 
-        ulong playerId = Session.CurrentControlledPlayerId ?? LocalContext.NetId ?? 0UL;
+        ulong playerId = LocalSeatSource.ForegroundSeatId();
         if (playerId == 0UL)
         {
             return;

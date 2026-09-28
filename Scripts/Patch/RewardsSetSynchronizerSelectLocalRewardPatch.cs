@@ -63,7 +63,7 @@ internal static class RewardsSetSynchronizerSelectLocalRewardPatch
         }
 
         ulong ownerId = reward.Player.NetId;
-        if (!LocalSelfCoopContext.LocalPlayerIds.Contains(ownerId))
+        if (!LocalSeatSource.IsLocalSeat(ownerId))
         {
             return;
         }

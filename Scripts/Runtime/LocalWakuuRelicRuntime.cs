@@ -1206,10 +1206,10 @@ internal static class LocalWakuuRelicRuntime
             return;
         }
 
-        ulong currentControlledPlayerId = LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId
-            ?? LocalContext.NetId
-            ?? player.NetId;
-        if (currentControlledPlayerId == player.NetId)
+        // R3：前台取值走统一入口；原写法是"两者都空时回退 player 自己" ⇒ 等价于"已在前后台，直接返回"
+        SeatRegistry seats = LocalSeatSource.CurrentSeats();
+        ulong currentControlledPlayerId = seats.ForegroundSeatId;
+        if (currentControlledPlayerId == 0UL || seats.IsForeground(player.NetId))
         {
             return;
         }

@@ -52,8 +52,9 @@ internal static class CardPileHandVisualOwnerGuardPatch
             return true;
         }
 
-        ulong? controlledPlayerId = LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId;
-        if (controlledPlayerId == null || card.Owner == null || card.Owner.NetId == controlledPlayerId.Value)
+        SeatRegistry seats = LocalSeatSource.CurrentSeats();
+        ulong? controlledPlayerId = seats.ControlledSeatId;
+        if (controlledPlayerId == null || card.Owner == null || seats.IsControlled(card.Owner.NetId))
         {
             return true;
         }

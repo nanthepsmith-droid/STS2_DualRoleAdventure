@@ -45,8 +45,9 @@ internal static class CardPileAddForegroundContextPinPatch
             return;
         }
 
-        ulong? controlledPlayerId = LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId;
-        if (controlledPlayerId == null || LocalContext.NetId == controlledPlayerId.Value)
+        SeatRegistry seats = LocalSeatSource.CurrentSeats();
+        ulong? controlledPlayerId = seats.ControlledSeatId;
+        if (controlledPlayerId == null || seats.IsContext(controlledPlayerId.Value))
         {
             return;
         }

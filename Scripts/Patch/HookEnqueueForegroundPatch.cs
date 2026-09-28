@@ -38,7 +38,7 @@ internal static class HookEnqueueForegroundPatch
             return;
         }
 
-        if (!LocalSelfCoopContext.LocalPlayerIds.Contains(gameAction.OwnerId))
+        if (!LocalSeatSource.IsLocalSeat(gameAction.OwnerId))
         {
             return;
         }

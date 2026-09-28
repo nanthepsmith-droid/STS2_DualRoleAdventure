@@ -59,15 +59,17 @@ internal static class CardTransformNetIdPinPatch
         }
 
         Player? owner = ResolveOwner(transformations);
-        bool isOwnerLocal = owner != null && LocalSelfCoopContext.LocalPlayerIds.Contains(owner.NetId);
+        bool isOwnerLocal = owner != null && LocalSeatSource.IsLocalSeat(owner.NetId);
         if (!isOwnerLocal)
         {
             return;
         }
 
         // 前台/后台 × NetId 是否已等于牌主人 → 用纯函数判定，避免逻辑散落（见 CardTransformNetIdPolicy 注释）。
-        bool isOwnerForeground = LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId == owner!.NetId;
-        bool currentNetIdIsOwner = LocalContext.NetId == owner.NetId;
+        // R3：受控位与上下文两个判定取自同一份席位快照
+        SeatRegistry seats = LocalSeatSource.CurrentSeats();
+        bool isOwnerForeground = seats.IsControlled(owner!.NetId);
+        bool currentNetIdIsOwner = seats.IsContext(owner.NetId);
 
         switch (CardTransformNetIdPolicy.Decide(isOwnerLocal, isOwnerForeground, currentNetIdIsOwner))
         {
@@ -89,8 +91,9 @@ internal static class CardTransformNetIdPinPatch
                 // 自动出牌期间 NetId 已被 RunWatchdogAsync 钉在瓦库身上，所以 r59 的「跳过钉」不够，
                 // 必须显式把 NetId 让到当前前台玩家（一个合法的本地玩家），让 vanilla 按 IsMine=false 跳过视觉。
                 // 数据层在视觉分支之前就已生效，不受影响。
-                ulong? controlledId = LocalMultiControlRuntime.SessionState.CurrentControlledPlayerId;
-                ulong? safeNetId = controlledId.HasValue && LocalSelfCoopContext.LocalPlayerIds.Contains(controlledId.Value)
+                SeatRegistry seatsShifted = LocalSeatSource.CurrentSeats();
+                ulong? controlledId = seatsShifted.ControlledSeatId;
+                ulong? safeNetId = controlledId.HasValue && seatsShifted.IsLocalSeat(controlledId.Value)
                     ? controlledId
                     : null;
 
