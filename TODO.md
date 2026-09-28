@@ -40,7 +40,7 @@
 | `瓦库托管基础收口草案-最终阶段前置G0.md` | **部分落地**：**G0.1**（B1 买遗物 / B2 买药水 / B3 删牌服务）**已被 §改进-5 吃掉**（r137/r139，已实机确认）；**G0.2**（B4 恋降级逃生门 / B5 回归清单固化）**未做** | 只做 G0.2 两个子项（范围小，差两项） | **§改进-5** |
 | `多瓦库并行托管可行性与方案.md` | **部分落地**：Phase 0（r107~r110）/ Phase 1（r113）/ 方案 D（r121~r134）均已实机确认；三层档位：队列 / 并发**已于 2026-09-26 转正为默认开**，加速档默认关（用户自选） | **转正判定已完成（2026-09-26，方案 §12.15，14 会话含 1 真人+3 瓦库对照局）**：① **并发档收益已证实** —— 同回合三瓦库 `delayMs` 增量中位 **14ms**（inline 基线是秒级 494→6297→9724），第 3 位瓦库启动 **9.7s → 95ms**；② 出牌总时延 —— 队列单张中位 1143ms（2 席）/ 1674ms（3 瓦库，排队所致），但 pass 相当 ⇒ **不提速也不劣化**；③ 回归 —— `收回滞留节点` / `幽灵弹层` / `add_child failed` **14 会话全 0**。⇒ ✅ **已于 2026-09-26 转正落地（r152）**：两档默认值改 `true`，设置页/玩家指南/单测/CHANGELOG 同步；`fastVakuuPlay` 仍为独立项（用户当前关着） | **§改进-2** |
 | 改进-2 出牌加速二期（`CardModel.OnPlayWrapper` 前缀省两段固定等待） | **待拍板**：r128 已给估值（~0.35~0.5s/张），用户未拍 | 拍板后作为独立的出牌路径优化做 | **§改进-2 ⑱** |
-| `runtime架构分层重构评估.md`（#18） | **动工中：R0 / R1 / R2 第一批已落地（2026-09-27 ~ 09-28）** —— R0（ADR + `AGENTS.md §1` 四条架构边界硬规则）`0a740c0`；R1a 布局数学（`LobbyCardLayoutPolicy`，marker r164，实机确认选人界面一致）`72dcaf1` / R1b 奖励判定（`CombatRewardMergePolicy`，marker r165）`7f85d09`；**R2 第一批（2026-09-28）** = ① `EnumerateDescendants` 四份私有副本 → `LocalNodeTree` 单点化 ② 三份人数面板（标准/每日/自定义）→ `LocalPlayerCountPanel` 共用组件。**⚠ 实机回归与收口（r169 → r171）**：一度抽过的通用子树扫描缓存（TTL 500ms）被实机证明**不能**用于写后读（席位卡每帧重复补建 ⇒「无限玩家」）、每帧列布局与标签订位（漂移）⇒ **全部回退为实时遍历**，本批只剩「单点化 + 组件化」收益（详见 `references/local-multicontrol-pitfalls.md` 坑 J）。**R2 第二批（2026-09-28）** = ③ 镜像五件套（药水 / 卡牌 / 金币得失 / 遗物 Obtain+Remove）与藏宝图的**门控 + 上下文判据 + 目标枚举 + 镜像作用域**收进 `Scripts/Runtime/LocalRewardMirror.cs`（行为零变化；S7 因"-2 反射目标"预期刷新基线）；marker **`2026-09-28-r172`**（**待实机一局**）。分支：R0/R1/R2 第一批**已合回 `master`（`08c9234`）**；R2 第二批在 **`refactor/r2-dedup`**（未合回、未推送）。门禁：单测 **721 全绿**、静态层 10 PASS | R2 剩余：**Daily/Custom 同构角色指派**（镜像设施与 subtree/面板去重复均已收口）；之后 → **R3（Seat 身份领域模型）** → R4（拆 God class） → R5（生命周期契约）；**R3/R4 期间冻结功能改动**（M2 智能抓牌须排在 R3/R4 之后）；每步一实机、行为零变化 | 本表 + `runtime架构分层重构评估.md` |
+| `runtime架构分层重构评估.md`（#18） | **动工中：R0 / R1 / R2 第一批已落地（2026-09-27 ~ 09-28）** —— R0（ADR + `AGENTS.md §1` 四条架构边界硬规则）`0a740c0`；R1a 布局数学（`LobbyCardLayoutPolicy`，marker r164，实机确认选人界面一致）`72dcaf1` / R1b 奖励判定（`CombatRewardMergePolicy`，marker r165）`7f85d09`；**R2 第一批（2026-09-28）** = ① `EnumerateDescendants` 四份私有副本 → `LocalNodeTree` 单点化 ② 三份人数面板（标准/每日/自定义）→ `LocalPlayerCountPanel` 共用组件。**⚠ 实机回归与收口（r169 → r171）**：一度抽过的通用子树扫描缓存（TTL 500ms）被实机证明**不能**用于写后读（席位卡每帧重复补建 ⇒「无限玩家」）、每帧列布局与标签订位（漂移）⇒ **全部回退为实时遍历**，本批只剩「单点化 + 组件化」收益（详见 `references/local-multicontrol-pitfalls.md` 坑 J）。**R2 第二批（2026-09-28）** = ③ 镜像五件套（药水 / 卡牌 / 金币得失 / 遗物 Obtain+Remove）与藏宝图的**门控 + 上下文判据 + 目标枚举 + 镜像作用域**收进 `Scripts/Runtime/LocalRewardMirror.cs`（行为零变化；S7 因"-2 反射目标"预期刷新基线）；marker **`2026-09-28-r172`**（**待实机一局**）。**R2 第四批（2026-09-28，本轮）= ④ Daily/Custom 同构席位对齐与角色指派入口**：新增 `Scripts/Runtime/PureLogic/LocalLobbySeatPolicy.cs`（席位计划 / reconcile 判定 / 指纹，由 `DailyLobbyPolicy` 通用化而来 + 新增 `ResolveTargetSeats` / `OrderedLocalSeats`）与 `Scripts/Runtime/LocalLobbySeatReconciler.cs`（「加席位 / 删多余本地席位 / 标 ready」三步编排），两个页面补丁各减约 60 行（净 **-294 行**），Custom 内联的 reconcile 判定改为调用同一纯函数；**角色来源不合并**（Daily = 日期种子逐席位驱动 `SetupLobbyParams`、Custom = 真人点选后同步 UI，属语义差异）；日志文案逐字保持；单测 **721 → 726**；marker **`2026-09-28-r176`**（**待实机**）。分支：R0/R1/R2 第一二批**均已合回 `master`（`08c9234` / `fc542bd`）**；本轮在 **`refactor/r2-daily-custom-seat-assign`**（未合回、未推送）；同日修复分支 `fix/wakuu-turnstart-copy-pick`（r173~r175 复制牌作答）已 `--ff-only` 合回 `master`（`3ce43dc`）。门禁：单测 **726 全绿**、静态层 **10 PASS**、`preflight -Deploy` 4 PASS / 3 SKIP | **R2 四项全部收口** → 下一步 **R3（Seat 身份领域模型）** → R4（拆 God class） → R5（生命周期契约）；**R3/R4 期间冻结功能改动**（M2 智能抓牌须排在 R3/R4 之后）；每步一实机、行为零变化。⚠ 已知未收的两处同形代码（**非** R2 清单项，待拍板）：`LocalSelfCoopContext.ReconcileStartRunLobbyPlayerCount`（标准角色选择页）的加/删/ready 三段与本次编排同形但有三处差异（多余席位过滤掉主席位 / ready 只遍历目标席位 / 日志字段不同），未纳入本轮 | 本表 + `runtime架构分层重构评估.md` |
 | `长期方向L1-L3规划.md` | **部分落地**：L1 接口层已落地（任务 2.2，r31）；L3 离线静态层 CI 已落地（2026-09-16）；**L2 已扩为 `runtime架构分层重构评估.md`（#18，R0 动工中）** | L2 走该提案的 R1~R4；L1 剩"反射面收敛" | 本表 |
 | `键盘手柄双输入本地双控可行性分析.md`（L1 档） | **待拍板**：结论已出（L1 轮流操作可行 / L2·L3 真正同时不可行）；**未实现** | 备选线索：`LocalDeviceSplitRouter` + patch `NControllerManager` 模式抢占 + 秒切防抖（仅认确认性输入），默认关 | 本表（备选） |
 | `本地LLM辅助开发可行性分析.md` | **部分落地**：P0 冒烟 / P1 索引 / P2 日志分诊 / P3 双语 + diff 预审 / T2 NUnit 草稿**均已完成**；**P4 经实测改换做法**（明细当优先级清单 + 自写抽取器）；`functiongemma` 工具路由未动 | P4 若要继续：先写自己的 `sts2src` 逐卡效果抽取器 → 人审 → 固化 `PureLogic` 表，**默认关**且须过 §21.4.2 回归清单 | 本表 |
@@ -1677,6 +1677,26 @@
 ### Daily 本地多控（r156 起，r157 修正，r158 零劫持 / r159 收尾 / **r161 断网可玩**；**联网局、断网局均已通过（2026-09-27）**）
 
 提案：`maintenance-docs/decision-records/本地多角色扩展到Daily模式可行性分析.md`（§五 实施建议、§六 结论口径）。
+
+**2026-09-28 r176：席位对齐 / 角色分配入口改为共用实现（R2 收口，行为零变化）**——
+只把每日页与自定义页**逐字相同的**「加缺失席位 / 删多余本地席位 / 标 ready」与判定收进
+`Scripts/Runtime/PureLogic/LocalLobbySeatPolicy.cs` + `Scripts/Runtime/LocalLobbySeatReconciler.cs`；
+**日志文案与 sender 上下文来源串逐字不变**；**角色来源未动**（每日 = 日期种子逐席位驱动 `SetupLobbyParams`；
+自定义 = 真人点选后同步 UI）。详见 `§决策记录跟踪表` 的 `runtime架构分层重构评估.md` 行。
+
+**r176 实机验证契约（进每日 / 自定义各一次厅，任一出征一次即可）**：
+- 照旧出现：`每日挑战大厅本地人数已同步: target=…, actual=…, added=…, removed=…, readyChanged=…`、
+  `自定义模式大厅本地人数已同步: …`、`每日挑战角色已按日期种子分配: seats=…, signature=…`、
+  `每日挑战席位卡已补建: added=…`、`通过每日挑战实体按钮调整本地人数成功` / `通过自定义模式实体按钮调整本地人数成功`、`通往…`级别的出征链；
+- 席位卡、瓦库勾选框、「切人 / 变瓦库」按钮、人数面板行为与 r175 一致；
+- **期望 0**：`### Exception ###`、`add_child() failed`、`NullReferenceException`、以及「席位卡已补建」在人数不变时反复刷；
+- 一条命令核对：`python D:\Download\pain\tools\log_scan.py --preset daily <日志>`（健康度另看 `--preset health`）。
+
+**⚠ 已知噪音（别当回归查）**：进每日 / 自定义页时日志里的
+`[ERROR] Error deleting path modded/profile2/saves/current_run_mp.save: Failed`（连带 `.backup`，每次进页 2 条，
+栈顶 `GodotFileIo.DeleteFile` ← `RunSaveManager.DeleteCurrentMultiplayerRun` ← 我们的入口 `Enter`）
+是**游戏侧存档管理器在文件本就不存在时**打的日志，**自 r156 起一直如此**（r172 6 条 / r173 2 条 / r175 0 条，
+r175 为 0 只因那局没进厅）；不是我们的异常，本轮也未改动该调用。
 
 **2026-09-27 首轮实机（r156，联网一局）用户反馈与修正（r157）**：
 1. ❌ **「不能玩原版多人联机每日游戏」** —— r156 把入口做成了**劫持** `StartHost(GameMode.Daily)`，
