@@ -82,10 +82,42 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
         return false;
     }
 
+    /// <summary>
+    /// 奖励网格多选一入口（第三方遗物「从牌组随机展示 N 张，选一张获得它的原始版本复制」等多走这里）。
+    /// </summary>
+    [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromSimpleGridForRewards))]
+    [HarmonyPriority(Priority.Low)]
+    [HarmonyPrefix]
+    private static bool FromSimpleGridForRewardsPrefix(
+        List<CardCreationResult> cards,
+        Player player,
+        CardSelectorPrefs prefs,
+        ref Task<IEnumerable<CardModel>> __result)
+    {
+        if (!ShouldAutoAnswer(player))
+        {
+            return true;
+        }
+
+        List<CardModel> candidates = cards.Select((creation) => creation.Card).ToList();
+        if (candidates.Count == 0)
+        {
+            return true;
+        }
+
+        LocalMultiControlLogger.Info(
+            $"瓦库作用域外选牌自动作答: player={player.NetId}, options={candidates.Count}, "
+            + $"select={prefs.MinSelect}~{prefs.MaxSelect}, mode={LocalWakuuAutopilotConfig.CardPickMode}, "
+            + "source=FromSimpleGridForRewards");
+
+        __result = ComputeGridAnswerAsync(candidates, prefs);
+        return false;
+    }
+
     /// <summary>该选牌入口是否由本补丁对瓦库做「作用域外自动作答」（供切前台前缀判断"要不要切"）。</summary>
     internal static bool IsAutoAnswerEntry(string source)
     {
-        return source is "FromChooseACardScreen" or "FromSimpleGrid";
+        return source is "FromChooseACardScreen" or "FromSimpleGrid" or "FromSimpleGridForRewards";
     }
 
     /// <summary>
@@ -120,8 +152,10 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
             return false;
         }
 
-        // 已有选择器（瓦库自动出牌作用域内）→ 交回原选择器处理，避免重复作答。
-        if (CardSelectCmd.Selector != null)
+        // 栈上是**我们的**策略选择器（瓦库自动出牌作用域内）→ 交回它按场景作答，避免重复作答。
+        // ⚠ 这里**不能**写成"栈必须为空"：第三方 mod 也会自己 `PushSelector`（实例：猪猪 mod【重瞳】
+        // 在调 `From*` 之前压它自己的选择器），那样我们会**永远**被挡在门外 —— r173 就是这么漏掉的。
+        if (CardSelectCmd.Selector is LocalWakuuStrategySelector)
         {
             return false;
         }
@@ -207,12 +241,58 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
         ProbeUncoveredEntry(player, "FromCombatPile");
     }
 
-    [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromHandForUpgrade))]
+    [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromHandForUpgrade), new[]
+    {
+        typeof(PlayerChoiceContext),
+        typeof(Player),
+        typeof(AbstractModel),
+    })]
     [HarmonyPriority(Priority.Low)]
     [HarmonyPrefix]
     private static void FromHandForUpgradeProbe(Player player)
     {
         ProbeUncoveredEntry(player, "FromHandForUpgrade");
+    }
+
+    [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromHandForDiscard), new[]
+    {
+        typeof(PlayerChoiceContext),
+        typeof(Player),
+        typeof(CardSelectorPrefs),
+        typeof(Func<CardModel, bool>),
+        typeof(AbstractModel),
+    })]
+    [HarmonyPriority(Priority.Low)]
+    [HarmonyPrefix]
+    private static void FromHandForDiscardProbe(Player player)
+    {
+        ProbeUncoveredEntry(player, "FromHandForDiscard");
+    }
+
+    [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromDeckGeneric), new[]
+    {
+        typeof(Player),
+        typeof(CardSelectorPrefs),
+        typeof(Func<CardModel, bool>),
+        typeof(Func<CardModel, int>),
+    })]
+    [HarmonyPriority(Priority.Low)]
+    [HarmonyPrefix]
+    private static void FromDeckGenericProbe(Player player)
+    {
+        ProbeUncoveredEntry(player, "FromDeckGeneric");
+    }
+
+    [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromChooseABundleScreen), new[]
+    {
+        typeof(Player),
+        typeof(IReadOnlyList<IReadOnlyList<CardModel>>),
+    })]
+    [HarmonyPriority(Priority.Low)]
+    [HarmonyPrefix]
+    private static void FromChooseABundleProbe(Player player)
+    {
+        ProbeUncoveredEntry(player, "FromChooseABundleScreen");
     }
 
     internal static void ProbeUncoveredEntry(Player? player, string entry)
@@ -223,7 +303,8 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
         }
 
         LocalMultiControlLogger.Warn(
-            $"瓦库作用域外选牌入口未适配: entry={entry}, player={player.NetId} —— 本次不会自动作答"
+            $"瓦库作用域外选牌入口未适配: entry={entry}, player={player.NetId}, "
+            + $"selectorStackTop={CardSelectCmd.Selector?.GetType().Name ?? "none"} —— 本次不会自动作答"
             + "（若该角色是后台托管的瓦库，界面会等真人点）。请把这条日志报给维护者以扩展适配。");
     }
 
