@@ -2,8 +2,8 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-09-28 18:44  HEAD=62a54d8
-# 统计: patch_classes=187 patch_rows=218 string_targets=195 descriptors=364
+# 生成时间=2026-09-28 18:52  HEAD=22e91f4
+# 统计: patch_classes=187 patch_rows=220 string_targets=195 descriptors=366
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	CardManualPlayContextPatch	CardModel	EnqueueManualPlay	string
@@ -30,6 +30,8 @@ P	CardSelectManualConfirmationPatch	CardSelectCmd	FromDeckGeneric	nameof
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromChooseABundleScreen	nameof
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromChooseACardScreen	nameof
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromCombatPile	nameof
+P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromDeckForTransformation	nameof
+P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromDeckForUpgrade	nameof
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromDeckGeneric	nameof
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromHand	nameof
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromHandForDiscard	nameof

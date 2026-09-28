@@ -117,7 +117,8 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
     /// <summary>该选牌入口是否由本补丁对瓦库做「作用域外自动作答」（供切前台前缀判断"要不要切"）。</summary>
     internal static bool IsAutoAnswerEntry(string source)
     {
-        return source is "FromChooseACardScreen" or "FromSimpleGrid" or "FromSimpleGridForRewards";
+        return source is "FromChooseACardScreen" or "FromSimpleGrid" or "FromSimpleGridForRewards"
+            or "FromDeckGeneric" or "FromDeckForUpgrade" or "FromHand";
     }
 
     /// <summary>
@@ -269,6 +270,10 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
         ProbeUncoveredEntry(player, "FromHandForDiscard");
     }
 
+    /// <summary>
+    /// 牌组选牌入口 —— **r174 探针实测第三方遗物「从牌组随机展示 N 张，选一张获得它的原始版本复制」就走这里**
+    /// （`entry=FromDeckGeneric`）；事件 / 商店 / 火堆的删牌与升级也会经过它。
+    /// </summary>
     [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromDeckGeneric), new[]
     {
         typeof(Player),
@@ -278,9 +283,83 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
     })]
     [HarmonyPriority(Priority.Low)]
     [HarmonyPrefix]
-    private static void FromDeckGenericProbe(Player player)
+    private static bool FromDeckGenericPrefix(
+        Player player,
+        CardSelectorPrefs prefs,
+        Func<CardModel, bool>? filter,
+        Func<CardModel, int>? sortingOrder,
+        ref Task<IEnumerable<CardModel>> __result)
     {
-        ProbeUncoveredEntry(player, "FromDeckGeneric");
+        return TryAutoAnswerDeckCards(player, prefs, filter, sortingOrder, "FromDeckGeneric", ref __result);
+    }
+
+    /// <summary>牌组「升级」选牌入口（火堆 smith / 事件里的升级类遗物）。</summary>
+    [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromDeckForUpgrade))]
+    [HarmonyPriority(Priority.Low)]
+    [HarmonyPrefix]
+    private static bool FromDeckForUpgradePrefix(
+        Player player,
+        CardSelectorPrefs prefs,
+        ref Task<IEnumerable<CardModel>> __result)
+    {
+        return TryAutoAnswerDeckCards(player, prefs, (card) => card.IsUpgradable, null, "FromDeckForUpgrade", ref __result);
+    }
+
+    /// <summary>
+    /// 牌组选牌的共用实现：候选与游戏原方法**同口径**（`PileType.Deck` + `filter` + `sortingOrder`），
+    /// 再用我们的策略选择器作答（min/max 取自 prefs）—— 于是"谁被选中"由 `cardPickMode` / 场景表决定。
+    /// </summary>
+    private static bool TryAutoAnswerDeckCards(
+        Player player,
+        CardSelectorPrefs prefs,
+        Func<CardModel, bool>? filter,
+        Func<CardModel, int>? sortingOrder,
+        string entry,
+        ref Task<IEnumerable<CardModel>> __result)
+    {
+        if (!ShouldAutoAnswer(player))
+        {
+            return true;
+        }
+
+        List<CardModel> candidates;
+        try
+        {
+            candidates = PileType.Deck.GetPile(player).Cards
+                .Where(filter ?? (_ => true))
+                .ToList();
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"瓦库作用域外牌组选牌取牌失败({entry})，交回原流程: {exception.Message}");
+            return true;
+        }
+
+        if (candidates.Count == 0)
+        {
+            return true;
+        }
+
+        if (sortingOrder != null)
+        {
+            candidates = candidates.OrderBy(sortingOrder).ToList();
+        }
+
+        LocalMultiControlLogger.Info(
+            $"瓦库作用域外牌组选牌自动作答: player={player.NetId}, options={candidates.Count}, "
+            + $"select={prefs.MinSelect}~{prefs.MaxSelect}, mode={LocalWakuuAutopilotConfig.CardPickMode}, source={entry}");
+
+        __result = ComputeGridAnswerAsync(candidates, prefs);
+        return false;
+    }
+
+    /// <summary>牌组「变化」选牌入口 —— 暂只探针（签名含 `CardTransformation`，真出现再适配）。</summary>
+    [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromDeckForTransformation))]
+    [HarmonyPriority(Priority.Low)]
+    [HarmonyPrefix]
+    private static void FromDeckForTransformationProbe(Player player)
+    {
+        ProbeUncoveredEntry(player, "FromDeckForTransformation");
     }
 
     [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromChooseABundleScreen), new[]

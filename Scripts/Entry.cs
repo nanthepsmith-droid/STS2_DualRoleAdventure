@@ -14,8 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // 修「瓦库不自动选重瞳复制牌」续：判据放宽（不再要求栈空，第三方自压的 selector 也能接管）+ 补 FromSimpleGridForRewards + 探针铺满（分支 fix/wakuu-turnstart-copy-pick）
-    private const string BuildMarker = "Revival v1.43.0 (game v0.111.0, marker=2026-09-28-r174)";
+    // 修「瓦库不自动选复制牌」定案：探针点名 FromDeckGeneric ⇒ 适配牌组选牌（含 FromDeckForUpgrade）+ 变化入口探针（分支 fix/wakuu-turnstart-copy-pick）
+    private const string BuildMarker = "Revival v1.43.0 (game v0.111.0, marker=2026-09-28-r175)";
 
     private static Harmony? _harmony;
 
