@@ -2066,19 +2066,29 @@ LOG ANCHORS: (期望 0) LocalCustomRunSelectionSync / ### Exception ###；INIT_O
   而 `YuWanCard.Content.dll` 还引用了 `CardSelectCmd.FromHand` / `FromHandForDiscard` / `FromSimpleGridForRewards` /
   `FromDeckGeneric` / `FromDeckForUpgrade` / `FromDeckForRemoval` / `FromDeckForEnchantment`。重瞳走的是未覆盖入口
   （最可能 `FromHand` —— 从 r6 起我们就规定「作用域外 `FromHand` 一律不代答」，防进战斗黑屏）。
-- **修法（r173）**：
-  1. 作用域外自动作答**扩展到 `FromHand`**（`Priority.Low`，作用域内仍由 `CardSelectHandScenarioPatch`
-     按场景优先级作答，两条件互斥不打架）；门控沿用同一套 `ShouldAutoAnswer`（本地多控 + 单人冒险 + 本地回环 +
-     本地席位 + **后台托管** + 瓦库形态 + 栈上无选择器），选牌用现成的场景表（Copy / Remove / Transform）。
-  2. 新增**未适配入口探针**（`FromCombatPile`、`FromHandForUpgrade`；只读不干预）：门控成立却没适配时打 WARN
-     `瓦库作用域外选牌入口未适配: entry=…` ⇒ 若重瞳其实走别的入口，复测日志会**直接点名**。
+- **修法（两步：r173 → r174）**：
+  1. **r173**：作用域外自动作答扩展到 `FromHand`（`Priority.Low`，作用域内仍由 `CardSelectHandScenarioPatch`
+     按场景优先级作答）；+ 未适配入口探针（`FromCombatPile` / `FromHandForUpgrade`）。
+     **实机未通过**：用户复测仍然要真人手点，而且日志里**连探针都不打**。
+  2. **r174（真因所在）**：第三方 `YuWanCard.Content.dll` 的 IL 引用里**有 `CardSelectCmd.PushSelector`**
+     ⇒ 它在调 `From*` **之前自己压了选择器**，而 `ShouldAutoAnswer` 当时要求「栈必须为空」⇒ 永远接管不到
+     （连探针都被这条判据挡住）。修法 = 判据改为「**栈顶不是我们自己的选择器**」
+     （`CardSelectCmd.Selector is not LocalWakuuStrategySelector`；我们的前缀执行早于游戏方法体内的
+     `Selector != null` 分支，因此能抢在它前面 `return false` + 给 `__result`）；
+     + 新增 `FromSimpleGridForRewards` 适配（遗物描述是"从牌组随机展示 N 张，选一张获得它的原始版本复制"，
+     最可能走这个入口）；+ 探针铺满（`FromHandForDiscard` / `FromDeckGeneric` / `FromChooseABundleScreen`），
+     并把 `selectorStackTop` 打进日志（一眼看出被谁挡住）。
+  - 门控仍为：本地多控 + 单人冒险 + 本地回环 + 本地席位 + **后台托管** + 瓦库形态；选牌用场景表
+    （Copy / Remove / Transform，未知场景按 `cardPickMode`）。
 - **验证契约（请实机）**：
   ```
-  改动:    瓦库作用域外手牌选牌自动作答（r173，marker 2026-09-28-r173）
-  SETUP:   本地多控 2 席，其中瓦库托管那一席带【重瞳】等"战斗开始选牌"类遗物
-  ACTION:  进战斗，看战斗开始时的选牌界面是否被瓦库自动作答
-  PASS:    `瓦库作用域外手牌选牌自动作答: … entry=FromHand`（或其它入口的自动作答行）
-  FAIL:    界面停在原地等真人点；或出现 `瓦库作用域外选牌入口未适配: entry=…`（⇒ 把这行报给我，下一批扩展）
+  改动:    作用域外选牌自动作答：判据放宽（不再要求栈空）+ 补 FromSimpleGridForRewards（r174，marker 2026-09-28-r174）
+  SETUP:   本地多控 2 席，瓦库托管那一席带【重瞳】等"拾起/战斗开始时选一张牌复制"类遗物
+  ACTION:  触发该遗物（拾起或进战斗），看选牌界面是否被瓦库自动作答
+  PASS:    `瓦库作用域外选牌自动作答: … source=FromSimpleGridForRewards`（或 FromHand / FromSimpleGrid 等）
+           且界面不再停下来等真人点
+  FAIL:    界面仍停在原地；或出现 `瓦库作用域外选牌入口未适配: entry=…, selectorStackTop=…`
+           ⇒ 把整行发我（selectorStackTop 会说明被谁挡住），下一批按它扩展适配
   期望 0： ### Exception ### / 进战斗黑屏 / add_child() failed
   ```
 - **经验**：见 `references/local-multicontrol-pitfalls.md` **坑 K**（作用域外作答的入口覆盖面 + 两条定位手段）。
