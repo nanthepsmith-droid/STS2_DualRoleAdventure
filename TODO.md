@@ -2080,6 +2080,13 @@ LOG ANCHORS: (期望 0) LocalCustomRunSelectionSync / ### Exception ###；INIT_O
      并把 `selectorStackTop` 打进日志（一眼看出被谁挡住）。
   - 门控仍为：本地多控 + 单人冒险 + 本地回环 + 本地席位 + **后台托管** + 瓦库形态；选牌用场景表
     （Copy / Remove / Transform，未知场景按 `cardPickMode`）。
+  3. **r175（定案）**：r174 挂的探针**一次就命中** —— 日志给出
+     `瓦库作用域外选牌入口未适配: entry=FromDeckGeneric, player=…327, selectorStackTop=none`
+     ⇒ 该效果走的是 **`FromDeckGeneric`**（牌组选牌，正对应"从牌组随机展示 N 张"），且**栈是空的**
+     （不是被第三方 selector 挡住）。修法 = 把 `FromDeckGeneric` 从探针**升级为自动作答**
+     （候选与游戏原方法同口径：`PileType.Deck` + `filter` + `sortingOrder`，再用策略选择器按 min/max 作答），
+     并顺带适配 `FromDeckForUpgrade`（火堆 / 事件升级类）；`FromDeckForTransformation` 仍只探针。
+     marker `2026-09-28-r175`。
 - **验证契约（请实机）**：
   ```
   改动:    作用域外选牌自动作答：判据放宽（不再要求栈空）+ 补 FromSimpleGridForRewards（r174，marker 2026-09-28-r174）
