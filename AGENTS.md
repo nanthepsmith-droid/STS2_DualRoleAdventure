@@ -227,6 +227,10 @@ When the game updates and the mod breaks:
 3. 状态变化（拍板 / 动工 / 关单 / 不做）**只改上面两处的那一行**，不要往提案正文追加状态；
 4. `SKILL.md` 只在「做法 / 坑」本身变化时才改；**日期戳现状（分支、部署位 marker、未推送提交数、单测条数）
    只进 `维护现状分析.md`**，不进 SKILL.md。
+5. **经验 / 根因链 / 日志实证 / 复测契约 → `references/`（或 SKILL 的坑），不进 `TODO.md`**：
+   `TODO.md` 是**面向外的"接下来做什么"**（待做 → 做到哪 → 关单），不写全案复盘长块、不贴日志证据链。
+   关单后的 bug 记录去处 = `CHANGELOG.md`（玩家可见）＋ `references/` 对应坑（做法/教训）＋
+   `D:\Download\pain\开发进度记录.md`（逐轮记录）。
 
 ## 9. Hard gates (run before every deploy)
 

@@ -2,11 +2,11 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
-## [1.43.1] - 2026-09-28
+## [1.44.0] - 2026-09-29
 
 > 本轮 = r163 ~ r185（2026-09-27 ~ 09-28）。头牌是**读档后瓦库整局停摆修复（BUG-22 三层）**与
 > **第三方自绘选牌/回合结束变换两类软锁的修复（BUG-23 / BUG-25 / BUG-26）**；
-> 另含一批 R2/R3 内部重构（行为零变化）与构建 marker `2026-09-28-r186`。
+> 另含一批 R2/R3 内部重构（行为零变化）与构建 marker `2026-09-29-r187`。
 
 ### Fixed
 - **读档后瓦库整局失效：不出牌 / 不自动选事件 / 不自动领奖（BUG-22，r166，2026-09-27）**：
