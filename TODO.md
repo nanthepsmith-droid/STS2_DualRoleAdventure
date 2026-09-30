@@ -2307,6 +2307,31 @@ if (LocalContext.IsMe(player) && NetService.Type != Replay) {
 **排查方法沉淀**：见 `references/local-multicontrol-pitfalls.md` **坑 M**（第三方自绘选牌家族 + 定位手段：
 先 `thirdparty_extract_embedded.ps1` 导出壳里的内嵌实现，再 `thirdparty_api_refs.ps1` / `decompile_mod.ps1`）。
 
+### BUG-27（已定性，**待拍板**）第三方休息区选项被当成「遗物选项」⇒ 火堆决策退化成"睡觉以外随机"（2026-09-30 用户实机发现）
+
+- **症状（用户报）**：瓦库在休息处**一直用愈合（`MEND`）给自己回血，而双方血量都在 50% 以上**；
+  用户猜测"是不是该敲的牌都敲完了没别的选择"——**不是**，锻造那一步没被走到。
+- **证据（r193，`logs-archive/godot__20260930-215215__r193.log`）**：
+  - 本房选项（`RestSiteSynchronizer` VERYDEBUG）：`HealRestSiteOption, SmithRestSiteOption, MendRestSiteOption,
+    CalypsosHappyHour.RestSite.CHHMutualAidRestSiteOption`（第 4 项 = 第三方 mod 加的）；
+  - `瓦库火堆已自动选择: player=…327, option=MEND, hp=63/80, 全员≥50%=True, success=True` **×2**（两次休息区都是 MEND）；
+  - 跨会话（同一个第三方 mod 在场时）：r184 `MEND,MEND`、r188 `CHH_MUTUAL_AID(失败)→SMITH`、r189 `CHH_MUTUAL_AID→SMITH`、
+    r190 `CHH_MUTUAL_AID→SMITH`、r193 `MEND,MEND` ⇒ 分布像**随机**而不是规则。
+- **根因**：`LocalWakuuRestAutoChoice.Decide` 用**补集式**判据识别"遗物提供的额外选项"
+  （`OptionId != SMITH && != MEND` 就算遗物项）⇒ 第三方 `CHH_MUTUAL_AID` 满足该补集 ⇒ 一进房就
+  `return others[random]`，把后面的**锻造优先**与**全员 ≥50% 压制 MEND**两条规则全部短路。
+  排除法证明：该局 `全员≥50%=True` 且瓦库未满血（`everyoneFull=false`）⇒ `Decide` 里能返回 MEND 的其余分支都不成立
+  （低血分支要 <50%；`!everyoneFull && !everyoneHealthy` 被 `everyoneHealthy` 否掉；兜底 MEND 在 HEAL 存在时不可达）。
+  根因链与复现锚点已沉淀为 `references/local-multicontrol-pitfalls.md` **坑 P**。
+- **修法选项（待拍板）**：
+  - **A（推荐）收紧"遗物选项"识别**：判据改成**看选项来源**（类型所在程序集 / 命名空间 = 游戏本体）而不是"不等于三个常量"；
+    第三方/未收录来源的选项按**普通 others** 处理 ⇒ 回到"锻造优先 / 全员≥50% 压制 MEND"的正常决策。
+  - **B**（保守）：保留随机分支，但**全员 ≥50% 时把 MEND 剔出随机池**；代价是第三方选项仍会分走 SMITH 的概率。
+  - **C**：第三方休息区选项一律忽略（既不选也不进池）——第三方选项永远没人选（可能不是用户想要的）。
+- **为什么不立刻改**：R3/R4 期间按 ADR 冻结**玩法行为**改动；且这属"要哪种行为"的偏好问题，需用户一句话拍板。
+- **实机验证要点（改完后）**：同一场景下应看到 `瓦库火堆已自动选择: … option=SMITH`（有非打击/防御可升级牌时），
+  而**不是** `option=MEND, 全员≥50%=True`；`MEND` 只在"有人 <50% 血"时出现。
+
 ---
 
 ## R3 身份收编（席位身份唯一取数入口 `SeatRegistry` / `LocalSeatSource`）
@@ -2603,11 +2628,26 @@ FAIL:    选牌界面串到对家手牌 / 选牌卡住不出结果；奖励领�
   原先误挂在奖励遮挡方法上方，已归位到 `TryGetCombatPlayer`）。
   marker **`2026-09-30-r192`**、`dll_check --deployed` 字节一致（sha256 `209272a156d3…`）、单测仍 776。
 
+- **第四刀（r193，✅ 2026-09-30 实机通过）= 瓦库自动切非瓦库的「每轮名额 + 待处理请求」台账**：新增
+  `Scripts/Runtime/PureLogic/WakuuRoundSwitchLedger.cs` —— 把原先散在 Runtime 字段区、由 5 个方法各自增删的
+  三个静态状态（每轮去重集合 + 待处理请求的回合键/来源）收成一个**可直接单测的台账**：
+  `BuildRoundKey` / `HasSwitched` / `MarkSwitched` / `TryRegisterPending` / `IsPendingValidFor` /
+  `ClearPending` / `Reset`。被钉死的既有语义：
+  ① 名额按「战斗身份 + 回合号」记（换战斗不继承）；② 手动切到瓦库也算用掉名额（r103）；
+  ③ 请求跨回合 / 名额已被别处用掉 ⇒ 自动作废并清空；④ 请求被手动出牌守卫拦住或切换失败 ⇒ **保留**，
+  切成功后由调用方清空。另把「存在活着的瓦库席位且它们全都没牌可出」这一判据从 **3 份逐字副本**
+  收敛为 `AreAllAliveWakuuSeatsWithoutPlayableCard(combatState)`（`TryAutoSwitchFromWakuuWhenAllWakuuNoPlayableCards` /
+  `TryAutoSwitchToNonWakuuOncePerRound` / `TrySwitchToNextOperableNonWakuuPlayerWhenAllWakuuNoPlayableCards` 共用）；
+  `BuildWakuuSwitchRoundKey` 退化为一行委托（键格式逐字不变）。
+  **日志文案与判定顺序逐字保留**（`检测到所有瓦库角色无牌可出…` / `瓦库自动切非瓦库（每回合一次）已触发…` /
+  `已登记瓦库自动切非瓦库请求…` 三条锚点未动）。
+  新增单测 **13 条**（回合键格式 / 名额首次与重复占用 / 登记与"名额已用不登记" / 未指定来源兜底 /
+  命中当前回合可执行且保留 / 切成功后清空 / 跨回合作废 / 名额被别处用掉作废 / 换战斗不继承 / 不同战斗同号互不影响）；
+  单测 **776 → 789**；构建 0 警告 0 错误（**246 .cs**）、静态层 10 PASS（S7 基线不变 366）、
+  marker **`2026-09-30-r193`**、`dll_check --deployed` 字节一致（sha256 `9d7d2dd64bea…`）。
+
 **下一刀候选**（按内聚度 / 风险排序；每刀单独一局实机）
-1. **切换流程剩余部分**（`TryAutoSwitchToNonWakuuOncePerRound` / `RequestAutoSwitchToNonWakuuOncePerRound` /
-   `TryAutoSwitchFromWakuuWhenAllWakuuNoPlayableCards` / `BuildWakuuSwitchRoundKey` + 每轮去重集合）——
-   与第二刀同族，可再收一轮（去重键与"每轮一次"的状态可一并搬出）；
-2. **前台 / 上下文对齐**（`ApplyControlContext` / `AlignContextForActionOwner` /
+1. ~~**切换流程剩余部分**~~ ✅ 第四刀（r193）已收；2. **前台 / 上下文对齐**（`ApplyControlContext` / `AlignContextForActionOwner` /
    `AlignLocalContextToForegroundForEndTurn` / `TryEnsureForegroundForPlayer`）—— 热路径，风险最高，放最后。
 
 **验证契约（请实机，marker `2026-09-30-r190`）**
@@ -2691,3 +2731,44 @@ FAIL:    奖励界面黑屏或不可见、读档后永久黑屏、奖励领不�
 - 我方 WARN 模板对比 r191：本局独有 6 个模板**全是既有族**（看门狗 / 熔断的三种 `reason=` / 药水动画）⇒ 未引入新告警来源。
 - 未直接命中（不影响判定）：`奖励领取按归属角色绑定`（"领取时同步器归属错位"是数据相关场景，本局没出现）、
   `RestSitePatch:62` 的上下文兜底（只在上下文为空时才回退同步器私有字段）—— 两处与已覆盖链路共用同一入口。
+
+**验证契约（请实机，marker `2026-09-30-r193`）**
+```
+改动:    R4 第四刀 —— 瓦库自动切非瓦库的「每轮名额 + 待处理请求」抽成 WakuuRoundSwitchLedger（行为零变化）
+SETUP:   本地多控 2~4 席（真人 + 至少一个瓦库托管席位）；至少打两场战斗（跨战斗不继承名额）
+ACTION:  ① 战斗里让瓦库把牌打光，看是否自动切回非瓦库角色（每回合最多一次）；
+         ② 手动切到瓦库（快捷键）后，看它是否**不再**把你弹回自己（r103 语义）；
+         ③ 打完整场战斗进入下一战斗，看新战斗的第一回合名额是否重置（还能再自动切一次）；
+         ④ 战斗中手动出牌（手动出牌守卫激活）时触发一次切人，看请求是否在守卫解除后仍会执行
+PASS:    与 r192 一致：切人顺序正常、切完能正常出牌；日志锚点照旧出现且语义不变 ——
+         `检测到所有瓦库角色无牌可出，已自动切换到非瓦库角色: from=…`、
+         `瓦库自动切非瓦库（每回合一次）已触发: round=…, from=…, source=…`、
+         `已登记瓦库自动切非瓦库请求: round=…, source=…`、
+         `手动切到瓦库角色，本轮不再因「无牌可出」自动切走: player=…, round=…, source=…`
+FAIL:    同一回合被反复自动切走（名额失效）/ 手动切到瓦库后被立刻弹回（r103 回归）/
+         换战斗后第一回合不再自动切（名额没重置）/ 切人后无法出牌、回合结束按钮不跟随
+期望 0： ### Exception ### / add_child() failed / 我方 NullReferenceException /
+         `战斗角色切换需要至少2名玩家`（人数正常时） / `控制上下文切换回滚` / `自动切前台失败`
+```
+
+**✅ 实机结论（2026-09-30，marker `2026-09-30-r193`，日志 `logs-archive/godot__20260930-215215__r193.log`）⇒ R4 第四刀关单**
+用户「测了一下应该没什么问题」；日志（2.4MB / 18489 行 / 2 席 + 多次读档续玩）复核：
+- **两条走本刀新状态（`MarkSwitched`）的链路都真实走到**：
+  ① `检测到所有瓦库角色无牌可出，已自动切换到非瓦库角色: from=…327` **×2**（L10923 / L11544）——
+  同时覆盖新抽出的判据 `AreAllAliveWakuuSeatsWithoutPlayableCard` 与 `HasSwitched`/`MarkSwitched`；
+  ② `手动切到瓦库角色，本轮不再因「无牌可出」自动切走: player=…327, round=2, source=hotkey:Tab/]/R` **×1**（L12799）
+  —— r103 那条"手动切瓦库也算用掉名额"的语义被正面覆盖。
+- 切人顺序合理、无反复自动切：`切换操控角色(指定)` ×18（按头像点名，不经本策略）、
+  `结束回合后已切换到下一个可出牌角色` ×3（第二刀的 `SwitchTargetPolicy` 路径照旧）。
+- 失败哨兵全 0：`战斗角色切换需要至少2名玩家` 0、`控制上下文切换回滚` / `自动切前台失败` /
+  `尝试设置当前操控角色失败` / `检测到无效战斗角色ID` 全 0；期望 0 全 0。
+- 终态与噪声：`INIT_STATUS=OK`（`INIT_FAILED=0`、`FATAL=0`）、`PATCH_RESULT 25/25·15/15·186`；
+  `[ERROR]` **7** 全为既有（Manosaba/ddu 分支 2 + BetterModMenu 超时 1 + 游戏侧 `was in state Canceled` 4 ——
+  见 §「已知项」条，跨会话历史 0~6，本局 4 属正常，卡名也与我方撤掉的动作无关）；
+  我方 WARN 模板对比 r192：**本局独有 6 个模板全是既有族**（看门狗 / 手牌差异 / 药水动画 / 休息区选项执行失败）
+  ⇒ 未引入新告警来源。
+- **未覆盖（非失败）**：`已登记瓦库自动切非瓦库请求` / `瓦库自动切非瓦库（每回合一次）已触发` **0 条**
+  ⇒ "延迟请求"那条路径（`TryRegisterPending` / `IsPendingValidFor` / `ClearPending`）本局没走到；
+  该路径的语义已由新加的 13 条单测钉死，留待下次自然覆盖。
+- **同局新发现（与本刀无关）**：瓦库休息区一直选 `MEND` —— 已定性为 **BUG-27**（第三方休息区选项被当成"遗物选项"⇒
+  决策退化成随机），**待拍板**，本刀不改。
