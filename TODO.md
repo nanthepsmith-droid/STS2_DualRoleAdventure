@@ -2593,13 +2593,21 @@ FAIL:    选牌界面串到对家手牌 / 选牌卡住不出结果；奖励领�
   当前不在列表时首席被当作当前而排除 —— 这条是原实现的既有行为，刻意钉住）；
   单测 **769 → 776**；marker **`2026-09-30-r191`**、`dll_check --deployed` 字节一致（sha256 `d852efe324d6…`）。
 
+- **第三刀（r192，✅ 2026-09-30 实机通过）= 奖励遮挡 / 读档转场黑幕的检查与诊断**：新增 `Scripts/Runtime/LocalOverlayDiagnostics.cs`
+  —— 搬走 `EnsureOverlayNotCoveredForRewards`（奖励弹出前关掉还开着的地图界面，防 `NOverlayStack` 把弹层
+  `Visible=false` 造成黑屏）、`IsLoadReplayTransitionCovering`（读档重放黑幕遮盖期判定）、
+  `DumpControlVisibilityChain`（控件可见性链）、`DumpTransitionOverlayState` + `CollectTransitionNodes`（转场节点扫描）；
+  **全部方法自带 try/catch、失败只打日志**（与原实现逐字一致），唯一副作用是"顺手关地图"。
+  8 处外部调用点（`RewardsSetPatch` 3 处 / `CombatRoomOfferRoomEndRewardsPatch` 5 处）改走新单元；
+  Runtime 净减 **~154 行**；顺带修好一处**文档错位**（"按玩家ID解析当前战斗中的 Player"那段 summary
+  原先误挂在奖励遮挡方法上方，已归位到 `TryGetCombatPlayer`）。
+  marker **`2026-09-30-r192`**、`dll_check --deployed` 字节一致（sha256 `209272a156d3…`）、单测仍 776。
+
 **下一刀候选**（按内聚度 / 风险排序；每刀单独一局实机）
-1. **弹层 / 转场诊断与兜底**（`DumpControlVisibilityChain` / `DumpTransitionOverlayState` / `CollectTransitionNodes` /
-   `EnsureOverlayNotCoveredForRewards` / `IsLoadReplayTransitionCovering`）—— 自包含、低风险；
-2. **切换流程剩余部分**（`TryAutoSwitchToNonWakuuOncePerRound` / `RequestAutoSwitchToNonWakuuOncePerRound` /
+1. **切换流程剩余部分**（`TryAutoSwitchToNonWakuuOncePerRound` / `RequestAutoSwitchToNonWakuuOncePerRound` /
    `TryAutoSwitchFromWakuuWhenAllWakuuNoPlayableCards` / `BuildWakuuSwitchRoundKey` + 每轮去重集合）——
    与第二刀同族，可再收一轮（去重键与"每轮一次"的状态可一并搬出）；
-3. **前台 / 上下文对齐**（`ApplyControlContext` / `AlignContextForActionOwner` /
+2. **前台 / 上下文对齐**（`ApplyControlContext` / `AlignContextForActionOwner` /
    `AlignLocalContextToForegroundForEndTurn` / `TryEnsureForegroundForPlayer`）—— 热路径，风险最高，放最后。
 
 **验证契约（请实机，marker `2026-09-30-r190`）**
@@ -2658,5 +2666,28 @@ FAIL:    切人跳错人 / 切到已结束回合或已阵亡的角色 / 切人�
   NRE **12 条全是第三方 `RitsuLib`**（本局**没有**游戏侧/我方 NRE）。
 - 未直接命中（不影响判定）：`结束回合后优先切换到可操作非瓦库角色` 0 —— 该分支要求"瓦库席位全部无牌可出"，
   是数据相关场景，本局没出现（与第二刀改动的同一策略 `CandidateOrder`，已被上面那条覆盖）。
+
+**验证契约（请实机，marker `2026-09-30-r192`）**
+```
+改动:    R4 第三刀 —— 奖励遮挡 / 读档转场黑幕的检查与诊断抽成 LocalOverlayDiagnostics（行为零变化）
+SETUP:   本地多控 2~4 席；一局里至少领一次战后奖励、进一次商店/事件
+ACTION:  正常玩：战后领奖励（瓦库自动领 + 真人手动领）、开一次地图再回奖励界面、读档续玩一次
+PASS:    与 r191 一致：奖励界面正常弹出可见、`奖励遮挡检查(source): mapOpen=…, capstoneInUse=…` 照旧出现；
+         读档后不黑屏（必要时才出现 `可见性诊断(...)` / `转场扫描(...)`）；瓦库照常领奖 / 出牌
+FAIL:    奖励界面黑屏或不可见、读档后永久黑屏、奖励领不到（这正是本单元要防的症状）
+期望 0： ### Exception ### / add_child() failed / 我方 NullReferenceException / `奖励遮挡检查异常` / `可见性诊断异常` / `转场扫描异常`
+```
+
+**✅ 实机结论（2026-09-30，marker `2026-09-30-r192`，日志 `logs-archive/godot__20260930-210103__r192.log`）⇒ R4 第三刀关单**
+2 席、一局里**读档 2 次**（读档窗口开/关各 2，时长 1453ms / 1296ms）、三场奖励流程：
+- **抽出来的三条诊断全部被真实调用 3 次**，且数值就是"健康态"：
+  `奖励遮挡检查(merged-rewards-offer-room-end): mapOpen=False, capstoneInUse=False` ×3；
+  `可见性诊断(...): NRewardsScreen[RewardsScreen] Visible=True ModulateA=1.00 …` ×3（奖励界面确实可见）；
+  `转场扫描(...): NTransition Visible=True ModulateA=1.00 SimpleA=0.00 GradientA=0.00` ×3（黑幕透明 ⇒ 没遮住）。
+- **三条诊断自身的异常哨兵全 0**（`奖励遮挡检查异常` / `可见性诊断异常` / `转场扫描异常`）—— 抽出来后 try/catch 口径没变。
+- 奖励链路正常：`奖励-拿牌归属玩家: context=…, syncLocal=…` **8 条**（两侧一致）、`瓦库卡牌奖励已自动领取` 3；
+  读档后无黑屏（用户继续游玩）；期望 0 全 0；`PATCH_RESULT` 与 r191 逐字相同。
+- 噪声极少：`[ERROR]` **3**（Manosaba/ddu 分支 2 + BetterModMenu 超时 1，连游戏侧存档删除失败都没出现）。
+- 我方 WARN 模板对比 r191：本局独有 6 个模板**全是既有族**（看门狗 / 熔断的三种 `reason=` / 药水动画）⇒ 未引入新告警来源。
 - 未直接命中（不影响判定）：`奖励领取按归属角色绑定`（"领取时同步器归属错位"是数据相关场景，本局没出现）、
   `RestSitePatch:62` 的上下文兜底（只在上下文为空时才回退同步器私有字段）—— 两处与已覆盖链路共用同一入口。
