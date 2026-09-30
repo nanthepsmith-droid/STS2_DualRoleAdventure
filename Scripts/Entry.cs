@@ -14,8 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // R4 第二刀（r191）：战斗内切人的目标选择数学提纯为 SwitchTargetPolicy + 单测
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-09-30-r191)";
+    // R4 第三刀（r192）：奖励遮挡 / 读档转场黑幕的检查与诊断抽成 LocalOverlayDiagnostics
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-09-30-r192)";
 
     private static Harmony? _harmony;
 

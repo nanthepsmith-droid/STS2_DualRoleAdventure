@@ -54,11 +54,11 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
         // 读档重放路径（PreFinished 战斗房在转场黑幕遮盖下进入）：若同步等待玩家领奖，
         // 会阻塞 LoadRun→FadeIn 链导致永久黑屏。改为后台执行合并奖励流程，立即返回
         // 完成信号，与原版 reward.Offer() 的 fire-and-forget 语义保持一致。
-        if (__instance.IsPreFinished || LocalMultiControlRuntime.IsLoadReplayTransitionCovering())
+        if (__instance.IsPreFinished || LocalOverlayDiagnostics.IsLoadReplayTransitionCovering())
         {
             LocalMultiControlLogger.Info(
                 $"读档重放路径检测到战后奖励，转为后台弹出: room={__instance.RoomType}, "
-                + $"isPreFinished={__instance.IsPreFinished}, transitionCovering={LocalMultiControlRuntime.IsLoadReplayTransitionCovering()}");
+                + $"isPreFinished={__instance.IsPreFinished}, transitionCovering={LocalOverlayDiagnostics.IsLoadReplayTransitionCovering()}");
             __result = Task.CompletedTask;
             TaskHelper.RunSafely(OfferMergedRewardsGeneratedOnceAsync(__instance));
             return false;
@@ -264,13 +264,13 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
         // 自建的展示集必须显式登记到同步器（原版 Offer() 内部会做这一步），
         // 否则 Id 停在 -1，奖励屏退出时 NRewardsScreen 会报后端未完成
         CombatRewardMergeContext.BeginDisplaySet(displaySet);
-        LocalMultiControlRuntime.EnsureOverlayNotCoveredForRewards("merged-rewards-offer-room-end");
+        LocalOverlayDiagnostics.EnsureOverlayNotCoveredForRewards("merged-rewards-offer-room-end");
         NRewardsScreen rewardScreen = NRewardsScreen.ShowScreen(displaySet, isTerminal, displayPlayer.RunState);
-        LocalMultiControlRuntime.DumpControlVisibilityChain(rewardScreen, "merged-rewards-offer-room-end");
+        LocalOverlayDiagnostics.DumpControlVisibilityChain(rewardScreen, "merged-rewards-offer-room-end");
         Callable.From(delegate
         {
             // 延迟一帧再扫，捕捉"弹出后被转场层盖住"的时序。
-            LocalMultiControlRuntime.DumpTransitionOverlayState("merged-rewards-offer-room-end");
+            LocalOverlayDiagnostics.DumpTransitionOverlayState("merged-rewards-offer-room-end");
         }).CallDeferred();
         await rewardScreen.ToSignal(rewardScreen, NRewardsScreen.SignalName.Completed);
         CombatRewardMergeContext.CompleteDisplaySet(displaySet, "merged-rewards-offer-room-end");

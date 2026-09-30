@@ -101,7 +101,7 @@ internal static class RewardsSetPatch
                 return;
             }
 
-            LocalMultiControlRuntime.EnsureOverlayNotCoveredForRewards("merged-rewards-offer-from-rewardsset");
+            LocalOverlayDiagnostics.EnsureOverlayNotCoveredForRewards("merged-rewards-offer-from-rewardsset");
             CombatRewardMergeContext.BeginDisplaySet(displaySet);
             NRewardsScreen rewardScreen = NRewardsScreen.ShowScreen(displaySet, isTerminal: true, displayPlayer.RunState);
             await rewardScreen.ToSignal(rewardScreen, NRewardsScreen.SignalName.Completed);
@@ -191,11 +191,11 @@ internal static class RewardsSetPatch
             return;
         }
 
-        LocalMultiControlRuntime.EnsureOverlayNotCoveredForRewards("rewards-offer-local");
+        LocalOverlayDiagnostics.EnsureOverlayNotCoveredForRewards("rewards-offer-local");
         NRewardsScreen.ShowScreen(rewardsSet, isTerminal, rewardsSet.Player.RunState);
         // 读档重放窗口内不能等待玩家操作（会阻塞 LoadRun→FadeIn 导致永久黑屏），
         // 奖励界面交由其自身流程管理，立即返回。
-        if (LocalMultiControlRuntime.IsLoadReplayTransitionCovering())
+        if (LocalOverlayDiagnostics.IsLoadReplayTransitionCovering())
         {
             LocalMultiControlLogger.Info("读档重放路径检测到非战斗奖励，跳过同步等待。");
             return;
