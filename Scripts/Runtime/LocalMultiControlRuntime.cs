@@ -1391,14 +1391,14 @@ internal static class LocalMultiControlRuntime
         }
 
         ulong currentPlayerId = Session.CurrentControlledPlayerId ?? LocalContext.NetId ?? combatPlayerIds[0];
-        int currentIndex = combatPlayerIds.IndexOf(currentPlayerId);
-        if (currentIndex < 0)
+        // R4 第二刀：下标解析与"±1 步"的取模提成纯逻辑（SwitchTargetPolicy，可单测）。
+        ulong? singleStepTarget = SwitchTargetPolicy.SingleStep(combatPlayerIds, currentPlayerId, next);
+        if (singleStepTarget == null)
         {
-            currentIndex = 0;
+            return false;
         }
 
-        int targetIndex = (currentIndex + (next ? 1 : combatPlayerIds.Count - 1)) % combatPlayerIds.Count;
-        ulong targetPlayerId = combatPlayerIds[targetIndex];
+        ulong targetPlayerId = singleStepTarget.Value;
         if (targetPlayerId == currentPlayerId)
         {
             return false;
@@ -1439,16 +1439,9 @@ internal static class LocalMultiControlRuntime
             return false;
         }
 
-        int currentIndex = combatPlayerIds.IndexOf(currentPlayerId);
-        if (currentIndex < 0)
+        // R4 第二刀：环形候选顺序提成纯逻辑（SwitchTargetPolicy，可单测）；游戏侧判据仍留在循环里。
+        foreach (ulong targetPlayerId in SwitchTargetPolicy.CandidateOrder(combatPlayerIds, currentPlayerId))
         {
-            currentIndex = 0;
-        }
-
-        for (int offset = 1; offset < combatPlayerIds.Count; offset++)
-        {
-            int targetIndex = (currentIndex + offset) % combatPlayerIds.Count;
-            ulong targetPlayerId = combatPlayerIds[targetIndex];
             Player? targetPlayer = combatState.GetPlayer(targetPlayerId);
             if (targetPlayer?.Creature == null || !targetPlayer.Creature.IsAlive)
             {
@@ -1504,16 +1497,9 @@ internal static class LocalMultiControlRuntime
             return false;
         }
 
-        int currentIndex = combatPlayerIds.IndexOf(currentPlayerId);
-        if (currentIndex < 0)
+        // R4 第二刀：环形候选顺序提成纯逻辑（SwitchTargetPolicy，可单测）；游戏侧判据仍留在循环里。
+        foreach (ulong targetPlayerId in SwitchTargetPolicy.CandidateOrder(combatPlayerIds, currentPlayerId))
         {
-            currentIndex = 0;
-        }
-
-        for (int offset = 1; offset < combatPlayerIds.Count; offset++)
-        {
-            int targetIndex = (currentIndex + offset) % combatPlayerIds.Count;
-            ulong targetPlayerId = combatPlayerIds[targetIndex];
             Player? targetPlayer = combatState.GetPlayer(targetPlayerId);
             if (targetPlayer?.Creature == null || !targetPlayer.Creature.IsAlive)
             {

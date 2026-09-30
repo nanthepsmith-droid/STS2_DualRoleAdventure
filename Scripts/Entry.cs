@@ -14,8 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // R3 收口（B1c 已评估不做）+ R4 第一刀：Run 级同步器"本地玩家"对齐抽成独立职责（r190）
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-09-30-r190)";
+    // R4 第二刀（r191）：战斗内切人的目标选择数学提纯为 SwitchTargetPolicy + 单测
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-09-30-r191)";
 
     private static Harmony? _harmony;
 
