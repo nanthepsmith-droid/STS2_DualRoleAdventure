@@ -307,6 +307,8 @@ internal static class LocalSelfCoopContext
             return false;
         }
 
+        // R3 B5 复核：这是席位表的**源级**谓词（"存档里的玩家是否就是这张席位表"），在来源类内部
+        // 直接用 `_localPlayerIds` 属预期；消费方的身份判定一律走 `LocalSeatSource`（B1b 已收编）。
         return _localPlayerIds
             .Take(_desiredLocalPlayerCount)
             .All((playerId) => run.Players.Any((player) => player.NetId == playerId));
@@ -557,6 +559,7 @@ internal static class LocalSelfCoopContext
             return false;
         }
 
+        // R3 B5 复核：意图缓存比较（事件 owner ↔ 刚记录的待切换席位），不是身份判定 ⇒ 不走 `LocalSeatSource`。
         if (!eventModel.IsFinished || eventModel.Owner.NetId != _pendingEventAutoSwitchPlayerId.Value)
         {
             return false;

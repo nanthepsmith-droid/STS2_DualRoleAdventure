@@ -54,6 +54,8 @@ internal static class ProgressSaveManagerUpdateWithRunDataPatch
                 return;
             }
 
+            // R3 B5 复核：这里问的是**平台身份**（平台 API 认定的本机玩家），不是席位表身份 ——
+            // 口径已统一在纯逻辑 `RunProgressLocalPlayerPolicy.Decide(...)`（r155），刻意不接 `LocalSeatSource`。
             PlatformType original = serializableRun!.PlatformType;
             ulong localId = PlatformUtil.GetLocalPlayerId(original);
             PlatformType primary = PlatformUtil.PrimaryPlatform;

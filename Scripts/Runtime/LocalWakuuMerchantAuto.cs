@@ -108,7 +108,8 @@ internal static class LocalWakuuMerchantAuto
 
     private static async Task RunAsync(MerchantRoom room, Player player)
     {
-        ulong? previousNetId = LocalContext.NetId;
+        // R3 B4：钉扎前保存原值走唯一取数入口（读侧；写侧与还原照旧）。
+        ulong? previousNetId = LocalSeatSource.ContextSeatId();
         try
         {
             await Task.Delay(ReadyDelayMs);

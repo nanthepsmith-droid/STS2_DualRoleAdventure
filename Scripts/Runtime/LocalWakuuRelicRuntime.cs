@@ -939,7 +939,8 @@ internal static class LocalWakuuRelicRuntime
         ICombatState combatState,
         string source)
     {
-        ulong? previousNetId = LocalContext.NetId;
+        // R3 B4：钉扎前保存原值走唯一取数入口（读侧；写侧 `:995` 与还原 `:1041` 照旧）。
+        ulong? previousNetId = LocalSeatSource.ContextSeatId();
         ulong previousSenderId = LocalSelfCoopContext.NetService?.NetId ?? 0UL;
         bool hasNetService = LocalSelfCoopContext.NetService != null;
         // 只有真的钉过上下文才还原（并发出牌档不钉，见下方说明）—— 避免并发下把别人刚设好的值"还原"掉。

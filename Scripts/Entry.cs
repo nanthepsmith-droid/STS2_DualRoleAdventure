@@ -14,8 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // R3 B3（r188）：反射 `_localPlayerId` 读写收编到唯一入口 `SynchronizerLocalPlayerId`
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-09-30-r188)";
+    // R3 B4/B5（r189）：route ① 剩余读点收编 + 选牌/存档域的"非身份判定"点定性
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-09-30-r189)";
 
     private static Harmony? _harmony;
 

@@ -236,6 +236,7 @@ internal sealed class LocalLoopbackHostGameService : INetHostGameService
         }
 
         int dispatchCount = 0;
+        // R3 B4 复核：这是"枚举除主席位以外的玩家"（两两比较），不是身份判定 ⇒ 不走 `LocalSeatSource`。
         foreach (var player in runState.Players.Where((candidate) => candidate.NetId != LocalSelfCoopContext.PrimaryPlayerId))
         {
             SyncPlayerDataMessage syntheticMessage = new()
@@ -254,6 +255,8 @@ internal sealed class LocalLoopbackHostGameService : INetHostGameService
 
     private void AlignSenderWithLocalContext()
     {
+        // R3 B4 复核：回环服务**自身就是"上下文"的载体**（把 sender 对齐到上下文），属来源自身、
+        // 不能自己问自己 ⇒ 保持直接读写 `LocalContext.NetId`。
         if (LocalContext.NetId.HasValue && LocalContext.NetId.Value != _currentSenderId)
         {
             SetCurrentSenderId(LocalContext.NetId.Value);

@@ -59,7 +59,8 @@ internal static class RestSiteSynchronizerChooseLocalOptionPatch
 
     private static async Task<bool> WrapChooseLocalOptionAsync(RestSiteSynchronizer synchronizer, int optionIndex, Task<bool> originalTask)
     {
-        ulong? localPlayerId = LocalContext.NetId;
+        // R3 B4：回环上下文读侧走唯一取数入口（等价旧写法 `LocalContext.NetId`）；取不到再回退同步器私有字段。
+        ulong? localPlayerId = LocalSeatSource.ContextSeatId();
         if (!localPlayerId.HasValue)
         {
             localPlayerId = ReadLocalPlayerIdFromSynchronizer(synchronizer);

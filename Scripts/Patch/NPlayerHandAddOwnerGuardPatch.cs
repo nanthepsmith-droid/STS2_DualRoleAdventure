@@ -50,6 +50,8 @@ internal static class NPlayerHandAddOwnerGuardPatch
             return true;
         }
 
+        // R3 B4 复核：这是**两两比较**（卡片主人 ↔ 本次选牌主人），不是"这个 id 是不是我们席位"的判定
+        // ⇒ 刻意不走 `LocalSeatSource`（选牌主人本身已由 ResolveSelectionOwnerId 过滤过本地席位）。
         if (model.Owner.NetId == selectionOwner.Value)
         {
             return true; // 选牌 owner 自己的牌正常加入

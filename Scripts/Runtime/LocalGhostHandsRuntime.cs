@@ -356,6 +356,7 @@ internal sealed partial class LocalGhostHandsOverlay : Control
             return;
         }
 
+        // R3 B4 复核：`!=` 是"排除自己"的枚举条件（两两比较），不是身份判定 ⇒ 不走 `LocalSeatSource`。
         List<Player> others = runState.Players
             .Where((player) => player.NetId != localNetId.Value)
             .ToList();

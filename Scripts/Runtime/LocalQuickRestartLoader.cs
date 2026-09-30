@@ -60,6 +60,7 @@ internal static class LocalQuickRestartLoader
             game.RemoteCursorContainer.Initialize(lobby.InputSynchronizer, lobby.PlayerIds);
             game.ReactionContainer.InitializeNetworking(netService);
 
+            // R3 B5 复核：按主席位 id 在存档里**查人**（lookup 型两两比较），不是身份判定 ⇒ 不走 `LocalSeatSource`。
             SerializablePlayer localPlayer = saveData.Players.First((player) => player.NetId == primaryPlayerId);
             if (localPlayer.CharacterId != null)
             {

@@ -82,7 +82,8 @@ internal static class RewardsSetSynchronizerSelectLocalRewardPatch
         __state.Synchronizer = __instance;
         __state.IsPatched = true;
         __state.PreviousSyncLocalId = syncLocalId.Value;
-        __state.PreviousContextNetId = LocalContext.NetId;
+        // R3 B4：钉扎前保存原值走唯一取数入口（读侧；写侧与还原照旧）。
+        __state.PreviousContextNetId = LocalSeatSource.ContextSeatId();
         __state.PreviousSenderId = loopback.NetId;
 
         SynchronizerLocalPlayerId.TryWrite(__instance, typeof(RewardsSetSynchronizer), ownerId);

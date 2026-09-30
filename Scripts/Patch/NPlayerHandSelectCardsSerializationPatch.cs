@@ -108,7 +108,8 @@ internal static class NPlayerHandSelectCardsSerializationPatch
                 // （CardPileCmd.AddGeneratedCardsToCombat 进 526 手牌），而 CardPileCmd.GetTweenForCardsChangingPiles
                 // 的视觉门用 LocalContext.IsMe(card.Owner) 判断是否创建卡牌节点；若 NetId 此刻不是选牌 owner，
                 // 526 的牌会被误判为"本人"创建节点并加进当前（527 的）选牌 UI，导致 527 能选到 526 手牌里的牌。
-                previousNetId = LocalContext.NetId;
+                // R3 B4：钉扎前保存原值走唯一取数入口（读侧；写侧与还原照旧 —— 上下文本身就是这个来源）。
+                previousNetId = LocalSeatSource.ContextSeatId();
                 LocalContext.NetId = ownerId.Value;
                 netIdPinned = true;
 
