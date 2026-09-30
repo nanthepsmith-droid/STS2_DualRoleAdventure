@@ -42,7 +42,6 @@ internal static class LocalMultiControlRuntime
 
     private static readonly HashSet<string> _wakuuAutoEndIssued = new HashSet<string>();
     private static readonly HashSet<int> _allPlayersAutoEndedRounds = new HashSet<int>();
-    private static readonly HashSet<string> _wakuuToNonWakuuSwitchedRounds = new HashSet<string>();
     private static readonly Dictionary<string, int> _watchdogScheduleRejectCounts = new Dictionary<string, int>();
     private static readonly Dictionary<string, int> _flowBlockSignalCounts = new Dictionary<string, int>();
     private static readonly HashSet<string> _flowBlockSignalDedupeRoundPlayer = new HashSet<string>();
@@ -57,8 +56,6 @@ internal static class LocalMultiControlRuntime
     private static ulong _watchdogScheduleLastPlayerId;
     private static int _watchdogScheduleLastRound = -1;
     private static string _watchdogScheduleLastSource = "none";
-    private static string? _pendingWakuuAutoSwitchRoundKey;
-    private static string? _pendingWakuuAutoSwitchSource;
     private static ulong? _pendingManualEndTurnPlayerId;
     private static int _pendingManualEndTurnRound = -1;
 
@@ -144,11 +141,9 @@ internal static class LocalMultiControlRuntime
         Session.Reset("RunManager.CleanUp");
         _wakuuAutoEndIssued.Clear();
         _allPlayersAutoEndedRounds.Clear();
-        _wakuuToNonWakuuSwitchedRounds.Clear();
+        WakuuRoundSwitchLedger.Reset();
         WakuuTurnEndOrigin.ResetForCombat();
         _lastAutoEndCombatIdentity = -1;
-        _pendingWakuuAutoSwitchRoundKey = null;
-        _pendingWakuuAutoSwitchSource = null;
         _pendingManualEndTurnPlayerId = null;
         _pendingManualEndTurnRound = -1;
         _watchdogScheduleRejectCounts.Clear();
@@ -257,7 +252,7 @@ internal static class LocalMultiControlRuntime
         }
 
         RefreshAutoEndTrackingForCombat(combatState);
-        if (_wakuuToNonWakuuSwitchedRounds.Add(BuildWakuuSwitchRoundKey(combatState.RoundNumber)))
+        if (WakuuRoundSwitchLedger.MarkSwitched(BuildWakuuSwitchRoundKey(combatState.RoundNumber)))
         {
             LocalMultiControlLogger.Info(
                 $"手动切到瓦库角色，本轮不再因「无牌可出」自动切走: player={playerId}, "
@@ -510,11 +505,9 @@ internal static class LocalMultiControlRuntime
         _lastAutoEndCombatIdentity = combatIdentity;
         _wakuuAutoEndIssued.Clear();
         _allPlayersAutoEndedRounds.Clear();
-        _wakuuToNonWakuuSwitchedRounds.Clear();
-        // 回合号只在战斗内有意义 → 换战斗时清空"谁结束了这一位"的归因表。
+        // 回合号只在战斗内有意义 → 换战斗时清空"每回合一次"的名额与待处理请求，以及"谁结束了这一位"的归因表。
+        WakuuRoundSwitchLedger.Reset();
         WakuuTurnEndOrigin.ResetForCombat();
-        _pendingWakuuAutoSwitchRoundKey = null;
-        _pendingWakuuAutoSwitchSource = null;
         _pendingManualEndTurnPlayerId = null;
         _pendingManualEndTurnRound = -1;
         _lastEndTurnReconcileAttemptMs = 0L;
@@ -1012,28 +1005,7 @@ internal static class LocalMultiControlRuntime
             return false;
         }
 
-        bool hasWakuuPlayer = false;
-        foreach (Player player in combatState.Players)
-        {
-            if (player?.Creature == null || !player.Creature.IsAlive)
-            {
-                continue;
-            }
-
-            if (!LocalSelfCoopContext.IsWakuuEnabled(player.NetId))
-            {
-                continue;
-            }
-
-            hasWakuuPlayer = true;
-            bool hasPlayableCards = PileType.Hand.GetPile(player).Cards.Any((card) => card.CanPlay());
-            if (hasPlayableCards)
-            {
-                return false;
-            }
-        }
-
-        if (!hasWakuuPlayer)
+        if (!AreAllAliveWakuuSeatsWithoutPlayableCard(combatState))
         {
             return false;
         }
@@ -1041,10 +1013,35 @@ internal static class LocalMultiControlRuntime
         return TrySwitchToNextOperableNonWakuuPlayer(currentPlayerId, source);
     }
 
+    /// <summary>
+    /// 「存在活着的瓦库席位，且这些席位当刻**全都无牌可出**」——切换流程三处判定共用（R4 第四刀去重）。
+    /// 没有瓦库席位 / 瓦库都死了 / 有任一瓦库还有可出牌 ⇒ false（即不该走"瓦库无牌可出"的兜底）。
+    /// 只看瓦库席位：真人席位有没有牌不在这里判。
+    /// </summary>
+    private static bool AreAllAliveWakuuSeatsWithoutPlayableCard(CombatState combatState)
+    {
+        bool hasAliveWakuu = false;
+        foreach (Player player in combatState.Players)
+        {
+            if (player?.Creature == null || !player.Creature.IsAlive || !LocalSelfCoopContext.IsWakuuEnabled(player.NetId))
+            {
+                continue;
+            }
+
+            hasAliveWakuu = true;
+            if (PileType.Hand.GetPile(player).Cards.Any((card) => card.CanPlay()))
+            {
+                return false;
+            }
+        }
+
+        return hasAliveWakuu;
+    }
+
     private static bool TryAutoSwitchFromWakuuWhenAllWakuuNoPlayableCards(CombatState combatState, string source)
     {
         string roundKey = BuildWakuuSwitchRoundKey(combatState.RoundNumber);
-        if (_wakuuToNonWakuuSwitchedRounds.Contains(roundKey))
+        if (WakuuRoundSwitchLedger.HasSwitched(roundKey))
         {
             return false;
         }
@@ -1055,23 +1052,7 @@ internal static class LocalMultiControlRuntime
             return false;
         }
 
-        bool hasAliveWakuu = false;
-        foreach (Player player in combatState.Players)
-        {
-            if (player?.Creature == null || !player.Creature.IsAlive || !LocalSelfCoopContext.IsWakuuEnabled(player.NetId))
-            {
-                continue;
-            }
-
-            hasAliveWakuu = true;
-            bool hasPlayableCards = PileType.Hand.GetPile(player).Cards.Any((card) => card.CanPlay());
-            if (hasPlayableCards)
-            {
-                return false;
-            }
-        }
-
-        if (!hasAliveWakuu)
+        if (!AreAllAliveWakuuSeatsWithoutPlayableCard(combatState))
         {
             return false;
         }
@@ -1079,7 +1060,7 @@ internal static class LocalMultiControlRuntime
         bool switched = TrySwitchToNextOperableNonWakuuPlayer(currentPlayerId, source);
         if (switched)
         {
-            _wakuuToNonWakuuSwitchedRounds.Add(roundKey);
+            WakuuRoundSwitchLedger.MarkSwitched(roundKey);
             LocalMultiControlLogger.Info($"检测到所有瓦库角色无牌可出，已自动切换到非瓦库角色: from={currentPlayerId}");
         }
 
@@ -1107,7 +1088,7 @@ internal static class LocalMultiControlRuntime
 
         RefreshAutoEndTrackingForCombat(combatState);
         string roundKey = BuildWakuuSwitchRoundKey(combatState.RoundNumber);
-        if (_wakuuToNonWakuuSwitchedRounds.Contains(roundKey))
+        if (WakuuRoundSwitchLedger.HasSwitched(roundKey))
         {
             return false;
         }
@@ -1118,22 +1099,7 @@ internal static class LocalMultiControlRuntime
             return false;
         }
 
-        bool hasAliveWakuu = false;
-        foreach (Player player in combatState.Players)
-        {
-            if (player?.Creature == null || !player.Creature.IsAlive || !LocalSelfCoopContext.IsWakuuEnabled(player.NetId))
-            {
-                continue;
-            }
-
-            hasAliveWakuu = true;
-            if (PileType.Hand.GetPile(player).Cards.Any((card) => card.CanPlay()))
-            {
-                return false;
-            }
-        }
-
-        if (!hasAliveWakuu)
+        if (!AreAllAliveWakuuSeatsWithoutPlayableCard(combatState))
         {
             return false;
         }
@@ -1144,7 +1110,7 @@ internal static class LocalMultiControlRuntime
             return false;
         }
 
-        _wakuuToNonWakuuSwitchedRounds.Add(roundKey);
+        WakuuRoundSwitchLedger.MarkSwitched(roundKey);
         LocalMultiControlLogger.Info($"瓦库自动切非瓦库（每回合一次）已触发: round={combatState.RoundNumber}, from={currentPlayerId}, source={source}");
         return true;
     }
@@ -1165,13 +1131,11 @@ internal static class LocalMultiControlRuntime
 
         RefreshAutoEndTrackingForCombat(combatState);
         string roundKey = BuildWakuuSwitchRoundKey(combatState.RoundNumber);
-        if (_wakuuToNonWakuuSwitchedRounds.Contains(roundKey))
+        if (!WakuuRoundSwitchLedger.TryRegisterPending(roundKey, source))
         {
             return;
         }
 
-        _pendingWakuuAutoSwitchRoundKey = roundKey;
-        _pendingWakuuAutoSwitchSource = source;
         LocalMultiControlLogger.Info($"已登记瓦库自动切非瓦库请求: round={combatState.RoundNumber}, source={source}");
     }
 
@@ -1381,7 +1345,8 @@ internal static class LocalMultiControlRuntime
 
     private static string BuildWakuuSwitchRoundKey(int roundNumber)
     {
-        return $"{_lastAutoEndCombatIdentity}:{roundNumber}";
+        // 回合键 = 战斗身份 + 回合号（格式与原实现逐字一致，见 WakuuRoundSwitchLedger.BuildRoundKey）。
+        return WakuuRoundSwitchLedger.BuildRoundKey(_lastAutoEndCombatIdentity, roundNumber);
     }
 
     private static bool TryConsumeManualEndTurnIntent(ulong endedPlayerId)
@@ -1417,39 +1382,26 @@ internal static class LocalMultiControlRuntime
     private static void TryConsumePendingWakuuAutoSwitch(CombatState combatState)
     {
         string currentRoundKey = BuildWakuuSwitchRoundKey(combatState.RoundNumber);
-        if (_pendingWakuuAutoSwitchRoundKey == null)
+        // 台账负责"无请求 / 跨回合作废 / 名额已用"三种作废判定；命中则保留请求等下一步执行。
+        if (!WakuuRoundSwitchLedger.IsPendingValidFor(currentRoundKey))
         {
-            return;
-        }
-
-        if (_pendingWakuuAutoSwitchRoundKey != currentRoundKey)
-        {
-            _pendingWakuuAutoSwitchRoundKey = null;
-            _pendingWakuuAutoSwitchSource = null;
-            return;
-        }
-
-        if (_wakuuToNonWakuuSwitchedRounds.Contains(currentRoundKey))
-        {
-            _pendingWakuuAutoSwitchRoundKey = null;
-            _pendingWakuuAutoSwitchSource = null;
             return;
         }
 
         if (LocalManualPlayGuard.IsActive)
         {
+            // 玩家正在手动打牌 → 先不动，请求保留（开关条件消失后下一 tick 再消费）。
             return;
         }
 
-        string source = _pendingWakuuAutoSwitchSource ?? "wakuu-pending";
-        bool switched = TryAutoSwitchToNonWakuuOncePerRound($"{source}-retry");
+        bool switched = TryAutoSwitchToNonWakuuOncePerRound($"{WakuuRoundSwitchLedger.PendingSource}-retry");
         if (!switched)
         {
+            // 切换失败 ⇒ 请求保留，后续 tick 继续尝试（原实现口径）。
             return;
         }
 
-        _pendingWakuuAutoSwitchRoundKey = null;
-        _pendingWakuuAutoSwitchSource = null;
+        WakuuRoundSwitchLedger.ClearPending();
     }
 
     private static CombatState? TryGetCombatState(NCombatUi combatUi)

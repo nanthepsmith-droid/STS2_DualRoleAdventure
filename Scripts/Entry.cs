@@ -14,8 +14,9 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // R4 第三刀（r192）：奖励遮挡 / 读档转场黑幕的检查与诊断抽成 LocalOverlayDiagnostics
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-09-30-r192)";
+    // R4 第四刀（r193）：瓦库自动切非瓦库的「每轮名额 + 待处理请求」抽成 WakuuRoundSwitchLedger，
+    // 并把"活着的瓦库全都没牌可出"这一判据从三份副本收敛成一份
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-09-30-r193)";
 
     private static Harmony? _harmony;
 
