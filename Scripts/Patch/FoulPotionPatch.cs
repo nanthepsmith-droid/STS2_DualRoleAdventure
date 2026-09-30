@@ -22,7 +22,7 @@ namespace LocalMultiControl.Scripts.Patch;
 /// <summary>
 /// 修复：假商人（商人？？？）事件里只有 1 号位角色能扔浑浊药水（污浊药水），2 号位点了没反应。
 /// 根因：本 mod 切人时会把 EventSynchronizer._localPlayerId 同步成当前前台角色
-/// （LocalMultiControlRuntime.SyncRunSynchronizerLocalPlayerId，UseSingleEventFlow=false），
+/// （Scripts/Runtime/RunSynchronizerSeatSync.cs，UseSingleEventFlow=false），
 /// 而 FakeMerchant 是共享事件（IsShared=true）、事件房间不按角色重建，NFakeMerchant 界面节点
 /// 只在进房那一刻通过 EventModel.SetNode 挂到“当时前台角色”的事件实例上。
 /// 切到其他角色后 EventRoom.LocalMutableEvent.Node == null：

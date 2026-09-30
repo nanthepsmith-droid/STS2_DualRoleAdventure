@@ -40,7 +40,6 @@ internal static class LocalMultiControlRuntime
 {
     private static readonly LocalMultiSessionState Session = new LocalMultiSessionState();
 
-    private static readonly HashSet<string> _fieldSyncFailures = new HashSet<string>();
     private static readonly HashSet<string> _wakuuAutoEndIssued = new HashSet<string>();
     private static readonly HashSet<int> _allPlayersAutoEndedRounds = new HashSet<int>();
     private static readonly HashSet<string> _wakuuToNonWakuuSwitchedRounds = new HashSet<string>();
@@ -623,7 +622,8 @@ internal static class LocalMultiControlRuntime
         ulong? previousNetId = LocalContext.NetId;
         LocalContext.NetId = currentControlledPlayerId.Value;
         LocalSelfCoopContext.NetService?.SetCurrentSenderId(currentControlledPlayerId.Value);
-        SyncRunSynchronizerLocalPlayerId(currentControlledPlayerId.Value);
+        // R4：Run 级同步器的"本地玩家"对齐抽成独立职责（行为与日志文案不变）。
+        RunSynchronizerSeatSync.Apply(currentControlledPlayerId.Value);
 
         bool combatUiRefreshSucceeded = RefreshCombatUiForControlledPlayer(currentControlledPlayerId.Value);
         if (CombatManager.Instance.IsInProgress && !combatUiRefreshSucceeded)
@@ -644,7 +644,7 @@ internal static class LocalMultiControlRuntime
                 if (previousNetId.HasValue)
                 {
                     LocalSelfCoopContext.NetService?.SetCurrentSenderId(previousNetId.Value);
-                    SyncRunSynchronizerLocalPlayerId(previousNetId.Value);
+                    RunSynchronizerSeatSync.Apply(previousNetId.Value);
                 }
 
                 return;
@@ -669,25 +669,6 @@ internal static class LocalMultiControlRuntime
         }
     }
 
-    private static void SyncRunSynchronizerLocalPlayerId(ulong playerId)
-    {
-        if (!RunManager.Instance.IsInProgress)
-        {
-            return;
-        }
-
-        ulong eventOwnerPlayerId = LocalSelfCoopContext.UseSingleEventFlow
-            ? LocalSelfCoopContext.PrimaryPlayerId
-            : playerId;
-        TrySetLocalPlayerId(RunManager.Instance.EventSynchronizer, eventOwnerPlayerId, nameof(RunManager.EventSynchronizer));
-        TrySetLocalPlayerId(RunManager.Instance.RewardsSetSynchronizer, playerId, nameof(RunManager.RewardsSetSynchronizer));
-        TrySetLocalPlayerId(RunManager.Instance.RewardSynchronizer, playerId, nameof(RunManager.RewardSynchronizer));
-        TrySetLocalPlayerId(RunManager.Instance.RestSiteSynchronizer, playerId, nameof(RunManager.RestSiteSynchronizer));
-        TrySetLocalPlayerId(RunManager.Instance.OneOffSynchronizer, playerId, nameof(RunManager.OneOffSynchronizer));
-        TrySetLocalPlayerId(RunManager.Instance.TreasureRoomRelicSynchronizer, playerId, nameof(RunManager.TreasureRoomRelicSynchronizer));
-        TrySetLocalPlayerId(RunManager.Instance.FlavorSynchronizer, playerId, nameof(RunManager.FlavorSynchronizer));
-    }
-
     public static void AlignContextForActionOwner(ulong playerId, string source)
     {
         if (!RunManager.Instance.IsInProgress)
@@ -698,14 +679,14 @@ internal static class LocalMultiControlRuntime
         // R3：口径统一为「回环上下文是不是这个席位」（不再裸比 LocalContext.NetId）
         if (LocalSeatSource.CurrentSeats().IsContext(playerId))
         {
-            SyncRunSynchronizerLocalPlayerId(playerId);
+            RunSynchronizerSeatSync.Apply(playerId);
             return;
         }
 
         ulong? previousNetId = LocalContext.NetId;
         LocalContext.NetId = playerId;
         LocalSelfCoopContext.NetService?.SetCurrentSenderId(playerId);
-        SyncRunSynchronizerLocalPlayerId(playerId);
+        RunSynchronizerSeatSync.Apply(playerId);
 
         // 默认档（未开「【实验】瓦库并发出牌」）下瓦库是内联出牌，出牌循环会把 LocalContext.NetId
         // 钉在瓦库自己身上；此时真人中途按牌 / 点结束回合，上下文"漂移"是**预期**的——本来就该让给真人。
@@ -1127,28 +1108,6 @@ internal static class LocalMultiControlRuntime
         }
 
         return TryEnsureForegroundForPlayer(player, source);
-    }
-
-    private static void TrySetLocalPlayerId(object? target, ulong playerId, string componentName)
-    {
-        if (target == null)
-        {
-            return;
-        }
-
-        try
-        {
-            // R3 B3：反射读写一律走唯一入口（本方法保留"去重 WARN"的既有语义）。
-            SynchronizerLocalPlayerId.TryWrite(target, playerId);
-        }
-        catch (Exception exception)
-        {
-            string key = $"{componentName}:{target.GetType().Name}";
-            if (_fieldSyncFailures.Add(key))
-            {
-                LocalMultiControlLogger.Warn($"同步 {key} 的 _localPlayerId 失败: {exception.Message}");
-            }
-        }
     }
 
     public static void TryAutoSwitchAfterEndTurn(ulong endedPlayerId)
@@ -2678,7 +2637,7 @@ internal static class LocalMultiControlRuntime
         ulong? previousNetId = LocalContext.NetId;
         LocalContext.NetId = playerId;
         LocalSelfCoopContext.NetService?.SetCurrentSenderId(playerId);
-        SyncRunSynchronizerLocalPlayerId(playerId);
+        RunSynchronizerSeatSync.Apply(playerId);
         LocalMultiControlLogger.Info(
             $"结束回合点击：上下文已校正到前台玩家 {previousNetId?.ToString() ?? "null"} -> {playerId}");
         return playerId;

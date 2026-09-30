@@ -156,12 +156,23 @@ internal static class LocalSelfCoopContext
         LocalMultiControlLogger.Info($"联机机器人席位已登记: {string.Join(",", GetCoopBotsPlayerIdsSnapshot())}");
     }
 
+    /// <summary>
+    /// 该席位是否由瓦库托管。
+    ///
+    /// R3 B1c（2026-09-30）**已评估：不改成问 <see cref="SeatRegistry.DriverOf"/>** ——
+    /// 理由：驱动事实源本来就只有这一处（`_wakuuPlayerIds` / `_coopBotsPlayerIds`，
+    /// 且 <see cref="SetCoopBotsDriven"/> / <see cref="SetWakuuEnabled"/> 在写入侧强制互斥），
+    /// 消费点全是调本方法，换一层包装只增间接；而三态互斥口径在"两处同时命中"时会改变结果，
+    /// 那不是"行为零变化"。**新代码若要"互斥的唯一答案"就显式问
+    /// `LocalSeatSource.CurrentSeats().IsWakuuDriven(id)`**（并在需要时先确认不变量）。
+    /// 本方法与 <see cref="IsCoopBotsDriven"/> 保留为**驱动事实源的源级原语**。
+    /// </summary>
     public static bool IsWakuuEnabled(ulong playerId)
     {
         return _wakuuPlayerIds.Contains(playerId);
     }
 
-    /// <summary>该席位是否交给第三方 mod「Co-op Bots」作答。</summary>
+    /// <summary>该席位是否交给第三方 mod「Co-op Bots」作答（源级原语，见 <see cref="IsWakuuEnabled"/> 的 B1c 说明）。</summary>
     public static bool IsCoopBotsDriven(ulong playerId)
     {
         return _coopBotsPlayerIds.Contains(playerId);

@@ -19,7 +19,7 @@ namespace LocalMultiControl.Scripts.Patch;
 /// 定位「本地玩家」，领取校验要求 reward.Player == LocalPlayer。
 ///
 /// 本 mod 多控下，RewardsSetSynchronizer._localPlayerId 被同步成「当前控制角色」
-/// （SyncRunSynchronizerLocalPlayerId）。若奖励弹出后控制权被切换（用户手动切人 / 事件自动切换），
+/// （`Scripts/Runtime/RunSynchronizerSeatSync.cs`）。若奖励弹出后控制权被切换（用户手动切人 / 事件自动切换），
 /// _localPlayerId 指向新控制角色，与原「奖励归属 player」错位：领取动作要么抛
 /// "reward.Player != LocalPlayer" 异常，要么打进错误角色的奖励栈；奖励永远无法领取，
 /// 归属 player 的完成源永不触发 → 事件 await OfferCustom 永久挂起 → 软锁死。

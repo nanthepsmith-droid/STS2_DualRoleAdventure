@@ -14,8 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // R3 B4/B5（r189）：route ① 剩余读点收编 + 选牌/存档域的"非身份判定"点定性
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-09-30-r189)";
+    // R3 收口（B1c 已评估不做）+ R4 第一刀：Run 级同步器"本地玩家"对齐抽成独立职责（r190）
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-09-30-r190)";
 
     private static Harmony? _harmony;
 
