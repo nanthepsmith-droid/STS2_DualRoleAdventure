@@ -158,13 +158,7 @@ internal static class RestSiteSynchronizerChooseLocalOptionPatch
 
     private static ulong? ReadLocalPlayerIdFromSynchronizer(RestSiteSynchronizer synchronizer)
     {
-        object? fieldValue = AccessTools.Field(typeof(RestSiteSynchronizer), "_localPlayerId")?.GetValue(synchronizer);
-        if (fieldValue is ulong fieldPlayerId)
-        {
-            return fieldPlayerId;
-        }
-
-        return null;
+        return SynchronizerLocalPlayerId.TryRead(synchronizer, typeof(RestSiteSynchronizer));
     }
 
     private static string DescribeOptions(IReadOnlyList<RestSiteOption> options)

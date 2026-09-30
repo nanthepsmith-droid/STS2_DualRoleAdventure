@@ -1,4 +1,3 @@
-using System.Reflection;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
 using MegaCrit.Sts2.Core.Combat;
@@ -33,19 +32,13 @@ internal static class HookPlayerChoiceContextLocalPatch
             return;
         }
 
-        FieldInfo field = AccessTools.Field(typeof(HookPlayerChoiceContext), "_localPlayerId");
-        if (field == null)
+        ulong? currentLocalPlayerId = SynchronizerLocalPlayerId.TryRead(context, typeof(HookPlayerChoiceContext));
+        if (currentLocalPlayerId == null || currentLocalPlayerId.Value == owner.NetId)
         {
             return;
         }
 
-        ulong currentLocalPlayerId = (ulong)(field.GetValue(context) ?? 0UL);
-        if (currentLocalPlayerId == owner.NetId)
-        {
-            return;
-        }
-
-        field.SetValue(context, owner.NetId);
+        SynchronizerLocalPlayerId.TryWrite(context, typeof(HookPlayerChoiceContext), owner.NetId);
         string logKey = $"{currentLocalPlayerId}->{owner.NetId}";
         if (_lastForceOwnerLogKey == logKey)
         {

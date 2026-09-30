@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
 using MegaCrit.Sts2.Core.Rewards;
@@ -214,11 +213,11 @@ internal static class CombatRewardMergeContext
     {
         try
         {
-            object? value = AccessTools.Field(typeof(RewardsSetSynchronizer), "_localPlayerId")?.GetValue(synchronizer);
-            return value is ulong id ? id : null;
+            return SynchronizerLocalPlayerId.TryRead(synchronizer, typeof(RewardsSetSynchronizer));
         }
         catch
         {
+            // 与旧实现同口径：读不到就当"没有归属"，不把异常抛给奖励流程。
             return null;
         }
     }
@@ -227,7 +226,7 @@ internal static class CombatRewardMergeContext
     {
         try
         {
-            AccessTools.Field(typeof(RewardsSetSynchronizer), "_localPlayerId")?.SetValue(synchronizer, playerId);
+            SynchronizerLocalPlayerId.TryWrite(synchronizer, typeof(RewardsSetSynchronizer), playerId);
         }
         catch (Exception exception)
         {

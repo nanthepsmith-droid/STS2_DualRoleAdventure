@@ -89,7 +89,7 @@ internal static class EventSynchronizerPatch
         if (!synchronizer.IsShared)
         {
             ulong currentPlayerId =
-                AccessTools.Field(typeof(EventSynchronizer), "_localPlayerId")?.GetValue(synchronizer) as ulong?
+                SynchronizerLocalPlayerId.TryRead(synchronizer, typeof(EventSynchronizer))
                 ?? LocalSeatSource.CurrentSeats().ControlledSeatId
                 ?? 0UL;
             if (currentPlayerId != 0)

@@ -1,4 +1,5 @@
 using HarmonyLib;
+using LocalMultiControl.Scripts.Runtime;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
 
@@ -45,7 +46,7 @@ internal static class SynchronizationOwnershipLogPatch
     private static void LogOwnership(object synchronizer, string operation)
     {
         ulong? contextId = LocalContext.NetId;
-        object? localId = AccessTools.Field(synchronizer.GetType(), "_localPlayerId")?.GetValue(synchronizer);
+        ulong? localId = SynchronizerLocalPlayerId.TryRead(synchronizer);
         LocalMultiControl.Scripts.Runtime.LocalMultiControlLogger.Info($"{operation}归属玩家: context={contextId?.ToString() ?? "null"}, syncLocal={localId?.ToString() ?? "null"}");
     }
 }

@@ -66,7 +66,7 @@ internal static class LocalRewardMirror
     /// </summary>
     internal static Player? ResolveSynchronizerSource(RewardSynchronizer synchronizer)
     {
-        ulong localPlayerId = AccessTools.Field(typeof(RewardSynchronizer), "_localPlayerId")?.GetValue(synchronizer) as ulong? ?? 0UL;
+        ulong localPlayerId = SynchronizerLocalPlayerId.ReadOrZero(synchronizer, typeof(RewardSynchronizer));
         if (localPlayerId == 0UL)
         {
             return null;

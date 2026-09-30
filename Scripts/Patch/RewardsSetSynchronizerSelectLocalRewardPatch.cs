@@ -1,5 +1,4 @@
 using System;
-using System.Reflection;
 using System.Threading.Tasks;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
@@ -68,14 +67,13 @@ internal static class RewardsSetSynchronizerSelectLocalRewardPatch
             return;
         }
 
-        FieldInfo? localIdField = AccessTools.Field(typeof(RewardsSetSynchronizer), "_localPlayerId");
-        if (localIdField == null)
+        ulong? syncLocalId = SynchronizerLocalPlayerId.TryRead(__instance, typeof(RewardsSetSynchronizer));
+        if (syncLocalId == null)
         {
             return;
         }
 
-        ulong syncLocalId = (ulong)(localIdField.GetValue(__instance) ?? 0UL);
-        if (syncLocalId == ownerId)
+        if (syncLocalId.Value == ownerId)
         {
             // 同步器归属已正确指向奖励归属角色，无需改绑。
             return;
@@ -83,11 +81,11 @@ internal static class RewardsSetSynchronizerSelectLocalRewardPatch
 
         __state.Synchronizer = __instance;
         __state.IsPatched = true;
-        __state.PreviousSyncLocalId = syncLocalId;
+        __state.PreviousSyncLocalId = syncLocalId.Value;
         __state.PreviousContextNetId = LocalContext.NetId;
         __state.PreviousSenderId = loopback.NetId;
 
-        localIdField.SetValue(__instance, ownerId);
+        SynchronizerLocalPlayerId.TryWrite(__instance, typeof(RewardsSetSynchronizer), ownerId);
         LocalContext.NetId = ownerId;
         loopback.SetCurrentSenderId(ownerId);
 
@@ -127,8 +125,8 @@ internal static class RewardsSetSynchronizerSelectLocalRewardPatch
 
             if (state.Synchronizer != null)
             {
-                AccessTools.Field(typeof(RewardsSetSynchronizer), "_localPlayerId")
-                    ?.SetValue(state.Synchronizer, state.PreviousSyncLocalId);
+                SynchronizerLocalPlayerId.TryWrite(
+                    state.Synchronizer, typeof(RewardsSetSynchronizer), state.PreviousSyncLocalId);
             }
 
             LocalMultiControlLogger.Info($"奖励领取归属已恢复: source={source}, syncLocal={state.PreviousSyncLocalId}");

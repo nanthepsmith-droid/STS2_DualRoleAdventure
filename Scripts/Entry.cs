@@ -14,8 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // BUG-23 方案 B 修正（r183）：候选 holder 改用 C# 类型遍历（FindChildren 的 type 过滤器匹配不到 C# 节点类）
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-09-29-r187)";
+    // R3 B3（r188）：反射 `_localPlayerId` 读写收编到唯一入口 `SynchronizerLocalPlayerId`
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-09-30-r188)";
 
     private static Harmony? _harmony;
 

@@ -628,7 +628,8 @@ internal static class LocalWakuuMerchantAuto
                 return;
             }
 
-            AccessTools.Field(target.GetType(), "_localPlayerId")?.SetValue(target, playerId);
+            // R3 B3：反射读写一律走唯一入口（本方法保留"每次失败都 WARN"的既有语义）。
+            SynchronizerLocalPlayerId.TryWrite(target, playerId);
         }
         catch (Exception exception)
         {

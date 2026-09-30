@@ -1138,7 +1138,8 @@ internal static class LocalMultiControlRuntime
 
         try
         {
-            AccessTools.Field(target.GetType(), "_localPlayerId")?.SetValue(target, playerId);
+            // R3 B3：反射读写一律走唯一入口（本方法保留"去重 WARN"的既有语义）。
+            SynchronizerLocalPlayerId.TryWrite(target, playerId);
         }
         catch (Exception exception)
         {
