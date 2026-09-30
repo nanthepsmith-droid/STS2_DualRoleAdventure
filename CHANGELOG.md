@@ -4,6 +4,17 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+### Fixed（玩家可见行为修复）
+- **瓦库在休息处一直用「愈合」给自己回血，即使双方血量都在 50% 以上（BUG-27，r194，2026-09-30）**：
+  根因是"遗物提供的额外选项"用了**补集式**判据（`OptionId` 不等于 `SMITH` / `MEND` 就算遗物项），
+  于是第三方 mod 加的休息区选项（如 CalypsosHappyHour 的 `CHH_MUTUAL_AID`）被当成遗物选项 ⇒
+  一进房就走"睡觉以外随机"，把「优先锻造升级（`SMITH`）」与「全员 ≥50% 时不做愈合（`MEND`）」两条规则
+  **全部短路**（表现就是随机到 `MEND` 去回血，哪怕没人缺血）。
+  修法 = **按来源判定**：只有"选项类型所在程序集 = 游戏本体"的额外选项才算遗物选项，
+  第三方 / 来源不明的选项一律按普通选项处理、不再劫持决策（来源判定拿不到时保守判"非游戏本体"）。
+  顺带把决策分支打进日志（`瓦库火堆已自动选择: … reason=锻造(优先非打击防御), success=True`），
+  以后有争议一眼能看出走的是哪条规则；新增 2 条单测（789 → 791），行为改动仅限"有第三方休息区选项"的场景。
+
 ### Changed（内部重构，行为零变化）
 - **R3 B3：第三方同步器私有 `_localPlayerId` 的反射读写收编到唯一入口（r188，2026-09-30）**：
   新增 `Scripts/Runtime/SynchronizerLocalPlayerId.cs`（按类型缓存 `FieldInfo`、`TryRead` / `ReadOrZero` /
