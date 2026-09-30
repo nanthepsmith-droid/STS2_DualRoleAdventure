@@ -2464,9 +2464,22 @@ FAIL:    奖励发错人 / 瓦库该动的席位不动、不该动的动了；�
   `CombatRewardMergeContext.SetLocalPlayerId`。复核：仓库内 `AccessTools.Field(…, "_localPlayerId")` **= 0**；
   S7 语义标识 370 → **366**（消失的 4 条正是原来"各自反射"的目标，已人审后刷新基线）；单测 **762 → 769**；
   marker **`2026-09-30-r188`**、`dll_check --deployed` 字节一致（sha256 `d40ca7607170…`）。
-- **B4** 选牌主人 / 手牌 owner（`NPlayerHandAddOwnerGuardPatch:53`、`NPlayerHandSelectCardsSerializationPatch:111/154`）；
-  **B5** 存档身份（`ProgressSaveManagerPatch:58-88`、`LocalSelfCoopContext.cs:308`）；UI 侧私有字段
-  （如 `NGameOverScreen._localPlayer`）待定性归批。
+- **B4 + B5 ✅ 已落地并实机通过（r189，2026-09-30，行为零变化）= route ① 收尾**：
+  **6 处读点改走 `LocalSeatSource.ContextSeatId()`**（全是"钉扎前保存原值 / 上下文兜底读"，写侧与还原照旧）——
+  `NPlayerHandSelectCardsSerializationPatch:111`（选牌主人域）、`RewardsSetSynchronizerSelectLocalRewardPatch:85`、
+  `LocalWakuuMerchantAuto:111`、`LocalWakuuRelicRuntime:942`（看门狗）、`RestSitePatch:62`（取不到再回退同步器私有字段）、
+  `SynchronizationOwnershipLogPatch:48`（诊断读；与上下文同源同值）；
+  另把 **8 处"不是身份判定"的点就地定性注释**（免得下轮再全仓盘一遍）：`NPlayerHandAddOwnerGuardPatch:53`（卡片主人 ↔ 选牌主人）、
+  `LocalGhostHandsRuntime:360`（排除自己）、`LocalLoopbackHostGameService:239`（枚举非主席位玩家）与 `:260`（回环服务自身即上下文载体）、
+  `LocalSelfCoopContext:310`（席位表**源级**谓词）与 `:560`（意图缓存比较）、`LocalQuickRestartLoader:63`（按主席位 id 查存档玩家 —— lookup，非判定）、
+  `ProgressSaveManagerPatch:57`（**平台身份**，口径已由纯逻辑 `RunProgressLocalPlayerPolicy` 统一，r155）。
+  复核（本机工具 `tools/identity_read_audit.py`）：**route ② 在 `LocalMultiControlRuntime` 之外 = 0 处**；
+  route ① 剩余"真读取"只剩 `LocalLoopbackHostGameService`（已注释的来源自身）与大厅线的 `NCustomRunLocalSelfCoopPatch:285`。
+  单测仍 **769**（本批无新纯逻辑）；S7 基线不变（366）；marker **`2026-09-30-r189`**、
+  `dll_check --deployed` 字节一致（sha256 `320cd65bbedc…`）。
+- **未归批（已定性）**：`NGameOverScreen._localPlayer` —— 是**结算页节点自己的"当前展示玩家"引用**（反射只为读它的
+  `Character.Id`），不是身份来源 ⇒ 不接 `LocalSeatSource`；R4 拆类时随 UI 层再看。
+- **B1c（待拍板）**：驱动三态判定统一（语义二选一，见上）。
 
 **验证契约（请实机，marker `2026-09-30-r188`）**
 ```
@@ -2506,3 +2519,41 @@ FAIL:    奖励领不了 / 领到错误角色；瓦库不出牌或事件不自�
   手牌点击出不了牌）⇒ **未引入新告警来源**。
 - 未直接命中（不影响判定）：`RestSitePatch` 反射读（仅上下文为空时兜底）、`LocalRewardMirror` 反射读（本局 0 次镜像）、
   `CombatRewardMergeContext` 写（仅归属不一致时才写）—— 三处与已覆盖链路共用同一入口。
+
+**验证契约（请实机，marker `2026-09-30-r189`）**
+```
+改动:    R3 B4+B5 —— route ① 剩余读点收编（6 处：钉扎前保存原值 / 上下文兜底读）
+         + 选牌/存档域的"非身份判定"点就地定性注释（行为零变化）
+SETUP:   本地多控 2~4 席（真人 + 至少一个瓦库托管席位）；一局里走到 战斗 + 事件 + 休息区 + 商店；
+         最好用一张"战斗内手牌选牌"类卡（如 炉心融解 / MiniHakkero / 复制牌）触发选牌串行化路径
+ACTION:  正常玩：战斗内触发手牌选牌（让后台角色触发 hook 类效果牌）、让瓦库后台出牌、商店自动采购、
+         休息区选择、领战后奖励；能读档一次更好
+PASS:    行为与 r188 完全一致：
+         `战斗内手牌选牌串行化: 已进入选牌 …` / `选牌展示前已切换前台到所属角色` /
+         `[选牌诊断] NPlayerHand UI holder: owner=…, LocalContext.NetId=…`（选牌期间两值应一致 —— 上下文被钉到选牌人）；
+         `奖励领取按归属角色绑定/已恢复` / `奖励-拿牌归属玩家: context=…, syncLocal=…` /
+         `瓦库商店自动买…成功` / `瓦库火堆…` / `卡牌奖励已自动领取` 照旧；`会话席位自检通过: seats=…` 照旧
+FAIL:    选牌界面串到对家手牌 / 选牌卡住不出结果；奖励领不了或领错人；`休息区升级切换失败`
+期望 0： ### Exception ### / add_child() failed / 我方 NullReferenceException / 幽灵弹层 /
+         `同步 … 的 _localPlayerId 失败`
+```
+
+**✅ 实机结论（2026-09-30，marker `2026-09-30-r189`，日志 `logs-archive/godot__20260930-140636__r189.log`）⇒ B4+B5 关单**
+2 席（真人 `…326` + 瓦库席位 `…327`）、读档 1 次、中局长度的第二幕（`瓦库出牌` 63 / `选择器作用域进入` 11 /
+`自动领取` 7 / `瓦库商店自动买` 10 / `瓦库火堆` 3 / `卡牌奖励已自动领取` 2）。
+- **本批改动的站点被真实走到**：① **战斗内手牌选牌串行化 ×2**（`mode=SimpleSelect`）——
+  `选牌展示前已切换前台到所属角色: player=…326`，且 `[选牌诊断] NPlayerHand UI holder: owner=…326,
+  LocalContext.NetId=…326` **两值一致**（选牌期间上下文被钉到选牌人）；`选牌守卫` 0（没有跨手牌串台）；
+  ② `奖励-拿牌归属玩家: context=…, syncLocal=…` **7 条**、两值一致（诊断读改走入口后仍与同步器归属同值）；
+  ③ 商店自动采购 3 张卡 + 遗物/药水决策（`LocalWakuuMerchantAuto` 的钉扎读）；④ `瓦库火堆` 3（休息区路径）。
+- **失败哨兵 0**：`同步 … 的 _localPlayerId 失败` 0、`休息区升级切换失败` 0、`奖励归属错位` 0；
+  期望 0 全 0（`### Exception ###` / `add_child() failed` / 我方 NRE / `Couldn't get hand node` / 幽灵弹层 /
+  `保留为人工领取` / `归属者残留已改写` / `手动出牌上下文漂移`）；`PATCH_RESULT 25/25·15/15·186` 与 r188 逐字相同；
+  `BUILD_IDENTITY commit=eda0348 state=dirty`。
+- 读档契约（1 次）：窗口开/关 1、恢复玩家 1、恢复瓦库席位 1、`读档后自动选事件` 1、`读档后瓦库出牌` 11，5 条哨兵全 0。
+- 噪声（均非我方、均既有）：`[ERROR]` 6 = Manosaba/ddu 分支 2 + BetterModMenu 超时 1 +
+  **游戏侧 `NHeavyBluntVfx.PlaySequence()` NRE 1**（栈里我方 0 帧，与历史 `NStarryImpactVfx`/`NHeavyBluntVfx` 同族）+
+  游戏侧存档删除失败 2；NRE 13 = 12 条第三方 `RitsuLib` + 上述 1 条游戏侧。
+- 我方 WARN 模板对比 r188：本局独有 5 个模板全是既有族（手牌点击出不了牌 / 手牌点击被忽略 / 跳过药水动画）⇒ **未引入新告警来源**。
+- 未直接命中（不影响判定）：`奖励领取按归属角色绑定`（"领取时同步器归属错位"是数据相关场景，本局没出现）、
+  `RestSitePatch:62` 的上下文兜底（只在上下文为空时才回退同步器私有字段）—— 两处与已覆盖链路共用同一入口。
