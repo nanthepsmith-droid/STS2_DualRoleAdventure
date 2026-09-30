@@ -2,8 +2,8 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-09-30 12:35  HEAD=5c6a44b
-# 统计: patch_classes=190 patch_rows=223 string_targets=190 descriptors=366
+# 生成时间=2026-09-30 22:44  HEAD=9c355d9
+# 统计: patch_classes=190 patch_rows=223 string_targets=191 descriptors=367
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	CardManualPlayContextPatch	CardModel	EnqueueManualPlay	string
@@ -292,6 +292,7 @@ S	accesstools	NRelicInventory	_player	field
 S	accesstools	NRelicInventory	_relicNodes	field
 S	accesstools	NRemoteMouseCursorContainer	GetCursor	method
 S	accesstools	NRestSiteCharacter	_selectedOptionConfirmation	field
+S	accesstools	NRestSiteCharacter	_thoughtBubbleVfx	field
 S	accesstools	NRestSiteRoom	AnimateDescriptionUp	method
 S	accesstools	NRestSiteRoom	EnableOptions	method
 S	accesstools	NRestSiteRoom	UpdateRestSiteOptions	method

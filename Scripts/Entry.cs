@@ -14,9 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // R4 第四刀（r193）：瓦库自动切非瓦库的「每轮名额 + 待处理请求」抽成 WakuuRoundSwitchLedger，
-    // 并把"活着的瓦库全都没牌可出"这一判据从三份副本收敛成一份
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-09-30-r193)";
+    // r195：休息区气泡"存活自检"诊断增强（看 IsVisibleInTree + 祖先链，定位"气泡不见了"）
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-09-30-r195)";
 
     private static Harmony? _harmony;
 

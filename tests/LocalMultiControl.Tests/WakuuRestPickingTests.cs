@@ -4,7 +4,11 @@ using NUnit.Framework;
 
 namespace LocalMultiControl.Tests;
 
-/// <summary>瓦库火堆「全员血量比例」判定纯函数测试（用户拍板：全员 ≥50% 时愈合优先级放最后）。</summary>
+/// <summary>
+/// 瓦库火堆决策的纯函数测试：
+/// ① 「全员血量比例」判定（用户拍板：全员 ≥50% 时愈合优先级放最后）；
+/// ② 「选项是否由游戏本体提供」的来源判定（BUG-27：第三方休息区选项不得被当成"遗物选项"）。
+/// </summary>
 [TestFixture]
 public class WakuuRestPickingTests
 {
@@ -51,5 +55,30 @@ public class WakuuRestPickingTests
         Assert.That(WakuuRestPicking.IsAllAboveHpRatio(players, 0.5m), Is.True);
         Assert.That(WakuuRestPicking.IsAllAboveHpRatio(players, 0.7m), Is.False);
         Assert.That(WakuuRestPicking.IsAllAboveHpRatio(players, 0.6m), Is.True);
+    }
+
+    [Test]
+    public void 选项来源判定_只有与游戏程序集同名才算游戏本体()
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(WakuuRestPicking.IsGameProvidedOptionSource("sts2", "sts2"), Is.True);
+            Assert.That(WakuuRestPicking.IsGameProvidedOptionSource("STS2", "sts2"), Is.True, "程序集名大小写不敏感");
+            // 实机踩到的那一个（CalypsosHappyHour 的 CHH_MUTUAL_AID）—— 必须判"不是游戏本体"，
+            // 否则它会被当成"遗物选项"、把决策短路成随机（BUG-27）。
+            Assert.That(WakuuRestPicking.IsGameProvidedOptionSource("CalypsosHappyHour", "sts2"), Is.False);
+        });
+    }
+
+    [Test]
+    public void 选项来源判定_拿不到来源时按非游戏本体处理()
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(WakuuRestPicking.IsGameProvidedOptionSource(null, "sts2"), Is.False, "来源未知不劫持决策");
+            Assert.That(WakuuRestPicking.IsGameProvidedOptionSource("sts2", null), Is.False);
+            Assert.That(WakuuRestPicking.IsGameProvidedOptionSource("", ""), Is.False);
+            Assert.That(WakuuRestPicking.IsGameProvidedOptionSource("  ", "sts2"), Is.False);
+        });
     }
 }

@@ -25,10 +25,16 @@ namespace LocalMultiControl.Scripts.Runtime;
 /// 瓦库火堆自动选择（可开关 autoRestChoice）。决策规则（用户拍板）：
 /// - 血量 &lt; 50%：优先睡觉（HEAL）；
 /// - 血量 ≥ 50%：
-///   · 有遗物提供的其他选项（举重/挖掘等，非 HEAL/SMITH/MEND 基础项）→ 在睡觉以外的选项里随机；
+///   · 有遗物提供的其他选项（举重/挖掘等，**由游戏本体提供**的非 HEAL/SMITH/MEND 项）→ 在睡觉以外的选项里随机；
 ///   · 无遗物选项 → 锻造升级"除打击/防御外"的最后一张牌；
 ///     若除打击/防御外都已升级（无可升级候选）→ 睡觉；
 /// - 帐篷类效果允许多选时：循环把所有选项按上述规则逐一选完。
+///
+/// ⚠ **"遗物选项"必须按来源判**（BUG-27，2026-09-30）：旧实现只写"OptionId 不等于 SMITH/MEND"，
+/// 于是第三方 mod 加的休息区选项（如 CalypsosHappyHour 的 `CHH_MUTUAL_AID`）被当成遗物项 ⇒
+/// 一进房就走随机分支、把上面两条规则全部短路（实机表现：瓦库一直选 MEND 回血，即使双方血都 &gt;50%）。
+/// 判据见 <see cref="IsGameProvidedOption"/>；决策原因会打进取 `<c>reason=</c>` 一并留证。
+/// 每条分支返回前都设置 <c>reason</c>，便于实机核对"到底走了哪条"。
 ///
 /// 实现要点：
 /// - 选择落点用私有 RestSiteSynchronizer.ChooseOption(Player, int)（反射缓存）——
@@ -56,6 +62,12 @@ internal static class LocalWakuuRestAutoChoice
 
     private static readonly Random _random = new();
     private static readonly object _randomLock = new();
+
+    /// <summary>
+    /// 游戏本体程序集名（`sts2`）—— 用于判定某个休息区选项是不是**游戏本体**提供的。
+    /// 只作比较用（不解析任何游戏类型），见 <see cref="IsGameProvidedOption"/> 与 references 坑 P。
+    /// </summary>
+    private static readonly string? GameAssemblyName = typeof(RestSiteOption).Assembly.GetName().Name;
 
     /// <summary>由 RestSiteSynchronizerBeginRestSitePatch postfix 调用。</summary>
     public static void TryBeginPending()
@@ -156,11 +168,11 @@ internal static class LocalWakuuRestAutoChoice
                     break; // 选完/被跳过补完，正常结束
                 }
 
-                RestSiteOption? choice = Decide(player, options, brokenOptionIds);
+                RestSiteOption? choice = Decide(player, options, brokenOptionIds, out string reason);
                 if (choice == null)
                 {
                     LocalMultiControlLogger.Info(
-                        $"瓦库火堆无可自动选择的选项，停住等真人处理: player={ownerId}");
+                        $"瓦库火堆无可自动选择的选项，停住等真人处理: player={ownerId}, reason={reason}");
                     return;
                 }
 
@@ -205,7 +217,8 @@ internal static class LocalWakuuRestAutoChoice
                 LocalMultiControlLogger.Info(
                     $"瓦库火堆已自动选择: player={ownerId}, option={choice.OptionId}, "
                     + $"hp={player.Creature?.CurrentHp}/{player.Creature?.MaxHp}, "
-                    + $"全员≥50%={IsEveryoneAboveHpRatio(WakuuRestPicking.DefaultHealthyHpRatio)}, success={success}");
+                    + $"全员≥50%={IsEveryoneAboveHpRatio(WakuuRestPicking.DefaultHealthyHpRatio)}, "
+                    + $"reason={reason}, success={success}");
                 if (!success)
                 {
                     // OnSelect 返回 false（选项自身判定不可用，如 CHH_MUTUAL_AID）：排除后换下一个
@@ -230,9 +243,12 @@ internal static class LocalWakuuRestAutoChoice
         }
     }
 
-    /// <summary>决策规则：返回要选的选项；null 表示交还真人。brokenOptionIds 为本次已证实不可用的选项。</summary>
+    /// <summary>
+    /// 决策规则：返回要选的选项；null 表示交还真人。brokenOptionIds 为本次已证实不可用的选项。
+    /// <paramref name="reason"/> 出参 = 走了哪条分支（打进日志供实机核对，不含玩家数据）。
+    /// </summary>
     private static RestSiteOption? Decide(
-        Player player, IReadOnlyList<RestSiteOption> options, HashSet<string> brokenOptionIds)
+        Player player, IReadOnlyList<RestSiteOption> options, HashSet<string> brokenOptionIds, out string reason)
     {
         List<RestSiteOption> enabled = options
             .Where((o) => o.IsEnabled && !brokenOptionIds.Contains(o.OptionId))
@@ -240,9 +256,14 @@ internal static class LocalWakuuRestAutoChoice
 
         RestSiteOption? heal = enabled.FirstOrDefault((o) => o.OptionId == HealOptionId);
         List<RestSiteOption> others = enabled.Where((o) => o.OptionId != HealOptionId).ToList();
-        List<RestSiteOption> relicExtras = others
+        List<RestSiteOption> extras = others
             .Where((o) => o.OptionId != SmithOptionId && o.OptionId != MendOptionId)
             .ToList();
+        // ⚠ 补集式判据的反面（BUG-27 / 坑 P）：**必须同时要求"由游戏本体提供"**，
+        // 否则第三方 mod 每加一个休息区选项都会被当成"遗物选项"⇒ 一进房就走随机分支
+        // （旧的 `relicExtras = extras` 就是这个 bug）。
+        List<RestSiteOption> relicExtras = extras.Where(IsGameProvidedOption).ToList();
+        List<RestSiteOption> thirdPartyExtras = extras.Where((o) => !IsGameProvidedOption(o)).ToList();
 
         decimal maxHp = player.Creature?.MaxHp ?? 1m;
         decimal currentHp = player.Creature?.CurrentHp ?? 0m;
@@ -250,6 +271,7 @@ internal static class LocalWakuuRestAutoChoice
 
         if (lowHp && heal != null)
         {
+            reason = "低血优先睡觉";
             return heal; // 低血优先睡觉
         }
 
@@ -257,7 +279,8 @@ internal static class LocalWakuuRestAutoChoice
         {
             lock (_randomLock)
             {
-                return others[_random.Next(others.Count)]; // 有遗物选项：睡觉以外随机
+                reason = $"遗物选项随机(池={others.Count})"; // 有遗物选项：睡觉以外随机
+                return others[_random.Next(others.Count)];
             }
         }
 
@@ -278,12 +301,14 @@ internal static class LocalWakuuRestAutoChoice
                 // 满血：任何可升级牌（含打击/防御）都值得升；全升完则睡觉（拍板：即使满血）
                 if (player.Deck.Cards.Any((c) => c.IsUpgradable))
                 {
+                    reason = "满血锻造(含打击防御)";
                     return smith;
                 }
             }
             else if (HasPreferredUpgradeCandidate(player))
             {
-                return smith; // 高血且还有"非打击/防御"的可升级牌
+                reason = "锻造(优先非打击防御)"; // 高血且还有"非打击/防御"的可升级牌
+                return smith;
             }
         }
 
@@ -295,12 +320,14 @@ internal static class LocalWakuuRestAutoChoice
             RestSiteOption? mend = TryGetMend(others);
             if (mend != null)
             {
+                reason = "愈合(有人<50%)";
                 return mend;
             }
         }
 
         if (heal != null)
         {
+            reason = "睡觉";
             return heal; // 没得升了、也没法愈合队友 → 睡觉（满血时也睡，按拍板）
         }
 
@@ -311,11 +338,42 @@ internal static class LocalWakuuRestAutoChoice
             RestSiteOption? mend = TryGetMend(others);
             if (mend != null)
             {
+                reason = "愈合兜底";
                 return mend;
             }
         }
 
-        return others.Count > 0 ? others[0] : null;
+        if (others.Count > 0)
+        {
+            // 兜底按原实现取第一个；池里是否混着"第三方/来源不明的额外选项"在 reason 里点名
+            // —— 它们已不再参与"遗物选项随机"（BUG-27 / 坑 P），落到这里只是兜底。
+            reason = thirdPartyExtras.Count > 0 ? "兜底(池内含第三方选项)" : "兜底其它选项";
+            return others[0];
+        }
+
+        reason = "无可用选项";
+        return null;
+    }
+
+    /// <summary>
+    /// 该选项是不是**游戏本体**提供的（判据 = 运行期类型所在程序集名 == `RestSiteOption` 所在程序集名）。
+    /// 第三方 mod 加的休息区选项不算"遗物选项"，不得触发"睡觉以外随机"（BUG-27 / references 坑 P）。
+    /// 拿不到来源时返回 false（保守：来源不明的选项不劫持决策），并留一条 WARN 供定性。
+    /// </summary>
+    private static bool IsGameProvidedOption(RestSiteOption option)
+    {
+        try
+        {
+            return WakuuRestPicking.IsGameProvidedOptionSource(
+                option.GetType().Assembly.GetName().Name, GameAssemblyName);
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn(
+                $"判定休息区选项来源失败（按非游戏本体处理，不参与遗物选项随机）: option={option.OptionId}, "
+                + $"error={exception.Message}");
+            return false;
+        }
     }
 
     /// <summary>取出愈合选项（没有可治疗对象时原版会返回 false，由重试逻辑排除）。</summary>
