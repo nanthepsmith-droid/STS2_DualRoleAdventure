@@ -2,6 +2,20 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
+## [Unreleased]
+
+### Changed（内部重构，行为零变化）
+- **R3 B3：第三方同步器私有 `_localPlayerId` 的反射读写收编到唯一入口（r188，2026-09-30）**：
+  新增 `Scripts/Runtime/SynchronizerLocalPlayerId.cs`（按类型缓存 `FieldInfo`、`TryRead` / `ReadOrZero` /
+  `TryWrite`，不吞异常也不打日志 ⇒ 各站点原有的 try/catch 与日志文案逐字不变），
+  把 9 个文件里各自写的 `AccessTools.Field(..., "_localPlayerId")`（读 7 处 / 写 5 处，
+  涉及 `RewardsSetSynchronizer` / `EventSynchronizer` / `RestSiteSynchronizer` /
+  `HookPlayerChoiceContext` / `RewardSynchronizer`）全部改走它；
+  重构后仓库内直接反射该字段的写法 **= 0**（S7 语义标识 370 → 366，消失的 4 条正是这些"各自反射"的目标）。
+  单测 762 → 769（新增假同步器真值表：基类字段 / 无字段 / 字段不是 ulong / null 目标 / 写后立刻可读）。
+  **已实机确认（2026-09-30）**：2 席 + 读档续玩的长局，四条真实链路（奖励领取改绑/还原、hook 选择上下文、
+  归属诊断、合并奖励展示集与商店自动采购）全部照旧，失败哨兵与期望 0 全 0，无新增告警族。
+
 ## [1.44.0] - 2026-09-29
 
 > 本轮 = r163 ~ r185（2026-09-27 ~ 09-28）。头牌是**读档后瓦库整局停摆修复（BUG-22 三层）**与

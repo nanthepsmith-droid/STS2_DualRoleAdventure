@@ -2452,7 +2452,57 @@ FAIL:    奖励发错人 / 瓦库该动的席位不动、不该动的动了；�
   `EventSynchronizerPatch:52` / `PlayerChoiceContextPatch:37`（钉扎前保存原值的读侧；写侧与还原照旧）。
   留原地：`SynchronizationOwnershipLogPatch:47` / `RestSitePatch:62` / `RewardsSetSynchronizerSelectLocalRewardPatch:87`
   → **B3**；`NPlayerHandSelectCardsSerializationPatch:111` → **B4**；`NCustomRunLocalSelfCoopPatch:285` → 大厅线。
-- **B3**：反射 `_localPlayerId` 统一读写入口（`RewardsSetSynchronizerSelectLocalRewardPatch` 6 处 /
-  `HookPlayerChoiceContextLocalPatch` 5 处 / `LocalWakuuMerchantAuto` 5 处 / `LocalRewardMirror` 2 处 /
-  `CombatRewardMergeContext` 2 处 / `RestSitePatch:161` / `SynchronizationOwnershipLogPatch:47` 等）；
-  **B4** 选牌主人 / 手牌 owner；**B5** 存档身份。
+- **B3 ✅ 已落地并实机通过（r188，2026-09-30，行为零变化）**：第三方同步器私有 `_localPlayerId` 的反射读写收编到唯一入口
+  `Scripts/Runtime/SynchronizerLocalPlayerId.cs`（按类型缓存 `FieldInfo`；`TryRead` / `ReadOrZero` / `TryWrite`；
+  **不吞异常、不打日志** ⇒ 各调用方原有的 try/catch 与 WARN 文案逐字不变）。收编 **12 处 / 9 文件**：
+  读 —— `RewardsSetSynchronizerSelectLocalRewardPatch:71`（字段缺失即 early return）、`EventSynchronizerPatch:92`
+  （`TryRead ?? 受控位 ?? 0`）、`RestSitePatch:159`、`HookPlayerChoiceContextLocalPatch:36`、
+  `LocalRewardMirror:69`（`ReadOrZero`）、`CombatRewardMergeContext:213`、
+  `SynchronizationOwnershipLogPatch:48`（按运行期类型读，等价旧 `target.GetType()`）；
+  写 —— `RewardsSetSynchronizerSelectLocalRewardPatch:130`（还原写）、`HookPlayerChoiceContextLocalPatch:48`、
+  `LocalMultiControlRuntime.TrySetLocalPlayerId`、`LocalWakuuMerchantAuto.TrySetLocalPlayerId`、
+  `CombatRewardMergeContext.SetLocalPlayerId`。复核：仓库内 `AccessTools.Field(…, "_localPlayerId")` **= 0**；
+  S7 语义标识 370 → **366**（消失的 4 条正是原来"各自反射"的目标，已人审后刷新基线）；单测 **762 → 769**；
+  marker **`2026-09-30-r188`**、`dll_check --deployed` 字节一致（sha256 `d40ca7607170…`）。
+- **B4** 选牌主人 / 手牌 owner（`NPlayerHandAddOwnerGuardPatch:53`、`NPlayerHandSelectCardsSerializationPatch:111/154`）；
+  **B5** 存档身份（`ProgressSaveManagerPatch:58-88`、`LocalSelfCoopContext.cs:308`）；UI 侧私有字段
+  （如 `NGameOverScreen._localPlayer`）待定性归批。
+
+**验证契约（请实机，marker `2026-09-30-r188`）**
+```
+改动:    R3 B3 —— 第三方同步器私有 _localPlayerId 的反射读写收编到唯一入口（12 处 / 9 文件，行为零变化）
+SETUP:   本地多控 2~4 席（真人 + 至少一个瓦库托管席位）；一局里尽量走到 战斗 + 事件 + 休息区 + 商店
+         （能读档一次更好 —— 读档后瓦库席位/上下文重建是这条链路的盲区）
+ACTION:  正常玩：战斗出一张 Owner 不是前台的牌（如 hook 类效果牌）、事件里让瓦库自动选、
+         休息区选择、商店自动买/手动删牌、领战后卡牌奖励（必要时先切人再点领取）
+PASS:    行为与 r185 完全一致：
+         `奖励领取按归属角色绑定: owner=…, syncLocal=…` 与紧跟的 `奖励领取归属已恢复: source=…` 成对出现；
+         `瓦库事件自动选择完成` / `瓦库休息区…` / `瓦库商店自动买…成功` / `奖励-拿牌归属玩家: context=…, syncLocal=…` 照旧；
+         `本地多控：hook 选择上下文 _localPlayerId 已强制归属到所选角色 …` 只在真的归属不一致时出现；
+         `会话席位自检通过: seats=…` 照旧
+FAIL:    奖励领不了 / 领到错误角色；瓦库不出牌或事件不自动选；商店删牌删错人；
+         `同步 … 的 _localPlayerId 失败`（新入口找不到字段=反射目标变了）
+期望 0： ### Exception ### / add_child() failed / 我方 NullReferenceException / 幽灵弹层 /
+         `SelectLocalReward` 相关游戏侧报错
+```
+
+**✅ 实机结论（2026-09-30，marker `2026-09-30-r188`，日志 `logs-archive/godot__20260930-134143__r188.log`）⇒ B3 关单**
+2 席（真人 326 + 瓦库席位 327）、**读档续玩 ×3** 的长局（`瓦库出牌` 352 / `选择器作用域进入` 67 /
+`自动领取` 27 / `瓦库商店自动买` 8 / `瓦库火堆` 5 / `瓦库事件自动选择完成` 6 / `让真人插队` 11）。
+- **唯一入口的四条真实链路都被走到**：① `RewardsSetSynchronizer` 读 + 还原写 ——
+  `奖励领取按归属角色绑定: owner=…326, syncLocal=…327 -> …326` 与 `奖励领取归属已恢复: source=postfix, syncLocal=…327`
+  **成对 1 次**（正是"领取时同步器归属指向另一个角色"的错位场景）；② `HookPlayerChoiceContext` 读 + 写 **13 次**（326↔327 来回）；
+  ③ 按运行期类型读（诊断补丁）—— `奖励-拿牌归属玩家: context=…, syncLocal=…` / `商店-删牌归属玩家: …` 两侧数值一致；
+  ④ `CombatRewardMergeContext` 读（`合并奖励展示集` 7）+ `LocalWakuuMerchantAuto` 写（随 8 次商店自动采购）。
+- **失败哨兵 0**：`同步 … 的 _localPlayerId 失败` 0（找不到字段 / 写失败都会打这条）、
+  `合并奖励展示集…不一致` 0、`休息区升级切换失败` 0。
+- 期望 0 全 0（`### Exception ###` / `add_child() failed` / 我方 NRE / `Couldn't get hand node` / 幽灵弹层 /
+  `保留为人工领取` / `归属者残留已改写` / `手动出牌上下文漂移`）；`PATCH_RESULT critical=25/25 optional=15/15
+  total_patched=186` 与 r184/r185 **逐字相同**；`BUILD_IDENTITY commit=5c6a44b state=dirty`（= master HEAD + 本批改动）。
+- 读档契约顺带覆盖（BUG-22 无回归）：窗口 开/关 各 3、恢复玩家 3、恢复瓦库席位 3、`读档后自动选事件` 6、`读档后瓦库出牌` 67，5 条哨兵全 0。
+- 噪声（均非我方）：`[ERROR]` 4 = Manosaba/ddu 分支不匹配 2 + BetterModMenu 超时 1 +
+  `Tried to add hand for player … twice!` 1（**既有偶发**：r169 1 / r172 3 / 其余 0）；NRE 12 全为第三方 `RitsuLib`（同基线）。
+- 我方 WARN 模板对比 r186 / r184：本局独有的 13 个模板**全是既有族**（看门狗 / 熔断 / 药水动画 / 藏宝图 quest 兜底 /
+  手牌点击出不了牌）⇒ **未引入新告警来源**。
+- 未直接命中（不影响判定）：`RestSitePatch` 反射读（仅上下文为空时兜底）、`LocalRewardMirror` 反射读（本局 0 次镜像）、
+  `CombatRewardMergeContext` 写（仅归属不一致时才写）—— 三处与已覆盖链路共用同一入口。
