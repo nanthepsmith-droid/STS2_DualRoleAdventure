@@ -2582,11 +2582,23 @@ FAIL:    选牌界面串到对家手牌 / 选牌卡住不出结果；奖励领�
   Runtime 净减 ~35 行；构建 0 警告 0 错误（**243 .cs**）、单测仍 **769**、S7 基线不变；
   marker **`2026-09-30-r190`**、`dll_check --deployed` 字节一致（sha256 `8abeffc05dcb…`）。
 
+- **第二刀（r191，✅ 2026-09-30 实机通过）= 战斗内切人的目标选择数学提纯**：新增
+  `Scripts/Runtime/PureLogic/SwitchTargetPolicy.cs`（`ResolveIndex` / `SingleStep` / `CandidateOrder`），
+  替掉 Runtime 里 **3 份逐字副本**的"下标解析 + 环形推进"：① `TrySwitchCombatPlayer`（单步前后切）→ `SingleStep`
+  ② `TrySwitchToNextOperableNonWakuuPlayer`（环形找下一个可操作的非瓦库角色）与
+  ③ `TrySwitchToNextPlayablePlayer`（环形找下一个手牌可出的角色）→ `CandidateOrder` + 原判据循环。
+  **保留在调用方的**：本地席位过滤（仍走 `LocalSeatSource.IsLocalSeat`）、`Count < 2` 的那条 WARN、
+  存活 / 未结束回合 / 手牌可出 / 是否瓦库这些游戏侧判据 —— 本类只给"候选顺序与下标"。
+  新增单测 **7 条**（找不到当前席位按 0、±1 步与回绕、少于 2 席不出目标、环形顺序不含自身、
+  当前不在列表时首席被当作当前而排除 —— 这条是原实现的既有行为，刻意钉住）；
+  单测 **769 → 776**；marker **`2026-09-30-r191`**、`dll_check --deployed` 字节一致（sha256 `d852efe324d6…`）。
+
 **下一刀候选**（按内聚度 / 风险排序；每刀单独一局实机）
-1. **切换目标选择**（`TrySwitchCombatPlayer` / `TrySwitchToNext*` / `TryAutoSwitchToNonWakuuOncePerRound` /
-   `BuildWakuuSwitchRoundKey` …）—— 内聚度高，且其中"该切谁"能提成纯逻辑进 `PureLogic` 并补单测；
-2. **弹层 / 转场诊断与兜底**（`DumpControlVisibilityChain` / `DumpTransitionOverlayState` / `CollectTransitionNodes` /
+1. **弹层 / 转场诊断与兜底**（`DumpControlVisibilityChain` / `DumpTransitionOverlayState` / `CollectTransitionNodes` /
    `EnsureOverlayNotCoveredForRewards` / `IsLoadReplayTransitionCovering`）—— 自包含、低风险；
+2. **切换流程剩余部分**（`TryAutoSwitchToNonWakuuOncePerRound` / `RequestAutoSwitchToNonWakuuOncePerRound` /
+   `TryAutoSwitchFromWakuuWhenAllWakuuNoPlayableCards` / `BuildWakuuSwitchRoundKey` + 每轮去重集合）——
+   与第二刀同族，可再收一轮（去重键与"每轮一次"的状态可一并搬出）；
 3. **前台 / 上下文对齐**（`ApplyControlContext` / `AlignContextForActionOwner` /
    `AlignLocalContextToForegroundForEndTurn` / `TryEnsureForegroundForPlayer`）—— 热路径，风险最高，放最后。
 
@@ -2618,5 +2630,33 @@ FAIL:    切人后奖励 / 事件 / 商店删牌认错人（这正是本单元�
   游戏侧存档删除失败 ×2（仅主局）、`[SteamHost] Error creating steam lobby! k_EResultNoConnection` ×1（20:28 局，Steam 侧）。
 - 我方 WARN 模板对比 r189：本局独有 4 个模板**全是既有族**（藏宝图 quest 兜底 / 托管遗物缺失当场补发 /
   选择器栈自恢复 / 跳过药水动画）⇒ **未引入新告警来源**。
+
+**验证契约（请实机，marker `2026-09-30-r191`）**
+```
+改动:    R4 第二刀 —— 战斗内切人的目标选择数学提纯为 SwitchTargetPolicy（3 份副本 → 1，行为零变化）
+SETUP:   本地多控 2~4 席（真人 + 至少一个瓦库托管席位）；至少打一场战斗，让瓦库在后台出牌
+ACTION:  战斗里反复切人（快捷键 / 界面按钮都试）、手动结束回合看是否自动切到下一位可操作角色、
+         让瓦库把牌打完（触发"结束回合后优先切换到可操作非瓦库角色"与"已切换到下一个可出牌角色"）
+PASS:    切人顺序与 r190 完全一致（当前 → 下一位 → 环形回绕，不会跳过存活/未结束回合的角色）；
+         `结束回合后优先切换到可操作非瓦库角色: A -> B` / `结束回合后已切换到下一个可出牌角色: A -> B` 照旧出现
+FAIL:    切人跳错人 / 切到已结束回合或已阵亡的角色 / 切人后没反应、回合结束按钮不跟随
+期望 0： 战斗角色切换需要至少2名玩家（人数正常时不应出现） / ### Exception ### / 我方 NullReferenceException
+```
+
+**✅ 实机结论（2026-09-30，marker `2026-09-30-r191`，日志 `logs-archive/godot__20260930-204950__r191.log`）⇒ R4 第二刀关单**
+2 席（真人 `…326` + 瓦库席位 `…327`）一场战斗为主的会话：
+- **两条走纯逻辑的切人链路都走到了**：① `结束回合后已切换到下一个可出牌角色: …326 -> …327` **×2**
+  （`TrySwitchToNextPlayablePlayer` → `SwitchTargetPolicy.CandidateOrder`）；② `切换操控角色(下一位): …327 -> …326` **×1**
+  （`TrySwitchCombatPlayer` → `SwitchTargetPolicy.SingleStep`）；另有 `切换操控角色(指定)` ×11（按头像点名切，
+  走的是另一条不进本策略的路径）—— 顺序全部合理、无跳人。
+- `战斗角色切换需要至少2名玩家` **0**（期望 0 哨兵）；切人相关失败哨兵全 0（`控制上下文切换回滚` /
+  `自动切前台失败` / `检测到无效战斗角色ID` / `尝试设置当前操控角色失败`）；期望 0 全 0；
+  `PATCH_RESULT 25/25·15/15·186` 与 r190 逐字相同；`BUILD_IDENTITY commit=a9287a3 state=dirty`。
+- **我方 WARN 模板对比 r190：「本局独有」= 0**（一条新模板都没有），反向 5 条也全是既有族
+  （藏宝图 quest 兜底 / 选择器栈自恢复 / 看门狗 / 熔断 / 药水动画 —— 本局没走到而已）。
+- 噪声（均非我方、均既有）：`[ERROR]` 5 = Manosaba/ddu 分支 2 + BetterModMenu 超时 1 + 游戏侧存档删除失败 2；
+  NRE **12 条全是第三方 `RitsuLib`**（本局**没有**游戏侧/我方 NRE）。
+- 未直接命中（不影响判定）：`结束回合后优先切换到可操作非瓦库角色` 0 —— 该分支要求"瓦库席位全部无牌可出"，
+  是数据相关场景，本局没出现（与第二刀改动的同一策略 `CandidateOrder`，已被上面那条覆盖）。
 - 未直接命中（不影响判定）：`奖励领取按归属角色绑定`（"领取时同步器归属错位"是数据相关场景，本局没出现）、
   `RestSitePatch:62` 的上下文兜底（只在上下文为空时才回退同步器私有字段）—— 两处与已覆盖链路共用同一入口。
