@@ -2479,7 +2479,13 @@ FAIL:    奖励发错人 / 瓦库该动的席位不动、不该动的动了；�
   `dll_check --deployed` 字节一致（sha256 `320cd65bbedc…`）。
 - **未归批（已定性）**：`NGameOverScreen._localPlayer` —— 是**结算页节点自己的"当前展示玩家"引用**（反射只为读它的
   `Character.Id`），不是身份来源 ⇒ 不接 `LocalSeatSource`；R4 拆类时随 UI 层再看。
-- **B1c（待拍板）**：驱动三态判定统一（语义二选一，见上）。
+- **B1c（驱动三态）✅ 已评估并关闭（2026-09-30，不做代码替换）**：驱动事实源本来就只有一处
+  （`LocalSelfCoopContext._wakuuPlayerIds` / `_coopBotsPlayerIds`，写入侧 `SetWakuuEnabled` / `SetCoopBotsDriven`
+  已强制互斥），消费点全是调 `IsWakuuEnabled` 这**一个**方法 ⇒ 换成 `SeatRegistry.DriverOf` 只多一层间接；
+  而"三态互斥"口径在"两处同时命中"（当前不可达）时会改变结果，不属"行为零变化"。
+  **结论**：`IsWakuuEnabled` / `IsCoopBotsDriven` 保留为**驱动事实源的源级原语**（已加注记，指明 B1c 为何没做），
+  **新代码**要"互斥的唯一答案"就显式问 `LocalSeatSource.CurrentSeats().IsWakuuDriven(id)`。
+  ⇒ **R3（身份收编）到此收口**（R0/R1/R2/R3 全部落地，下一步进 R4）。
 
 **验证契约（请实机，marker `2026-09-30-r188`）**
 ```
@@ -2555,5 +2561,62 @@ FAIL:    选牌界面串到对家手牌 / 选牌卡住不出结果；奖励领�
   **游戏侧 `NHeavyBluntVfx.PlaySequence()` NRE 1**（栈里我方 0 帧，与历史 `NStarryImpactVfx`/`NHeavyBluntVfx` 同族）+
   游戏侧存档删除失败 2；NRE 13 = 12 条第三方 `RitsuLib` + 上述 1 条游戏侧。
 - 我方 WARN 模板对比 r188：本局独有 5 个模板全是既有族（手牌点击出不了牌 / 手牌点击被忽略 / 跳过药水动画）⇒ **未引入新告警来源**。
+
+---
+
+## R4 拆 God class（`LocalMultiControlRuntime.cs`，2026-09-30 起）
+
+> 提案：`runtime架构分层重构评估.md` §四 R4 + §八（该文件在仓库外维护）。
+> 目标：**按职责把 2800+ 行的 Runtime 拆成独立单元**；每刀行为零变化 + 一局实机；
+> 拆出去的单元优先选"职责单一、能独立读懂（能单测更好）"的，Runtime 侧只保留编排与来源自身。
+
+**已落地**
+- **第一刀（r190，✅ 2026-09-30 实机通过）= Run 级同步器的「本地玩家」对齐**：新增 `Scripts/Runtime/RunSynchronizerSeatSync.cs`
+  —— `Apply(playerId)` 把 7 个 Run 级同步器（`Event` / `RewardsSet` / `Reward` / `RestSite` / `OneOff` /
+  `TreasureRoomRelic` / `Flavor`）的私有 `_localPlayerId` 对齐到当前归属角色；
+  **`EventSynchronizer` 走"事件流所属者"这条差异原样保留**（`UseSingleEventFlow` 时钉主席位，`FoulPotionPatch` 依赖它）；
+  写入失败按 `组件:类型` 去重只记一条 WARN（键格式与文案逐字不变）。
+  从 Runtime 搬走 `SyncRunSynchronizerLocalPlayerId` + `TrySetLocalPlayerId` + `_fieldSyncFailures`
+  （5 个调用点 → `RunSynchronizerSeatSync.Apply(...)`）；新单元**不再自带反射**，一律走 B3 的唯一入口
+  `SynchronizerLocalPlayerId` ⇒ Runtime 里最后一处"自己写 `AccessTools.Field(..., "_localPlayerId")`"随之消失。
+  Runtime 净减 ~35 行；构建 0 警告 0 错误（**243 .cs**）、单测仍 **769**、S7 基线不变；
+  marker **`2026-09-30-r190`**、`dll_check --deployed` 字节一致（sha256 `8abeffc05dcb…`）。
+
+**下一刀候选**（按内聚度 / 风险排序；每刀单独一局实机）
+1. **切换目标选择**（`TrySwitchCombatPlayer` / `TrySwitchToNext*` / `TryAutoSwitchToNonWakuuOncePerRound` /
+   `BuildWakuuSwitchRoundKey` …）—— 内聚度高，且其中"该切谁"能提成纯逻辑进 `PureLogic` 并补单测；
+2. **弹层 / 转场诊断与兜底**（`DumpControlVisibilityChain` / `DumpTransitionOverlayState` / `CollectTransitionNodes` /
+   `EnsureOverlayNotCoveredForRewards` / `IsLoadReplayTransitionCovering`）—— 自包含、低风险；
+3. **前台 / 上下文对齐**（`ApplyControlContext` / `AlignContextForActionOwner` /
+   `AlignLocalContextToForegroundForEndTurn` / `TryEnsureForegroundForPlayer`）—— 热路径，风险最高，放最后。
+
+**验证契约（请实机，marker `2026-09-30-r190`）**
+```
+改动:    R4 第一刀 —— Run 级同步器「本地玩家」对齐抽成 RunSynchronizerSeatSync（行为零变化）
+SETUP:   本地多控 2~4 席（真人 + 至少一个瓦库托管席位）；一局里尽量走到 战斗 + 事件 + 商店 + 休息区 + 宝箱
+ACTION:  正常玩：中途切人后让瓦库领奖励 / 事件里换人再选 / 进商店（自动买 + 手动删牌）/ 休息区选择 / 开宝箱遗物投票
+PASS:    与 r189 完全一致：切人后奖励归属正确、`奖励-拿牌归属玩家: context=…, syncLocal=…` 两侧一致、
+         `瓦库商店自动买…成功`、`瓦库事件自动选择完成`、`瓦库火堆…`、宝箱投票正常推进；`会话席位自检通过: seats=…` 照旧
+FAIL:    切人后奖励 / 事件 / 商店删牌认错人（这正是本单元要防的症状）；`同步 … 的 _localPlayerId 失败`
+期望 0： ### Exception ### / add_child() failed / 我方 NullReferenceException / 幽灵弹层
+```
+
+**✅ 实机结论（2026-09-30，marker `2026-09-30-r190`，日志 `logs-archive/godot__20260930-204056__r190.log`）⇒ R4 第一刀关单**
+本机当晚跑了 3 次 r190 会话（20:28 / 20:33 / 20:40），**三次全部 `INIT_OK`、`INIT_FAILED` 0**；
+主局（20:40，1.7MB）2 席（真人 `…326` + 瓦库席位 `…327`）：
+- **本单元要防的症状被正面覆盖**：① `奖励领取按归属角色绑定: owner=…326, syncLocal=…327 -> …326`
+  与 `奖励领取归属已恢复: source=postfix, syncLocal=…327` **成对 1 次** —— 正是"切人之后同步器归属还是上一个人"
+  的场景，抽取后的 `Apply()` 按原口径改绑并还原；② `商店-删牌归属玩家: context=…326, syncLocal=…326`
+  （`OneOffSynchronizer` 也是这 7 个之一）⇒ 删牌认人正确；③ `瓦库事件自动选择完成` **5**（`EventSynchronizer`
+  走"事件流所属者"这条特例照旧）；④ 宝箱 `宝箱已禁用自动代投，改为逐角色手动选择` +
+  `宝箱选择完成后自动切换到下一位未选角色`（逐角色投票正常推进）；⑤ `瓦库火堆` 3、`瓦库商店自动买` 3（本局金币 19，
+  三条都是"不买"的正当决策）。
+- **失败哨兵 0**：`同步 … 的 _localPlayerId 失败` **0**（去重 WARN 的键与文案未变）、`休息区升级切换失败` 0；
+  期望 0 全 0（`### Exception ###` / `add_child() failed` / 我方 NRE / `Couldn't get hand node` / 幽灵弹层 /
+  `保留为人工领取` / `归属者残留已改写` / `手动出牌上下文漂移`）；`PATCH_RESULT` 与 r189 逐字相同。
+- 噪声（三次会话合计，均非我方且均既有）：Manosaba/ddu 分支不匹配 ×2、BetterModMenu 超时 ×1、
+  游戏侧存档删除失败 ×2（仅主局）、`[SteamHost] Error creating steam lobby! k_EResultNoConnection` ×1（20:28 局，Steam 侧）。
+- 我方 WARN 模板对比 r189：本局独有 4 个模板**全是既有族**（藏宝图 quest 兜底 / 托管遗物缺失当场补发 /
+  选择器栈自恢复 / 跳过药水动画）⇒ **未引入新告警来源**。
 - 未直接命中（不影响判定）：`奖励领取按归属角色绑定`（"领取时同步器归属错位"是数据相关场景，本局没出现）、
   `RestSitePatch:62` 的上下文兜底（只在上下文为空时才回退同步器私有字段）—— 两处与已覆盖链路共用同一入口。
