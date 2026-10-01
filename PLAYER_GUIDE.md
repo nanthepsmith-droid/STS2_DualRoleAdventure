@@ -164,7 +164,8 @@ shopping can optionally be handed to Vakuu via "Auto-buy cards" (below).
     for last as long as any other card can be played** (to maximize X); ties go to the leftmost card.
     For single-enemy cards it **prefers a killable target, otherwise the enemy with the lowest effective
     HP** (focus fire); ally buffs go to human players first.
-  - **Auto**: reserved for a future external solver; currently identical to Heuristic.
+  - **Auto**: not wired to an external solver yet (that direction is shelved); the mode is kept and
+    behaves exactly like Heuristic.
   - ⚠ Scoring uses a **rough estimate** (card values + Strength/Dexterity, no Vulnerable/Weak modifiers)
     and has **no cross-turn planning**; switch back to Heuristic anytime if it feels off. All three modes
     only affect in-combat plays — never card picks, events or shops.
