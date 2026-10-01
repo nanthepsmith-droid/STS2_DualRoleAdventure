@@ -2900,6 +2900,19 @@ FAIL:    切人后没反应 / 点结束回合无效（BUG-2 回归）/ 出牌入
     这 5 项只影响日志去重与节流、**不影响玩法**（行为零变化口径成立）。
   - 单测 **791 → 798**（+7）；marker **`2026-10-01-r197`**、`dll_check --deployed` 字节一致（sha256 `544dfb3eb304…`）。
 
+**已落地（零 mod 代码改动 ⇒ 未升 marker、未部署，同 r162 先例）**
+- **R5-2（2026-10-01）= 守卫类状态体检**：口径 = 逐个核"获取 / 释放是否配在 try/finally 内"
+  （泄漏一次即"守卫永久激活"）。**结论：7/7 全部配对正确、零修复** ——
+  `FoulPotionPatch._activeThrowCount`（inc + finally dec）、`LocalWakuuRewardAutoClaim._suppressCardRewardDepth`
+  （`++` + finally `Math.Max(0, --)`）、`LocalManualPlayGuard._depth`（`Enter()` ↔ **Harmony `[HarmonyFinalizer]`** `Exit()`）、
+  `CombatManagerReadyEnemyTurnPatch._mirroring`（true + finally false）、`CreatureCmdKillWinCheckPatch._pendingWatchers`
+  （inc + 早退 dec + 观察器 finally dec）、`StaleCombatActionJanitorPatch._purgeLoopsInFlight`（CAS + finally dec）、
+  `LocalWakuuRelicRuntime._selectorScopeInFlight`（inc + finally dec + 释放闸门）。
+  工具化 = 本机层新增 **`tools/guard_pairing_audit.py`**（首次全仓跑：16 个获取点 ⇒ PAIRED 2 /
+  RELEASE_ELSEWHERE 5 / NO_RELEASE 9，逐条复核后**全是合法形态**：Harmony Finalizer / 专门的后台观察方法 /
+  只增不减且按窗口·战斗·退局复位的日志计数器）。
+  **R5-5 抽样也一并过**：`LocalStatBadgeUi._overlay`、`LocalWakuuSafetyNet._ticker` 都自带"失效即重建"守卫。
+
 **R5 剩余分批**（按风险 / 收益排序，细节见 ADR §十.4）
 1. **R5-2 守卫类状态体检**：临界区计数 / 重入标志逐个核"进出是否配在 try/finally 内"
    （`LocalManualPlayGuard._depth` / `FoulPotionPatch._activeThrowCount` / `CombatManagerReadyEnemyTurnPatch._mirroring` /
