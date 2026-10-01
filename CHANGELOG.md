@@ -16,6 +16,18 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   以后有争议一眼能看出走的是哪条规则；新增 2 条单测（789 → 791），行为改动仅限"有第三方休息区选项"的场景。
 
 ### Changed（内部重构，行为零变化）
+- **R4 收尾刀：前台 / 归属上下文的对齐抽成独立单元（r196，2026-10-01）**：
+  新增 `Scripts/Runtime/ControlContextAlignment.cs`，把"把归属对齐到某个席位"的四个入口从
+  `LocalMultiControlRuntime` 搬出 —— 动作入队前的上下文让位（`AlignContextForActionOwner`）、
+  后台角色触发效果 / 选牌时的自动切前台（`TryEnsureForegroundForPlayer` / `…ForPlayerId`）、
+  结束回合点击前的上下文校正（`AlignLocalContextToForegroundForEndTurn`）；
+  三处并行载体（回环上下文 / 回环服务当前发送者 / Run 级同步器私有字段）的写入收成唯一原语 `WriteSeatContext`，
+  避免"只写一半"（症状是奖励 / 事件 / 商店认错人）。8 处补丁调用点改走新单元，`LocalMultiControlRuntime`
+  净减 ~137 行（2599 → 2462）；**判定顺序、日志文案与回滚口径逐字不变**，单测仍 791。
+  顺手清掉测试工程里 2 条历史 `CS8625` 告警（`null` → `null!`）。
+  **已实机确认（2026-10-01）**：2 席一局里四条入口都被真实走到（`控制上下文已更新` 46 次，其中 3 次来自
+  "后台角色触发战斗效果/选牌时自动切前台"；结束回合点击链路 8 次），失败哨兵与期望 0 全 0，
+  `PATCH_RESULT` 与前几局逐字相同，无新增告警族。
 - **R3 B3：第三方同步器私有 `_localPlayerId` 的反射读写收编到唯一入口（r188，2026-09-30）**：
   新增 `Scripts/Runtime/SynchronizerLocalPlayerId.cs`（按类型缓存 `FieldInfo`、`TryRead` / `ReadOrZero` /
   `TryWrite`，不吞异常也不打日志 ⇒ 各站点原有的 try/catch 与日志文案逐字不变），
