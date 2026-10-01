@@ -40,6 +40,12 @@ internal enum CardTransformNetIdAction
 /// 原版视觉分支也会因 <c>FindOnTable=null</c> 抛异常并**炸穿回合循环**（游戏侧原话
 /// "turn loop died … the combat is stuck" ⇒ 整场战斗软锁）。节点不存在时唯一安全的做法是
 /// 让 <c>IsMine=false</c> 跳过整段视觉：数据层照常完成，UI 由既有自愈链路重建。
+///
+/// r199（BUG-29）再补第四个维度「牌主人是不是我们托管的席位」：<c>CardCmd.Transform</c> 的结构是
+/// **数据阶段（3 张牌都在这里换好，中间夹多个 <c>await</c>）→ 视觉阶段**，而视觉阶段才去查原牌节点。
+/// 托管席位（瓦库）的手牌节点在该异步窗口里可能已被换掉/重建 ⇒ 探针在 Prefix 时看到节点、
+/// 视觉阶段却查不到 ⇒ 抛 <c>Couldn't get hand node …</c> ⇒ 出牌中断、牌停屏、只换了一半。
+/// **"探针看到节点"不足以保证视觉阶段能查到** ⇒ 托管席位一律跳过视觉（与 r185 同一处置，只是判据更强）。
 /// </summary>
 internal static class CardTransformNetIdPolicy
 {
@@ -53,15 +59,32 @@ internal static class CardTransformNetIdPolicy
     /// 原牌的手牌节点探针（<c>NCard.FindOnTable(original, PileType.Hand)</c>）：
     /// <c>null</c> = 没探（不在战斗/没有变换牌），<c>true</c> = 全部原牌都有节点，<c>false</c> = 至少一张缺失。
     /// </param>
+    /// <param name="isOwnerAutomated">
+    /// 牌主人是否是**我们托管的席位**（瓦库驱动）。true ⇒ 一律跳过原版视觉，不看探针与前台：
+    /// 游戏把变换分成"数据阶段（含多个 <c>await</c> 挂钩点）→ 视觉阶段"，视觉阶段才用
+    /// <c>LocalContext.IsMine(cardAdded)</c> 去 <c>NCard.FindOnTable(original, PileType.Hand)</c> 找**原牌节点**；
+    /// 托管席位的手牌节点在异步窗口里可能已被换掉/重建 ⇒ 抛
+    /// <c>Couldn't get hand node for original card …</c> ⇒ <c>PlayCardAction</c> 以异常结束 ⇒
+    /// **牌停在屏幕中央、效果只做了一半**（r109「数据链」同族；2026-10-01 实机：猪猪 mod【猪猪王】要换 3 张，
+    /// 结果只换了 1 张、牌不消失）。视觉对这个席位只是装饰，跳过最安全（UI 由既有顺序自愈重建）。
+    /// </param>
     public static CardTransformNetIdAction Decide(
         bool isOwnerLocal,
         bool isOwnerForeground,
         bool currentNetIdIsOwner,
-        bool? handNodeExists)
+        bool? handNodeExists,
+        bool isOwnerAutomated = false)
     {
         if (!isOwnerLocal)
         {
             return CardTransformNetIdAction.None;
+        }
+
+        if (isOwnerAutomated)
+        {
+            // 不看探针、不看前台：必须保证**整段异步窗口**里 IsMine=false
+            // （中途 NetId 可能被看门狗/切人改写，所以不能只在"现在已是主人"时才让开）。
+            return CardTransformNetIdAction.ShiftAwayFromOwner;
         }
 
         if (handNodeExists == false)

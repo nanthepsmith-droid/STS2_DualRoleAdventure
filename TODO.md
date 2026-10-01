@@ -2379,6 +2379,58 @@ if (LocalContext.IsMe(player) && NetService.Type != Replay) {
 
 ---
 
+### BUG-29 瓦库打出「变化手牌」类卡牌后牌停在屏幕中央不消失、只变化了一部分（猪猪 mod【猪猪王】）（2026-10-01 用户实机反馈；**r199 已修，待实机**）
+
+**现象（用户原话）**：「瓦库打出猪猪 mod（YuWanCard）的卡牌【猪猪王】后这张牌停在屏幕中不消失，
+可能是因为这张牌要选择三张手牌变化，但是最后只变化了 1 张牌」。
+
+**日志实证（`logs-archive/godot__20261001-130746__r198.log`）**：
+```
+L9488 [ERROR] GameAction PlayCardAction card: CARD.YUWANCARD-PIG_KING … completed with exception:
+      System.AggregateException: … (Couldn't get hand node for original card CARD.DEFEND_IRONCLAD (25303433)!)
+L9452   at MegaCrit.Sts2.Core.Commands.CardCmd+<Transform>d__13.MoveNext_Patch1(…)
+L9455   at YuWanCard.Cards.PigKing.OnPlay(PlayerChoiceContext choiceContext, CardPlay cardPlay)
+```
+同一局出现 **2 次**（actionId=5 与 3）。**我方变换补丁 `[手牌同步修复]` 一行日志都没有**
+⇒ 它当时没进入任何分支（判定 = `None`，即"什么都不做"）。
+
+**根因**（读 `sts2src` 的 `CardCmd.Transform` 定死）：原版把变换分成两段 ——
+① **数据阶段**：`RemoveFromCurrentPile` + `AddInternal` 把**所有**牌换好（L409-453，中间夹
+`await Hook.AfterCardEnteredCombat(...)` / `await Hook.AfterCardChangedPiles(...)` 等挂钩点）；
+② **视觉阶段**（L456+）：`if (!LocalContext.IsMine(cardAdded2)) continue;` 之后按
+`NCard.FindOnTable(original2, PileType.Hand)` 找**原牌节点**播换牌特效，**找不到就 throw**。
+托管席位（瓦库）的手牌节点在那段 `await` 窗口里已被换掉/重建 ⇒ 视觉阶段必然查不到 ⇒ 抛异常
+⇒ `PlayCardAction` 以异常结束 ⇒ **牌停屏 + 只变化一部分**。
+⚠ r185 的探针判据（`handNodeExists`）**覆盖不到这一路**：它看的是"**此刻**缺不缺节点"，
+而这里是"**之后**才缺"（Probe 在 Prefix 时节点还在）。
+
+**修法（r199）**：`CardTransformNetIdPolicy.Decide` 加第四维度 `isOwnerAutomated` ——
+**托管席位（瓦库）的手牌变换一律跳过原版视觉**（无条件 `ShiftAwayFromOwner`，不看探针、不看前台；
+理由：异步窗口里 NetId 也可能被看门狗/切人改写，所以要做"整段担保"而不是"此刻判定"）。
+数据层在视觉之前就已生效，跳过只丢装饰；手牌 UI 由既有 `ScheduleReconcileDisplayedHandOrder` 等自愈链路重建。
+补丁侧：探针只在**非托管**席位跑；托管席位分支单独打一条 INFO 便于统计。
+**真人自己出这类牌不受影响**（非托管席位走原判定，动画照旧）。
+坑已沉淀为 `references/local-multicontrol-pitfalls.md` **坑 S**（两侧已 sync）。
+
+**验证契约（请实机，marker `2026-10-01-r199`）**
+```
+改动:    BUG-29 —— 托管席位（瓦库）的手牌变换一律跳过原版视觉（附 R5-4 诊断台账重排，行为零变化）
+SETUP:   本地多控 2 席（真人 + 瓦库托管）；想办法让**瓦库**打出会「变化手牌」的牌（猪猪 mod【猪猪王】
+         `YUWANCARD-PIG_KING` 最直接；同类还有历史「数据链」/酒狐「不等价交换」）
+ACTION:  ① 让瓦库打出【猪猪王】，观察那 3 张手牌是否都变化、打出的牌是否正常进弃牌堆（不留在屏幕中央）；
+         ② 反复几次（该牌可重复打出），并顺手切一次人看手牌 UI 是否自愈（顺序/内容正确）；
+         ③ 顺带确认 R5-4 无回归：两类看门狗窗口日志格式照旧 + 两条复位自检照旧"无残留"。
+PASS:    牌打出后**正常消失**（进弃牌堆）、**该变化的牌全部变化**（3 张）；
+         日志出现 `[手牌同步修复] 托管席位（瓦库）的变换一律跳过原版视觉…`（每次该牌打出至少一条）、
+         `Couldn't get hand node for original card` **0 条**、`PlayCardAction … completed with exception` **0 条**；
+         切人后手牌 UI 内容/顺序正确。
+FAIL:    牌仍停在屏幕中央 / 只变化一部分 / 上述两条 ERROR 仍出现（贴回日志行）。
+期望 0： Couldn't get hand node for original card / PlayCardAction … completed with exception /
+         ### Exception ### / 我方 NullReferenceException
+```
+
+---
+
 ## R3 身份收编（席位身份唯一取数入口 `SeatRegistry` / `LocalSeatSource`）
 
 > 提案：`maintenance-docs/decision-records/runtime架构分层重构评估.md` §四 R3 + **§八 靶区清单**（该文件在仓库外维护）。
@@ -2913,6 +2965,17 @@ FAIL:    切人后没反应 / 点结束回合无效（BUG-2 回归）/ 出牌入
   只增不减且按窗口·战斗·退局复位的日志计数器）。
   **R5-5 抽样也一并过**：`LocalStatBadgeUi._overlay`、`LocalWakuuSafetyNet._ticker` 都自带"失效即重建"守卫。
 
+**已落地（本轮，待实机）**
+- **R5-4（r198，2026-10-01）= 诊断 / 节流窗口台账抽纯逻辑**：新增
+  `Scripts/Runtime/PureLogic/RuntimeDiagnosticsLedger.cs` —— 把原先散在 Runtime 字段区的 **9 个静态状态**
+  （瓦库看门狗调度窗口 6：被拒表 / 窗口起点 / 成功计数 / 最近玩家·回合·来源；流程阻塞信号窗口 3：
+  计数表 / 按回合+玩家去重集 / 窗口起点）收成一处，**只碰字符串 / 整数 / 时间戳**（取时间与打日志留在 Runtime）。
+  **逐字保留的原语义**：懒开窗（首条记录才开窗 ⇒ 本次不到点）、到点判据 `>= 2000ms`、日志 `windowMs=` 取翻滚前值、
+  翻滚时看门狗**保留最近身份**、流程信号**不清去重集**、键格式 `reason`（空⇒`unknown`）/`signal:reason`/
+  `signal:round:player`；退局复位从 9 行收成一次 `RuntimeDiagnosticsLedger.Reset("run-cleanup")`。
+  Runtime 净减 **~48 行**；新增单测 **10 条**（798 → **808**）；marker **`2026-10-01-r198`**、
+  `dll_check --deployed` 字节一致（sha256 `ed61bd27fd36…`）。
+
 **R5 剩余分批**（按风险 / 收益排序，细节见 ADR §十.4）
 1. **R5-2 守卫类状态体检**：临界区计数 / 重入标志逐个核"进出是否配在 try/finally 内"
    （`LocalManualPlayGuard._depth` / `FoulPotionPatch._activeThrowCount` / `CombatManagerReadyEnemyTurnPatch._mirroring` /
@@ -2959,4 +3022,21 @@ FAIL:    任一条自检行是 WARN（`进局复位自检发现残留: 键=值, 
   本局没进商店与火堆）。
 - 噪声（均非我方、均既有）：全局 `[ERROR]` 4 = Manosaba/ddu 分支不匹配 2 + 游戏侧存档删除失败 2；
   NRE 12 全为第三方 `RitsuLib`。
+
+**验证契约（请实机，marker `2026-10-01-r198`）**
+```
+改动:    R5-4 —— 诊断 / 节流窗口台账抽成 RuntimeDiagnosticsLedger（行为零变化；日志文案与键格式逐字不变）
+SETUP:   本地多控 2~4 席（真人 + 至少一个瓦库托管席位）；一局里让瓦库持续后台出牌（这是看门狗/流程信号窗口的来源）
+ACTION:  ① 正常打几场战斗，让瓦库在后台出牌（会产生"瓦库看门狗调度统计"/"流程阻塞看门狗统计"两类窗口日志）；
+         ② 中途频繁切人、手动出牌插队（触发"流程阻塞"侧的信号与去重）；
+         ③ 打完一局后照常退局 → 再进一局（顺带再验一次复位自检）。
+PASS:    与 r197 完全一致：玩法无任何变化；两类窗口日志**格式与数值口径照旧** ——
+         `瓦库看门狗调度统计: windowMs=…, scheduled=…, rejected=…, lastPlayer=…, lastRound=…, lastSource=…, selectorStackCount=…, selectorStackTop=…`
+         `流程阻塞看门狗统计: windowMs=…, signals=…, player=…, round=…, source=…, selectorStackCount=…, selectorStackTop=…`
+         （`rejected`/`signals` 仍是 `键:次数,键:次数`，无数据时是 `none`）；
+         `进局复位自检: 无残留` / `退局复位自检: 无残留` 照旧；`PATCH_RESULT` 与上一局逐字相同。
+FAIL:    两类窗口日志消失或格式变了（`log_scan` 锚点会失效）/ 窗口翻滚后计数不清零（会刷屏）/
+         同一回合同一玩家重复刷"流程阻塞"（去重集被误清）/ 切人后瓦库照旧不干活。
+期望 0： 进局复位自检发现残留 / 退局复位自检发现残留 / ### Exception ### / add_child() failed / 我方 NullReferenceException
+```
 

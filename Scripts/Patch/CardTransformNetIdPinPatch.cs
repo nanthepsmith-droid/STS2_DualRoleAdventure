@@ -67,14 +67,26 @@ internal static class CardTransformNetIdPinPatch
             return;
         }
 
-        // 前台/后台 × NetId 是否已等于牌主人 × 原牌节点是否存在 → 用纯函数判定，避免逻辑散落。
+        // 前台/后台 × NetId 是否已等于牌主人 × 原牌节点是否存在 × 是否托管席位 → 用纯函数判定，避免逻辑散落。
         // R3：受控位与上下文两个判定取自同一份席位快照
         SeatRegistry seats = LocalSeatSource.CurrentSeats();
-        bool isOwnerForeground = seats.IsControlled(owner!.NetId);
+        bool isOwnerAutomated = seats.IsWakuuDriven(owner!.NetId);
+        bool isOwnerForeground = seats.IsControlled(owner.NetId);
         bool currentNetIdIsOwner = seats.IsContext(owner.NetId);
-        bool? handNodeExists = ProbeHandNodeExists(transformations, out CardModel? firstMissingOriginal);
+        CardModel? firstMissingOriginal = null;
+        bool? handNodeExists = null;
+        if (!isOwnerAutomated)
+        {
+            // 托管席位不看探针（r199：探针看到节点也不代表视觉阶段还查得到，见策略注释）。
+            handNodeExists = ProbeHandNodeExists(transformations, out firstMissingOriginal);
+        }
 
-        switch (CardTransformNetIdPolicy.Decide(isOwnerLocal, isOwnerForeground, currentNetIdIsOwner, handNodeExists))
+        switch (CardTransformNetIdPolicy.Decide(
+                    isOwnerLocal,
+                    isOwnerForeground,
+                    currentNetIdIsOwner,
+                    handNodeExists,
+                    isOwnerAutomated))
         {
             case CardTransformNetIdAction.PinToOwner:
                 // 只钉 NetId、不跳过原方法：保证其它 mod 在本方法上的 Prefix/__state 照常执行。
@@ -109,7 +121,18 @@ internal static class CardTransformNetIdPinPatch
                 LocalContext.NetId = safeNetId;
                 _pinActive.Value = true;
 
-                if (handNodeExists == false)
+                if (isOwnerAutomated)
+                {
+                    // r199（BUG-29）：托管席位的变换一律跳过原版视觉。原因是原版把变换分成
+                    // 「数据阶段（中间有 await 挂钩点）→ 视觉阶段」，视觉阶段才查原牌手牌节点；
+                    // 托管席位的手牌节点在这段异步窗口里可能已被换掉/重建 ⇒ 抛 Couldn't get hand node
+                    // ⇒ 出牌以异常结束、牌停在屏幕中央、只换了一半（实机：猪猪 mod【猪猪王】换 3 张只换 1 张）。
+                    // 探针（只在非托管席位跑）看到节点也不足以保证视觉阶段还查得到，所以这里不做条件判断。
+                    LocalMultiControlLogger.Info(
+                        $"[手牌同步修复] 托管席位（瓦库）的变换一律跳过原版视觉（防异步窗口内原牌节点消失导致抛异常卡屏）: "
+                        + $"owner={owner.NetId}, netId={_previousNetId.Value?.ToString() ?? "null"} -> {safeNetId?.ToString() ?? "null"}");
+                }
+                else if (handNodeExists == false)
                 {
                     // BUG-25 实机锚点：点名是"节点缺失"这一路，便于后续统计与回归。
                     LocalMultiControlLogger.Info(

@@ -13,6 +13,8 @@ namespace LocalMultiControl.Tests;
 /// （实机：AncientsAwakened「唯我」）在前台刚切、手牌 UI 未建时，
 /// 即便 owner=前台且 NetId=owner 也会抛异常并炸穿回合循环（整场战斗软锁）——
 /// 节点缺失时唯一安全的动作是让 IsMine=false 跳过整段视觉。
+/// r199（BUG-29）补第四维度「牌主人是不是托管席位」：托管席位**无条件**跳过视觉 ——
+/// 原版"数据阶段（含 await）→ 视觉阶段"之间原牌节点可能消失，探针看到也不代表视觉阶段查得到。
 /// </summary>
 [TestFixture]
 public class CardTransformNetIdPolicyTests
@@ -129,48 +131,83 @@ public class CardTransformNetIdPolicyTests
     {
         foreach (bool isOwnerLocal in new[] { true, false })
         {
+            foreach (bool isOwnerAutomated in new[] { true, false })
+            {
+                foreach (bool isOwnerForeground in new[] { true, false })
+                {
+                    foreach (bool netIdIsOwner in new[] { true, false })
+                    {
+                        foreach (bool? handNodeExists in new bool?[] { true, false, null })
+                        {
+                            CardTransformNetIdAction action = CardTransformNetIdPolicy.Decide(
+                                isOwnerLocal, isOwnerForeground, netIdIsOwner, handNodeExists, isOwnerAutomated);
+                            string context = $"auto={isOwnerAutomated}, fg={isOwnerForeground}, "
+                                             + $"netIdIsOwner={netIdIsOwner}, node={handNodeExists?.ToString() ?? "null"}";
+
+                            // 期望动作 = 实现语义的逐格展开（写死，防回归漂移）：
+                            // 非本地牌主 → None；
+                            // r199：托管席位（瓦库）→ 一律让开（异步窗口里原牌节点可能消失 ⇒ 视觉必抛）；
+                            // 节点缺失 → 视觉必抛，让 IsMine=false（NetId 已是主人时显式让开，否则不动）；
+                            // 节点存在/未探 → 前台要对齐（未对齐就钉），后台要让开（已对齐就显式让）。
+                            CardTransformNetIdAction expected;
+                            if (!isOwnerLocal)
+                            {
+                                expected = CardTransformNetIdAction.None;
+                            }
+                            else if (isOwnerAutomated)
+                            {
+                                expected = CardTransformNetIdAction.ShiftAwayFromOwner;
+                            }
+                            else if (handNodeExists == false)
+                            {
+                                expected = netIdIsOwner
+                                    ? CardTransformNetIdAction.ShiftAwayFromOwner
+                                    : CardTransformNetIdAction.None;
+                            }
+                            else if (isOwnerForeground)
+                            {
+                                expected = netIdIsOwner
+                                    ? CardTransformNetIdAction.None
+                                    : CardTransformNetIdAction.PinToOwner;
+                            }
+                            else
+                            {
+                                expected = netIdIsOwner
+                                    ? CardTransformNetIdAction.ShiftAwayFromOwner
+                                    : CardTransformNetIdAction.None;
+                            }
+
+                            Assert.That(action, Is.EqualTo(expected), $"真值表漂移: {context}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    [Test]
+    public void 托管席位_一律让开_与探针前台均无关()
+    {
+        // r199（BUG-29，2026-10-01 实机 猪猪 mod【猪猪王】）：原版变换是
+        // 「数据阶段（含多个 await）→ 视觉阶段」，视觉阶段才按 IsMine 去查原牌手牌节点。
+        // 托管席位（瓦库）的手牌节点在这段异步窗口里可能已被换掉 ⇒ 探针在 Prefix 时看到节点、
+        // 视觉阶段却查不到 ⇒ 抛 Couldn't get hand node ⇒ 出牌中断、牌停屏、只换了一半。
+        // 所以托管席位必须**无条件**让开（也不能只在"现在已是主人"时让开 —— 中途 NetId 可能被改写）。
+        Assert.Multiple(() =>
+        {
             foreach (bool isOwnerForeground in new[] { true, false })
             {
                 foreach (bool netIdIsOwner in new[] { true, false })
                 {
                     foreach (bool? handNodeExists in new bool?[] { true, false, null })
                     {
-                        CardTransformNetIdAction action = CardTransformNetIdPolicy.Decide(
-                            isOwnerLocal, isOwnerForeground, netIdIsOwner, handNodeExists);
-                        string context = $"fg={isOwnerForeground}, netIdIsOwner={netIdIsOwner}, node={handNodeExists?.ToString() ?? "null"}";
-
-                        // 期望动作 = 实现语义的逐格展开（写死，防回归漂移）：
-                        // 非本地牌主 → None；
-                        // 节点缺失 → 视觉必抛，让 IsMine=false（NetId 已是主人时显式让开，否则不动）；
-                        // 节点存在/未探 → 前台要对齐（未对齐就钉），后台要让开（已对齐就显式让）。
-                        CardTransformNetIdAction expected;
-                        if (!isOwnerLocal)
-                        {
-                            expected = CardTransformNetIdAction.None;
-                        }
-                        else if (handNodeExists == false)
-                        {
-                            expected = netIdIsOwner
-                                ? CardTransformNetIdAction.ShiftAwayFromOwner
-                                : CardTransformNetIdAction.None;
-                        }
-                        else if (isOwnerForeground)
-                        {
-                            expected = netIdIsOwner
-                                ? CardTransformNetIdAction.None
-                                : CardTransformNetIdAction.PinToOwner;
-                        }
-                        else
-                        {
-                            expected = netIdIsOwner
-                                ? CardTransformNetIdAction.ShiftAwayFromOwner
-                                : CardTransformNetIdAction.None;
-                        }
-
-                        Assert.That(action, Is.EqualTo(expected), $"真值表漂移: {context}");
+                        Assert.That(
+                            CardTransformNetIdPolicy.Decide(true, isOwnerForeground, netIdIsOwner, handNodeExists, isOwnerAutomated: true),
+                            Is.EqualTo(CardTransformNetIdAction.ShiftAwayFromOwner),
+                            $"托管席位应无条件让开: fg={isOwnerForeground}, netIdIsOwner={netIdIsOwner}, node={handNodeExists}");
                     }
                 }
             }
-        }
+        });
     }
 }

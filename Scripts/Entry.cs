@@ -14,8 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // r197：R5 第一批 —— 退局/进局复位自检（ResetResidualPolicy）+ 补齐战斗级状态的退局复位
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-01-r197)";
+    // r199：BUG-29 —— 托管席位（瓦库）的手牌变换一律跳过原版视觉（防第三方变换牌抛异常卡屏）
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-01-r199)";
 
     private static Harmony? _harmony;
 
