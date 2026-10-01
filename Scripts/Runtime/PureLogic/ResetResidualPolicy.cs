@@ -45,26 +45,26 @@ internal readonly struct ResetResidualSnapshot
     /// <summary>`_endTurnReconcileLogCount`（自愈失败日志条数上限计数）。</summary>
     public int EndTurnReconcileLogCount { get; init; }
 
-    // ── 局级（只在退局时复位）──
-    /// <summary>`_watchdogScheduleRejectCounts`（看门狗调度被拒的按来源计数）。</summary>
+    // ── 局级（只在退局时复位；R5-4 起由 `RuntimeDiagnosticsLedger` 持有）──
+    /// <summary>看门狗调度被拒的按来源计数（`RuntimeDiagnosticsLedger.WatchdogRejectCount`）。</summary>
     public int WatchdogScheduleRejectCounts { get; init; }
 
-    /// <summary>`_watchdogScheduleWindowStartMs` / 成功计数 / 最近一次的身份与回合是否非初值。</summary>
+    /// <summary>看门狗窗口是否已开（`RuntimeDiagnosticsLedger.WatchdogWindowStarted`）。</summary>
     public bool WatchdogScheduleWindowStarted { get; init; }
 
-    /// <summary>`_watchdogScheduleSuccessCount`（窗口内成功调度次数）。</summary>
+    /// <summary>窗口内成功调度次数（`RuntimeDiagnosticsLedger.WatchdogSuccessCount`）。</summary>
     public int WatchdogScheduleSuccessCount { get; init; }
 
-    /// <summary>`_watchdogScheduleLastPlayerId` / `_watchdogScheduleLastRound` 是否非初值。</summary>
+    /// <summary>最近一次调度的身份 / 回合是否非初值（`RuntimeDiagnosticsLedger.WatchdogLastTargetSet`）。</summary>
     public bool WatchdogScheduleLastTargetSet { get; init; }
 
-    /// <summary>`_flowBlockSignalCounts`（流程阻塞信号按来源计数）。</summary>
+    /// <summary>流程阻塞信号按来源计数（`RuntimeDiagnosticsLedger.FlowSignalCount`）。</summary>
     public int FlowBlockSignalCounts { get; init; }
 
-    /// <summary>`_flowBlockSignalDedupeRoundPlayer`（流程阻塞信号去重键）。</summary>
+    /// <summary>流程阻塞信号去重键数（`RuntimeDiagnosticsLedger.FlowDedupeCount`）。</summary>
     public int FlowBlockSignalDedupeRoundPlayer { get; init; }
 
-    /// <summary>`_flowBlockSignalWindowStartMs` 是否非初值。</summary>
+    /// <summary>流程阻塞窗口是否已开（`RuntimeDiagnosticsLedger.FlowWindowStarted`）。</summary>
     public bool FlowBlockSignalWindowStarted { get; init; }
 }
 

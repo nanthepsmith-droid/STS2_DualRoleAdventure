@@ -42,20 +42,11 @@ internal static class LocalMultiControlRuntime
 
     private static readonly HashSet<string> _wakuuAutoEndIssued = new HashSet<string>();
     private static readonly HashSet<int> _allPlayersAutoEndedRounds = new HashSet<int>();
-    private static readonly Dictionary<string, int> _watchdogScheduleRejectCounts = new Dictionary<string, int>();
-    private static readonly Dictionary<string, int> _flowBlockSignalCounts = new Dictionary<string, int>();
-    private static readonly HashSet<string> _flowBlockSignalDedupeRoundPlayer = new HashSet<string>();
     private static int _lastAutoEndCombatIdentity = -1;
     private static Vector2? _combatEnergyContainerDefaultPosition;
 
     /// <summary>战斗能量归属诊断日志去重（每场战斗入战时清一次，避免每回合刷屏）。</summary>
     private static readonly HashSet<string> _combatEnergyDiagKeys = new HashSet<string>();
-    private static long _flowBlockSignalWindowStartMs;
-    private static long _watchdogScheduleWindowStartMs;
-    private static int _watchdogScheduleSuccessCount;
-    private static ulong _watchdogScheduleLastPlayerId;
-    private static int _watchdogScheduleLastRound = -1;
-    private static string _watchdogScheduleLastSource = "none";
     private static ulong? _pendingManualEndTurnPlayerId;
     private static int _pendingManualEndTurnRound = -1;
 
@@ -148,15 +139,8 @@ internal static class LocalMultiControlRuntime
         _lastAutoEndCombatIdentity = -1;
         _pendingManualEndTurnPlayerId = null;
         _pendingManualEndTurnRound = -1;
-        _watchdogScheduleRejectCounts.Clear();
-        _flowBlockSignalCounts.Clear();
-        _flowBlockSignalDedupeRoundPlayer.Clear();
-        _flowBlockSignalWindowStartMs = 0L;
-        _watchdogScheduleWindowStartMs = 0L;
-        _watchdogScheduleSuccessCount = 0;
-        _watchdogScheduleLastPlayerId = 0UL;
-        _watchdogScheduleLastRound = -1;
-        _watchdogScheduleLastSource = "run-cleanup";
+        // R5-4：两张诊断窗口（看门狗调度 / 流程阻塞信号）的复位收进台账的一处 Reset（口径与原 9 行逐字一致）。
+        RuntimeDiagnosticsLedger.Reset("run-cleanup");
         // R5 第一批：补齐 5 处**战斗级**诊断 / 节流状态的退局复位 —— 原来只在"换战斗"时清
         // （`RefreshAutoEndTrackingForCombat`），退局后仍带着上一局的残余（只影响日志去重与节流，不影响玩法）。
         _skipDrawAnimLogged.Clear();
@@ -196,13 +180,13 @@ internal static class LocalMultiControlRuntime
             PendingManualEndTurnSet = _pendingManualEndTurnPlayerId.HasValue || _pendingManualEndTurnRound != -1,
             LastEndTurnReconcileAttemptSet = _lastEndTurnReconcileAttemptMs != 0L,
             EndTurnReconcileLogCount = _endTurnReconcileLogCount,
-            WatchdogScheduleRejectCounts = _watchdogScheduleRejectCounts.Count,
-            WatchdogScheduleWindowStarted = _watchdogScheduleWindowStartMs != 0L,
-            WatchdogScheduleSuccessCount = _watchdogScheduleSuccessCount,
-            WatchdogScheduleLastTargetSet = _watchdogScheduleLastPlayerId != 0UL || _watchdogScheduleLastRound != -1,
-            FlowBlockSignalCounts = _flowBlockSignalCounts.Count,
-            FlowBlockSignalDedupeRoundPlayer = _flowBlockSignalDedupeRoundPlayer.Count,
-            FlowBlockSignalWindowStarted = _flowBlockSignalWindowStartMs != 0L,
+            WatchdogScheduleRejectCounts = RuntimeDiagnosticsLedger.WatchdogRejectCount,
+            WatchdogScheduleWindowStarted = RuntimeDiagnosticsLedger.WatchdogWindowStarted,
+            WatchdogScheduleSuccessCount = RuntimeDiagnosticsLedger.WatchdogSuccessCount,
+            WatchdogScheduleLastTargetSet = RuntimeDiagnosticsLedger.WatchdogLastTargetSet,
+            FlowBlockSignalCounts = RuntimeDiagnosticsLedger.FlowSignalCount,
+            FlowBlockSignalDedupeRoundPlayer = RuntimeDiagnosticsLedger.FlowDedupeCount,
+            FlowBlockSignalWindowStarted = RuntimeDiagnosticsLedger.FlowWindowStarted,
         };
 
         IReadOnlyList<string> residuals = ResetResidualPolicy.FindResiduals(snapshot);
@@ -2125,40 +2109,18 @@ internal static class LocalMultiControlRuntime
     private static void RecordWatchdogScheduleResult(bool scheduled, string reason, ulong playerId, int roundNumber, string source)
     {
         long nowMs = (long)Time.GetTicksMsec();
-        if (_watchdogScheduleWindowStartMs <= 0L)
-        {
-            _watchdogScheduleWindowStartMs = nowMs;
-        }
-
-        _watchdogScheduleLastPlayerId = playerId;
-        _watchdogScheduleLastRound = roundNumber;
-        _watchdogScheduleLastSource = source;
-
-        if (scheduled)
-        {
-            _watchdogScheduleSuccessCount++;
-        }
-        else
-        {
-            string key = string.IsNullOrEmpty(reason) ? "unknown" : reason;
-            _watchdogScheduleRejectCounts[key] = (_watchdogScheduleRejectCounts.TryGetValue(key, out int count) ? count : 0) + 1;
-        }
-
-        if (nowMs - _watchdogScheduleWindowStartMs < 2000L)
+        // R5-4：窗口状态（懒开窗 / 最近身份 / 成功与被拒计数）在台账里；这里只负责"到点打日志 + 翻滚"。
+        RuntimeDiagnosticsLedger.NoteWatchdogSchedule(scheduled, reason, playerId, roundNumber, source, nowMs);
+        if (!RuntimeDiagnosticsLedger.IsWatchdogWindowDue(nowMs))
         {
             return;
         }
 
-        string rejectSummary = _watchdogScheduleRejectCounts.Count == 0
-            ? "none"
-            : string.Join(",", _watchdogScheduleRejectCounts.Select((entry) => $"{entry.Key}:{entry.Value}"));
         LocalWakuuRelicRuntime.SelectorStackSnapshot snapshot = LocalWakuuRelicRuntime.SnapshotSelectorStack();
         LocalMultiControlLogger.Info(
-            $"瓦库看门狗调度统计: windowMs={nowMs - _watchdogScheduleWindowStartMs}, scheduled={_watchdogScheduleSuccessCount}, rejected={rejectSummary}, lastPlayer={_watchdogScheduleLastPlayerId}, lastRound={_watchdogScheduleLastRound}, lastSource={_watchdogScheduleLastSource}, selectorStackCount={snapshot.Count}, selectorStackTop={snapshot.TopType}");
+            $"瓦库看门狗调度统计: windowMs={RuntimeDiagnosticsLedger.WatchdogWindowElapsedMs(nowMs)}, scheduled={RuntimeDiagnosticsLedger.WatchdogSuccessCount}, rejected={RuntimeDiagnosticsLedger.DescribeWatchdogRejects()}, lastPlayer={RuntimeDiagnosticsLedger.WatchdogLastPlayerId}, lastRound={RuntimeDiagnosticsLedger.WatchdogLastRound}, lastSource={RuntimeDiagnosticsLedger.WatchdogLastSource}, selectorStackCount={snapshot.Count}, selectorStackTop={snapshot.TopType}");
 
-        _watchdogScheduleWindowStartMs = nowMs;
-        _watchdogScheduleSuccessCount = 0;
-        _watchdogScheduleRejectCounts.Clear();
+        RuntimeDiagnosticsLedger.RollWatchdogWindow(nowMs);
     }
 
     public static void RecordFlowBlockSignal(
@@ -2174,38 +2136,24 @@ internal static class LocalMultiControlRuntime
             return;
         }
 
-        if (dedupePerRoundPlayer && round >= 0)
-        {
-            string dedupeKey = $"{signal}:{round}:{playerId}";
-            if (!_flowBlockSignalDedupeRoundPlayer.Add(dedupeKey))
-            {
-                return;
-            }
-        }
-
-        long nowMs = (long)Time.GetTicksMsec();
-        if (_flowBlockSignalWindowStartMs <= 0L)
-        {
-            _flowBlockSignalWindowStartMs = nowMs;
-        }
-
-        string key = $"{signal}:{reason}";
-        _flowBlockSignalCounts[key] = (_flowBlockSignalCounts.TryGetValue(key, out int count) ? count : 0) + 1;
-
-        if (nowMs - _flowBlockSignalWindowStartMs < 2000L)
+        // R5-4：「同一回合同一玩家只记一次」的去重判据收进台账（关闭去重或 round<0 时一律受理）。
+        if (!RuntimeDiagnosticsLedger.TryAcceptFlowSignal(signal, round, playerId, dedupePerRoundPlayer))
         {
             return;
         }
 
-        string signalSummary = _flowBlockSignalCounts.Count == 0
-            ? "none"
-            : string.Join(",", _flowBlockSignalCounts.Select((entry) => $"{entry.Key}:{entry.Value}"));
+        long nowMs = (long)Time.GetTicksMsec();
+        RuntimeDiagnosticsLedger.NoteFlowSignal(signal, reason, nowMs);
+        if (!RuntimeDiagnosticsLedger.IsFlowWindowDue(nowMs))
+        {
+            return;
+        }
+
         LocalWakuuRelicRuntime.SelectorStackSnapshot snapshot = LocalWakuuRelicRuntime.SnapshotSelectorStack();
         LocalMultiControlLogger.Warn(
-            $"流程阻塞看门狗统计: windowMs={nowMs - _flowBlockSignalWindowStartMs}, signals={signalSummary}, player={playerId}, round={round}, source={source}, selectorStackCount={snapshot.Count}, selectorStackTop={snapshot.TopType}");
+            $"流程阻塞看门狗统计: windowMs={RuntimeDiagnosticsLedger.FlowWindowElapsedMs(nowMs)}, signals={RuntimeDiagnosticsLedger.DescribeFlowSignals()}, player={playerId}, round={round}, source={source}, selectorStackCount={snapshot.Count}, selectorStackTop={snapshot.TopType}");
 
-        _flowBlockSignalWindowStartMs = nowMs;
-        _flowBlockSignalCounts.Clear();
+        RuntimeDiagnosticsLedger.RollFlowWindow(nowMs);
     }
 
     private static void ReevaluateEndTurnButtonState(NCombatUi combatUi, CombatState combatState, Player currentPlayer)
