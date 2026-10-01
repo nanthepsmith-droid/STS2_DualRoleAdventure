@@ -2877,3 +2877,73 @@ FAIL:    切人后没反应 / 点结束回合无效（BUG-2 回归）/ 出牌入
   NRE 12 全为第三方 `RitsuLib`（`RuntimeReflectionMirrorSource`）。
 - **未覆盖（非失败）**：`检测到所有瓦库角色无牌可出` / `结束回合后优先切换到可操作非瓦库角色` 0（数据相关，同 r193 那局）；
   上面 ③ 的校正分支。
+
+## R5 生命周期契约（2026-10-01 起）
+
+> 提案：`runtime架构分层重构评估.md` §四 R5 + **§十 靶区清单与复位矩阵**（该文件在仓库外维护）。
+> 口径：跨调用存活的可变状态要有**显式复位契约**（作用域 + 复位事件）；**漏清一项要在日志里被点名**，
+> 而不是等玩家遇到"上一局的残留"（会话残留 / 幽灵弹层 / 守卫卡住 / 抽牌演出被误跳过是同一族）。
+> 盘点工具（本机层）：`tools/static_state_audit.py`（静态可变状态 + 写入/清空点 + 报告）。
+
+**已落地**
+- **R5-1（r197，2026-10-01，待实机）= 复位契约显式化 + 进局 / 退局复位自检**：
+  - 新增纯逻辑 `Scripts/Runtime/PureLogic/ResetResidualPolicy.cs` —— `ResetResidualSnapshot` 收 **16 项**
+    "初值可判定"的计数器 / 标志位（集合记元素个数、哨兵记"是否已被写入"），`FindResiduals` 按**固定顺序**
+    输出 `键=值`、`Describe` 给 `无残留` / `键=值, …`。**刻意排除** `_watchdogScheduleLastSource`
+    （它的干净值是复位写进去的 `run-cleanup` 哨兵 ⇒ 拿它判必然假阳性）与 `_combatEnergyContainerDefaultPosition`
+    （"抓到一次就复用"的进程级 UI 兜底，跨局保留是有意的）。
+  - Runtime 接两个**只读**锚点：`ReportResetResiduals("进局")`（`OnRunLaunched` 第一条语句，查"上一局残留"）与
+    `("退局")`（`OnRunCleanup` 末尾）⇒ 日志 `进局复位自检: 无残留` / `退局复位自检发现残留: …`（WARN）。
+  - **顺手补齐 5 处跨局残留的复位**：`_skipDrawAnimLogged` / `_skipDrawAnimCombatIdentity` /
+    `_combatEnergyDiagKeys` / `_lastEndTurnReconcileAttemptMs` / `_endTurnReconcileLogCount`
+    —— 原来只在"换战斗"时清（`RefreshAutoEndTrackingForCombat`），退局后仍带上一局残余；
+    这 5 项只影响日志去重与节流、**不影响玩法**（行为零变化口径成立）。
+  - 单测 **791 → 798**（+7）；marker **`2026-10-01-r197`**、`dll_check --deployed` 字节一致（sha256 `544dfb3eb304…`）。
+
+**R5 剩余分批**（按风险 / 收益排序，细节见 ADR §十.4）
+1. **R5-2 守卫类状态体检**：临界区计数 / 重入标志逐个核"进出是否配在 try/finally 内"
+   （`LocalManualPlayGuard._depth` / `FoulPotionPatch._activeThrowCount` / `CombatManagerReadyEnemyTurnPatch._mirroring` /
+   `LocalWakuuRewardAutoClaim._suppressCardRewardDepth` / `CreatureCmdKillWinCheckPatch._pendingWatchers` /
+   `StaleCombatActionJanitorPatch._purgeLoopsInFlight` / `LocalWakuuRelicRuntime._selectorScopeInFlight`）——
+   泄漏一次即"守卫永久激活"（症状 = 瓦库不干活 / 手动出牌被拦）。**只改异常路径**。
+2. **R5-3 会话级状态收进 Session**：`LocalSelfCoopContext` 的 20 处可写静态 + `LocalSelfCoopSessionGuard`
+   ⇒ 会话复位矩阵可单测（进/出大厅、进/退局、读档窗口三种时序）。
+3. **R5-4 诊断 / 节流台账抽纯逻辑**：`_watchdogSchedule*`（6）+ `_flowBlockSignal*`（3）= **9 字段 / 42 调用点**
+   （全在 `LocalMultiControlRuntime` 内）⇒ 一个带 `Reset()` 的纯逻辑台账 + 单测（日志文案逐字保留）。
+4. **R5-5 节点引用缓存体检**：第三方资源桥 / CB 适配器 / 徽章 / 手柄路由 / 安全网持有的节点与反射缓存 ——
+   判据 = Godot 节点释放后静态引用是否仍被读（同 R2 坑 J："UI 引用缓存要验仍在树内"）。
+
+**验证契约（请实机，marker `2026-10-01-r197`）**
+```
+改动:    R5-1 —— 复位契约显式化 + 进局 / 退局复位自检（行为零变化：只读状态 + 打日志；另补 5 处诊断级退局复位）
+SETUP:   本地多控 2~4 席（真人 + 至少一个瓦库托管席位）；一整轮要走到「进局 → 打两场以上战斗 → 退局回主菜单 → 再进局」
+ACTION:  ① 正常玩一局后正常退出到主菜单，再开一局（可以同一存档读档继续，也可以新开）；
+         ② 一局里至少打两场战斗（触发"换战斗"的战斗级复位路径）；
+         ③ 有余力再走一次读档续玩（R5 与读档窗口同族，顺带覆盖）。
+PASS:    玩法与 r196 完全一致；两条自检锚点**都出现且都是"无残留"** ——
+         `进局复位自检: 无残留`（每次进局一条）、`退局复位自检: 无残留`（每次退局一条）；
+         `检测到战斗场次切换，重置瓦库自动结束回合状态` 照旧出现；`PATCH_RESULT` 与上一局逐字相同；
+         我方 WARN 无新增族。
+FAIL:    任一条自检行是 WARN（`进局复位自检发现残留: 键=值, …` / `退局复位自检发现残留: …`）——
+         **这不算"坏了"，而是暴露了下一条靶子**：把那行原样贴回来即可（键名就是状态名，见 ADR §十.3 的快照表）。
+期望 0： 进局复位自检发现残留 / 退局复位自检发现残留 / ### Exception ### / add_child() failed / 我方 NullReferenceException
+```
+
+**✅ 实机结论（2026-10-01，用户「测了一下」；日志 `logs-archive/godot__20261001-112319__r197.log`，
+1.5MB、2 席（…326 + 瓦库 …327）、marker `2026-10-01-r197`、`BUILD_IDENTITY commit=a181602 state=dirty`）⇒ 关单**
+- **两条契约锚点全部命中且都是"无残留"，且走的是完整的跨局闭环**：
+  `进局复位自检: 无残留` **×2**（L8492 floor=0 / L12081 floor=4 = 读档续玩）+ `退局复位自检: 无残留` **×2**
+  （L11950 / L12654）；`复位自检发现残留` **0 条**（期望 0 命中）。
+  ⇒「进局 → 战斗 → 退局 → **读档进局** → 退局」整条路径上，本 mod 的局级 / 战斗级静态状态每次都清干净。
+- **战斗级复位路径也真实跑到**：`检测到战斗场次切换，重置瓦库自动结束回合状态` **×2**；
+  读档路径顺带覆盖（`读档窗口已开启` 1 + `读档已恢复瓦库席位` 1）。
+- 健康度：`INIT_STATUS=OK`（`INIT_FAILED=0`、`FATAL=0`）、`PATCH_RESULT critical=25/25 optional=15/15 total=186`
+  （与历史逐字相同）、我方 `[ERROR]` **0**；期望 0 全 0（`### Exception ###` / `add_child() failed` /
+  `Couldn't get hand node` / 幽灵弹层 / `保留为人工领取` / `归属者残留已改写` / `自动切前台失败` /
+  `控制上下文切换回滚` / `检测到无效战斗角色ID` / `检测到手动出牌上下文漂移`）。
+- 我方 WARN 模板对比 r196：本局独有 **2 个全是既有族**（托管遗物缺失当场补发 1 / 跳过药水动画 `RADIANT_TINCTURE`）
+  ⇒ 未引入新告警来源；业务链路顺带全过（瓦库出牌 47 / 事件自动选择 3 / 卡牌奖励自动领取 3 / 切人 7；
+  本局没进商店与火堆）。
+- 噪声（均非我方、均既有）：全局 `[ERROR]` 4 = Manosaba/ddu 分支不匹配 2 + 游戏侧存档删除失败 2；
+  NRE 12 全为第三方 `RitsuLib`。
+
