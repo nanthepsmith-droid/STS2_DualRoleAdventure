@@ -97,7 +97,7 @@ internal static class NPlayerHandSelectCardsSerializationPatch
             ulong? ownerId = ResolveSelectionOwnerId(source);
             if (ownerId.HasValue)
             {
-                bool switched = LocalMultiControlRuntime.TryEnsureForegroundForPlayerId(ownerId.Value, "select-serialized");
+                bool switched = ControlContextAlignment.TryEnsureForegroundForPlayerId(ownerId.Value, "select-serialized");
                 if (switched)
                 {
                     LocalMultiControlLogger.Info($"选牌展示前已切换前台到所属角色: player={ownerId.Value}");

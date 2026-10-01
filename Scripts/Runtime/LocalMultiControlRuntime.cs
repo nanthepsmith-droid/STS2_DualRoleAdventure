@@ -582,7 +582,11 @@ internal static class LocalMultiControlRuntime
         }
     }
 
-    private static void ApplyControlContext(string source)
+    /// <summary>
+    /// 把归属切到会话受控位并刷新呈现（编排：写上下文 + 战斗界面 / 顶栏 / 牌组 / 房间刷新 + 回滚判定）。
+    /// R4 收尾刀后，**判定与写入**在 <see cref="ControlContextAlignment"/>（该单元也会反过来调它触发刷新链）。
+    /// </summary>
+    internal static void ApplyControlContext(string source)
     {
         ulong? currentControlledPlayerId = Session.CurrentControlledPlayerId;
         if (!currentControlledPlayerId.HasValue)
@@ -613,10 +617,8 @@ internal static class LocalMultiControlRuntime
         }
 
         ulong? previousNetId = LocalContext.NetId;
-        LocalContext.NetId = currentControlledPlayerId.Value;
-        LocalSelfCoopContext.NetService?.SetCurrentSenderId(currentControlledPlayerId.Value);
-        // R4：Run 级同步器的"本地玩家"对齐抽成独立职责（行为与日志文案不变）。
-        RunSynchronizerSeatSync.Apply(currentControlledPlayerId.Value);
+        // R4 收尾刀：上下文三处写入（回环上下文 / 回环发送者 / Run 级同步器）收进唯一写入原语（行为逐字不变）。
+        ControlContextAlignment.WriteSeatContext(currentControlledPlayerId.Value);
 
         bool combatUiRefreshSucceeded = RefreshCombatUiForControlledPlayer(currentControlledPlayerId.Value);
         if (CombatManager.Instance.IsInProgress && !combatUiRefreshSucceeded)
@@ -636,8 +638,7 @@ internal static class LocalMultiControlRuntime
                 LocalContext.NetId = previousNetId;
                 if (previousNetId.HasValue)
                 {
-                    LocalSelfCoopContext.NetService?.SetCurrentSenderId(previousNetId.Value);
-                    RunSynchronizerSeatSync.Apply(previousNetId.Value);
+                    ControlContextAlignment.WriteSeatContext(previousNetId.Value);
                 }
 
                 return;
@@ -660,40 +661,6 @@ internal static class LocalMultiControlRuntime
             string slotLabel = LocalSelfCoopContext.GetSlotLabel(currentControlledPlayerId.Value);
             NGame.Instance?.AddChildSafely(NFullscreenTextVfx.Create(LocalModText.ControlledSlot(slotLabel)));
         }
-    }
-
-    public static void AlignContextForActionOwner(ulong playerId, string source)
-    {
-        if (!RunManager.Instance.IsInProgress)
-        {
-            return;
-        }
-
-        // R3：口径统一为「回环上下文是不是这个席位」（不再裸比 LocalContext.NetId）
-        if (LocalSeatSource.CurrentSeats().IsContext(playerId))
-        {
-            RunSynchronizerSeatSync.Apply(playerId);
-            return;
-        }
-
-        ulong? previousNetId = LocalContext.NetId;
-        LocalContext.NetId = playerId;
-        LocalSelfCoopContext.NetService?.SetCurrentSenderId(playerId);
-        RunSynchronizerSeatSync.Apply(playerId);
-
-        // 默认档（未开「【实验】瓦库并发出牌」）下瓦库是内联出牌，出牌循环会把 LocalContext.NetId
-        // 钉在瓦库自己身上；此时真人中途按牌 / 点结束回合，上下文"漂移"是**预期**的——本来就该让给真人。
-        // 记 INFO 即可，别每局刷十几条 WARN 把真问题淹掉（2026-09-13 实机：默认档一局 12 条全是这种）。
-        if (previousNetId.HasValue && LocalWakuuRelicRuntime.IsVakuuFormModeById(previousNetId.Value))
-        {
-            LocalMultiControlLogger.Info(
-                $"后台瓦库出牌钉住的上下文已让给真人（默认档预期路径）: "
-                + $"{previousNetId.Value} -> {playerId}, source={source}");
-            return;
-        }
-
-        LocalMultiControlLogger.Warn(
-            $"检测到手动出牌上下文漂移，已强制校正: {previousNetId?.ToString() ?? "null"} -> {playerId}, source={source}");
     }
 
     /// <summary>
@@ -822,68 +789,6 @@ internal static class LocalMultiControlRuntime
         };
     }
 
-    public static bool TryEnsureForegroundForPlayer(Player player, string source)
-    {
-        if (!LocalSelfCoopContext.IsEnabled || !RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)
-        {
-            return false;
-        }
-
-        if (player?.Creature == null || player.Creature.CombatState == null)
-        {
-            return false;
-        }
-
-        if (!LocalSeatSource.IsLocalSeat(player.NetId))
-        {
-            return false;
-        }
-
-        NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
-        if (combatUi == null)
-        {
-            return false;
-        }
-
-        NPlayerHand hand = combatUi.Hand;
-        if (hand.InCardPlay || hand.IsInCardSelection || (NTargetManager.Instance?.IsInSelection ?? false))
-        {
-            LocalMultiControlLogger.Info(
-                $"自动切前台延后（当前有进行中的出牌/选牌/瞄准流程）: target={player.NetId}, source={source}");
-            return false;
-        }
-
-        // R3：`受控位 ?? 上下文 ?? 主席位` 的拼法收进快照口径（ForegroundOrPrimarySeatId）
-        SeatRegistry seats = LocalSeatSource.CurrentSeats();
-        ulong previousPlayerId = seats.ForegroundOrPrimarySeatId;
-        if (previousPlayerId == player.NetId)
-        {
-            return true;
-        }
-
-        LocalMultiControlLogger.Info(
-            $"检测到后台角色触发战斗效果/选牌，自动切换前台: from={previousPlayerId}, to={player.NetId}, source={source}");
-
-        if (!Session.TrySetCurrentPlayer(player.NetId))
-        {
-            return false;
-        }
-
-        ApplyControlContext($"auto-foreground-{source}");
-
-        // ⚠ 这里是"写后读"：ApplyControlContext 刚改过受控位与上下文，快照的权威命中校验会据此重建
-        SeatRegistry seatsAfterSwitch = LocalSeatSource.CurrentSeats();
-        bool switched = seatsAfterSwitch.IsControlled(player.NetId) && seatsAfterSwitch.IsContext(player.NetId);
-        if (!switched)
-        {
-            LocalMultiControlLogger.Warn(
-                $"自动切前台失败，已回滚会话控制索引: target={player.NetId}, source={source}");
-            Session.TrySetCurrentPlayer(previousPlayerId);
-        }
-
-        return switched;
-    }
-
     /// <summary>
     /// 当前前台（受控）玩家——即屏幕上正在显示的那位。
     /// 注意与 <see cref="LocalContext"/> 区分：LocalContext 会为「瓦库后台出牌的动作归属」临时漂移，
@@ -924,32 +829,6 @@ internal static class LocalMultiControlRuntime
     private static bool IsLocalSessionPlayer(Player? player)
     {
         return player != null && LocalSeatSource.IsLocalSeat(player.NetId);
-    }
-
-    /// <summary>
-    /// 按玩家ID把前台/控制上下文切到指定角色，适用于只有 NetId、没有现成 Player 引用的挂点
-    /// （如 ActionQueueSynchronizer.EnqueueHookAction 入队瞬间，仅有 GenericHookGameAction.OwnerId）。
-    /// </summary>
-    internal static bool TryEnsureForegroundForPlayerId(ulong playerId, string source)
-    {
-        if (!LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.UseSingleAdventureMode)
-        {
-            return false;
-        }
-
-        // R3：本地席位判定走统一入口（不再裸比席位表）
-        if (!LocalSeatSource.IsLocalSeat(playerId))
-        {
-            return false;
-        }
-
-        Player? player = TryGetCombatPlayer(playerId);
-        if (player == null)
-        {
-            return false;
-        }
-
-        return TryEnsureForegroundForPlayer(player, source);
     }
 
     public static void TryAutoSwitchAfterEndTurn(ulong endedPlayerId)
@@ -2388,46 +2267,6 @@ internal static class LocalMultiControlRuntime
 
         ReevaluateEndTurnButtonState(combatUi, combatState, player);
         LocalMultiControlLogger.Info($"回合开始兜底重评结束回合按钮: player={player.NetId}, source={source}");
-    }
-
-    /// <summary>
-    /// 结束回合按钮点击前的归属校正（r104，BUG-2）。
-    ///
-    /// 原版 <c>NEndTurnButton.CallReleaseLogic</c> 用 <c>LocalContext.GetMe(...)</c> 决定「这次点击是
-    /// 结束谁的回合」；而本 mod 的 <c>LocalContext</c> 会为**瓦库后台出牌的动作归属**临时漂移。
-    /// 一旦漂移到「已经结束回合的角色」身上，点击就会被当成「撤销结束回合」处理，
-    /// 表现为**点结束回合完全没反应**；切回自己再切到瓦库（重新对齐上下文）才恢复。
-    ///
-    /// 这里在点击瞬间把上下文校正到**前台玩家**（<see cref="Session"/>.CurrentControlledPlayerId，
-    /// 不受漂移影响），保证后续原版逻辑结算的是玩家正在看的那个角色。
-    /// 返回校正后的前台玩家 id；无战斗中前台角色时返回 null（交回原版自行处理）。
-    /// </summary>
-    internal static ulong? AlignLocalContextToForegroundForEndTurn()
-    {
-        if (!LocalSelfCoopContext.IsEnabled || !RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)
-        {
-            return null;
-        }
-
-        Player? foreground = TryGetForegroundPlayer();
-        if (foreground == null)
-        {
-            return null;
-        }
-
-        ulong playerId = foreground.NetId;
-        if (LocalSeatSource.CurrentSeats().IsContext(playerId))
-        {
-            return playerId;
-        }
-
-        ulong? previousNetId = LocalContext.NetId;
-        LocalContext.NetId = playerId;
-        LocalSelfCoopContext.NetService?.SetCurrentSenderId(playerId);
-        RunSynchronizerSeatSync.Apply(playerId);
-        LocalMultiControlLogger.Info(
-            $"结束回合点击：上下文已校正到前台玩家 {previousNetId?.ToString() ?? "null"} -> {playerId}");
-        return playerId;
     }
 
     /// <summary>

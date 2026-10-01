@@ -53,6 +53,6 @@ internal static class HookEnqueueForegroundPatch
             return;
         }
 
-        LocalMultiControlRuntime.TryEnsureForegroundForPlayerId(gameAction.OwnerId, $"hook-enqueue-{gameAction.HookId}");
+        ControlContextAlignment.TryEnsureForegroundForPlayerId(gameAction.OwnerId, $"hook-enqueue-{gameAction.HookId}");
     }
 }

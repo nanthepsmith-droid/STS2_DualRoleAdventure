@@ -28,7 +28,7 @@ internal static class NEndTurnButtonPatch
         // 漂移到「已经结束回合的角色」身上时，原版会把这次点击当成「撤销结束回合」处理——
         // 观感就是点结束回合完全没反应（切回自己再切到瓦库、上下文重新对齐后才恢复）。
         // 这里顺带把上下文校正到前台玩家，保证后续原版逻辑结算的正是玩家正在看的角色。
-        ulong? clickTargetId = LocalMultiControlRuntime.AlignLocalContextToForegroundForEndTurn();
+        ulong? clickTargetId = ControlContextAlignment.AlignLocalContextToForegroundForEndTurn();
         Player? me = clickTargetId.HasValue
             ? combatState.GetPlayer(clickTargetId.Value)
             : LocalContext.GetMe(combatState);

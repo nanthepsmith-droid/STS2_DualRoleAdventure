@@ -55,7 +55,7 @@ internal static class CardSelectForegroundSwitchPatch
             return;
         }
 
-        LocalMultiControlRuntime.TryEnsureForegroundForPlayer(player, $"combat-choice-{source}");
+        ControlContextAlignment.TryEnsureForegroundForPlayer(player, $"combat-choice-{source}");
     }
 
     [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromHand))]

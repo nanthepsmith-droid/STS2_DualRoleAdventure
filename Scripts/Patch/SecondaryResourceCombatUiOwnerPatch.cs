@@ -15,7 +15,7 @@ namespace LocalMultiControl.Scripts.Patch;
 /// （`SecondaryResourceCombatUiStateTracker.OnCombatStateChanged` 就是这么调
 /// `SecondaryResourceUiRuntime.UpdateCombatUi(parent, LocalContext.GetMe(state))` 的），
 /// 而本 mod 的 `LocalContext.NetId` 会为了「瓦库后台出牌的动作归属」临时漂移到瓦库身上
-/// （见 `LocalMultiControlRuntime.AlignContextForActionOwner`）。
+/// （见 `ControlContextAlignment.AlignContextForActionOwner`）。
 /// 于是瓦库（蕾忍）出牌期间 RitsuLib 会把计数器重绑到瓦库 → 蕾克拉显示；
 /// 出牌结束上下文回到真人 → 下次状态变化时又隐藏 —— 正是实机看到的
 /// 「进战斗后仍有蕾克拉，瓦库打完牌后自动消失」。

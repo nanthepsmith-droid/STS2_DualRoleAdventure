@@ -14,8 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // r195：休息区气泡"存活自检"诊断增强（看 IsVisibleInTree + 祖先链，定位"气泡不见了"）
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-09-30-r195)";
+    // r196：R4 收尾刀 —— 前台/上下文对齐抽成 ControlContextAlignment（行为零变化）
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-01-r196)";
 
     private static Harmony? _harmony;
 

@@ -46,7 +46,7 @@ public class SwitchTargetPolicyTests
     {
         Assert.That(SwitchTargetPolicy.SingleStep(new List<ulong> { 10 }, 10, true), Is.Null);
         Assert.That(SwitchTargetPolicy.SingleStep(new List<ulong>(), 10, true), Is.Null);
-        Assert.That(SwitchTargetPolicy.SingleStep(null, 10, true), Is.Null);
+        Assert.That(SwitchTargetPolicy.SingleStep(null!, 10, true), Is.Null);
     }
 
     [Test]
@@ -70,6 +70,6 @@ public class SwitchTargetPolicyTests
     {
         Assert.That(SwitchTargetPolicy.CandidateOrder(new List<ulong> { 10 }, 10), Is.Empty);
         Assert.That(SwitchTargetPolicy.CandidateOrder(new List<ulong>(), 10), Is.Empty);
-        Assert.That(SwitchTargetPolicy.CandidateOrder(null, 10), Is.Empty);
+        Assert.That(SwitchTargetPolicy.CandidateOrder(null!, 10), Is.Empty);
     }
 }

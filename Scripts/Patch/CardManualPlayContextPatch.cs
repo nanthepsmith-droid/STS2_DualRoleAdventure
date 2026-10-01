@@ -46,7 +46,7 @@ internal static class CardManualPlayContextPatch
             LocalWakuuRelicRuntime.YieldPendingQueuePlaysToHuman(owner.NetId, "card-enqueue-manual-play");
         }
 
-        LocalMultiControlRuntime.AlignContextForActionOwner(owner.NetId, "card-enqueue-manual-play");
+        ControlContextAlignment.AlignContextForActionOwner(owner.NetId, "card-enqueue-manual-play");
     }
 
     [HarmonyFinalizer]

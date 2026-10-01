@@ -62,7 +62,7 @@ internal static class CombatManagerSetupPlayerTurnForegroundPatch
         ulong foregroundSeatId = LocalSeatSource.ForegroundSeatId();
         ulong? previousForegroundId = peek && foregroundSeatId != 0UL ? foregroundSeatId : null;
 
-        if (LocalMultiControlRuntime.TryEnsureForegroundForPlayer(player, "turn-start-setup") && peek)
+        if (ControlContextAlignment.TryEnsureForegroundForPlayer(player, "turn-start-setup") && peek)
         {
             LocalMultiControlRuntime.ScheduleReturnToForegroundAfterPeek(
                 player.NetId, previousForegroundId, "turn-start-setup");
@@ -86,7 +86,7 @@ internal static class CombatManagerDoTurnEndForegroundPatch
             return;
         }
 
-        LocalMultiControlRuntime.TryEnsureForegroundForPlayer(player, "turn-end-hooks");
+        ControlContextAlignment.TryEnsureForegroundForPlayer(player, "turn-end-hooks");
     }
 }
 
@@ -106,6 +106,6 @@ internal static class CombatManagerFlushPlayerHandForegroundPatch
             return;
         }
 
-        LocalMultiControlRuntime.TryEnsureForegroundForPlayer(player, "turn-end-flush");
+        ControlContextAlignment.TryEnsureForegroundForPlayer(player, "turn-end-flush");
     }
 }

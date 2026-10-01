@@ -98,7 +98,7 @@ internal static class NCardPlayQueueOnActionEnqueuedFailSafePatch
             return;
         }
 
-        LocalMultiControlRuntime.AlignContextForActionOwner(playerId, "action-queue-ui-failsafe");
+        ControlContextAlignment.AlignContextForActionOwner(playerId, "action-queue-ui-failsafe");
     }
 }
 
@@ -157,7 +157,7 @@ internal static class ActionQueueSynchronizerRequestEnqueueFailSafePatch
         ulong playerId = LocalSeatSource.ContextOrPrimarySeatId();
         if (playerId != 0)
         {
-            LocalMultiControlRuntime.AlignContextForActionOwner(playerId, "request-enqueue-failsafe");
+            ControlContextAlignment.AlignContextForActionOwner(playerId, "request-enqueue-failsafe");
         }
 
         return null;
