@@ -71,6 +71,8 @@ internal static class LocalMultiControlRuntime
 
     public static void OnRunLaunched(RunState runState)
     {
+        // R5 第一批：进局复位自检 —— 此刻"上一局"的静态状态本该已被 OnRunCleanup 清空（有残留即点名）。
+        ReportResetResiduals("进局");
         LocalWakuuRelicLocalization.Initialize();
         try
         {
@@ -155,6 +157,13 @@ internal static class LocalMultiControlRuntime
         _watchdogScheduleLastPlayerId = 0UL;
         _watchdogScheduleLastRound = -1;
         _watchdogScheduleLastSource = "run-cleanup";
+        // R5 第一批：补齐 5 处**战斗级**诊断 / 节流状态的退局复位 —— 原来只在"换战斗"时清
+        // （`RefreshAutoEndTrackingForCombat`），退局后仍带着上一局的残余（只影响日志去重与节流，不影响玩法）。
+        _skipDrawAnimLogged.Clear();
+        _skipDrawAnimCombatIdentity = int.MinValue;
+        _combatEnergyDiagKeys.Clear();
+        _lastEndTurnReconcileAttemptMs = 0L;
+        _endTurnReconcileLogCount = 0;
         LocalMerchantInventoryRuntime.Clear();
         LocalRestSiteSeatBubble.Reset("run-cleanup");
         LocalWakuuRelicRuntime.ProbeAndRecoverSelectorStack("run-cleanup", allowRecover: true);
@@ -162,6 +171,48 @@ internal static class LocalMultiControlRuntime
         CoopBotsSeatRuntime.ReleaseOnRunCleanup();
         LocalSelfCoopContext.Disable("RunManager.CleanUp");
         LocalMultiControlLogger.Info("RunManager.CleanUp 后已完成本地多控会话清理。");
+        // R5 第一批：退局复位自检（正常路径必须"无残留"；有残留即点名）。
+        ReportResetResiduals("退局");
+    }
+
+    /// <summary>
+    /// R5 第一批：复位自检 —— 在**进局**（`RunManager.Launch` 之前）与**退局**（`RunManager.CleanUp` 之后）
+    /// 两个时刻断言"本 mod 的局级 / 战斗级静态状态已清空"。
+    ///
+    /// 判据在 <see cref="ResetResidualPolicy"/>（纯逻辑、可单测），这里只负责取快照与打日志。
+    /// **行为零变化**（只读状态 + 打日志）：目的是给"跨局残留"这一族问题（会话残留 / 幽灵弹层 / 守卫卡住）
+    /// 一个可跨会话对比的观测点 —— 漏清一项就会在这两行里被点名，而不是等玩家遇到上一局的残留。
+    /// </summary>
+    private static void ReportResetResiduals(string moment)
+    {
+        ResetResidualSnapshot snapshot = new ResetResidualSnapshot
+        {
+            WakuuAutoEndIssued = _wakuuAutoEndIssued.Count,
+            AllPlayersAutoEndedRounds = _allPlayersAutoEndedRounds.Count,
+            SkipDrawAnimLogged = _skipDrawAnimLogged.Count,
+            CombatEnergyDiagKeys = _combatEnergyDiagKeys.Count,
+            LastAutoEndCombatIdentitySet = _lastAutoEndCombatIdentity != -1,
+            SkipDrawAnimCombatIdentitySet = _skipDrawAnimCombatIdentity != int.MinValue,
+            PendingManualEndTurnSet = _pendingManualEndTurnPlayerId.HasValue || _pendingManualEndTurnRound != -1,
+            LastEndTurnReconcileAttemptSet = _lastEndTurnReconcileAttemptMs != 0L,
+            EndTurnReconcileLogCount = _endTurnReconcileLogCount,
+            WatchdogScheduleRejectCounts = _watchdogScheduleRejectCounts.Count,
+            WatchdogScheduleWindowStarted = _watchdogScheduleWindowStartMs != 0L,
+            WatchdogScheduleSuccessCount = _watchdogScheduleSuccessCount,
+            WatchdogScheduleLastTargetSet = _watchdogScheduleLastPlayerId != 0UL || _watchdogScheduleLastRound != -1,
+            FlowBlockSignalCounts = _flowBlockSignalCounts.Count,
+            FlowBlockSignalDedupeRoundPlayer = _flowBlockSignalDedupeRoundPlayer.Count,
+            FlowBlockSignalWindowStarted = _flowBlockSignalWindowStartMs != 0L,
+        };
+
+        IReadOnlyList<string> residuals = ResetResidualPolicy.FindResiduals(snapshot);
+        if (residuals.Count == 0)
+        {
+            LocalMultiControlLogger.Info($"{moment}复位自检: {ResetResidualPolicy.Describe(residuals)}");
+            return;
+        }
+
+        LocalMultiControlLogger.Warn($"{moment}复位自检发现残留: {ResetResidualPolicy.Describe(residuals)}");
     }
 
     public static void SwitchNextControlledPlayer(string source)

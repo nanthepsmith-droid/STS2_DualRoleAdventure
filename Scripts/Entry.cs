@@ -14,8 +14,8 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // r196：R4 收尾刀 —— 前台/上下文对齐抽成 ControlContextAlignment（行为零变化）
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-01-r196)";
+    // r197：R5 第一批 —— 退局/进局复位自检（ResetResidualPolicy）+ 补齐战斗级状态的退局复位
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-01-r197)";
 
     private static Harmony? _harmony;
 
