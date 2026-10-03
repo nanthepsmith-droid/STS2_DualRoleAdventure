@@ -87,18 +87,41 @@ internal sealed class ScoredWakuuBrain : IWakuuCombatBrain
         }
 
         // 降级路径：与 HeuristicWakuuBrain 完全一致（最左可打牌 / 无牌可出即结束回合）。
-        CardModel? fallback = ctx.Hand.FirstOrDefault(static card => card.CanPlay());
-        if (fallback != null)
+        // ⚠ r204：**降级路径自身也必须兜住异常** —— 2026-10-03 实机就是这里栽的：
+        // 上一段 catch 兜住了评分异常、打出"降级为最左可打牌"，但下面 ResolveTarget → EstimateDamage
+        // 又抛了同一个 InvalidCastException（第三方卡 Repeat 类型不符），异常冒穿本方法
+        // ⇒ 选择器作用域/出牌作用域以异常退出 ⇒ 看门狗重启失败 ⇒ 遗物反复闪 + 当回合不出牌。
+        try
         {
-            action = new WakuuPlannedAction(
-                WakuuActionKind.PlayCard,
-                fallback,
-                ResolveTarget(fallback, ctx),
-                null,
-                0,
-                $"scored-fallback-first-playable:{fallback.Id}",
-                confident: true);
-            return true;
+            CardModel? fallback = ctx.Hand.FirstOrDefault(static card => card.CanPlay());
+            if (fallback != null)
+            {
+                Creature? target = null;
+                try
+                {
+                    target = ResolveTarget(fallback, ctx);
+                }
+                catch (Exception targetException)
+                {
+                    // 选目标失败不能连累出牌：按"无目标"出（与启发式档同形）。
+                    LocalMultiControlLogger.Warn(
+                        $"瓦库降级选目标异常，按无目标出牌: card={fallback.Id}, error={targetException.Message}");
+                }
+
+                action = new WakuuPlannedAction(
+                    WakuuActionKind.PlayCard,
+                    fallback,
+                    target,
+                    null,
+                    0,
+                    $"scored-fallback-first-playable:{fallback.Id}",
+                    confident: true);
+                return true;
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"瓦库降级路径异常，本次结束回合: {exception.Message}");
         }
 
         action = EndTurn();
@@ -234,28 +257,33 @@ internal sealed class ScoredWakuuBrain : IWakuuCombatBrain
     /// </summary>
     private static int EstimateDamage(CardModel card, Player owner)
     {
-        if (!card.DynamicVars.ContainsKey("Damage"))
+        // ⚠ 一律走 WakuuCardVarReader：`DynamicVars.Damage` / `.Repeat` 是硬转型访问器
+        // （游戏内部 `(DamageVar)_vars["Damage"]` / `(RepeatVar)_vars["Repeat"]`），
+        // 第三方卡把同名变量声明成别的类型就会抛 InvalidCastException ——
+        // 实测猪猪 mod `PIG_MULTI_SHOT` 的 "Repeat"，且本方法还会被"降级路径"调用，
+        // 抛出去就是整轮自动出牌被打断（遗物反复闪 + 当回合不出牌）。
+        if (!WakuuCardVarReader.TryReadEnchantedInt(card, "Damage", out int perHit))
         {
             return 0;
         }
 
-        int perHit = (int)card.DynamicVars.Damage.EnchantedValue;
         int strength = owner.Creature.GetPowerAmount<StrengthPower>();
-        int hits = card.DynamicVars.ContainsKey("Repeat") ? Math.Max(1, card.DynamicVars.Repeat.IntValue) : 1;
-        return Math.Max(0, (perHit + strength) * hits);
+        int hits = WakuuVarMath.RepeatOrDefault(
+            WakuuCardVarReader.TryReadInt(card, "Repeat", out int repeat),
+            repeat);
+        return WakuuVarMath.EstimateAttackDamage(perHit, strength, hits);
     }
 
     /// <summary>粗估格挡 = 卡面格挡（含附魔）+ 敏捷。</summary>
     private static int EstimateBlock(CardModel card, Player owner)
     {
-        if (!card.DynamicVars.ContainsKey("Block"))
+        if (!WakuuCardVarReader.TryReadEnchantedInt(card, "Block", out int baseBlock))
         {
             return 0;
         }
 
-        int baseBlock = (int)card.DynamicVars.Block.EnchantedValue;
         int dexterity = owner.Creature.GetPowerAmount<DexterityPower>();
-        return Math.Max(0, baseBlock + dexterity);
+        return WakuuVarMath.EstimateBlockGain(baseBlock, dexterity);
     }
 
     // ------------------------------------------------------------------

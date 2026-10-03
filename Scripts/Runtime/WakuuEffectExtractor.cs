@@ -456,12 +456,12 @@ internal static class WakuuEffectExtractor
 
     private static int ReadRepeat(CardModel card)
     {
-        if (card.DynamicVars.ContainsKey("Repeat"))
-        {
-            return Math.Max(1, card.DynamicVars.Repeat.IntValue);
-        }
-
-        return 1;
+        // ⚠ 不能写 `card.DynamicVars.Repeat`：那是硬转型访问器（`(RepeatVar)_vars["Repeat"]`），
+        // 第三方卡把同名变量声明成别的类型就抛 InvalidCastException（实测猪猪 mod `PIG_MULTI_SHOT`）。
+        // 走类型无关读取器，读不到就按 1 段（r204）。
+        return WakuuVarMath.RepeatOrDefault(
+            WakuuCardVarReader.TryReadInt(card, "Repeat", out int repeat),
+            repeat);
     }
 
     private static int SafePowerAmount<TPower>(Player owner)
