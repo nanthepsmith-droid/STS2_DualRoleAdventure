@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
@@ -123,11 +124,13 @@ internal static class CardTransformNetIdPinPatch
 
                 if (isOwnerAutomated)
                 {
-                    // r199（BUG-29）：托管席位的变换一律跳过原版视觉。原因是原版把变换分成
+                    // r199（BUG-29）：托管席位的变换一律跳过原版视觉。原版把变换分成
                     // 「数据阶段（中间有 await 挂钩点）→ 视觉阶段」，视觉阶段才查原牌手牌节点；
-                    // 托管席位的手牌节点在这段异步窗口里可能已被换掉/重建 ⇒ 抛 Couldn't get hand node
+                    // 托管席位的手牌 UI 根本不存在 ⇒ 一旦被当成"我的牌"就必抛 Couldn't get hand node
                     // ⇒ 出牌以异常结束、牌停在屏幕中央、只换了一半（实机：猪猪 mod【猪猪王】换 3 张只换 1 张）。
-                    // 探针（只在非托管席位跑）看到节点也不足以保证视觉阶段还查得到，所以这里不做条件判断。
+                    // ⚠ 只靠"把 NetId 让开一次"挡不住（异步窗口里会被写回，r199/r201 实机两次证实）
+                    // ⇒ 这里只是保底层，真正把关的是 CardTransformAutomatedSeatContextGuardPatch 的 transpiler
+                    //（把视觉阶段那句 IsMine 调用点改写掉，见 AutomatedSeatTransformVisualGate）。
                     LocalMultiControlLogger.Info(
                         $"[手牌同步修复] 托管席位（瓦库）的变换一律跳过原版视觉（防异步窗口内原牌节点消失导致抛异常卡屏）: "
                         + $"owner={owner.NetId}, netId={_previousNetId.Value?.ToString() ?? "null"} -> {safeNetId?.ToString() ?? "null"}");
@@ -280,5 +283,191 @@ internal static class CardTransformNetIdPinPatch
         }
 
         return null;
+    }
+}
+
+/// <summary>
+/// 托管席位（瓦库）的换牌视觉门兜底（r203 定案层）+ 上下文拉回（r201 保底层）。
+///
+/// 挂点是编译器为 <c>CardCmd.Transform</c> 生成的状态机 `<c>MoveNext</c>`
+/// （异步方法本体所在、异常栈里也写着 `CardCmd+&lt;Transform&gt;d__13.MoveNext_Patch1`；解析见
+/// <see cref="AsyncStateMachineTargetResolver"/>），做两件事：
+/// <list type="number">
+/// <item><b>transpiler（r203，主修法）</b>：把视觉阶段那句 <c>LocalContext.IsMine(cardAdded2)</c>
+///   改写成 <see cref="AutomatedSeatTransformVisualGate.IsMineForTransformVisual"/> —— 托管席位的牌一律不当"我的牌"。
+///   这是唯一不受"谁在什么时候写 <c>LocalContext.NetId</c>""JIT 会不会内联极小方法"影响的姿势。</item>
+/// <item><b>prefix（r201 保底层）</b>：每次状态机推进一步之前，若上下文被钉在托管席位就拉回安全值
+///   （修的是同一根因的另一面：被钉住的上下文会带偏其它原版视觉门）。</item>
+/// </list>
+///
+/// **四轮实机教训（详见 references 坑 S 第 4~7 条）**：
+/// r199 只在 <c>Transform</c> 的 Prefix 让开一次 ⇒ 异步窗口里被写回，照抛（日志 `netId=…326 -> …326` 已让开却仍抛）；
+/// r200 给 <c>LocalContext.IsMine</c> 挂补丁 ⇒ 极小方法被 JIT 内联，补丁形同不存在（补丁已挂 `optional=16/16`，兜底日志 0 条）；
+/// r201/r202 挂 MoveNext 每步拉回 ⇒ 实机证明**写回发生在同一个状态机步内**（前缀一次都没命中：`已拉回安全值` 0 条），照抛；
+/// ⇒ 所以主修法必须落在"判定本身"上（transpiler 换调用点），而不是"改变量/拦方法"。
+/// </summary>
+[HarmonyPatch]
+internal static class CardTransformAutomatedSeatContextGuardPatch
+{
+    private static MethodBase? _target;
+
+    private static bool Prepare()
+    {
+        _target = ResolveTarget(out string description, out bool fellBack);
+        if (_target == null)
+        {
+            LocalMultiControlLogger.Warn(
+                "[手牌同步修复] 未找到 CardCmd.Transform（或其状态机 MoveNext），托管席位变换的上下文兜底未挂载"
+                + "（BUG-29 可能复发）。");
+            return false;
+        }
+
+        if (fellBack)
+        {
+            // 降级要显眼：只挂 kickoff = 只在进入时让开一次，挡不住异步窗口里的写入（r201 就是这么失效的）。
+            LocalMultiControlLogger.Warn(
+                $"[手牌同步修复] 托管席位变换的上下文兜底**降级**（未解析到状态机 MoveNext，只挂 kickoff 单次让开）: {description}");
+        }
+        else
+        {
+            LocalMultiControlLogger.Info($"[手牌同步修复] 已挂载托管席位变换的上下文兜底: {description}");
+        }
+
+        return true;
+    }
+
+    private static MethodBase? TargetMethod()
+    {
+        return _target;
+    }
+
+    /// <summary>
+    /// 解析目标：优先取 <c>CardCmd.Transform(IEnumerable&lt;CardTransformation&gt;, Rng, CardPreviewStyle)</c>
+    /// 的状态机 <c>MoveNext</c>；解析不到状态机时退回 kickoff（前缀仍会执行一次"让开"，
+    /// 行为等价于 r199 而不会更差），并显式标注已降级。
+    /// </summary>
+    private static MethodBase? ResolveTarget(out string description, out bool fellBack)
+    {
+        description = "none";
+        fellBack = false;
+        MethodInfo? transform = AccessTools.Method(typeof(CardCmd), nameof(CardCmd.Transform), new[]
+        {
+            typeof(IEnumerable<CardTransformation>),
+            typeof(Rng),
+            typeof(CardPreviewStyle),
+        });
+        if (transform == null)
+        {
+            return null;
+        }
+
+        // ⚠ 状态机的 MoveNext 是 **private**（元数据实见 Private/Final/Virtual）——r201 就是只查了
+        // BindingFlags.Public 才解析失败、静默降级成 kickoff 单次让开（实机日志：
+        // "已挂载…: CardCmd.Transform（未解析到状态机，已降级为 kickoff 单次让开）"）。
+        // 解析统一走 AsyncStateMachineTargetResolver（可离线单测）。
+        MethodInfo? moveNext = AsyncStateMachineTargetResolver.FindMoveNext(transform);
+        if (moveNext != null)
+        {
+            description = $"{moveNext.DeclaringType?.FullName}.{moveNext.Name}";
+            return moveNext;
+        }
+
+        description = $"{transform.DeclaringType?.Name}.{transform.Name}"
+                      + "（未解析到状态机，已降级为 kickoff 单次让开）";
+        fellBack = true;
+        return transform;
+    }
+
+    /// <summary>
+    /// r203 主修法：把视觉阶段的 <c>LocalContext.IsMine(cardAdded2)</c> 调用点换成
+    /// <see cref="AutomatedSeatTransformVisualGate.IsMineForTransformVisual"/>（签名一致 ⇒ 只换操作数，栈不变）。
+    /// </summary>
+    [HarmonyTranspiler]
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        MethodInfo? replacement = AccessTools.Method(
+            typeof(AutomatedSeatTransformVisualGate),
+            nameof(AutomatedSeatTransformVisualGate.IsMineForTransformVisual));
+        if (replacement == null)
+        {
+            LocalMultiControlLogger.Warn(
+                "[手牌同步修复] 变换视觉门改写目标缺失（AutomatedSeatTransformVisualGate），本次未改写。");
+            return instructions;
+        }
+
+        List<CodeInstruction> result = instructions.ToList();
+        int patched = 0;
+        foreach (CodeInstruction instruction in result)
+        {
+            if (instruction.operand is not MethodInfo method
+                || !IsCardIsMineCall(method))
+            {
+                continue;
+            }
+
+            instruction.operand = replacement;
+            patched++;
+        }
+
+        if (patched > 0)
+        {
+            LocalMultiControlLogger.Info(
+                $"[手牌同步修复] 已改写变换视觉门 {patched} 处 IsMine 调用点"
+                + "（托管席位一律跳过换牌视觉：它的手牌 UI 不存在，找节点必抛 ⇒ 牌停屏）");
+        }
+        else
+        {
+            LocalMultiControlLogger.Warn(
+                "[手牌同步修复] 变换视觉门改写 0 处：CardCmd.Transform 里找不到 IsMine(CardModel) 调用点（游戏更新？）"
+                + " ⇒ 视觉兜底未生效，BUG-29 可能复发。");
+        }
+
+        return result;
+    }
+
+    /// <summary>是不是 <c>LocalContext.IsMine(CardModel)</c>（按名字 + 声明类型 + 参数类型判定，避免受 opcode/别名影响）。</summary>
+    private static bool IsCardIsMineCall(MethodInfo method)
+    {
+        if (method.DeclaringType != typeof(LocalContext) || method.Name != nameof(LocalContext.IsMine))
+        {
+            return false;
+        }
+
+        ParameterInfo[] parameters = method.GetParameters();
+        return parameters.Length == 1 && parameters[0].ParameterType == typeof(CardModel);
+    }
+
+    [HarmonyPrefix]
+    private static void Prefix()
+    {
+        if (!LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.UseSingleAdventureMode)
+        {
+            return;
+        }
+
+        ulong? current = LocalContext.NetId;
+        if (!current.HasValue)
+        {
+            return;
+        }
+
+        SeatRegistry seats = LocalSeatSource.CurrentSeats();
+        ulong? controlled = seats.ControlledSeatId;
+        bool controlledIsLocal = controlled.HasValue && seats.IsLocalSeat(controlled.Value);
+        if (!AutomatedSeatTransformContextGuard.TryResolveSafeNetId(
+                current,
+                seats.IsWakuuDriven(current.Value),
+                controlled,
+                controlledIsLocal,
+                out ulong? safeNetId))
+        {
+            return;
+        }
+
+        LocalContext.NetId = safeNetId;
+        LocalMultiControlLogger.Info(
+            "[手牌同步修复] 变换期间上下文被钉回托管席位，已拉回安全值"
+            + "（否则原版视觉会去前台手牌找托管席位的牌节点并抛 Couldn't get hand node）: "
+            + $"netId={current} -> {safeNetId?.ToString() ?? "null"}");
     }
 }

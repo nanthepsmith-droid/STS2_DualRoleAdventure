@@ -14,8 +14,10 @@ namespace LocalMultiControl.Scripts.Scripts;
 [ModInitializer(nameof(Init))]
 public partial class Entry
 {
-    // r199：BUG-29 —— 托管席位（瓦库）的手牌变换一律跳过原版视觉（防第三方变换牌抛异常卡屏）
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-01-r199)";
+    // r204：卡面数值一律走「类型无关」读取器（WakuuCardVarReader）——修第三方卡把 Repeat 之类声明成别的类型
+    //       时硬转型访问器抛 InvalidCastException、在降级路径里冒穿出牌循环（遗物反复闪 + 当回合不出牌）；
+    //       同时给评分大脑的降级路径整体兜住异常。
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-03-r204)";
 
     private static Harmony? _harmony;
 

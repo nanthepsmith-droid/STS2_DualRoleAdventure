@@ -2,8 +2,8 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-09-30 22:44  HEAD=9c355d9
-# 统计: patch_classes=190 patch_rows=223 string_targets=191 descriptors=367
+# 生成时间=2026-10-03 17:42  HEAD=d66a8b6
+# 统计: patch_classes=191 patch_rows=224 string_targets=193 descriptors=370
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	CardManualPlayContextPatch	CardModel	EnqueueManualPlay	string
@@ -38,6 +38,7 @@ P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromHandForDiscard	nameo
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromHandForUpgrade	nameof
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromSimpleGrid	nameof
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromSimpleGridForRewards	nameof
+P	CardTransformAutomatedSeatContextGuardPatch	-	-	no-target
 P	CardTransformNetIdPinPatch	CardCmd	Transform	nameof
 P	ClientLobbyJoinResponseDeserializePatch	ClientLobbyJoinResponseMessage	Deserialize	nameof
 P	ClientLobbyJoinResponseSerializePatch	ClientLobbyJoinResponseMessage	Serialize	nameof
@@ -230,6 +231,8 @@ S	accesstools	ActChangeSynchronizer	_readyPlayers	field
 S	accesstools	ActChangeSynchronizer	_runState	field
 S	accesstools	ActionQueueSet	_actionQueues	field
 S	accesstools	ActionQueueSynchronizer	_actionQueueSet	field
+S	accesstools	AutomatedSeatTransformVisualGate	IsMineForTransformVisual	method
+S	accesstools	CardCmd	Transform	method
 S	accesstools	CombatManager	_playersReadyToBeginEnemyTurn	field
 S	accesstools	CombatManager	_turnState	field
 S	accesstools	CoopBotsShopAckPatch	Postfix	method

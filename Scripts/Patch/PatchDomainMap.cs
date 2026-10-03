@@ -186,6 +186,8 @@ internal static class PatchDomainMap
             ["RewardsSetPatch"] = PatchDomain.Rewards,
 
             // ============ Wakuu：瓦库托管 ============
+            // BUG-29 第三轮（r201）：变换期间把被第三方钉回托管席位的上下文拉回安全值
+            ["CardTransformAutomatedSeatContextGuardPatch"] = PatchDomain.Wakuu,
             ["CardSelectHandScenarioPatch"] = PatchDomain.Wakuu,
             ["CardSelectWakuuTurnStartAutoAnswerPatch"] = PatchDomain.Wakuu,
             // BUG-23 方案 B：第三方自绘选牌界面（NChooseACardSelectionScreen）由瓦库自动作答
