@@ -2381,55 +2381,37 @@ if (LocalContext.IsMe(player) && NetService.Type != Replay) {
 
 ---
 
-### BUG-29 瓦库打出「变化手牌」类卡牌后牌停在屏幕中央不消失、只变化了一部分（猪猪 mod【猪猪王】）（2026-10-01 用户实机反馈；**r199 已修，待实机**）
+### BUG-29 瓦库打出「变化手牌」类卡牌后牌停在屏幕中央不消失（猪猪 mod【猪猪王】）—— ✅ **2026-10-03 实机关单（r203）**
 
-**现象（用户原话）**：「瓦库打出猪猪 mod（YuWanCard）的卡牌【猪猪王】后这张牌停在屏幕中不消失，
-可能是因为这张牌要选择三张手牌变化，但是最后只变化了 1 张牌」。
+用户 2026-10-03 实机确认「**猪猪王确实会消失了**」。五轮修法（r199~r203）与四条教训全部沉淀在
+`references/local-multicontrol-pitfalls.md` **坑 S 第 4~8 条**；最终有效修法 = **transpiler 改写视觉阶段
+`LocalContext.IsMine` 调用点**（`AutomatedSeatTransformVisualGate` + 纯函数 `AutomatedSeatTransformVisualPolicy`）。
+⚠ 用户未单独确认"3 张都变"，下次顺带看一眼即可（不另开条目）。
 
-**日志实证（`logs-archive/godot__20261001-130746__r198.log`）**：
-```
-L9488 [ERROR] GameAction PlayCardAction card: CARD.YUWANCARD-PIG_KING … completed with exception:
-      System.AggregateException: … (Couldn't get hand node for original card CARD.DEFEND_IRONCLAD (25303433)!)
-L9452   at MegaCrit.Sts2.Core.Commands.CardCmd+<Transform>d__13.MoveNext_Patch1(…)
-L9455   at YuWanCard.Cards.PigKing.OnPlay(PlayerChoiceContext choiceContext, CardPlay cardPlay)
-```
-同一局出现 **2 次**（actionId=5 与 3）。**我方变换补丁 `[手牌同步修复]` 一行日志都没有**
-⇒ 它当时没进入任何分支（判定 = `None`，即"什么都不做"）。
+---
 
-**根因**（读 `sts2src` 的 `CardCmd.Transform` 定死）：原版把变换分成两段 ——
-① **数据阶段**：`RemoveFromCurrentPile` + `AddInternal` 把**所有**牌换好（L409-453，中间夹
-`await Hook.AfterCardEnteredCombat(...)` / `await Hook.AfterCardChangedPiles(...)` 等挂钩点）；
-② **视觉阶段**（L456+）：`if (!LocalContext.IsMine(cardAdded2)) continue;` 之后按
-`NCard.FindOnTable(original2, PileType.Hand)` 找**原牌节点**播换牌特效，**找不到就 throw**。
-托管席位（瓦库）的手牌节点在那段 `await` 窗口里已被换掉/重建 ⇒ 视觉阶段必然查不到 ⇒ 抛异常
-⇒ `PlayCardAction` 以异常结束 ⇒ **牌停屏 + 只变化一部分**。
-⚠ r185 的探针判据（`handNodeExists`）**覆盖不到这一路**：它看的是"**此刻**缺不缺节点"，
-而这里是"**之后**才缺"（Probe 在 Prefix 时节点还在）。
+### BUG-30 瓦库形态一直闪（遗物生效动画反复播）+ 当回合一张牌也不出（第三方卡同名变量类型不符）—— ✅ **2026-10-03 实机关单（r204）**
 
-**修法（r199）**：`CardTransformNetIdPolicy.Decide` 加第四维度 `isOwnerAutomated` ——
-**托管席位（瓦库）的手牌变换一律跳过原版视觉**（无条件 `ShiftAwayFromOwner`，不看探针、不看前台；
-理由：异步窗口里 NetId 也可能被看门狗/切人改写，所以要做"整段担保"而不是"此刻判定"）。
-数据层在视觉之前就已生效，跳过只丢装饰；手牌 UI 由既有 `ScheduleReconcileDisplayedHandOrder` 等自愈链路重建。
-补丁侧：探针只在**非托管**席位跑；托管席位分支单独打一条 INFO 便于统计。
-**真人自己出这类牌不受影响**（非托管席位走原判定，动画照旧）。
-坑已沉淀为 `references/local-multicontrol-pitfalls.md` **坑 S**（两侧已 sync）。
+**现象（用户原话）**：「瓦库的瓦库形态一直闪（遗物生效时就会闪），并且不知道打牌」——
+自动出牌被反复打断：每次重试都重触发遗物 hook（视觉"一直闪"），却一张牌都没打出去。
 
-**验证契约（请实机，marker `2026-10-01-r199`）**
-```
-改动:    BUG-29 —— 托管席位（瓦库）的手牌变换一律跳过原版视觉（附 R5-4 诊断台账重排，行为零变化）
-SETUP:   本地多控 2 席（真人 + 瓦库托管）；想办法让**瓦库**打出会「变化手牌」的牌（猪猪 mod【猪猪王】
-         `YUWANCARD-PIG_KING` 最直接；同类还有历史「数据链」/酒狐「不等价交换」）
-ACTION:  ① 让瓦库打出【猪猪王】，观察那 3 张手牌是否都变化、打出的牌是否正常进弃牌堆（不留在屏幕中央）；
-         ② 反复几次（该牌可重复打出），并顺手切一次人看手牌 UI 是否自愈（顺序/内容正确）；
-         ③ 顺带确认 R5-4 无回归：两类看门狗窗口日志格式照旧 + 两条复位自检照旧"无残留"。
-PASS:    牌打出后**正常消失**（进弃牌堆）、**该变化的牌全部变化**（3 张）；
-         日志出现 `[手牌同步修复] 托管席位（瓦库）的变换一律跳过原版视觉…`（每次该牌打出至少一条）、
-         `Couldn't get hand node for original card` **0 条**、`PlayCardAction … completed with exception` **0 条**；
-         切人后手牌 UI 内容/顺序正确。
-FAIL:    牌仍停在屏幕中央 / 只变化一部分 / 上述两条 ERROR 仍出现（贴回日志行）。
-期望 0： Couldn't get hand node for original card / PlayCardAction … completed with exception /
-         ### Exception ### / 我方 NullReferenceException
-```
+**根因链与修法**：`references/thirdparty-mod-conflicts.md` **§六**（猪猪 mod `PIG_MULTI_SHOT` 把 `Repeat` 声明成普通
+`DynamicVar`，而游戏强类型访问器 `DynamicVars.Repeat` 是硬转型 `(RepeatVar)_vars["Repeat"]` ⇒ `InvalidCastException`；
+**致命点是它在"降级路径"里又抛一次**（`ResolveTarget → EstimateDamage`）⇒ 异常冒穿出牌循环）。r204 = `WakuuCardVarReader`
+（类型无关读 + 永不抛）+ 纯函数 `WakuuVarMath` + 评分大脑降级路径整体兜异常。
+
+**✅ 实机结论（2026-10-03，marker r204，`logs-archive/godot__20261003-180229__r204.log`）** —— 修前/修后同口径对比：
+
+| 指标 | r203（修前） | **r204（修后）** |
+|---|---|---|
+| 瓦库评分大脑异常 / 选择器作用域异常退出 / 看门狗重启失败 / 知识层抽取异常 | 41 / 41 / 41 / 41 | **0 / 0 / 0 / 0** |
+| 瓦库出牌作用域已进入 | 42（狂重试） | **5** |
+| 瓦库评分出牌 / 出牌走动作队列完成 | 5 / 5 | **11 / 11** |
+| `Couldn't get hand node`（BUG-29 复核） | 0 | **0** |
+
+`INIT_OK` ✓、`PATCH_RESULT critical=25/25 optional=15/15 total_patched=187` ✓、我方 `[ERROR]` **0**（全局 3 条均为第三方/启动器噪声：
+Manosaba · ddu 分支不符 + BetterModMenu 工坊标签超时）、我方 WARN 37 族**全是既有族**（无新族）。
+用户确认「对的对的」⇒ 遗物不再反复闪、瓦库正常出牌。
 
 ---
 
