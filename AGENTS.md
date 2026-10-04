@@ -217,7 +217,8 @@ When the game updates and the mod breaks:
 | 经验集 | `<home>\.codebuddy\skills\dualroleadventure-development\SKILL.md` + `references/` | 稳定做法与坑、场景路由（**不写日期戳现状**） |
 | 工作项 | 仓库 `TODO.md`（含 §「决策记录跟踪表」） | 待做 → 做到哪 → 关单；**工作项状态的唯一事实源** |
 | 提案索引 | `D:\Download\pain\maintenance-docs\decision-records\README.md` | 全部提案/方案的清单、定位与状态（**状态类事实的单一来源**）；提案正文里的旧「待拍板/未动工」字样不再作为判据 |
-| 快照 | `D:\Download\pain\maintenance-docs\维护现状分析.md` | 某时间点的全貌盘点（会漂移，**不作判据**） |
+| **现状** | `D:\Download\pain\开发进度记录.md`（**顶部最新「🔚 本轮收工」块**） | 分支 / marker / 未推送提交数 / 版本 / 部署位 —— **现状唯一事实源**；历史收工块与逐轮记录已归档到 `decision-records/archive/`。**别在别处再写一份现状**（2026-10-04 收敛） |
+| 盘点 | `D:\Download\pain\maintenance-docs\维护现状分析.md` | 结构性全貌（工具链 / mod 集合 / 游戏侧资料 / 缺口），**不定期刷新、不记现状**（会漂移，**不作判据**） |
 
 **同步纪律**（新提案当天就要做，别攒）：
 
@@ -226,11 +227,16 @@ When the game updates and the mod breaks:
 2. 同时在 `TODO.md` §「决策记录跟踪表」**挂条目**（或明确写「仅调研，不排期」）—— **登记 ≠ 排期、≠ 承诺动工**；
 3. 状态变化（拍板 / 动工 / 关单 / 不做）**只改上面两处的那一行**，不要往提案正文追加状态；
 4. `SKILL.md` 只在「做法 / 坑」本身变化时才改；**日期戳现状（分支、部署位 marker、未推送提交数、单测条数）
-   只进 `维护现状分析.md`**，不进 SKILL.md。
+   只进 `D:\Download\pain\开发进度记录.md` 顶部最新「🔚 本轮收工」块**（现状唯一事实源），
+   **不进 SKILL.md、也不进 `维护现状分析.md`**（后者只在版本发布 / 维护里程碑做结构性盘点）。
 5. **经验 / 根因链 / 日志实证 / 复测契约 → `references/`（或 SKILL 的坑），不进 `TODO.md`**：
    `TODO.md` 是**面向外的"接下来做什么"**（待做 → 做到哪 → 关单），不写全案复盘长块、不贴日志证据链。
    关单后的 bug 记录去处 = `CHANGELOG.md`（玩家可见）＋ `references/` 对应坑（做法/教训）＋
-   `D:\Download\pain\开发进度记录.md`（逐轮记录）。
+   `D:\Download\pain\开发进度记录.md`（逐轮记录）；**已收口的重构线逐轮流水**（含当时验证契约）另挪到
+   `maintenance-docs\decision-records\archive\`，`TODO.md` 原位只留摘要 + 归档指针。
+6. **现状只写一次（2026-10-04 收敛）**：分支 / marker / 未推送数 / 版本只在上面第 4 条那一处写；
+   其他文档（`维护现状分析.md`、memory、`TODO.md` 段首）要提就**指向它**，不复制第二份 ——
+   此前四处各写一份，每轮收工要写 4 遍，且必然漂移。
 
 ## 9. Hard gates (run before every deploy)
 
