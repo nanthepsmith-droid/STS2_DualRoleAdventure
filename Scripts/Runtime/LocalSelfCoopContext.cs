@@ -20,12 +20,25 @@ namespace LocalMultiControl.Scripts.Runtime;
 
 internal static class LocalSelfCoopContext
 {
-    private const int MinLocalPlayerCount = 2;
-    public const int MaxLocalPlayerCount = 12;
+    private const int MinLocalPlayerCount = SelfCoopSessionState.MinLocalPlayerCount;
+    public const int MaxLocalPlayerCount = SelfCoopSessionState.MaxLocalPlayerCount;
     private const int MaxLocalAscensionLevel = 10;
 
-    private static readonly List<ulong> _localPlayerIds = new() { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
-    private static readonly HashSet<ulong> _wakuuPlayerIds = new();
+    /// <summary>
+    /// 会话级可变状态的**唯一载体**（R5-3）。下面所有转发成员的名字与可见性保持原样 ⇒ 调用点零改动；
+    /// 「会话复位矩阵」（进 / 出大厅、进 / 退局、读档窗口三种时序）由 <see cref="SelfCoopSessionState"/>
+    /// 承担并可单测，本类只留 Godot 引用（`NetService` / 两个页面）与编排、日志。
+    /// </summary>
+    private static readonly SelfCoopSessionState _session = new();
+
+    private static List<ulong> _localPlayerIds => _session.LocalPlayerIds;
+    private static HashSet<ulong> _wakuuPlayerIds => _session.WakuuPlayerIds;
+
+    /// <summary>
+    /// 由第三方 mod「Co-op Bots」接管的本地席位（POC）。与 <see cref="_wakuuPlayerIds"/> **互斥**：
+    /// 同一席位同时只能有一种驱动（真人 / 瓦库 / 联机机器人），见 <see cref="CoopBotsSeatPlan"/>。
+    /// </summary>
+    private static HashSet<ulong> _coopBotsPlayerIds => _session.CoopBotsPlayerIds;
 
     /// <summary>
     /// 「读档窗口」开启时刻（单调时钟毫秒，0 = 未开启）。见 <see cref="LoadReplayWindowPolicy"/>：
@@ -33,21 +46,35 @@ internal static class LocalSelfCoopContext
     /// ⇒ 瓦库不出牌 / 不自动选事件，且事件卡牌奖励归属断档导致点的人与奖励主人不匹配（软锁）。
     /// r166 日志实证：5 次读档 5 次复现（`本地多控模式已关闭，原因: no-local-lobby-screen` 紧跟读档就绪）。
     /// </summary>
-    private static long _loadReplayWindowOpenedAtMs;
+    private static long _loadReplayWindowOpenedAtMs
+    {
+        get => _session.LoadReplayWindowOpenedAtMs;
+        set => _session.LoadReplayWindowOpenedAtMs = value;
+    }
 
-    /// <summary>
-    /// 由第三方 mod「Co-op Bots」接管的本地席位（POC）。与 <see cref="_wakuuPlayerIds"/> **互斥**：
-    /// 同一席位同时只能有一种驱动（真人 / 瓦库 / 联机机器人），见 <see cref="CoopBotsSeatPlan"/>。
-    /// </summary>
-    private static readonly HashSet<ulong> _coopBotsPlayerIds = new();
+    private static int _desiredLocalPlayerCount
+    {
+        get => _session.DesiredLocalPlayerCount;
+        set => _session.DesiredLocalPlayerCount = value;
+    }
 
-    private static int _desiredLocalPlayerCount = 2;
+    private static bool _isSyncingCharacterHighlight
+    {
+        get => _session.IsSyncingCharacterHighlight;
+        set => _session.IsSyncingCharacterHighlight = value;
+    }
 
-    private static bool _isSyncingCharacterHighlight;
+    private static ulong? _pendingEventAutoSwitchPlayerId
+    {
+        get => _session.PendingEventAutoSwitchPlayerId;
+        set => _session.PendingEventAutoSwitchPlayerId = value;
+    }
 
-    private static ulong? _pendingEventAutoSwitchPlayerId;
-
-    private static bool _eventAutoSwitchPending;
+    private static bool _eventAutoSwitchPending
+    {
+        get => _session.EventAutoSwitchPending;
+        set => _session.EventAutoSwitchPending = value;
+    }
     public static bool UseSingleAdventureMode => true;
 
     public static bool UseSingleEventFlow => false;
@@ -60,21 +87,42 @@ internal static class LocalSelfCoopContext
     /// 且 `StartRunLobby._maxPlayers` 是 readonly ⇒ 超过 4 的本地席位根本加不进大厅。
     /// 进 Daily 页时设置、离开时恢复。
     /// </summary>
-    public static int LobbyLocalPlayerLimit { get; private set; } = MaxLocalPlayerCount;
+    public static int LobbyLocalPlayerLimit
+    {
+        get => _session.LobbyLocalPlayerLimit;
+        private set => _session.LobbyLocalPlayerLimit = value;
+    }
 
     public static IReadOnlyList<ulong> LocalPlayerIds => _localPlayerIds;
     public static IReadOnlyCollection<ulong> WakuuPlayerIds => _wakuuPlayerIds;
     public static IReadOnlyCollection<ulong> CoopBotsPlayerIds => _coopBotsPlayerIds;
 
-    public static ulong PrimaryPlayerId { get; private set; } = 1;
-    // 保留兼容字段，旧代码仍可读取第二槽位。
-    public static ulong SecondaryPlayerId { get; private set; } = 2;
+    public static ulong PrimaryPlayerId
+    {
+        get => _session.PrimaryPlayerId;
+        private set => _session.PrimaryPlayerId = value;
+    }
 
-    public static bool IsEnabled { get; private set; }
+    // 保留兼容字段，旧代码仍可读取第二槽位。
+    public static ulong SecondaryPlayerId
+    {
+        get => _session.SecondaryPlayerId;
+        private set => _session.SecondaryPlayerId = value;
+    }
+
+    public static bool IsEnabled
+    {
+        get => _session.IsEnabled;
+        private set => _session.IsEnabled = value;
+    }
 
     public static LocalLoopbackHostGameService? NetService { get; private set; }
 
-    public static ulong CurrentLobbyEditingPlayerId { get; private set; } = 1;
+    public static ulong CurrentLobbyEditingPlayerId
+    {
+        get => _session.CurrentLobbyEditingPlayerId;
+        private set => _session.CurrentLobbyEditingPlayerId = value;
+    }
 
     public static NCharacterSelectScreen? ActiveCharacterSelectScreen { get; set; }
 
@@ -327,9 +375,8 @@ internal static class LocalSelfCoopContext
 
     public static void Enable(LocalLoopbackHostGameService netService)
     {
-        IsEnabled = true;
+        _session.EnterSession();
         NetService = netService;
-        CurrentLobbyEditingPlayerId = PrimaryPlayerId;
         ActiveCharacterSelectScreen = null;
         ActiveSelfCoopLobbyScreen = null;
         netService.SetCurrentSenderId(CurrentLobbyEditingPlayerId);
@@ -341,7 +388,7 @@ internal static class LocalSelfCoopContext
 
     /// <summary>读档窗口是否仍在有效期内（守卫据此不下手）。详见 <see cref="LoadReplayWindowPolicy"/>。</summary>
     public static bool IsLoadReplayWindowActive =>
-        LoadReplayWindowPolicy.IsActive(_loadReplayWindowOpenedAtMs, System.Environment.TickCount64);
+        _session.IsLoadReplayWindowActive(System.Environment.TickCount64);
 
     /// <summary>
     /// 打开「读档窗口」（继续游戏 / ESC 快速重启 的读档入口调用）。
@@ -349,20 +396,19 @@ internal static class LocalSelfCoopContext
     /// </summary>
     public static void OpenLoadReplayWindow(string source)
     {
-        _loadReplayWindowOpenedAtMs = System.Environment.TickCount64;
+        _session.OpenLoadReplayWindow(System.Environment.TickCount64);
         LocalMultiControlLogger.Info($"读档窗口已开启: source={source}（窗口内会话守卫不下手，最长 180 秒）");
     }
 
     /// <summary>关闭「读档窗口」（进局 / 清理 / 会话关闭时调用）。</summary>
     public static void CloseLoadReplayWindow(string source)
     {
-        if (_loadReplayWindowOpenedAtMs <= 0)
+        long elapsedMs = _session.CloseLoadReplayWindow(System.Environment.TickCount64);
+        if (elapsedMs < 0)
         {
             return;
         }
 
-        long elapsedMs = System.Environment.TickCount64 - _loadReplayWindowOpenedAtMs;
-        _loadReplayWindowOpenedAtMs = 0;
         LocalMultiControlLogger.Info($"读档窗口已关闭: source={source}, 时长={elapsedMs}ms");
     }
 
@@ -376,17 +422,14 @@ internal static class LocalSelfCoopContext
             return;
         }
 
-        IsEnabled = false;
+        // 会话级状态复位全部收进 Session（R5-3）：幂等 ⇒「离开大厅页 / 退局 / 读档取消」三条时序共用同一出口。
+        _session.LeaveSession();
         NetService = null;
-        CurrentLobbyEditingPlayerId = PrimaryPlayerId;
         ActiveCharacterSelectScreen = null;
         ActiveSelfCoopLobbyScreen = null;
-        _pendingEventAutoSwitchPlayerId = null;
-        _eventAutoSwitchPending = false;
-        // 会话结束：把页面级席位上限复位（否则从每日页直接退出会把上限留在 4，
-        // 之后再开 Standard/Custom 就只能选到 2~4 人）。
-        LobbyLocalPlayerLimit = MaxLocalPlayerCount;
         LocalMultiControlLogger.Info($"本地多控模式已关闭，原因: {reason}");
+        // R5-3 复位矩阵锚点：会话关闭后必须"无残留"；有残留会点名（键即状态名），不用等实机撞见"上一局的残留"。
+        LocalMultiControlLogger.Info($"会话复位自检: {SelfCoopSessionState.Describe(_session.FindResiduals())}");
     }
 
     public static bool SwitchLobbyEditingPlayer(bool next)
@@ -559,7 +602,7 @@ internal static class LocalSelfCoopContext
             return;
         }
 
-        _pendingEventAutoSwitchPlayerId = playerId;
+        _session.RequestEventAutoSwitch(playerId);
         LocalMultiControlLogger.Info($"记录事件自动切换请求: player={playerId}");
     }
 
@@ -576,20 +619,13 @@ internal static class LocalSelfCoopContext
             return false;
         }
 
-        _pendingEventAutoSwitchPlayerId = null;
-        _eventAutoSwitchPending = true;
-        return true;
+        // 状态迁移收进 Session（R5-3）：请求 → 确认（owner 匹配）→ 待消费。
+        return _session.ConfirmEventAutoSwitch(eventModel.Owner.NetId);
     }
 
     public static bool TryConsumePendingEventAutoSwitch()
     {
-        if (!_eventAutoSwitchPending)
-        {
-            return false;
-        }
-
-        _eventAutoSwitchPending = false;
-        return true;
+        return _session.TryConsumeEventAutoSwitch();
     }
 
     /// <summary>
@@ -598,10 +634,8 @@ internal static class LocalSelfCoopContext
     /// </summary>
     public static void CancelPendingEventAutoSwitch()
     {
-        if (_eventAutoSwitchPending || _pendingEventAutoSwitchPlayerId.HasValue)
+        if (_session.CancelEventAutoSwitch())
         {
-            _eventAutoSwitchPending = false;
-            _pendingEventAutoSwitchPlayerId = null;
             LocalMultiControlLogger.Info("已作废待触发的事件自动切换请求。");
         }
     }
