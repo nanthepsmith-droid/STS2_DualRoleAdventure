@@ -2395,7 +2395,7 @@ if (LocalContext.IsMe(player) && NetService.Type != Replay) {
 **现象（用户原话）**：「瓦库的瓦库形态一直闪（遗物生效时就会闪），并且不知道打牌」——
 自动出牌被反复打断：每次重试都重触发遗物 hook（视觉"一直闪"），却一张牌都没打出去。
 
-**根因链与修法**：`references/thirdparty-mod-conflicts.md` **§六**（猪猪 mod `PIG_MULTI_SHOT` 把 `Repeat` 声明成普通
+**根因链与修法**：`references/thirdparty-mod-conflicts.md` **§七**（猪猪 mod `PIG_MULTI_SHOT` 把 `Repeat` 声明成普通
 `DynamicVar`，而游戏强类型访问器 `DynamicVars.Repeat` 是硬转型 `(RepeatVar)_vars["Repeat"]` ⇒ `InvalidCastException`；
 **致命点是它在"降级路径"里又抛一次**（`ResolveTarget → EstimateDamage`）⇒ 异常冒穿出牌循环）。r204 = `WakuuCardVarReader`
 （类型无关读 + 永不抛）+ 纯函数 `WakuuVarMath` + 评分大脑降级路径整体兜异常。
@@ -2415,16 +2415,23 @@ Manosaba · ddu 分支不符 + BetterModMenu 工坊标签超时）、我方 WARN
 
 ---
 
-### 待用户回归自查（2026-10-03 收工；r200~r204 已拆提交合回 master、**未发版**，marker `2026-10-03-r204`）
+### 就地复核结论（2026-10-04 复核通过；r200~r204 已拆提交合回 master、**未发版**，marker `2026-10-03-r204`）
 
-BUG-29（用户「猪猪王 BUG 全无」）与 BUG-30 均已实机收掉，**BUG-29 不再留复测项**。下面两件事属于**就地复核**，
-过了就可以谈发版（口径未变：升 minor ⇒ 1.45.0 / tag v1.45）：
+BUG-29（用户「猪猪王 BUG 全无」）与 BUG-30 均已实机收掉。2026-10-04 用户实机复核
+（归档 `godot__20261004-134128__r204.log` 等 3 份，marker r204 / `INIT_OK`），两项**均通过**：
 
-1. **r198（R5-4 诊断台账）首次实机**：一局里确认两类看门狗窗口日志格式照旧 + 两条复位自检仍打「无残留」
-   （r198 引入的这一批还没被实机覆盖过）。
-2. **一轮常规回归**（本次动了「变换视觉门」与「瓦库卡面数值读取」两条公共路径）：打 2~3 回合（含瓦库出牌）、
-   切人、进一次奖励/商店/事件，确认无新的卡屏 / 不出牌 / 异常族。
-   验收口径：`INIT_OK` ✓、我方 `[ERROR]` **0**、我方 WARN **无新族**、期望 0 清单全 0。
+1. **r198（R5-4 诊断台账）首次实机 ✅**：两类看门狗窗口日志格式与契约逐字一致
+   （`瓦库看门狗调度统计` 24 条 / `流程阻塞看门狗统计` 2 条；`rejected`/`signals` 键·次数格式正确、翻滚后计数清零）；
+   `进局复位自检: 无残留` ×3 + `退局复位自检: 无残留` ×3（`复位自检发现残留` **0** 条）。
+2. **一轮常规回归 ✅**（本次动了「变换视觉门」与「瓦库卡面数值读取」两条公共路径）：期望 0 清单全 0、
+   我方 `[ERROR]` **0**、我方 WARN **无新族**（warn-diff 报的 4 个「本局独有」都是历史既有多发族）。
+   干扰项定性（均第三方 / 引擎，非我方）：最新一份 `[ERROR]` 37 条 = Manosaba·ddu 分支不符 ×2 + 游戏原生存档删除失败 ×2 +
+   NRE 33（RegentFX `NStarryImpactVfx` 21 + RegentFX `StarryImpactPatch` 12 + RitsuLib `LocString` 12 等）；
+   两份长会话的 `### Exception ###`（161 / 270）**100% 为第三方 `BaseLib.Patches.UI` 的 `ArgumentOutOfRangeException`**
+   （历史 r199 同源 335 条）⇒ 既有第三方族。
+
+**用户 2026-10-04 拍板：不发版，攒一波大的**（版本 / tag 一律等用户再拍：升 minor ⇒ 1.45.0 / tag v1.45）；
+当前 `master` 领先 origin **27**、**未 push**。R5 只剩 **R5-3 会话级状态收进 Session**（已开工）。
 
 ---
 
@@ -2979,8 +2986,9 @@ FAIL:    切人后没反应 / 点结束回合无效（BUG-2 回归）/ 出牌入
    `LocalWakuuRewardAutoClaim._suppressCardRewardDepth` / `CreatureCmdKillWinCheckPatch._pendingWatchers` /
    `StaleCombatActionJanitorPatch._purgeLoopsInFlight` / `LocalWakuuRelicRuntime._selectorScopeInFlight`）——
    泄漏一次即"守卫永久激活"（症状 = 瓦库不干活 / 手动出牌被拦）。**只改异常路径**。
-2. **R5-3 会话级状态收进 Session**：`LocalSelfCoopContext` 的 20 处可写静态 + `LocalSelfCoopSessionGuard`
-   ⇒ 会话复位矩阵可单测（进/出大厅、进/退局、读档窗口三种时序）。
+2. ~~**R5-3 会话级状态收进 Session**~~ ✅ **已落地（r205，2026-10-04，待实机）**：见 ADR §10.6 与下方
+   `2026-10-04-r205` 契约；实现 = `PureLogic/SelfCoopSessionState.cs` + Context 同名转发（调用点零改动），
+   单测 823 → 838。
 3. **R5-4 诊断 / 节流台账抽纯逻辑**：`_watchdogSchedule*`（6）+ `_flowBlockSignal*`（3）= **9 字段 / 42 调用点**
    （全在 `LocalMultiControlRuntime` 内）⇒ 一个带 `Reset()` 的纯逻辑台账 + 单测（日志文案逐字保留）。
 4. **R5-5 节点引用缓存体检**：第三方资源桥 / CB 适配器 / 徽章 / 手柄路由 / 安全网持有的节点与反射缓存 ——
@@ -3036,4 +3044,28 @@ FAIL:    两类窗口日志消失或格式变了（`log_scan` 锚点会失效）
          同一回合同一玩家重复刷"流程阻塞"（去重集被误清）/ 切人后瓦库照旧不干活。
 期望 0： 进局复位自检发现残留 / 退局复位自检发现残留 / ### Exception ### / add_child() failed / 我方 NullReferenceException
 ```
+
+**验证契约（请实机，marker `2026-10-04-r205`）**
+```
+改动:    R5-3 —— 会话级可变状态收进 SelfCoopSessionState（行为零变化：转发成员名字与可见性不变；仅新增一条自检锚点）
+SETUP:   本地多控 2~4 席（真人 + 至少一个瓦库托管席位）
+ACTION:  ① 从我们的大厅页（角色选择 / 自定义 / 每日）开局，打 2~3 回合（含瓦库出牌、切人）；
+         ② 退局回主菜单 → 再进一局（覆盖"退局 / 再进大厅"两个时序）；
+         ③ 另开一局走一次读档续玩（覆盖读档窗口）；有余力再从大厅页直接退回主菜单，让会话守卫清一次会话。
+PASS:    玩法与 r204 完全一致；每次会话关闭都是 `本地多控模式已关闭，原因: …` 紧跟一条
+         `会话复位自检: 无残留`；既有锚点照旧（`进局复位自检: 无残留` / `退局复位自检: 无残留` /
+         读档窗口开·关日志 / 两类看门狗窗口统计）；`PATCH_RESULT` 与上一局逐字相同。
+FAIL:    任一次会话关闭的自检行不是 `会话复位自检: 无残留`（会点名 `键=值`，键即状态名，原样贴回即可）；
+         从大厅页退回主菜单后会话没被清（官方联机页冒出我们的席位增减 / 切人按钮）；
+         切人按钮或席位增减去功能（转发接入错的典型症状）。
+期望 0： 进局复位自检发现残留 / 退局复位自检发现残留 / ### Exception ### / add_child() failed / 我方 NullReferenceException
+```
+
+**✅ 实机结论（2026-10-04，日志 `logs-archive/godot__20261004-140108__r205.log`，marker r205 / `INIT_OK`）⇒ R5-3 关单**：
+三条时序全覆盖且全部「无残留」—— `会话复位自检: 无残留` **×4**（4 次 `RunManager.CleanUp` 关会话，每次紧跟一条）、
+`退局复位自检: 无残留` ×4、`进局复位自检: 无残留` ×4；读档续玩 **×2**（`读档窗口已开启 source=continue-game`）、
+战斗级复位 ×4；期望 0 清单全 0、我方 `[ERROR]` **0**、我方 WARN **无新族**
+（本局独有 3 个都是既有族的药水 / 遗物名变体：熔断跳过 / 跳过药水动画 / 跳过遗物动画）。
+全局 `[ERROR]` 7 = 启动器 `Manosaba·ddu 分支不符` 2 + 游戏原生存档删除失败 4 +
+**`[PreloadStallGuard]` 强制放行 1**（第三方 `MomoVfx` 预加载停滞 5360ms；属独立补丁 mod 的设计内日志，非本 mod）。
 
