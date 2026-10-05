@@ -37,21 +37,21 @@
 |---|---|---|---|
 | `瓦库托管最终阶段-实施草案.md`（M1~M4） | **搁置（2026-10-01 拍板，不排期）** —— M1 已落地并随 v1.43.0 发布，**M2~M4 不再排期**；理由与再评估触发条件见 `maintenance-docs/decision-records/README.md` §五。Q1~Q5 已拍板（新开关默认关 / Skip 跟随 `deckAwareDraft` / 静态效果表 ≤50 条 / 日志 `[瓦库评价]` / `AnyAlly` 自用优先）；**M1 知识层已于 2026-09-26 实现（r153）** —— 纯逻辑知识层（效果事实 / 静态语义表 31 条 / 端口与基线 / 置信度 / 牌组评估 / 机会成本 / 协同估计）+ 只读抽取器 `WakuuEffectExtractor` + `[瓦库评价]` 只读抽样日志；**不做决策接入、默认（启发式）档零变化**，+43 单测（653 全绿）；分支早已合回 master，随 **v1.43.0** 发布（2026-09-27） | **暂不排期**。搁置理由：需求已由第三方能力覆盖（Co-op Bots 兼容层 r144~r148 已落地）+ 优先级重排（该方向已有其它社区分支投入更多）；口径与再评估触发条件见 `maintenance-docs/decision-records/README.md` §五。~~原下一步：M1 `[瓦库评价]` 实机抽查 → M2 智能抓牌（`deckAwareDraft`，默认关）~~ | 本表 + `STS2…AI总规范_Final_v2.md`（总约束） |
 | `STS2…瓦库托管最终阶段_AI总规范_Final_v2.md` | **规范稿**（无落地） | 作为 M1~M4 的总设计约束，**不单独动工**（M2~M4 已搁置，见上一行） | 本表 |
-| `瓦库托管基础收口草案-最终阶段前置G0.md` | **部分落地**：**G0.1**（B1 买遗物 / B2 买药水 / B3 删牌服务）**已被 §改进-5 吃掉**（r137/r139，已实机确认）；**G0.2**（B4 恋降级逃生门 / B5 回归清单固化）**未做** | 只做 G0.2 两个子项（范围小，差两项） | **§改进-5** |
+| `瓦库托管基础收口草案-最终阶段前置G0.md` | **部分落地**：**G0.1**（B1 买遗物 / B2 买药水 / B3 删牌服务）**已被 §改进-5 吃掉**（r137/r139，已实机确认）；**G0.2-B5 回归清单固化 ✅ 已完成（2026-10-05）** ⇒ 产出 `maintenance-docs/references/实机回归清单.md`（「改了哪块 → 跑哪条命令 → 期望什么」索引：通用期望 0 清单 + 战斗类 §21.6 三条 + 奖励/事件 / 火堆 / 结算 / Daily；已 sync 到 skill 侧）；**G0.2-B4（恋降级逃生门）未做** | 只剩 **B4** 待拍板（判定依赖第三方识别、实机场景仅古明地恋一例，需先确认必要性） | **§改进-5** + `references/实机回归清单.md` |
 | `多瓦库并行托管可行性与方案.md` | **部分落地**：Phase 0（r107~r110）/ Phase 1（r113）/ 方案 D（r121~r134）均已实机确认；三层档位：队列 / 并发**已于 2026-09-26 转正为默认开**，加速档默认关（用户自选） | **转正判定已完成（2026-09-26，方案 §12.15，14 会话含 1 真人+3 瓦库对照局）**：① **并发档收益已证实** —— 同回合三瓦库 `delayMs` 增量中位 **14ms**（inline 基线是秒级 494→6297→9724），第 3 位瓦库启动 **9.7s → 95ms**；② 出牌总时延 —— 队列单张中位 1143ms（2 席）/ 1674ms（3 瓦库，排队所致），但 pass 相当 ⇒ **不提速也不劣化**；③ 回归 —— `收回滞留节点` / `幽灵弹层` / `add_child failed` **14 会话全 0**。⇒ ✅ **已于 2026-09-26 转正落地（r152）**：两档默认值改 `true`，设置页/玩家指南/单测/CHANGELOG 同步；`fastVakuuPlay` 仍为独立项（用户当前关着） | **§改进-2** |
 | 改进-2 出牌加速二期（`CardModel.OnPlayWrapper` 前缀省两段固定等待） | **待拍板**：r128 已给估值（~0.35~0.5s/张），用户未拍 | 拍板后作为独立的出牌路径优化做 | **§改进-2 ⑱** |
-| `runtime架构分层重构评估.md`（#18） | **动工中：R0 / R1 / R2 第一批已落地（2026-09-27 ~ 09-28）** —— R0（ADR + `AGENTS.md §1` 四条架构边界硬规则）`0a740c0`；R1a 布局数学（`LobbyCardLayoutPolicy`，marker r164，实机确认选人界面一致）`72dcaf1` / R1b 奖励判定（`CombatRewardMergePolicy`，marker r165）`7f85d09`；**R2 第一批（2026-09-28）** = ① `EnumerateDescendants` 四份私有副本 → `LocalNodeTree` 单点化 ② 三份人数面板（标准/每日/自定义）→ `LocalPlayerCountPanel` 共用组件。**⚠ 实机回归与收口（r169 → r171）**：一度抽过的通用子树扫描缓存（TTL 500ms）被实机证明**不能**用于写后读（席位卡每帧重复补建 ⇒「无限玩家」）、每帧列布局与标签订位（漂移）⇒ **全部回退为实时遍历**，本批只剩「单点化 + 组件化」收益（详见 `references/local-multicontrol-pitfalls.md` 坑 J）。**R2 第二批（2026-09-28）** = ③ 镜像五件套（药水 / 卡牌 / 金币得失 / 遗物 Obtain+Remove）与藏宝图的**门控 + 上下文判据 + 目标枚举 + 镜像作用域**收进 `Scripts/Runtime/LocalRewardMirror.cs`（行为零变化；S7 因"-2 反射目标"预期刷新基线）；marker **`2026-09-28-r172`**（**待实机一局**）。**R2 第四批（2026-09-28，本轮）= ④ Daily/Custom 同构席位对齐与角色指派入口**：新增 `Scripts/Runtime/PureLogic/LocalLobbySeatPolicy.cs`（席位计划 / reconcile 判定 / 指纹，由 `DailyLobbyPolicy` 通用化而来 + 新增 `ResolveTargetSeats` / `OrderedLocalSeats`）与 `Scripts/Runtime/LocalLobbySeatReconciler.cs`（「加席位 / 删多余本地席位 / 标 ready」三步编排），两个页面补丁各减约 60 行（净 **-294 行**），Custom 内联的 reconcile 判定改为调用同一纯函数；**角色来源不合并**（Daily = 日期种子逐席位驱动 `SetupLobbyParams`、Custom = 真人点选后同步 UI，属语义差异）；日志文案逐字保持；单测 **721 → 726**；marker **`2026-09-28-r176`**（**待实机**）。分支：R0/R1/R2 第一二批**均已合回 `master`（`08c9234` / `fc542bd`）**；本轮在 **`refactor/r2-daily-custom-seat-assign`**（未合回、未推送）；同日修复分支 `fix/wakuu-turnstart-copy-pick`（r173~r175 复制牌作答）已 `--ff-only` 合回 `master`（`3ce43dc`）。门禁：单测 **726 全绿**、静态层 **10 PASS**、`preflight -Deploy` 4 PASS / 3 SKIP | **R2 四项全部收口**；**R3 已动工**（2026-09-28 第一轮 = 席位身份唯一取数入口 `SeatRegistry` / `SeatIdentity` 纯逻辑 + 靶区清单，**一个调用点都没改**；单测 **744**、marker `2026-09-28-r177`；靶区与分批见 ADR §八 —— 实测裸身份比较 ≈48 处 / 28 文件、`CurrentControlledPlayerId` 读取点已从 13 涨到 **32**；**第二轮 B1 已落地** = 新增薄适配 `Scripts/Runtime/LocalSeatSource.cs`，**24 处**动作 / 前台读点改走它（写入点未动；动作/前台侧两路口径**各只剩 1 处**，都在奖励归属 ⇒ B2），marker `2026-09-28-r178`、单测 744、**待实机**，下一批 = **B1b 本地席位判定统一** + **B2 奖励归属**，契约见本文件 §R3）→ 之后 R4（拆 God class） → R5（生命周期契约）；**R3/R4 期间冻结功能改动**（~~M2 智能抓牌须排在 R3/R4 之后~~ —— M2 已于 2026-10-01 搁置，该顺序约束随之失效）；每步一实机、行为零变化。⚠ 已知未收的两处同形代码（**非** R2 清单项，待拍板）：`LocalSelfCoopContext.ReconcileStartRunLobbyPlayerCount`（标准角色选择页）的加/删/ready 三段与本次编排同形但有三处差异（多余席位过滤掉主席位 / ready 只遍历目标席位 / 日志字段不同），未纳入本轮 | 本表 + `runtime架构分层重构评估.md` |
+| `runtime架构分层重构评估.md`（#18） | **动工中：R0 / R1 / R2 第一批已落地（2026-09-27 ~ 09-28）** —— R0（ADR + `AGENTS.md §1` 四条架构边界硬规则）`0a740c0`；R1a 布局数学（`LobbyCardLayoutPolicy`，marker r164，实机确认选人界面一致）`72dcaf1` / R1b 奖励判定（`CombatRewardMergePolicy`，marker r165）`7f85d09`；**R2 第一批（2026-09-28）** = ① `EnumerateDescendants` 四份私有副本 → `LocalNodeTree` 单点化 ② 三份人数面板（标准/每日/自定义）→ `LocalPlayerCountPanel` 共用组件。**⚠ 实机回归与收口（r169 → r171）**：一度抽过的通用子树扫描缓存（TTL 500ms）被实机证明**不能**用于写后读（席位卡每帧重复补建 ⇒「无限玩家」）、每帧列布局与标签订位（漂移）⇒ **全部回退为实时遍历**，本批只剩「单点化 + 组件化」收益（详见 `references/local-multicontrol-pitfalls.md` 坑 J）。**R2 第二批（2026-09-28）** = ③ 镜像五件套（药水 / 卡牌 / 金币得失 / 遗物 Obtain+Remove）与藏宝图的**门控 + 上下文判据 + 目标枚举 + 镜像作用域**收进 `Scripts/Runtime/LocalRewardMirror.cs`（行为零变化；S7 因"-2 反射目标"预期刷新基线）；marker **`2026-09-28-r172`**（随后 R3~R5 每轮实机已覆盖；**R0~R5 全线收口**，见本文件 §R3/§R4/§R5 与 ADR §十）。**R2 第四批（2026-09-28，本轮）= ④ Daily/Custom 同构席位对齐与角色指派入口**：新增 `Scripts/Runtime/PureLogic/LocalLobbySeatPolicy.cs`（席位计划 / reconcile 判定 / 指纹，由 `DailyLobbyPolicy` 通用化而来 + 新增 `ResolveTargetSeats` / `OrderedLocalSeats`）与 `Scripts/Runtime/LocalLobbySeatReconciler.cs`（「加席位 / 删多余本地席位 / 标 ready」三步编排），两个页面补丁各减约 60 行（净 **-294 行**），Custom 内联的 reconcile 判定改为调用同一纯函数；**角色来源不合并**（Daily = 日期种子逐席位驱动 `SetupLobbyParams`、Custom = 真人点选后同步 UI，属语义差异）；日志文案逐字保持；单测 **721 → 726**；marker **`2026-09-28-r176`**（**待实机**）。分支：R0/R1/R2 第一二批**均已合回 `master`（`08c9234` / `fc542bd`）**；本轮在 **`refactor/r2-daily-custom-seat-assign`**（未合回、未推送）；同日修复分支 `fix/wakuu-turnstart-copy-pick`（r173~r175 复制牌作答）已 `--ff-only` 合回 `master`（`3ce43dc`）。门禁：单测 **726 全绿**、静态层 **10 PASS**、`preflight -Deploy` 4 PASS / 3 SKIP | **R2 四项全部收口**；**R3 已动工**（2026-09-28 第一轮 = 席位身份唯一取数入口 `SeatRegistry` / `SeatIdentity` 纯逻辑 + 靶区清单，**一个调用点都没改**；单测 **744**、marker `2026-09-28-r177`；靶区与分批见 ADR §八 —— 实测裸身份比较 ≈48 处 / 28 文件、`CurrentControlledPlayerId` 读取点已从 13 涨到 **32**；**第二轮 B1 已落地** = 新增薄适配 `Scripts/Runtime/LocalSeatSource.cs`，**24 处**动作 / 前台读点改走它（写入点未动；动作/前台侧两路口径**各只剩 1 处**，都在奖励归属 ⇒ B2），marker `2026-09-28-r178`、单测 744、**待实机**，下一批 = **B1b 本地席位判定统一** + **B2 奖励归属**，契约见本文件 §R3）→ 之后 R4（拆 God class） → R5（生命周期契约）；**R3/R4 期间冻结功能改动**（~~M2 智能抓牌须排在 R3/R4 之后~~ —— M2 已于 2026-10-01 搁置，该顺序约束随之失效）；每步一实机、行为零变化。⚠ 已知未收的两处同形代码（**非** R2 清单项，待拍板）：`LocalSelfCoopContext.ReconcileStartRunLobbyPlayerCount`（标准角色选择页）的加/删/ready 三段与本次编排同形但有三处差异（多余席位过滤掉主席位 / ready 只遍历目标席位 / 日志字段不同），未纳入本轮 | 本表 + `runtime架构分层重构评估.md` |
 | `长期方向L1-L3规划.md` | **部分落地**：L1 接口层已落地（任务 2.2，r31）；L3 离线静态层 CI 已落地（2026-09-16）；**L2 已扩为 `runtime架构分层重构评估.md`（#18，R0 动工中）** | L2 走该提案的 R1~R4；L1 剩"反射面收敛" | 本表 |
 | `键盘手柄双输入本地双控可行性分析.md`（L1 档） | **待拍板**：结论已出（L1 轮流操作可行 / L2·L3 真正同时不可行）；**未实现** | 备选线索：`LocalDeviceSplitRouter` + patch `NControllerManager` 模式抢占 + 秒切防抖（仅认确认性输入），默认关 | 本表（备选） |
 | `本地LLM辅助开发可行性分析.md` | **部分落地**：P0 冒烟 / P1 索引 / P2 日志分诊 / P3 双语 + diff 预审 / T2 NUnit 草稿**均已完成**；**P4 经实测改换做法**（明细当优先级清单 + 自写抽取器）；`functiongemma` 工具路由未动 | P4 若要继续：先写自己的 `sts2src` 逐卡效果抽取器 → 人审 → 固化 `PureLogic` 表，**默认关**且须过 §21.4.2 回归清单 | 本表 |
 | `开发环境迁移Linux可行性分析.md` | **未动工**（纯调研，未动 U 盘/分区） | 推荐路线：先 Phase 0、再 Phase 1（两步没跑完前不要动 U 盘与分区） | 本表（待拍板） |
 | `本地多角色扩展到Daily模式可行性分析.md` | **✅ 已实机通过（联网 + 断网各一局，2026-09-27，marker r161）；已随 v1.43.0 发布**：按提案 §五/§六 落地 ① 独立卡片入口（**不劫持官方 Daily**）② 异步大厅 reconcile（clamp 4）③ 按日期种子分配角色 ④ `DAILY_SCORE_SKIP` 禁止上传 ⑤ 每日页人数面板 ⑥ 每日页瓦库勾选/切换编辑席位；r156（POC）→ r157（入口改独立卡 + 每日页白名单）→ r158（**零劫持**：三个官方入口全部还给原版）→ r159（lobby 判空修每帧 NRE + 面板加严）；代码已提交并合回 master（`a2dc84b`，r160 经验固化 `c3db47c`，r161 `98b3f46`/`b0943de`）。**联网局（marker r161，4 席出征）与断网局（marker r161，2 席）各一局均通过**，详见 `§Daily 本地多控` | ① 断网局 ✅（2026-09-27，r161 通过）；② **BUG-21** ✅ 关单（r161）；③ 仍可择日用官方单机每日对照 3 条 `NDailyRunLeaderboard` 的 `ObjectDisposedException`；增强项（只让 primary 上传 1p 榜 / 超过 4 席 / 每日页 UI 精修 / `NDailyRunLoadScreen` 适配）留待后续 | 本表 + 仓库 `TODO.md §Daily 本地多控` / `§BUG-21` |
-| `瓦库四功能-可行性核验报告.md` | **待拍板**（结论已出）：四功能均无架构级死路；功能一难度下调为「中」 | 按建议顺序（净化 → 我们联合 → 炼化 → 地狱战神）逐级动工，动工前需用户拍板 | 本表 + 提案 §7 |
-| `瓦库炼化净化联合地狱战神-功能提案与可行性分析.md` | **未动工**（仅提案；已被 09-22 核验报告逐条核验） | 同上（以核验报告的顺序与难度为准） | 本表 |
+| `瓦库四功能-可行性核验报告.md` | **已排定为下一项（2026-10-05 用户拍板「下一项做瓦库四功能，等我考虑好了就开工」）**：核验完成，四功能均无架构级死路；难度 = 净化**高** / 我们联合**中高** / 炼化**中** / 地狱战神**中** | **开工前先定 4 个设计点**（见右栏）→ 然后按 **净化 → 我们联合 → 炼化 → 地狱战神** 逐功能动工，**每个功能一个 `feat/<主题>` 分支 + 全门禁 + 合前确认** | 本表 + 核验报告 §6 / 提案 |
+| `瓦库炼化净化联合地狱战神-功能提案与可行性分析.md` | **未动工**（仅提案；已被 09-22 核验报告逐条核验；**2026-10-05 定为下一项**） | 同上（以核验报告的顺序与难度为准）。**待拍板 4 点**：① 四功能共用的「**选哪个瓦库**」UI 形态（核验建议=每个瓦库生成一条选项，标题用 `GetSlotLabel`/`RoleSlot`）；② **炼化**的数值档位（血量/血上限比例、卡组自选张数 任意/20/5、遗物自选 1 件且排除耳环与瓦库形态）；③ **炼化后该席位在瓦库名单里怎么处理**（需 mod 侧 3 处配套：名单摘除 / 切人过滤 / 存档标记防读档复活）；④ **地狱战神**范围（自定义卡是 mod 首次、机制未验证；「合体」混合抽弃是全案最难 ⇒ 是否先只做「我挡/你攻」或降级实现） | 本表 |
 | `Co-op_Bots联机队友兼容可行性分析.md` | **部分落地 + 实机进行中（r144 POC → r145 回合死锁 → r146 席位隔离 → r147「幽灵弹层 + 镜像来源席位」→ r148 商店 R1 通过）**：r144~r146 已提交并 `--ff-only` 合回 master（`50bff2b` 代码 / `25077d1` 文档）；r147+r148 已提交为 `1eefef7`，且已随 v1.43.0 合回 master（分支 `fix/r147-phantom-overlay-mirror` 已删除）。落地 = ① `CoopBotsAdapter` 反射适配器（探测 / `AutoPilot.Set` 逐席接管与释放 / 未装即优雅降级）② 席位驱动**三态互斥**（`CoopBotsSeatPlan` + `LocalSelfCoopContext`，POC 配置键 `coopBotsSeats`）③ **R1 商店 ACK 旁路补丁** `CoopBotsShopAckPatch`（**装了 CB 就要挂**，与其 Bot 是否被我们接管无关）④ **r145**：3 席「回合结束不了」（就绪补齐改成「只补本地席位 + 走真实方法调用」）⑤ **r146**：第三方席位隔离（`LocalSelfCoopContext.IsLocalSessionSeat`）⑥ **r147**：**幽灵弹层**根治 + 自愈，以及 `MirrorSeatPolicy` 五条镜像链的来源席位过滤。**实机已验**：r147 全部改动通过（0 条 add_child failed / 0 条幽灵弹层自愈 / 0 条 bot 奖励镜像）；**R1 于 r148 通过**（Bot 删牌服务→药水，两次旁路均 `count=1,seats=[]`，最终 `done=1`，正常离店并进入下一战斗）。**未做**：12 席三态 UI / 持久化、Phase 3 补丁面回归、**被接管的本地席位**的奖励归驱动方分流、**BUG-17** 根因。**2026-09-26 逐条实测（marker r148，第一幕整局；配置 `coopBotsSeats` 为空 ⇒ 本局 Bot 是 CB **自己的合成 Bot**、非我方 POC 接管）**：§R2 **11 点全部通过** —— #1 `地图自动跟投 … filled=3/3` **54 次 / 0 失败**（含 Bot 全票、随后均触发推进）；#2 `本地多控自动补齐敌方回合就绪 … mirrored=` **从不含 Bot id**（41 次）；#5 `RequestEnqueue 空引用已拦截` **0**；#7 `事件/流程金币已同步到其余角色` **0**；#8 `角色独立奖励已生成(Offer): player=<Bot>` **0** + `第三方席位卡牌奖励交回原版远端作答` 24；#9 `打开奖励界面: player=<瓦库>` **0**；#11 `瓦库火堆已自动选择 … success=True` 6 / `扫描瓦库休息区失败` 0；#6 `瓦库火堆队友选择已自动指定` 4；#3/#4 选人屏 **弱覆盖**（`角色选择页已创建本地人数 +/- 实体按钮` 4 次，无错位/残留）。同局 `add_child() failed` / `幽灵弹层已自愈` / `弹层阻挡自动流程` **全 0**（r147 稳定）。**仍待验**：**我方 POC 接管席位**路径下的 R2 回归（本局未接管）、BUG-17 诊断锚点 | ✅ ① R2 逐条实测**已完成（2026-09-26）** —— **清单已固化**：`Scripts/Tools/thirdparty_patch_overlap.py`（口径与命令见 `Co-op_Bots联机队友兼容可行性分析.md` §R2；逐条判据表同节，产物 `decision-records/第三方补丁目标交叉分析-CoopBots.md`）；② 事件末页选牌复现后按 BUG-17 的三条锚点分流；③ 之后再谈 Phase 1 的选人屏三态钮与 save tag v4 | 本表 + §BUG-17 |
 | `局内加人与战斗临时玩家-可行性分析.md` | **未动工**（调研结论稿）：需求 A 局内加正式玩家 = 有条件可行但风险高；需求 B 战斗中临时玩家（召唤型）= 可行且有现成抓手 | 2026-09-25 **已归位**到 `maintenance-docs/decision-records/`（原先错放在 `maintenance-docs/` 根）；是否排期待拍板 | 本表（待拍板） |
 | `原版药水一览表.md` / `原版附魔一览表.md` | **参考数据表**（非提案）；药水表已随 r136 校正"当前 mod 行为"列 | 改规则表时同步这两张表；附魔侧"优先选哪类牌"待用户填期望 | **§改进-4** |
-| `补丁mod收进主仓库compat-mods.md`（#20） | **✅ 已落地（2026-10-05）**：`HextechRunesLocalCoopFix` 已从 `pain` 根迁入主仓库 `compat-mods/HextechRunesLocalCoopFix/`（旧的 pain 根目录已删、只留一份源码）；`LocalMultiControl.csproj` 加 `<Compile Remove="compat-mods/**" />`（校验：参与编译 .cs **257 不变**、主 dll 里 grep 不到补丁 mod 类型名）；`build_all_mods.ps1` 新增 `compat-mods\*\*.csproj` 发现规则（`-List` 显示 14 个 mod、从新位置构建部署字节一致）；`AGENTS.md §2`、`pain/README.md` 同步 | 剩余：**push origin**（需用户确认）＋ 后续把其它无 git 的补丁 mod（`PreloadStallGuard` 等）按同法陆续收进来 | 本表（执行当天已登记） |
+| `补丁mod收进主仓库compat-mods.md`（#20） | **✅ 已落地（2026-10-05）**：`HextechRunesLocalCoopFix` 已从 `pain` 根迁入主仓库 `compat-mods/HextechRunesLocalCoopFix/`（旧的 pain 根目录已删、只留一份源码）；`LocalMultiControl.csproj` 加 `<Compile Remove="compat-mods/**" />`（校验：参与编译 .cs **257 不变**、主 dll 里 grep 不到补丁 mod 类型名）；`build_all_mods.ps1` 新增 `compat-mods\*\*.csproj` 发现规则（`-List` 显示 14 个 mod、从新位置构建部署字节一致）；`AGENTS.md §2`、`pain/README.md` 同步 | 剩余：**push origin**（需用户确认）。~~后续把其它无 git 的补丁 mod（`PreloadStallGuard` 等）按同法陆续收进来~~ ⇒ **口径已收窄（2026-10-05 用户拍板）**：`compat-mods/` **只收「因主 mod（本地多控）与第三方 mod 交互才存在的补丁」**；纯第三方自身 bug 的兼容 fix（`Act4FinalAscentFixes` / `EnchantTargetRandomFix` / `LexNinja2LaserFix` / `OddmeltGaugeCardRenderFix` / `YuiVfxSceneFix` / `YuWanCardWhiteScarfFix` / `TouhouAncients*`）与我们自己的辅助 mod（`HistoryFilter` / `HistoryLoadoutExport`）**都不迁**（判定问句：「没有主 mod，它还需要存在吗」= 不需要就不收） | 本表（执行当天已登记；口径当天收窄） |
 
 
 > 与其它清单的关系：`维护现状分析.md §4.6` 是**快照**（保留定位描述，状态可能滞后）；
@@ -69,7 +69,7 @@
 > 都是「能用但别扭」的**多人规模化**体验问题，数据层未见错误；先留档排期，本轮不动代码。
 > 同类既有备案：`maintenance-docs/decision-records/瓦库托管优化可行性分析.md` §16.2。
 
-### BUG-1 战斗第一回合能量不同步（新增，2026-09-08）
+### BUG-1 战斗第一回合能量不同步（2026-09-08 报；**r96/r97 修 + r99 辉星补，✅ 2026-09-10 实机关单**）
 
 - **现象**：进战斗前选中的是**瓦库托管角色**时，进入战斗后第一回合——手牌等内容显示的是真人玩家
   （同时也是战斗开始时的默认第一个玩家），**能量条却是瓦库的**；手动切换一下角色即恢复同步。
@@ -94,7 +94,7 @@
   并删掉不可靠的 `_lastCombatUiPlayerId` 追踪。另加帧末延迟补校 + 每场一条
   `战斗能量归属核对: 能量=…, 手牌=…(cardOwner/emptyHand), 受控=…`。marker **r97**。
 - ✅ **BUG-1 已闭环（2026-09-10，用户实机确认）**：r97 能量同步 + r99 辉星（储君第二资源）正常显示。
-- ✅ **r97 能量已实机确认同步（2026-09-10）**；**辉星（储君/Regent 第二资源 Stars）不同步 → r98 已修（待复测）**：
+- ✅ **r97 能量已实机确认同步（2026-09-10）**；**辉星（储君/Regent 第二资源 Stars）不同步 → r98 已修（随后被 r99 取代并闭环）**：
   ① 入战切人提前到 `NCombatRoom._Ready` **前缀**（新 `NCombatRoomReadyForegroundPatch`，Combat 域已登记）——
   原版 `NCombatUi.Activate` 与第三方按 LocalContext 绑定本地玩家的 mod（本机装有
   RegentFX「万象辉星」，dll 内可见 `NCombatRoomReadyPatch`/`SetupStarRingForLocalPlayer`）
@@ -103,7 +103,7 @@
   （新日志 `辉星归属不一致已校正`，核对行加 `辉星=` 字段）。
   ③ 修原版 `NStarCounter` 订阅死角：`Initialize` 只有 `!_isListeningToCombatState` 才订阅 `StarsChanged`，
   该标志无人复位 → 重绑改为「先退订旧玩家 + 复位标志」。marker **r98**。
-- 🔧 **r98 实机证明归属本来就对 → 真根因是生命周期，r99 已修（待复测）**：r98 日志
+- 🔧 **r98 实机证明归属本来就对 → 真根因是生命周期，r99 已修（✅ 2026-09-10 闭环）**：r98 日志
   `战斗能量归属核对: 能量=326, 辉星=326, 手牌=326(cardOwner)` 全对、无校正 WARN；
   用户复测「**单人储君正常，本地多控下无论入战时是不是瓦库都不显示辉星**」。
   根因：原版把辉星计数器 `Reparent` 进能量球，而本 mod 每次切角色都**重建能量球并 QueueFree 旧的**
@@ -153,7 +153,7 @@
   彻底避开右下投票区；③ 若确认是 overlay 每帧写 `Size/Position` 触发了按钮重排，则改为
   只画不写（CanvasItem `_Draw` 自绘）。
 
-### BUG-4 第三方「次级资源」战斗UI切角色后仍显示（蕾克拉，2026-09-10 已修 r100，待复测）
+### BUG-4 第三方「次级资源」战斗UI切角色后仍显示（蕾克拉，✅ 2026-09-10 r100~r102 实机关单）
 
 - **现象**：LexNinja2 的**蕾克拉**在蕾忍角色上正常显示在能量旁边，但**切到其它角色后依旧显示**。
 - **定性**：蕾克拉走 **RitsuLib 次级资源框架**（`[NodeAttachment] LEX_NINJA2_NODEATTACHMENT_LEX_KELA_COMBAT_COUNTER:
@@ -166,7 +166,7 @@
   `SecondaryResourceUiRuntime.UpdateCombatUi(NCombatUi, Player)`；未装 RitsuLib / 失败只记一次日志并跳过。
   成功日志 `第三方次级资源战斗UI已同步到当前玩家: player=…`。
 - **验证**：切到非蕾忍角色 → 蕾克拉消失；切回 → 恢复。
-- ⚠ **r100 残留场景 → r101 补强 → r102 改对根因（2026-09-10，待复测）**：蕾忍是瓦库 + 非 1 号位 +
+- ⚠ **r100 残留场景 → r101 补强 → r102 改对根因（2026-09-10；✅ 用户实机确认闭环）**：蕾忍是瓦库 + 非 1 号位 +
   入战前停在瓦库视角时，进战斗后蕾克拉仍在，直到瓦库打完牌才自己消失。
   **r101 实机日志推翻粘滞假设**：入战时计数器本来就绑在 1 号位且已隐藏
   （`counters=1, bound=326, material=False, visible=False`）→ 是**之后**被改回瓦库的。
@@ -1086,7 +1086,7 @@
   事件有 `CountEventWinSlice`，商店侧没有对应物）。要用统计驱动商店决策，得先补一个
   「商店购买 → 局胜负」的查询（纯函数 + 单测）—— **待用户拍板**。
 
-### 改进-7（= BUG-16）遗物效果自建的奖励集不自动领取 → 瓦库奖励弹屏等真人点（**r143，2026-09-20 已部署，待实机**）
+### 改进-7（= BUG-16）遗物效果自建的奖励集不自动领取 → 瓦库奖励弹屏等真人点（**r143，2026-09-20 已部署；✅ 同日实机复测通过**）
 
 - **现象（用户 2026-09-20 实机反馈）**：「瓦库拾取 YUI extra mod 的**赐福**（一种遗物）时不会自动领取
   赐福自动弹出的、**只有一张牌**的战斗奖励；其它『拾取遗物时获得卡牌奖励』的情况（如**星系仪**）似乎同样如此。」
@@ -1162,7 +1162,7 @@
     （两层修复都已部署，且 `RewardsSetPatch` 兜底覆盖整类入口）。
   - **提交**：`2e96fd1`（r142 评分档）+ `563c8bd`（r143 修复 + 文档收口），分支 `feat/wakuu-scored-brain`。
 
-### 改进-6 Phase 5「局内打牌评分」落地：新增 `vakuuBrain=scored` 档（**r142，2026-09-20 已部署，待实机**）
+### 改进-6 Phase 5「局内打牌评分」落地：新增 `vakuuBrain=scored` 档（**r142，2026-09-20 已部署；✅ 同日实机通过**）
 
 > 方向来源：`maintenance-docs/decision-records/瓦库托管优化可行性分析.md` §18.2（阶段 B 卡牌评分 /
 > §18.2.6 目标选择升级）与 §21.6（**Phase 5 范围收缩为「接口 + 轻量启发式评分 + 目标选择升级」**）。
@@ -1282,10 +1282,13 @@
    - **已固化为门禁**：`static_checks.py` 新增 **S8 源码编码卫生**（离线静态层自此 **8 项**）。
      理由：这类乱码**不报错、不影响功能**，但实机日志里就是乱码 ⇒ **日志锚点无法 grep**，
      而我们的排查（`log_scan.py` 计数、跨会话对比）全靠锚点。日志字符串本身属排查资产，必须门禁化。
-   - **`dotnet format --verify-no-changes` 本来就是红的**：报 `CardTransformNetIdPinPatch.cs` /
-     `LocalWakuuMerchantAuto.cs` / `WakuuStatBadgeTests.cs` 的**存量** WHITESPACE 问题。
-     它不在 §9 强制门禁链（`preflight` 的 G3 是 diff 预审，`-Lint` 才跑 lint）。
-     要么一次性 `dotnet format` 收敛并加进 G3，要么明确"不做格式门禁"。
+   - ✅ **格式存量已收口（2026-10-05）**：`dotnet format LocalMultiControl.csproj` 一次性收敛了**纯空白**违规
+     （`CardTransformNetIdPinPatch.cs` 48 处缩进 + `LocalWakuuMerchantAuto.cs` 3 处；`git diff -w` 为空
+     ⇒ **零行为变化**），`--verify-no-changes` 现为**绿**。`WakuuStatBadgeTests.cs` 属测试工程，
+     不在 `LocalMultiControl.csproj` 的 format 范围内（`dotnet format` 只吃该 csproj）。
+     **口径：不把 `dotnet format --verify-no-changes` 加进强制门禁链** —— 理由①格式规则随 dotnet SDK 版本漂移，
+     升级 SDK 会让门禁突然变红、与"这轮改坏了没有"无关；②收益已被本轮一次性清干净。
+     需要时手动抽查：`dotnet format LocalMultiControl.csproj --verify-no-changes`（只读、不改文件）。
 
 ---
 
@@ -1625,7 +1628,7 @@
   - ⚠ **口径订正**：`检测到真人选牌请求` 自此**不再是"期望 0"**（它是修好后的正常锚点）；
     `tools/log_scan.py` 的 health 预设已同步，并把"chooser 不是真人 ⇒ 归属者写错"写成判据。**本节关单。**
 
-### BUG-20 游戏结束后结算页没有结束按钮（2026-09-27 用户反馈；**r155 已修 → 待实机确认**）
+### BUG-20 游戏结束后结算页没有结束按钮（2026-09-27 用户反馈；**r155 已修 → ✅ 2026-10-05 审计复核通过**）
 
 - **现象（用户原话）**：「游戏结束后没有结束按钮」—— 结算第一页（战绩页）的「继续」按钮还在，
   点进第二页（战绩明细 / 徽章页）后**没有「返回主菜单」按钮，卡死出不去**。
@@ -1677,6 +1680,12 @@
 - **回归要求**：单人对局（`Players.Count == 1`）与非回环平台对局行为**逐字不变**（补丁 Keep 分支直接放过）；
   结算第一页/`ViewRun`/`ReturnToMainMenu` 按钮行为不变；
   存档里的 `platform_type` 字段**不被改动**（只在 `UpdateWithRunData` 调用期间临时替换并还原）。
+- ✅ **2026-10-05 审计复核通过（跨会话，PASS 条件命中）**：**5 份打完整局的会话**
+  （r161 / r172 / r184 / r199 / r204）里 `整局进度写入已校正本地玩家识别` 均命中（各 1~2 条）；
+  而 PASS 要求为 0 的 `Local player with net id 1 not found in run` 在**抽查的 6 份会话（含 r207）全部为 0**。
+  ⚠ 该锚点只在 `ProgressSaveManager.UpdateWithRunData` 被调用时打印 —— **没走到结算的会话（如 r207）本就为 0，不是漏打**；
+  `结算页徽章保存兜底` 同理（它是"进度里缺角色统计"的兜底，没缺就不打）。
+  口径与命令见 §过期待办状态订正（2026-10-05 审计）。
 
 ### Daily 本地多控（r156 起，r157 修正，r158 零劫持 / r159 收尾 / **r161 断网可玩**；**联网局、断网局均已通过（2026-09-27）**）
 
@@ -2005,7 +2014,7 @@ LOG ANCHORS: (期望 0) LocalCustomRunSelectionSync / ### Exception ###；INIT_O
   `references/tools.md` 同步 S10 / `--preset daily` / 归档跳过语义；
   skill 侧 `SKILL.md` 硬规矩 **三条 → 四条**（新增第 4 条判空规矩）。references 两侧 10 份逐字节一致。
 
-### BUG-22 读档后瓦库整局失效（不出牌 / 不自动选事件 / 不自动领奖）—— **r166 已修，待实机**
+### BUG-22 读档后瓦库整局失效（不出牌 / 不自动选事件 / 不自动领奖）—— ✅ **r166~r168 已修并实机关单**（2026-10-05 审计复核）
 
 - **现象（用户 2026-09-27 报）**：「打一半瓦库不会自己选事件选项了」。日志 `logs-archive\godot__20260927-185422__r165.log` 实证：
   全 4 个事件房（`Beginning event`）里**只有读档前的那一个**被自动选（L18778），读档后两次同类事件（L19193 / L19634）**一条自动选择日志都没有**；
@@ -2132,7 +2141,7 @@ LOG ANCHORS: (期望 0) LocalCustomRunSelectionSync / ### Exception ###；INIT_O
 
 ---
 
-### BUG-23 瓦库打出「第三方自绘选牌」类卡牌后卡死（2026-09-28 实机，沙耶 mod 色素细胞；**已定性，待拍板修法**）
+### BUG-23 瓦库打出「第三方自绘选牌」类卡牌后卡死（2026-09-28 实机，沙耶 mod 色素细胞；✅ **已关单：A 解软锁 r181 / B 功能完整 r183 均实机通过**）
 
 **现象**（用户 2026-09-28，marker `r180`，日志 `logs-archive/godot__20260928-202151__r180.log`）：
 瓦库打出沙耶 mod 的【色素细胞】`FIGURE_SAYA-PIGMENT_CELL_CARD`（千变万化词条，打出后从几张牌里选一张加入手牌）
@@ -2175,7 +2184,7 @@ if (LocalContext.IsMe(player) && NetService.Type != Replay) {
 
 **修法决策（2026-09-28 用户拍板）**：**先做 A（解软锁），B 随后单独一轮**。
 
-**✅ A 已实现并部署（marker `2026-09-28-r181`，待实机）**：
+**✅ A 已实现、部署并实机通过（marker `2026-09-28-r181`；实机结论见下方同轮条目）**：
 - 新增补丁 `Scripts/Patch/PlayerChoiceSynchronizerRemoteChoiceFallbackPatch.cs`
   （`PlayerChoiceSynchronizer.WaitForRemoteChoice` 前缀）：**我们本地席位 + 后台托管瓦库**等待远端选择时，
   直接以"空结果"放行并在日志里点名——
@@ -2222,7 +2231,7 @@ if (LocalContext.IsMe(player) && NetService.Type != Replay) {
   历史 60+ 份日志都有）；参考局独有的 9 个全是 `关键目标 … 存在第三方补丁 owner`（同一件事的另一面）
   ⇒ **A 没有引入任何新告警来源**。**BUG-23 方案 A 关单**。
 
-**✅ B 已实现并部署（marker `2026-09-28-r182`，待实机）——「功能完整」版：第三方自绘选牌由瓦库自动作答**
+**✅ B 已实现并部署（marker `2026-09-28-r182`；随后被 r183 修正取代，见下）——「功能完整」版：第三方自绘选牌由瓦库自动作答**
 
 用户 2026-09-28 拍板「A 先做、B 随后单独一轮」，故 B 单列本轮。**两半缺一不可**：
 
@@ -2270,7 +2279,7 @@ if (LocalContext.IsMe(player) && NetService.Type != Replay) {
 - 其余健康：`### Exception ###` / `add_child() failed` / 我方 `[ERROR]` **全 0**；12 条 NRE 仍是第三方 `RitsuLib`；
   `弹层阻挡自动流程 … top=NChooseACardSelectionScreen[inTree=True]`（既有兜底，识别到界面挡着看门狗，正常）。
 
-**✅ r183 修正（marker `2026-09-28-r183`，待实机）**：
+**✅ r183 修正（marker `2026-09-28-r183`；实机通过见下方 r183 条目）**：
 - 候选改走我们自己的 `LocalNodeTree.EnumerateDescendants(screen).OfType<NGridCardHolder>()`（**C# 类型**遍历，
   R2 的单点化设施正是为这类场景收的），不再用 `FindChildren` 的 type 过滤器；
 - 候选（holder）是屏幕在 `_Ready` 里建的，偶有晚半拍 ⇒ 加 **0.35s × 最多 3 次**重试后才判"交回真人"，
@@ -2311,7 +2320,7 @@ if (LocalContext.IsMe(player) && NetService.Type != Replay) {
 **排查方法沉淀**：见 `references/local-multicontrol-pitfalls.md` **坑 M**（第三方自绘选牌家族 + 定位手段：
 先 `thirdparty_extract_embedded.ps1` 导出壳里的内嵌实现，再 `thirdparty_api_refs.ps1` / `decompile_mod.ps1`）。
 
-### BUG-27（**r194 已修，待实机**）第三方休息区选项被当成「遗物选项」⇒ 火堆决策退化成"睡觉以外随机"（2026-09-30 用户实机发现）
+### BUG-27（**r194 已修；✅ 2026-09-30 实机关单**）第三方休息区选项被当成「遗物选项」⇒ 火堆决策退化成"睡觉以外随机"（2026-09-30 用户实机发现）
 
 - **症状（用户报）**：瓦库在休息处**一直用愈合（`MEND`）给自己回血，而双方血量都在 50% 以上**；
   用户猜测"是不是该敲的牌都敲完了没别的选择"——**不是**，锻造那一步没被走到。
@@ -2503,8 +2512,41 @@ BUG-29（用户「猪猪王 BUG 全无」）与 BUG-30 均已实机收掉。2026
    两份长会话的 `### Exception ###`（161 / 270）**100% 为第三方 `BaseLib.Patches.UI` 的 `ArgumentOutOfRangeException`**
    （历史 r199 同源 335 条）⇒ 既有第三方族。
 
-**用户 2026-10-04 拍板：不发版，攒一波大的**（版本 / tag 一律等用户再拍：升 minor ⇒ 1.45.0 / tag v1.45）；
-当前 `master` 领先 origin **27**、**未 push**。R5 只剩 **R5-3 会话级状态收进 Session**（已开工）。
+**用户 2026-10-04 拍板：不发版，攒一波大的**（版本 / tag 一律等用户再拍：升 minor ⇒ 1.45.0 / tag v1.45）。
+
+> 📌 以上是 2026-10-04 的**快照**：当时 `master` 领先 origin **27**、R5-3 才开工；
+> **R5-3 已随 r205 关单、R5 全线收口**（见 §R5）。**当前**领先提交数 / marker / 版本一律看
+> `开发进度记录.md` 顶部收工块（现状唯一事实源），本段不复刻。
+
+---
+
+## 过期待办状态订正（2026-10-05 审计）
+
+> **触发**：`TODO.md` 里多条标题仍写着「待实机 / 待复测」，正文其实早已关单 —— 反复回读会浪费一次
+> "到底验没验"的判断。本轮逐条核对并订正标题，同时把可复现的证据口径留在这里。
+> **方法**：`tools\log_scan.py`（跨会话计数）逐条核对；日志证据一律**当天**从 `logs-archive` 取（`godot.log` 只留 5 份）。
+
+| 条目 | 结论 | 证据 |
+|---|---|---|
+| BUG-1（能量 + 辉星） | ✅ 2026-09-10 关单 | 用户实机确认（r97 能量同步 / r99 辉星显示） |
+| BUG-4（蕾克拉次级资源） | ✅ 2026-09-10 关单 | 用户实机确认（r100~r102）；`第三方次级资源战斗UI已同步` 长期有命中 |
+| 改进-6（`vakuuBrain=scored`，r142） | ✅ 2026-09-20 | 用户实机（`瓦库评分出牌` 501 条、降级 0） |
+| 改进-7 / BUG-16（r143） | ✅ 2026-09-20 | `logs-archive\godot__20260920-183506__r143.log`（5 批 10 张全自动领取、`打开奖励界面` 0） |
+| BUG-20（结算页无结束按钮，r155） | ✅ 2026-10-05 审计 | `整局进度写入已校正本地玩家识别` 命中 r161/r172/r184/r199/r204（**只有打完整局的会话才打这条**）；期望 0 的 `Local player with net id 1 not found in run` 在**抽查 6 份会话（含 r207）全 0** |
+| BUG-22（读档后瓦库停摆，r166~r168） | ✅ 2026-10-05 审计 | 「窗口开启 → 恢复席位 → 读档后出牌」三锚点：r172 **5 / 5 / 164**、r184 **1 / 1 / 6**、r207 **1 / 1 / 13** |
+| BUG-23（第三方自绘选牌，r181 / r183） | ✅ 2026-09-28 关单 | A：`瓦库远端选择无人作答，已按空结果放行`（r181）；B：`瓦库自绘选牌自动作答`（r183 日志命中 1） |
+| BUG-27（火堆第三方选项，r194） | ✅ 2026-09-30 关单 | `logs-archive\godot__20260930-223831__r194.log`：`option=MEND` **0** / `option=SMITH` 58 / `option=HEAL` 4 |
+| R2 第二批（r172 镜像收口） | 已由 R3~R5 覆盖 | 每轮实机；R0~R5 全线收口见 §R3/§R4/§R5 与 ADR §十 |
+
+> ⚠ **两条口径（本轮确认，别再当回归报）**：
+> ① **`### Exception ###` 不能当全周期哨兵** —— 长会话里第三方 `BaseLib.Patches.UI.ModSourceTooltip.Fold` 的
+> `ArgumentOutOfRangeException`（悬浮提示折叠时索引越界）能涨到 **270 / 335 条**（r199 / r204 会话），
+> 而 r207 会话是 **0** ⇒ 归第三方，已在 §就地复核结论（2026-10-04）登记。
+> ② **「瓦库锚点为 0」有时是"这一局压根没瓦库席位"**，不是回归 —— 判据是 `已恢复瓦库勾选玩家:` 后面**有没有 id**：
+> 实测 r199 / r204 两份大会话该行为**空**（该局没勾瓦库）⇒ 0 次出牌属预期；r207 有 `76561198422527327` ⇒ 正常出牌 13 次。
+>
+> 复跑命令：读档契约 `python tools\log_scan.py --preset load --file <归档日志>`；
+> 长期哨兵 `python tools\log_scan.py --preset closed --all-logs --logs-dir D:\Download\pain\logs-archive`。
 
 ---
 
