@@ -167,4 +167,48 @@ public class WakuuOwnerSelectorMapTests
         WakuuOwnerSelectorMap<string> map = new();
         Assert.That(() => map.Register(326, null!), Throws.ArgumentNullException);
     }
+
+    /// <summary>
+    /// <c>IsRegistered</c>（2026-10-05 随净化加入）：选择器守卫改用它替代类型白名单 ——
+    /// 必须"只认本表登记过的实例"，否则会把非托管选择器误判成托管（摘掉真人 UI）。
+    /// </summary>
+    [Test]
+    public void IsRegistered_只认本表登记过的实例()
+    {
+        WakuuOwnerSelectorMap<object> map = new();
+        object registered = new();
+        object foreign = new();
+
+        using (map.Register(326, registered))
+        {
+            Assert.Multiple(() =>
+            {
+                Assert.That(map.IsRegistered(registered), Is.True, "登记过的实例应被认作托管选择器");
+                Assert.That(map.IsRegistered(foreign), Is.False, "没登记过的实例不算托管选择器");
+                Assert.That(map.IsRegistered(null!), Is.False, "null 不算托管选择器");
+            });
+        }
+
+        Assert.That(map.IsRegistered(registered), Is.False, "释放后不再是托管选择器");
+    }
+
+    [Test]
+    public void IsRegistered_不同归属者与任意嵌套层级都算登记过()
+    {
+        WakuuOwnerSelectorMap<object> map = new();
+        object outer = new();
+        object inner = new();
+
+        using (map.Register(326, outer))
+        {
+            using (map.Register(327, inner))
+            {
+                Assert.Multiple(() =>
+                {
+                    Assert.That(map.IsRegistered(outer), Is.True);
+                    Assert.That(map.IsRegistered(inner), Is.True);
+                });
+            }
+        }
+    }
 }

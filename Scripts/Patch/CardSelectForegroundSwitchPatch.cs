@@ -27,6 +27,24 @@ internal static class CardSelectForegroundSwitchPatch
     /// </summary>
     internal static readonly System.Threading.AsyncLocal<ulong?> CurrentChoicePlayerId = new System.Threading.AsyncLocal<ulong?>();
 
+    /// <summary>
+    /// 给「**由模组自己发起、但由真人手选**」的选牌入口临时钉住归属者（如休息处净化：选项由模组注入，
+    /// 选牌时用的是 <c>CardSelectCmd.FromDeckForRemoval</c> —— 它是 <c>WakuuSelectorRouteAudit</c> 的
+    /// <c>legacyFallback</c>，没有归属者前缀）。
+    ///
+    /// 作用：结算期间 <see cref="CardSelectCmdSelectorGuardPatch"/> 会按归属者分发 ——
+    /// 归属者非瓦库 ⇒ 摘掉栈上的托管选择器、改走正常选牌 UI，从而挡住"并发跑着的瓦库火堆选项
+    /// 把真人的这次选牌替他答了"。**栈上无选择器时本设置无任何副作用**（正常路径）。
+    ///
+    /// AsyncLocal 沿异步链流动，作用域释放时恢复原值 ⇒ 不影响并发的其他选牌链。
+    /// </summary>
+    internal static IDisposable PushChoiceOwner(ulong chooserNetId)
+    {
+        ulong? previous = CurrentChoicePlayerId.Value;
+        CurrentChoicePlayerId.Value = chooserNetId;
+        return new ChoiceOwnerScope(previous);
+    }
+
     private static void EnsureForegroundForCombatChoice(Player player, string source)
     {
         if (!LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.UseSingleAdventureMode)
@@ -135,6 +153,33 @@ internal static class CardSelectForegroundSwitchPatch
     {
         EnsureForegroundForCombatChoice(player, "FromCombatPile");
     }
+
+    /// <summary>
+    /// <see cref="PushChoiceOwner"/> 的作用域：释放时把 <c>CurrentChoicePlayerId</c> 恢复成进入前的值。
+    /// ⚠ 本类必须声明在本文件**所有带 [HarmonyPatch] 的方法之后** —— 离线静态层 S4/S7 的解析器
+    /// 按"最近出现过的 class 名"归属方法级 [HarmonyPatch]，插在方法前面会被误判成一个"只有方法级补丁的类"。
+    /// </summary>
+    private sealed class ChoiceOwnerScope : IDisposable
+    {
+        private readonly ulong? _previous;
+        private bool _disposed;
+
+        internal ChoiceOwnerScope(ulong? previous)
+        {
+            _previous = previous;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            CurrentChoicePlayerId.Value = _previous;
+        }
+    }
 }
 
 /// <summary>
@@ -164,8 +209,14 @@ internal static class CardSelectCmdSelectorGuardPatch
             return;
         }
 
-        // 只认托管选择器（游戏原生 VakuuCardSelector / 本 mod 策略选择器）；其余（如测试用）不动
-        if (top is not VakuuCardSelector and not LocalWakuuStrategySelector)
+        // 只认「托管选择器」：游戏原生 VakuuCardSelector，或**登记在 WakuuSelectorRegistry 里**的选择器
+        // （= 本 mod 通过 WakuuSelectorRegistry.Open 压栈的，含策略/锻造/定向选择器）。
+        //
+        // ⚠ 这里原先写的是类型白名单 `is not VakuuCardSelector and not LocalWakuuStrategySelector`，
+        // 于是**火堆锻造的 LocalWakuuSmithSelector 与 LocalWakuuTargetedCardSelector 被静默漏判**：
+        // 归属者已知（例如净化流程把真人钉成归属者）时守卫会直接放行，栈顶那个瓦库选择器就替真人把牌选了。
+        // 改成"按登记身份判"后与"谁压的栈"天然一致，新增托管选择器实现也不会再被漏掉。
+        if (top is not VakuuCardSelector && !WakuuSelectorRegistry.IsRegistered(top))
         {
             return;
         }

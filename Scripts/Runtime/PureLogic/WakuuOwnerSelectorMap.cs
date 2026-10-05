@@ -109,6 +109,36 @@ internal sealed class WakuuOwnerSelectorMap<TSelector> where TSelector : class
         }
     }
 
+    /// <summary>
+    /// 某个选择器实例**是否由本表登记**（按引用比对，任意归属者/任意嵌套层级）。
+    /// 用途：选择器守卫要判"栈顶是不是托管选择器" —— 用类型白名单会漏掉后加的实现
+    /// （火堆锻造的 <c>LocalWakuuSmithSelector</c>、定向选择器 <c>LocalWakuuTargetedCardSelector</c>
+    /// 都曾因此被漏掉），按登记身份判则与"谁压的栈"天然一致。
+    /// </summary>
+    public bool IsRegistered(TSelector selector)
+    {
+        if (selector == null)
+        {
+            return false;
+        }
+
+        lock (_lock)
+        {
+            foreach (List<Entry> list in _byOwner.Values)
+            {
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (ReferenceEquals(list[i].Selector, selector))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>清空整表（运行清理时调用，防止泄漏条目跨局生效）。返回被清掉的条目数。</summary>
     public int Reset()
     {

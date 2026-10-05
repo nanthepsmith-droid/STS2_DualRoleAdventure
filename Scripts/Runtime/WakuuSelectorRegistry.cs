@@ -64,6 +64,15 @@ internal static class WakuuSelectorRegistry
         return Map.TryGet(ownerId, out selector);
     }
 
+    /// <summary>
+    /// 该选择器实例是否由本注册表登记（= 是"托管选择器"）。选择器守卫用它替代类型白名单，
+    /// 避免新增托管选择器实现时被静默漏判（详见 <see cref="WakuuOwnerSelectorMap{TSelector}.IsRegistered"/>）。
+    /// </summary>
+    internal static bool IsRegistered(ICardSelector selector)
+    {
+        return Map.IsRegistered(selector);
+    }
+
     /// <summary>登记表当前条目数（含嵌套），用于清理期日志。</summary>
     internal static int Count => Map.Count;
 
