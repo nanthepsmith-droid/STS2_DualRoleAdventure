@@ -11,7 +11,9 @@
 #   新增 mod 无需改本脚本；产物名读 csproj 的 <AssemblyName>，槽位默认同名。
 #   需要「例外」时改同目录的 mod_registry.json：
 #     enabled=false -> 官方已修复 / 不再使用的 mod，跳过构建与部署
-#                      （注意：游戏仍会加载槽位里残留的 dll，脚本会 WARN，需手动清槽位）
+#                      （注意：槽位里残留的 dll 只是垃圾 —— 游戏是否加载某个槽位由**游戏内** mod 列表
+#                       决定（settings.save 的 mod_settings.mod_list.is_enabled），实测 2026-10-05 完全对应；
+#                       脚本对残留 dll 仍会 WARN，确认不需要后手动清槽位即可）
 #     slot / dll    -> 覆盖槽位目录名 / 部署后的 dll 文件名
 #
 # 用法:
@@ -211,9 +213,11 @@ function Test-SlotHygiene {
     if (-not $Mod.Enabled) {
         $leftover = @(Get-ChildItem -LiteralPath $slotDir -Filter *.dll -File -ErrorAction SilentlyContinue)
         if ($leftover.Count -gt 0) {
-            Write-Host "[!] $($Mod.Name) 已在注册表禁用，但槽位仍有 dll，游戏仍会加载它：" -ForegroundColor Yellow
+            Write-Host "[!] $($Mod.Name) 已在注册表禁用，但槽位仍留有 dll：" -ForegroundColor Yellow
             $leftover | ForEach-Object { Write-Host "      $($_.FullName)" -ForegroundColor Yellow }
-            Write-Host "      确认不再需要后请手动删除该槽位目录。" -ForegroundColor Yellow
+            Write-Host "      游戏是否加载它取决于「游戏内」mod 列表（settings.save 的 mod_settings.mod_list.is_enabled）——" -ForegroundColor Yellow
+            Write-Host "      实测（r207 日志：58 个 Finished mod initialization 与游戏内开关完全对应）禁用后游戏不会加载它，" -ForegroundColor Yellow
+            Write-Host "      残留 dll 属垃圾；确认不再需要后请手动删除该槽位目录，让 mods 目录保持一槽一版本。" -ForegroundColor Yellow
         }
         return
     }
@@ -277,6 +281,25 @@ function Find-SlotIdDllMismatch {
 }
 # 全槽位扫描（定义之后立即执行；-List 也会走到这里）
 Find-SlotIdDllMismatch
+
+# 孤儿槽位扫描：mods\ 下有**本仓库没有对应源码**的槽位目录（自动发现看不见它）—— 只 WARN、不阻断。
+# 动机（2026-10-05 实测）：`dualroleadventureold`（我们某次旧版产物、没有 csproj）长期躺在 mods\ 里，
+# 既不在构建清单里，也没人知道游戏是否加载它 —— 这类槽位只能靠"全目录扫描 - 已知槽位集合"发现。
+# 判"游戏到底加载没加载"看 godot.log 的 `Finished mod initialization for '<名>' (<id>).`（只列已启用的）。
+function Find-OrphanSlots {
+    param([string[]]$KnownSlots)
+    if (-not (Test-Path -LiteralPath $modsDir)) { return }
+    foreach ($dir in (Get-ChildItem -LiteralPath $modsDir -Directory -ErrorAction SilentlyContinue)) {
+        if ($dir.Name.StartsWith(".")) { continue }
+        if ($KnownSlots -contains $dir.Name) { continue }
+        $dlls = @(Get-ChildItem -LiteralPath $dir.FullName -Filter *.dll -File -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.Name })
+        $dllText = if ($dlls.Count -gt 0) { $dlls -join ', ' } else { '无 dll' }
+        Write-Host "[!] mods\ 下有本仓库不认识的槽位: '$($dir.Name)'（dll: $dllText）" -ForegroundColor Yellow
+        Write-Host "      本仓库没有它的源码（自动发现 / -Only 都碰不到它）；删不删看游戏是否加载：" -ForegroundColor Yellow
+        Write-Host "      godot.log 的 Finished mod initialization for 只列游戏内已启用的 mod。" -ForegroundColor Yellow
+    }
+}
 
 # 单仓库构建：返回 dll 路径（构建产物在仓库根）或 $null
 # 可选传 $TestCsproj：构建成功后跑 dotnet test，0 失败才算构建通过（任务 2.1 单元测试门槛）
@@ -433,6 +456,9 @@ if ($FixRepos.Count -gt 0) {
 } else {
     $mods = @(Discover-Mods -Root $ReposRoot -RegistryMap $registryMap)
 }
+# 孤儿槽位扫描必须在 -Only 过滤**之前**做：过滤后 $mods 只剩被选中那几个，
+# 会把其余已知槽位全误判成"孤儿"。
+Find-OrphanSlots -KnownSlots (@($mods | ForEach-Object { $_.Slot }) + $MainSlot)
 if ($Only.Count -gt 0) { $mods = @($mods | Where-Object { $Only -contains $_.Name }) }
 # 主 mod 是否参与本轮（-Only 未指定时总是参与）
 $mainSelected = ($Only.Count -eq 0) -or ($Only -contains $MainRepo) -or ($Only -contains "main")

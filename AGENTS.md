@@ -104,8 +104,16 @@ The mod set is **dynamic** — never hand-maintain a repo list in the script:
 - 例外写在 `Scripts/Tools/mod_registry.json`：`enabled=false` 停用已废弃的 mod（官方已修复的那种）、
   `slot`/`dll` 覆盖槽位名、`note` 备注。
 - 常用：`-List` 看全部 mod 的启用/部署/一致状态；`-Only <name>` 只处理指定 mod。
-- 注意：**禁用 ≠ 卸载**。禁用的 mod 若槽位还留着 dll，游戏照样加载，脚本会 WARN 让你手动删槽位；
+- 注意：**「禁用」有两套含义，别混**。`mod_registry.json` 的 `enabled` 只表示**要不要构建/部署**；
+  **游戏是否加载某个槽位**由**游戏内** mod 列表决定（`settings.save` 的 `mod_settings.mod_list[].is_enabled`）。
+  实测（2026-10-05，r207 日志：58 个 `Finished mod initialization for …` 与游戏内开关集合**完全对应**）：
+  禁用的槽位**不会**被加载，槽位里残留的 dll 只是垃圾 ⇒ 确认不需要后删掉它，让 `mods\` 保持「一槽一版本」。
+  ⚠ 反过来也要小心：**`mods\` 下可能有本仓库没有源码的槽位**（实测 `dualroleadventureold` = 我们的旧版产物，
+  没有 csproj ⇒ 自动发现看不见它）。清理前先用上面的日志法确认它到底加不加载。
   新 mod 槽位缺 `*.json` 也会 WARN（游戏不会把它识别为 mod）。
+- 脚本每次运行（含 `-List` / `-CheckOnly`）都会扫 `mods\` 并 WARN「**本仓库不认识的槽位**」= **孤儿槽位**：
+  目录里有 dll，但本仓库没有对应源码/仓库（自动发现与 `-Only` 都碰不到它）。`-Only` 过滤**之前**扫描，
+  所以不会把没选中的已知槽位误判成孤儿。2026-10-05 就是靠这条口径发现 `dualroleadventureold` 的。
 
 - The build copies the DLL to the repo root: `DualRoleAdventure.dll`. **Always deploy/ship the root artifact**, not `.godot/mono/temp/...`.
 - Deploy = copy **only** `DualRoleAdventure.dll` into the slot folder (`<game>\mods\<slot>\`); the dll filename

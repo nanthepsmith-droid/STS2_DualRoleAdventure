@@ -5,20 +5,32 @@
     "is treated as a mod repo (repo root artifact <AssemblyName>.dll -> slot mods\\<slot>\\<dll>).",
     "Use this file ONLY for exceptions:",
     "  enabled=false  -> skip build/deploy (obsolete fix, official game already fixed it).",
-    "                    The script still WARNS if the game slot still holds a dll, because the",
-    "                    game keeps loading whatever is in the slot - disabling here does NOT uninstall.",
+    "                    The script still WARNS if the game slot holds a leftover dll - that dll is",
+    "                    just garbage, NOT an active mod: whether the GAME loads a slot is decided by",
+    "                    the in-game mod list (settings.save -> mod_settings.mod_list[].is_enabled).",
+    "                    Verified 2026-10-05: the 58 'Finished mod initialization for ...' lines in",
+    "                    godot.log match the is_enabled=true set exactly (all 5 disabled local slots",
+    "                    are absent), so disabling here + deleting the slot keeps mods\\ unambiguous.",
     "  slot / dll     -> override slot directory name / deployed dll file name.",
     "  note           -> free text, printed by -List.",
-    "Unknown repos not listed here are auto-discovered and enabled by default."
+    "Unknown repos not listed here are auto-discovered and enabled by default.",
+    "NOTE on 'enabled' semantics: it means BUILD/DEPLOY here, which is independent of the in-game",
+    "per-mod toggle. A few entries below are marked enabled=true (we keep building them) while the",
+    "game side has them switched off - see their notes."
   ],
   "mods": [
-    { "name": "Act4FinalAscentFixes", "enabled": true, "note": "" },
+    { "name": "Act4FinalAscentFixes", "enabled": true, "note": "游戏内已禁用（mod_list is_enabled=false）；此处 true = 仍参与构建/部署" },
     { "name": "LexNinja2LaserFix", "enabled": true, "note": "" },
-    { "name": "OddmeltGaugeCardRenderFix", "enabled": true, "note": "" },
-    { "name": "TouhouAncientsAncientFixes", "enabled": false, "note": "OBSOLETE 2026-09-08: no longer needed" },
-    { "name": "TouhouAncientsMiniHakkeroFixed", "enabled": false, "note": "OBSOLETE 2026-09-08: no longer needed" },
+    { "name": "OddmeltGaugeCardRenderFix", "enabled": true, "note": "游戏内已禁用（mod_list is_enabled=false）；此处 true = 仍参与构建/部署" },
+    { "name": "TouhouAncientsAncientFixes", "enabled": false, "note": "OBSOLETE 2026-09-08: no longer needed（槽位残留已于 2026-10-05 清除）" },
+    { "name": "TouhouAncientsMiniHakkeroFixed", "enabled": false, "note": "OBSOLETE 2026-09-08: no longer needed（槽位残留已于 2026-10-05 清除）" },
     { "name": "YuWanCardWhiteScarfFix", "enabled": true, "note": "" },
     { "name": "HistoryFilter", "enabled": true, "note": "aux mod, not a fix" },
-    { "name": "HistoryLoadoutExport", "enabled": true, "note": "aux mod, not a fix" }
+    { "name": "HistoryLoadoutExport", "enabled": true, "note": "aux mod, not a fix" },
+    { "name": "EnchantTargetRandomFix", "enabled": true, "note": "显式登记 2026-10-05（此前靠自动发现）" },
+    { "name": "NinjaSlayerBossGreetingFix", "enabled": true, "note": "显式登记 2026-10-05；本地回环 Host-无-NetHost 致第三方 Boss 问候 NRE 的补丁" },
+    { "name": "PreloadStallGuard", "enabled": true, "note": "显式登记 2026-10-05；第三方预加载未完成致战斗卡 NotPlayPhase 的兜底" },
+    { "name": "YuiVfxSceneFix", "enabled": true, "note": "显式登记 2026-10-05（此前靠自动发现）" },
+    { "name": "HextechRunesLocalCoopFix", "enabled": true, "note": "主仓库 compat-mods/ 托管（2026-10-05 迁入）；同仓托管、独立 csproj/dll/槽位" }
   ]
 }
