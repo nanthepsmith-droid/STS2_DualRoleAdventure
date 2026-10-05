@@ -25,9 +25,18 @@ namespace LocalMultiControl.Scripts.Runtime;
 ///
 /// 所以本工具做两件事：
 /// <list type="number">
-/// <item>调用方覆写 <c>AssetPaths</c> 返回空（本类不管，见各选项类注释）—— 别让预加载去碰这个路径；</item>
-/// <item>把**一个游戏自带的同语义图标**注册到我们的路径下，让 <c>GetTexture2D(IconPath)</c> 命中缓存。</item>
+/// <item>把**一个游戏自带的同语义图标**注册到我们的路径下（自持副本，见下），让
+///   <c>GetTexture2D(IconPath)</c> 命中缓存、**不去真的加载**那个不存在的文件；</item>
+/// <item>在房间预加载**之前**调用（注入时调用即可）—— 理由见下面的差集语义。</item>
 /// </list>
+///
+/// ⚠ **调用方切记不要覆写 `AssetPaths`**（基类实现就是返回 `IconPath`，保持原样即可）：
+/// <c>PreloadManager.LoadAssetSets</c> 是这样算卸载集的 ——
+/// <code>assetsToUnloadSet = Cache.GetLoadedCacheAssets().Except(本房间需求集)</code>
+/// ⇒ 一旦把我们的路径从需求集里摘掉，注册好的图标会被**当成"本房间不需要"卸载并 Dispose**
+/// （r210 实测：`休息区选项图标已就绪` 之后 5 行就被卸，`Icon` 又变 null，点击仍被空图标异常打断）。
+/// 反过来，路径**留在**需求集里 ⇒ `needLoaded = 需求集 − 已缓存` 因我们已登记而跳过它
+/// ⇒ 既不会被卸、也不会去加载那个不存在的文件。**这两件事必须成对出现**。
 ///
 /// ⚠ **必须自持纹理副本**：直接借用 `GetTexture2D(原版路径)` 拿到的实例**不行** —— 它是
 /// <c>AssetCache</c> 的「missed cache 资产」，进房时 <c>UnloadMissedCacheAssets</c> 会

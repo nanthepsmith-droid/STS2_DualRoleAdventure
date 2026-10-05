@@ -64,17 +64,31 @@ internal sealed class PurifyWakuuRestSiteOption : RestSiteOption
     }
 
     /// <summary>
-    /// 返回**空**：本选项的图标是 dll 资源盲区（基类按 OptionId 硬拼 png 路径，我们无法往游戏 pck 里补图）。
-    /// 若把那个不存在的路径交给房间预加载，<c>AssetCache</c> 会把它记进 `_failedAssets`，
-    /// 之后 `RestSiteOption.Icon` 会**抛 `AssetLoadException`** —— 而 <c>NRestSiteButton.Reload</c> 里
-    /// 「设图标」在「设按钮名字」**之前**（游戏源码 `NRestSiteButton.cs:115-116`）⇒ 名字永远不会被赋值，
-    /// 按钮显示场景占位文字（r208 实机就是这么变成 "Dig" 的）。
-    /// 真正的图标由 <see cref="EnsureIconRegistered"/> 借用原版图标注册到 <see cref="IconPath"/>。
+    /// ⚠ **本类刻意不覆写 <c>AssetPaths</c>**（保持基类行为 = 返回 <see cref="IconPath"/>）。
+    /// 详细理由见 <see cref="LocalRestSiteOptionIcon"/> 类注释，一句话版：
+    /// `PreloadManager.LoadAssetSets` 用「**已缓存 − 本房间需求集**」的差集决定卸载谁，
+    /// 一旦把这个路径从需求集里摘掉，我们注册好的图标就会被**当成"本房间不需要"卸载并 Dispose**
+    /// （r210 实测：注册成功后 5 行就被卸，`Icon` 又变 null ⇒ 点击仍被"空图标异常"打断）。
+    /// 正确姿势 = 路径留在需求集里（不被卸），同时在房间预加载**之前**把自持纹理塞进缓存
+    /// （`needLoaded = 需求集 − 已缓存` 因已缓存而跳过它 ⇒ 也不会去真的加载那个不存在的文件）。
     /// </summary>
-    public override IEnumerable<string> AssetPaths => Array.Empty<string>();
 
-    /// <summary>有可净化的瓦库才可用（无目标时按钮置灰，不弹任何界面）。</summary>
-    public override bool IsEnabled => PurifyWakuuRestSiteRuntime.HasAnyCandidate(Owner);
+    /// <summary>
+    /// 有可净化的瓦库才可用（无目标时按钮置灰，不弹任何界面）。
+    ///
+    /// ⚠ 顺带在**每次求值时补一次图标注册**：游戏建按钮时先读 `IsEnabled`（`NRestSiteButton.Create`）、
+    /// 之后才 `Reload()` 取 `Icon`。万一注册因为时序意外（房间预加载早于注入 / 缓存被卸）没生效，
+    /// 这一次补注册能把 `Icon` 拉回非 null，避免"空图标 ⇒ 点击被 `SetTexture(null)` 异常打断"。
+    /// 成功后只是一次 `HashSet + ContainsKey`，开销可忽略。
+    /// </summary>
+    public override bool IsEnabled
+    {
+        get
+        {
+            EnsureIconRegistered();
+            return PurifyWakuuRestSiteRuntime.HasAnyCandidate(Owner);
+        }
+    }
 
     /// <summary>
     /// 让本选项的图标可用（实现与坑见 <see cref="LocalRestSiteOptionIcon"/>）。

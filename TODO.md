@@ -2596,7 +2596,7 @@ BUG-29（用户「猪猪王 BUG 全无」）与 BUG-30 均已实机收掉。2026
 
 ---
 
-## 瓦库四功能（2026-10-05 开工）—— ① 净化（r210 已部署，⏳ 待实机；r208/r209 两轮实测各暴露一批缺陷，均已修）
+## 瓦库四功能（2026-10-05 开工）—— ① 净化（r212 已部署，⏳ 待实机；r208/r209/r210 三轮实测各暴露一批缺陷，均已修）
 
 > 提案 `瓦库炼化净化联合地狱战神-功能提案与可行性分析.md` + 逐条核验 `瓦库四功能-可行性核验报告.md`
 > （**均在仓库外 `maintenance-docs/decision-records/`**）。**4 个设计点 2026-10-05 已拍定**，
@@ -2674,7 +2674,32 @@ BUG-29（用户「猪猪王 BUG 全无」）与 BUG-30 均已实机收掉。2026
 它不在 `AssetCache` 的卸载台账里、谁也不回收；`SetAsset` 注册的是这份自持实例。
 `PurifyWakuuRestSiteOption.EnsureIconRegistered()` 改为调用它（炼化等后续休息区选项共用同一入口）。
 
-**⏳ 实机复测契约（r210）**
+### r210 三测结论与修复（⇒ r211 / r212）
+
+**用户实测（`logs-archive/godot__20261005-215958__r210.log`）**：**"没变化"** —— 仍要点两下。
+日志显示 r210 的新代码确实跑了（`休息区选项图标已就绪（自持纹理副本…）` = 1），但 5 行之后就
+`Unloading 15 missed cache assets` → 又开始 `No loader found for resource: …option_lmc_purify.png`，
+`NotImplementedException` 仍有 9 条。
+
+**根因（机制层，前两轮都没看透）**：`PreloadManager.LoadAssetSets` 用**差集**决定卸载谁
+（`PreloadManager.cs:166-169`）：
+```
+assetsToUnloadSet = Cache.GetLoadedCacheAssets().Except(Common ∪ RunSet ∪ Act ∪ 本房间额外集)
+needLoaded        =                                    （同一并集）.Except(已缓存)
+```
+休息区的「本房间额外集」= 背景图 + `restSiteOptions.SelectMany(o => o.AssetPaths)`。
+r209/r210 把 `AssetPaths` 覆写成**空**（想着"别让预加载碰这个不存在的路径"）⇒ 我们的路径**不在需求集**里
+⇒ 落进差集 ⇒ **刚注册好的自持图标被卸载并 Dispose** ⇒ `Icon` 又变 null。
+**"不进需求集"和"被卸载"是同一件事**。
+
+**修法（r211 + r212）**：
+1. **不再覆写 `AssetPaths`**（保持基类返回 `IconPath`）⇒ 路径留在需求集里，不被差集卸掉；
+2. 仍在注入时（房间预加载**之前**）`SetAsset` 自持纹理 ⇒ `needLoaded` 因"已缓存"跳过它
+   （不会真去加载那个不存在的文件 ⇒ 也不会有 failed 记账）；
+3. r212 兜底：选项 `IsEnabled` 求值时补一次注册（游戏建按钮时**先读 `IsEnabled`、之后才取 `Icon``），
+   防注入时序意外。
+
+**⏳ 实机复测契约（r212）**
 1. 设置页打开「瓦库形态托管」+「火堆净化」，开一局（真人 + ≥1 瓦库），进任意休息处。
 2. 期望日志有 `休息区已注入瓦库净化选项: owner=…, candidates=N`（`owner` = 真人席位，**绝不能是瓦库席位**）
    + `休息区选项图标已就绪（自持纹理副本，不受缓存卸载影响）: ui/rest_site/option_cook.png -> …`。

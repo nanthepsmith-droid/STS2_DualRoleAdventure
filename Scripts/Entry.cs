@@ -34,7 +34,12 @@ public partial class Entry
     //       NThoughtBubbleVfx.SetTexture(null) 抛 NotImplementedException 冒穿 ChooseOption，
     //       整次「点选项」被中断（实机：净化要点两下）。改为在 LocalRestSiteOptionIcon 里
     //       用 GetImage() + ImageTexture.CreateFromImage 造**自持**纹理副本（抽成四功能共用工具）。
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-05-r210)";
+    // r211：r210 仍"没变化" —— 根因是 PreloadManager.LoadAssetSets 用「已缓存 − 本房间需求集」的**差集**
+    //       决定卸载谁：r210 把 AssetPaths 覆写成空 ⇒ 我们的 icon 路径不在需求集里 ⇒ 注册好 5 行后就被
+    //       卸载并 Dispose，Icon 又变 null。修法 = **不覆写 AssetPaths**（路径留在需求集里）+ 预加载前登记
+    //       自持纹理（needLoaded 因已缓存而跳过它）⇒ 既不被卸、也不加载不存在的文件。
+    // r212：再加一道兜底 —— 选项 IsEnabled 求值（建按钮时）时补一次图标注册，防时序意外。
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-05-r212)";
 
     private static Harmony? _harmony;
 
