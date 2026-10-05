@@ -17,7 +17,11 @@ public partial class Entry
     // r205：会话级可变状态收进 SelfCoopSessionState（R5-3）——「进 / 出大厅、进 / 退局、读档窗口」
     //       三条时序共用同一关闭出口（LeaveSession），复位矩阵可单测；对外调用点零改动
     //       （转发成员的名字与可见性保持原样）。
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-04-r205)";
+    // r206：手牌 UI 加入守卫扩到「非选牌期间」—— 共享手牌 UI 只显示受控席位的手牌，
+    //       拦住瓦库（后台托管席位）的牌节点经取消出牌 / 回手牌路径漏进真人手牌（幽灵牌）。
+    // r207：同一条守卫的两条分支都补"淡出回收"—— 只拦不回收会让卡面停在屏幕中间不动
+    //       （实机：瓦库打【群情激愤】时真人那侧正在选牌，选牌分支把节点拦下却没人收）。
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-05-r207)";
 
     private static Harmony? _harmony;
 
