@@ -135,7 +135,9 @@ LocalContext.IsMe(player) || player.NetId == runManager.NetService.NetId
 ⇒ **v1.0.1 已补 ④ 收敛**（待下一局日志确认该 WARN 归零）。
 
 **✅ v1.1.0（⑤ 瓦库席位自动作答）—— 2026-10-05 实机通过**
-（dll sha256 `5A82D03D29A2…`；证据 `logs-archive/godot__20261005-173455__r205.log`，marker r205 / `INIT_OK`）：
+（dll sha256 `5A82D03D29A2…` —— ⚠ 本 mod **不是确定性构建**，每次 rebuild 的 hash 都会变，这里只是当次快照；
+判"改动真的进去了"看 `build_all_mods.ps1` 的部署字节校验 + 关键日志文案。
+证据 `logs-archive/godot__20261005-173455__r205.log`，marker r205 / `INIT_OK`）：
 
 启动 `瓦库席位符文界面自动作答: 已就绪`；两处符文批次里 **角色1（真人）** 得到
 `符文界面归属席位不是「后台托管瓦库」，交真人作答`、**角色2（瓦库）** 得到
@@ -167,10 +169,11 @@ FAIL:    瓦库那一屏仍需手点 ⇒ 看有没有 `…没有可选项…` / 
 
 ## 构建 / 部署
 
-由主仓库脚本自动发现（pain 根下含 `*.csproj` 的目录 = 一个 mod）：
+由主仓库脚本自动发现（**2026-10-05 起本 mod 已迁入主仓库 `compat-mods/`**；
+发现规则 = pain 根下含 `*.csproj` 的目录 + 主仓库 `compat-mods\*\*.csproj`）：
 
 ```powershell
-cd D:\Download\pain\HextechRunesLocalCoopFix
+cd D:\Download\pain\STS2_DualRoleAdventure-itriedtofix\compat-mods\HextechRunesLocalCoopFix
 dotnet build HextechRunesLocalCoopFix.csproj -c Release      # 0 警告 0 错误
 
 cd D:\Download\pain\STS2_DualRoleAdventure-itriedtofix
