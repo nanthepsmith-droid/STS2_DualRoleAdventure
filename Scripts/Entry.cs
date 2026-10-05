@@ -21,7 +21,10 @@ public partial class Entry
     //       拦住瓦库（后台托管席位）的牌节点经取消出牌 / 回手牌路径漏进真人手牌（幽灵牌）。
     // r207：同一条守卫的两条分支都补"淡出回收"—— 只拦不回收会让卡面停在屏幕中间不动
     //       （实机：瓦库打【群情激愤】时真人那侧正在选牌，选牌分支把节点拦下却没人收）。
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-05-r207)";
+    // r208：瓦库四功能开工（第一件「净化」，默认关）—— 休息处给真人席位注入「净化」选项，
+    //       先弹新造的局内「选玩家」选择器选目标瓦库，再走原版删牌界面删其最多 5 张牌；
+    //       顺带把选择器守卫从"类型白名单"改成"按 WakuuSelectorRegistry 登记身份判"。
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-05-r208)";
 
     private static Harmony? _harmony;
 
@@ -167,6 +170,7 @@ public partial class Entry
         {
             RegisterWakuuRelicsToPool();
             SafeAction(fatalFailures, FatalCode.Model, "瓦库遗物本地化", () => LocalWakuuRelicLocalization.Initialize());
+            SafeAction(fatalFailures, FatalCode.Model, "瓦库休息区选项本地化", () => LocalWakuuRestSiteLocalization.Initialize());
             // 社区统计（SkadaHelper）为可选第三方依赖：探测失败只打日志，永不阻断
             WakuuSkadaAdapter.Probe();
             // 联机 AI 队友（Co-op Bots）同为可选第三方依赖：只探测 + 登记配置里的席位，绝不接管（进局时才接管）

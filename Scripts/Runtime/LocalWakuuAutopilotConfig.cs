@@ -55,6 +55,12 @@ internal static class LocalWakuuAutopilotConfig
     public static bool AutoRestChoice { get; private set; } = true;
 
     /// <summary>
+    /// 瓦库四功能 · 净化（默认关）：休息处给真人席位注入「净化」选项，
+    /// 先选一个瓦库、再删其卡组里的牌（每次最多 5 张）。见 <see cref="PurifyWakuuRestSiteOption"/>。
+    /// </summary>
+    public static bool PurifyWakuu { get; private set; }
+
+    /// <summary>
     /// 瓦库形态：战斗中自动用药水（Phase 2.5 保守版，默认关，已拍板）。
     /// 血液/再生低血自用；果汁到手立刻喝；增益/攻击/卡牌授予类精英 Boss 战首回合用；
     /// mod 药水普通战斗随机回合消耗；未分类原版药水保守跳过。
@@ -258,6 +264,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.autoClaimPotions): data.autoClaimPotions = value; break;
                     case nameof(WakuuConfigData.autoChooseEvents): data.autoChooseEvents = value; break;
                     case nameof(WakuuConfigData.autoRestChoice): data.autoRestChoice = value; break;
+                    case nameof(WakuuConfigData.purifyVakuu): data.purifyVakuu = value; break;
                     case nameof(WakuuConfigData.autoUsePotions): data.autoUsePotions = value; break;
                     case nameof(WakuuConfigData.neowAutoChoose): data.neowAutoChoose = value; break;
                     case nameof(WakuuConfigData.skadaAssist): data.skadaAssist = value; break;
@@ -577,6 +584,7 @@ internal static class LocalWakuuAutopilotConfig
                 + $"shopAssistBuyRemoval={data.shopAssistBuyRemoval}, "
                 + $"statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, fastVakuuPlay={data.fastVakuuPlay}, vakuuPlayQueue={data.vakuuPlayQueue}, vakuuPlayOverlap={data.vakuuPlayOverlap}, vakuuViewMode={WakuuViewModes.Normalize(data.vakuuViewMode)}, "
                 + $"personalTier={NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier}, "
+                + $"purifyVakuu={data.purifyVakuu}, "
                 + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}, "
                 + $"vakuuBrain={data.vakuuBrain}, coopBotsSeats={data.coopBotsSeats}");
         }
@@ -591,6 +599,7 @@ internal static class LocalWakuuAutopilotConfig
         AutoClaimPotions = data.autoClaimPotions;
         AutoChooseEvents = data.autoChooseEvents;
         AutoRestChoice = data.autoRestChoice;
+        PurifyWakuu = data.purifyVakuu;
         AutoUsePotions = data.autoUsePotions;
         NeowAutoChoose = data.neowAutoChoose;
         SkadaAssist = data.skadaAssist;

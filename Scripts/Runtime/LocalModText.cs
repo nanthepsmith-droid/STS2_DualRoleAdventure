@@ -78,6 +78,26 @@ internal static class LocalModText
         "休息区提示：若未显示选项，请先按 R 或 ] 切换一次角色",
         "Rest site tip: if options are missing, press R or ] to switch once");
 
+    /// <summary>通用「取消」按钮文案（选玩家选择器等自建弹层用）。</summary>
+    public static string Cancel => Select("取消", "Cancel");
+
+    // ---- 瓦库四功能（2026-10-05 开工）----
+
+    /// <summary>净化：选玩家选择器的标题。</summary>
+    public static string PurifyPickTitle => Select("净化 · 选择目标瓦库", "Purify · Choose a Vakuu");
+
+    /// <summary>净化：休息区选项名（注入 rest_site_ui 表的 OPTION_LMC_PURIFY.name）。</summary>
+    public static string PurifyOptionName => Select("净化", "Purify");
+
+    /// <summary>
+    /// 净化：休息区选项描述（注入 rest_site_ui 表的 OPTION_LMC_PURIFY.description）。
+    /// `{Amount}` 是游戏 LocString 的占位符，由 PurifyWakuuRestSiteOption 用 Add("Amount", …) 填充 —— 
+    /// 所以这里**必须是普通字符串字面量**，不能写成 C# 插值。
+    /// </summary>
+    public static string PurifyOptionDescription => Select(
+        "删除目标瓦库卡组中最多 {Amount} 张牌。",
+        "Remove up to {Amount} cards from the chosen Vakuu's deck.");
+
     public static string GlobalWakuuLabel => Select("全瓦库", "All Vakuu");
 
     public static string VakuuControlsPlayer(string slotLabel)

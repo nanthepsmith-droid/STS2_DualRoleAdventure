@@ -43,6 +43,7 @@ public class WakuuConfigJsonTests
             Assert.That(data.autoClaimPotions, Is.True);
             Assert.That(data.autoChooseEvents, Is.True);
             Assert.That(data.autoRestChoice, Is.True);
+            Assert.That(data.purifyVakuu, Is.False); // 瓦库四功能 · 净化：可开关且默认关
             // 策略默认值
             Assert.That(data.eventChoiceMode, Is.EqualTo("first"));
             Assert.That(data.cardPickMode, Is.EqualTo("last"));
@@ -227,6 +228,19 @@ public class WakuuConfigJsonTests
     {
         WakuuConfigData data = WakuuConfigJson.Parse("""{ "unknownField": 123, "useVakuuForm": true }""")!;
         Assert.That(data.useVakuuForm, Is.True);
+    }
+
+    /// <summary>瓦库四功能 · 净化开关（2026-10-05，默认关；键名用官方拼写 vakuu）。</summary>
+    [Test]
+    public void 解析净化开关_true生效()
+    {
+        WakuuConfigData data = WakuuConfigJson.Parse("""{ "purifyVakuu": true }""")!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(data.purifyVakuu, Is.True);
+            Assert.That(data.autoRestChoice, Is.True, "未提供的字段保持默认值");
+        });
     }
 
     [Test]

@@ -26,9 +26,22 @@ namespace LocalMultiControl.Scripts.Patch;
 internal static class RestSiteOptionPatch
 {
     [HarmonyPostfix]
-    private static void Postfix(ref List<RestSiteOption> __result)
+    private static void Postfix(Player player, ref List<RestSiteOption> __result)
     {
         // 需求调整：休息区保留原多人联机选项，不再删减。
+        //
+        // 2026-10-05 起：瓦库四功能之「净化」在这里给**真人席位**追加一条自定义选项
+        // （开关 purifyWakuu，默认关）。目标瓦库由局内「选玩家」选择器选定 —— 见
+        // PurifyWakuuRestSiteOption / PurifyWakuuRestSiteRuntime。
+        // 整段兜异常：休息区选项生成失败会直接影响进房，绝不能因本功能把流程炸掉。
+        try
+        {
+            PurifyWakuuRestSiteRuntime.TryInjectPurifyOption(player, __result);
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"注入瓦库净化选项失败: {exception.Message}");
+        }
     }
 }
 

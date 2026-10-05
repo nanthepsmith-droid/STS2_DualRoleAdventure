@@ -236,6 +236,13 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.AutoRestChoice,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("autoRestChoice", value));
         AddToggleRow(column,
+            LocalModText.Select("火堆净化（瓦库四功能）", "Purify at Rest Sites (Wakuu Feature)"),
+            LocalModText.Select(
+                "默认关。开启后休息处会给你（真人）多出一条「净化」选项：选中后先选一个瓦库，再删它卡组里最多 5 张牌（走原版删牌界面，可取消）。",
+                "Off by default. When on, rest sites give you an extra \"Purify\" option: pick a Vakuu, then remove up to 5 cards from its deck (the vanilla removal screen, cancelable)."),
+            () => LocalWakuuAutopilotConfig.PurifyWakuu,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("purifyVakuu", value));
+        AddToggleRow(column,
             LocalModText.Select("战斗中自动用药水", "Auto-Use Potions in Combat"),
             LocalModText.Select(
                 "默认关。按药水规则表逐药自动使用：血液/再生低血自用；果汁到手即喝；混沌药水填空位；力量等增益与火焰等攻击类精英/Boss战首回合；格挡/免伤类回合结束前按敌方意图伤害兜底；能量/迅捷/异蛇剩能量补牌；灰水/赌徒等定向消耗坏牌；故障机器人/储君/亡灵契约师/铁甲战士专属药水自动给对应队友，复制/超巨化优先给真人；污浊药水只在商人投掷；mod 药水普通战斗随机回合消耗。",

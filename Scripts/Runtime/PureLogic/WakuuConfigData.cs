@@ -37,6 +37,16 @@ internal sealed class WakuuConfigData
 
     public bool autoRestChoice { get; set; } = true;
 
+    /// <summary>
+    /// 瓦库四功能 · 净化（默认关；四功能总口径 = 可开关、默认关闭）：休息处给**真人席位**注入一条
+    /// 「净化」选项 —— 选中后先弹「选哪个瓦库」选择器，再对该瓦库的卡组弹原版删牌界面（每次最多 5 张）。
+    /// 见 <see cref="PurifyWakuuRestSiteOption"/> / <see cref="PurifyWakuuRestSiteRuntime"/>。
+    ///
+    /// ⚠ 键名用官方拼写 <c>vakuu</c>（不是 Wakuu）—— 与 r140 的拼写统一一致，
+    /// 由单测 `旧拼写配置键_自动迁移到新键` 的「序列化里不得出现 Wakuu」哨兵钉住。
+    /// </summary>
+    public bool purifyVakuu { get; set; }
+
     /// <summary>战斗中自动用药水：默认关（拍板：保守版写死规则，先观察）。</summary>
     public bool autoUsePotions { get; set; }
 

@@ -65,6 +65,7 @@ internal static class LocalMultiControlRuntime
         // R5 第一批：进局复位自检 —— 此刻"上一局"的静态状态本该已被 OnRunCleanup 清空（有残留即点名）。
         ReportResetResiduals("进局");
         LocalWakuuRelicLocalization.Initialize();
+        LocalWakuuRestSiteLocalization.Initialize();
         try
         {
             LocalWakuuAutopilotConfig.Reload("run-launched");
