@@ -2594,3 +2594,65 @@ BUG-29（用户「猪猪王 BUG 全无」）与 BUG-30 均已实机收掉。2026
 >
 > 🗄 **逐轮记录（含各轮验证契约与实机结论）已归档**：见上方归档文件 **§R5**。
 
+---
+
+## 瓦库四功能（2026-10-05 开工）—— ① 净化（r208 已部署，⏳ 待实机）
+
+> 提案 `瓦库炼化净化联合地狱战神-功能提案与可行性分析.md` + 逐条核验 `瓦库四功能-可行性核验报告.md`
+> （**均在仓库外 `maintenance-docs/decision-records/`**）。**4 个设计点 2026-10-05 已拍定**，
+> 结果见核验报告 **§7 拍板附录** 与本文件 §决策记录跟踪表。
+> 顺序：**净化 → 我们联合 → 炼化 → 地狱战神**（每个功能一个 `feat/<主题>` 分支 + 全门禁 + 合前确认）。
+
+### ① 净化（本项）—— 施工状态
+
+**功能**：休息处（RestSite）给**真人席位**多出一条「净化」选项 —— 点选后先弹**局内「选玩家」选择器**
+选定一个瓦库，再对该瓦库卡组弹**原版删牌界面**，每次最多删 5 张；取消 / 0 张选中 ⇒ 选项不被消费（可重选）。
+
+**开关（默认关）**：设置页 →「火堆净化（瓦库四功能）」；配置文件键 **`purifyVakuu`**（`vakuu_autopilot.json`）。
+⚠ 键名用官方拼写 `vakuu`（不是 `Wakuu`），由单测 `旧拼写配置键_自动迁移到新键` 的哨兵钉住。
+另外需要「瓦库形态托管（总开关）」开着（候选 = 处于瓦库形态的玩家）。
+
+**新增文件**
+- `Scripts/Runtime/LocalWakuuPlayerPicker.cs` —— 局内「选玩家」选择器（**四功能共用基建**，代码自建模态弹层；
+  dll-only 无法加 .tscn，故全部节点在代码里构造）。契约：返回 NetId / 取消返回 null / `_ExitTree` 兜底解等待（绝不挂死）。
+- `Scripts/Runtime/PurifyWakuuRestSiteRuntime.cs` —— 注入判定（只注入真人席位、幂等、有候选才注入）+ 候选枚举。
+- `Scripts/Runtime/PurifyWakuuRestSiteOption.cs` —— `RestSiteOption` 子类（蓝本 = 游戏 `CookRestSiteOption`）。
+- `Scripts/Runtime/LocalWakuuRestSiteLocalization.cs` —— 往游戏 `rest_site_ui` 表注入
+  `OPTION_LMC_PURIFY.name/.description`（mod 不打包 loc 文件）。
+
+**改动点**
+- `Scripts/Patch/RestSitePatch.cs` 的 `RestSiteOptionPatch`（原先空壳）→ postfix 里调注入（整段 try/catch）。
+- `Scripts/Patch/CardSelectForegroundSwitchPatch.cs`：
+  ① 新增 `PushChoiceOwner(netId)` 作用域（模组自己发起、真人手选的入口临时钉归属者，防并发瓦库托管选择器抢答）；
+  ② 选择器守卫的判定从**类型白名单**改成**按 `WakuuSelectorRegistry` 登记身份判** —— 原先会漏判
+  `LocalWakuuSmithSelector`（火堆锻造）与 `LocalWakuuTargetedCardSelector`。
+- `Scripts/Runtime/PureLogic/WakuuOwnerSelectorMap.cs` + `WakuuSelectorRegistry.cs`：新增 `IsRegistered`。
+- `Scripts/Runtime/PureLogic/WakuuConfigData.cs` / `LocalWakuuAutopilotConfig.cs` / `Scripts/UI/LocalWakuuConfigSubmenu.cs`：配置项。
+- `Scripts/Entry.cs`（marker **r208** + 本地化注册）、`Scripts/Runtime/LocalMultiControlRuntime.cs`（进局重注入本地化）。
+
+**⏳ 实机复测契约（r208）**
+1. 设置页打开「瓦库形态托管」+「火堆净化」，开一局（真人 + ≥1 瓦库），进任意休息处。
+2. 期望日志有 `休息区已注入瓦库净化选项: owner=…, candidates=N`（`owner` = 真人席位，**绝不能是瓦库席位**）。
+3. 点「净化」→ 期望 `选玩家选择器已打开: title=净化 · 选择目标瓦库, candidates=N` → 弹层出现、能点选、能取消。
+4. 选完 → 弹原版删牌界面（标题是"选择要移除的牌"类文案）→ 选 1~5 张确认 →
+   `净化完成: owner=…, target=…, count=N, cards=[…], 剩余可删牌=…`，且目标瓦库卡组确实少了这几张。
+5. 取消路径：选择器取消 ⇒ `净化取消：未选择目标瓦库`；删牌界面取消 ⇒ `净化取消：未选择任何卡牌`，**选项仍可用**。
+6. **期望 0**：`注入瓦库净化选项失败` / `枚举可净化瓦库失败` / `选玩家选择器构建失败` / `选玩家选择器打开失败` /
+   `注入瓦库休息区选项本地化失败` / 我方 `[ERROR]`。
+7. 关闭「火堆净化」⇒ 休息处**不应**出现该选项（回归：与原版一致）。
+8. 顺带看：并发瓦库火堆选项进行中时点净化，若出现
+   `检测到真人选牌请求，本次跳过瓦库选择器改走正常UI: chooser=…` = **守卫按预期拦截**（不是异常）。
+
+**已知风险 / 未覆盖（实机重点看）**
+- 「选玩家」弹层是**首次实机**：观感 / 手柄焦点 / 与休息区输入是否互斥，都需要一局确认。
+- 删牌界面走的是 `FromDeckForRemoval`（`WakuuSelectorRouteAudit` 的 `legacyFallback` 入口），
+  本次**没有**给它补归属者前缀（那 5 个入口的取证被 CHANGELOG 留档为"需单独取证"），
+  改为在净化流程内用 `PushChoiceOwner` 局部钉住 —— 若实机仍见"真人选牌被瓦库替答"，再考虑补前缀。
+- 净化选中瓦库自己**正在执行**的火堆选项若与删牌并发，可能出现 `NDeckCardSelectScreen` 与瓦库选项执行交叠（待观察）。
+
+### ② 我们联合 ③ 炼化 ④ 地狱战神 —— 未动工
+- ② 我们联合：`CombatBegan` 锚点已核验；跨玩家加手牌必须 `CardCreation.Create(model, 目标)` 并设 Owner。
+- ③ 炼化：数值照提案原案；**炼化后席位不摘名单**（用户拍板，核验报告 §2.2 三件配套取消）。
+- ④ 地狱战神：**改名**（占位名「瓦库的爹」）+ 首版只做遗物与自定义卡框架；
+  开工前先补一份「游戏如何把 mod 卡模型挂进卡池」的验证（mod 零自定卡先例）。
+
