@@ -2,14 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Godot;
 using LocalMultiControl.Scripts.Patch;
-using MegaCrit.Sts2.Core.Assets;
 using MegaCrit.Sts2.Core.CardSelection;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Entities.RestSite;
-using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Models;
 
@@ -40,8 +37,7 @@ internal sealed class PurifyWakuuRestSiteOption : RestSiteOption
     internal const int MaxCards = 5;
 
     /// <summary>本选项的图标路径（与基类硬拼规则一致：<c>ui/rest_site/option_&lt;id 小写&gt;.png</c>）。</summary>
-    internal static string IconPath =>
-        ImageHelper.GetImagePath($"ui/rest_site/option_{PurifyOptionId.ToLowerInvariant()}.png");
+    internal static string IconPath => LocalRestSiteOptionIcon.IconPathFor(PurifyOptionId);
 
     /// <summary>可借用的原版休息区图标（按语义优先：烹饪 = 删牌换血上限，最贴近"净化"；退而求其次用休息）。</summary>
     private static readonly string[] BorrowedIconInnerPaths =
@@ -49,8 +45,6 @@ internal sealed class PurifyWakuuRestSiteOption : RestSiteOption
         "ui/rest_site/option_cook.png",
         "ui/rest_site/option_heal.png",
     };
-
-    private static bool _iconRegistered;
 
     public PurifyWakuuRestSiteOption(Player owner)
         : base(owner)
@@ -83,47 +77,12 @@ internal sealed class PurifyWakuuRestSiteOption : RestSiteOption
     public override bool IsEnabled => PurifyWakuuRestSiteRuntime.HasAnyCandidate(Owner);
 
     /// <summary>
-    /// 把原版【烹饪】图标（语义最接近"删牌"）注册到本选项的图标路径下，让
-    /// <c>PreloadManager.Cache.GetTexture2D(<see cref="IconPath"/>)</c> 命中缓存而**不去真的加载文件**。
-    /// 幂等；失败只记 WARN（退化为空图标 —— 那时 `Icon` 返回 null 只是不显示图，**不会抛异常**）。
-    /// 由 <see cref="PurifyWakuuRestSiteRuntime.TryInjectPurifyOption"/> 在注入前调用（早于房间预加载）。
+    /// 让本选项的图标可用（实现与坑见 <see cref="LocalRestSiteOptionIcon"/>）。
+    /// 由 <see cref="PurifyWakuuRestSiteRuntime.TryInjectPurifyOption"/> 在注入前调用。
     /// </summary>
     internal static void EnsureIconRegistered()
     {
-        if (_iconRegistered)
-        {
-            return;
-        }
-
-        try
-        {
-            if (PreloadManager.Cache.ContainsKey(IconPath))
-            {
-                _iconRegistered = true;
-                return;
-            }
-
-            foreach (string innerPath in BorrowedIconInnerPaths)
-            {
-                Texture2D? texture = PreloadManager.Cache.GetTexture2D(ImageHelper.GetImagePath(innerPath));
-                if (texture == null)
-                {
-                    continue;
-                }
-
-                PreloadManager.Cache.SetAsset(IconPath, texture);
-                _iconRegistered = true;
-                LocalMultiControlLogger.Info($"净化选项图标已复用原版图标: {innerPath} -> {IconPath}");
-                return;
-            }
-
-            LocalMultiControlLogger.Warn($"净化选项图标注册失败：原版备用图标都取不到，本项将不显示图标。path={IconPath}");
-            _iconRegistered = true;
-        }
-        catch (Exception exception)
-        {
-            LocalMultiControlLogger.Warn($"注册净化选项图标异常: {exception.Message}");
-        }
+        LocalRestSiteOptionIcon.EnsureRegistered(PurifyOptionId, BorrowedIconInnerPaths);
     }
 
     public override async Task<bool> OnSelect()

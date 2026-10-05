@@ -2596,7 +2596,7 @@ BUG-29（用户「猪猪王 BUG 全无」）与 BUG-30 均已实机收掉。2026
 
 ---
 
-## 瓦库四功能（2026-10-05 开工）—— ① 净化（r209 已部署，⏳ 待实机；r208 首测暴露 2 个缺陷均已修）
+## 瓦库四功能（2026-10-05 开工）—— ① 净化（r210 已部署，⏳ 待实机；r208/r209 两轮实测各暴露一批缺陷，均已修）
 
 > 提案 `瓦库炼化净化联合地狱战神-功能提案与可行性分析.md` + 逐条核验 `瓦库四功能-可行性核验报告.md`
 > （**均在仓库外 `maintenance-docs/decision-records/`**）。**4 个设计点 2026-10-05 已拍定**，
@@ -2653,11 +2653,33 @@ BUG-29（用户「猪猪王 BUG 全无」）与 BUG-30 均已实机收掉。2026
    **修法**：该补丁新增 `SuppressForHumanChoice()` 作用域（AsyncLocal，命中时 `ShouldAutoAnswer` 一律 false），
    净化流程内压制；`PushChoiceOwner` 保留（防并发瓦库选择器抢答）—— 两道防护缺一不可。
 
-**⏳ 实机复测契约（r209）**
+### r209 二测结论与修复（⇒ r210）
+
+**用户实测（`logs-archive/godot__20261005-215021__r209.log`）**：按钮名与"能自己选牌"都正常了，
+但**点「净化」要点两下**才弹界面。
+
+**根因（r209 的图标修法不彻底）**：r209 用 `GetTexture2D(原版【烹饪】)` 借来的实例直接
+`SetAsset(IconPath, borrowed)` —— 但那是 `AssetCache` 的**「missed cache 资产」**：进房时
+`Unloading N missed cache assets` 会 **Dispose** 它，我们留在缓存里的别名随即悬空
+（`IsInstanceValid == false`）⇒ `GetIcon` 转而去 `ResourceLoader.Load` 我们那个不存在的路径 ⇒ 返 null。
+后果（`Icon == null`）：
+- `NRestSiteCharacter.RefreshThoughtBubbleVfx` → `NThoughtBubbleVfx.SetTexture(null)` **抛
+  `NotImplementedException`**（"Can't set texture unless thought bubble was initialized with a texture"）
+  ⇒ 它冒穿 `RestSiteSynchronizer.ChooseOption` ⇒ **整次「点选项」被中断**，选择器根本没机会打开（第一下白点）；
+  第二下之所以行：`RefreshThoughtBubbleVfx` 开头有「同一选项已进过气泡就 return」的提前退出口。
+- 同一会话留下 **18 条** `NotImplementedException` + 每次取图标都刷 `No loader found for resource: …option_lmc_purify.png`。
+
+**修法（r210）**：新增**四功能共用工具** `Runtime/LocalRestSiteOptionIcon.cs` —— 借原版图标后
+**造一份自持纹理**（`texture.GetImage()` + `ImageTexture.CreateFromImage`，退路 `Duplicate()`），
+它不在 `AssetCache` 的卸载台账里、谁也不回收；`SetAsset` 注册的是这份自持实例。
+`PurifyWakuuRestSiteOption.EnsureIconRegistered()` 改为调用它（炼化等后续休息区选项共用同一入口）。
+
+**⏳ 实机复测契约（r210）**
 1. 设置页打开「瓦库形态托管」+「火堆净化」，开一局（真人 + ≥1 瓦库），进任意休息处。
 2. 期望日志有 `休息区已注入瓦库净化选项: owner=…, candidates=N`（`owner` = 真人席位，**绝不能是瓦库席位**）
-   + `净化选项图标已复用原版图标: ui/rest_site/option_cook.png -> …`。
+   + `休息区选项图标已就绪（自持纹理副本，不受缓存卸载影响）: ui/rest_site/option_cook.png -> …`。
 3. **按钮应显示「净化」**（不再是占位文字）；预期图标 = 原版【烹饪】的图标。
+   **点一下就应该弹出选择器**（r208~r209 的"要点两下"是空图标异常打断点击所致，见上）。
 4. 点「净化」→ 期望 `选玩家选择器已打开: title=净化 · 选择目标瓦库, candidates=N` → 弹层出现、能点选、能取消。
 5. 选完 → 期望 `净化选牌交给真人（已压制瓦库自动作答与归属者抢答）: target=…, 可删牌=N` →
    **弹原版删牌界面**（真人可逐张勾选）→ 选 1~5 张确认 →
@@ -2667,6 +2689,8 @@ BUG-29（用户「猪猪王 BUG 全无」）与 BUG-30 均已实机收掉。2026
    - `注入瓦库净化选项失败` / `枚举可净化瓦库失败` / `选玩家选择器构建失败` / `选玩家选择器打开失败` /
      `注入瓦库休息区选项本地化失败` / `注册净化选项图标失败` / 我方 `[ERROR]`；
    - `AssetLoadException` / `No loader found for resource` / `option_lmc_purify.png`（图标路径不该再被加载）；
+   - `NotImplementedException` / `Can't set texture unless thought bubble was initialized with a texture`
+     （空图标会让角色头顶气泡 `SetTexture(null)` 抛异常并**打断整次点选项**）；
    - **净化期间**的 `瓦库作用域外牌组选牌自动作答 … source=FromDeckGeneric, player=<目标瓦库>`（r208 就是被它替答）。
 8. 关闭「火堆净化」⇒ 休息处**不应**出现该选项（回归：与原版一致）。
 9. 顺带看：并发瓦库火堆选项进行中时点净化，若出现

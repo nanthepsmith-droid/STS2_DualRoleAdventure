@@ -29,7 +29,12 @@ public partial class Entry
     //       改为 AssetPaths 返空 + 借用原版【烹饪】图标注册到本路径。
     //       ② 瓦库「作用域外牌组选牌自动作答」把净化选牌替真人答了（真人看不到删牌界面）⇒ 新增
     //       CardSelectWakuuTurnStartAutoAnswerPatch.SuppressForHumanChoice 作用域，净化流程内压制。
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-05-r209)";
+    // r210：r209 的图标修法不彻底 —— 借原版图标拿到的实例是 AssetCache 的「missed cache 资产」，
+    //       进房时 UnloadMissedCacheAssets 会 Dispose 它，缓存里的别名随即悬空 ⇒ Icon 返 null ⇒
+    //       NThoughtBubbleVfx.SetTexture(null) 抛 NotImplementedException 冒穿 ChooseOption，
+    //       整次「点选项」被中断（实机：净化要点两下）。改为在 LocalRestSiteOptionIcon 里
+    //       用 GetImage() + ImageTexture.CreateFromImage 造**自持**纹理副本（抽成四功能共用工具）。
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-05-r210)";
 
     private static Harmony? _harmony;
 
