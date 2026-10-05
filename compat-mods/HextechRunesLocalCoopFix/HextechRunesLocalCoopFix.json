@@ -1,0 +1,11 @@
+{
+    "id": "HextechRunesLocalCoopFix",
+    "name": "Hextech Runes Local Co-op Fix",
+    "author": "fix",
+    "description": "海克斯大乱斗（HextechRunes）的「逐席位符文选择」是按原版联机写的：它只认一个本机玩家（LocalContext 身份 / NetService.NetId），其他席位走远端等待分支。本地多控把 2~N 个席位放在同一台机器上，于是非主席位被当成远端玩家 ⇒ 它的符文选择界面根本不弹、也没人会替它作答 ⇒ 行动/回合流程永久挂起（用户看到的是「第二个玩家的符文界面切不过去、选不了 ⇒ 软锁」）。本补丁在本地多控会话（回环 NetService）里放宽两处：① 把本地席位也判成「本机玩家」，让每个席位都弹自己的符文界面；② 符文界面选完即关闭，从而两个叠在弹层栈里的界面可以逐席位依次作答。同时给符文界面标题加上「角色N」标注，并让【后台托管中的瓦库席位】自己选符文（真人席位照旧自己点）。",
+    "version": "1.1.0",
+    "has_pck": false,
+    "has_dll": true,
+    "dependencies": [],
+    "affects_gameplay": true
+}

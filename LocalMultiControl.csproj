@@ -30,6 +30,12 @@
     <Compile Remove="sts2src/**" />
     <None Remove="src/**" />
     <None Remove="sts2src/**" />
+    <!-- compat-mods/<ModName>/ = 独立补丁 mod 的源码（2026-10-05 起收进本仓库托管，见
+         maintenance-docs/decision-records/补丁mod收进主仓库compat-mods.md）：
+         它们是**独立工程 / 独立 dll / 独立槽位**，绝不能编进主 mod 的 dll。
+         Godot SDK 默认 **/*.cs 通配 ⇒ 必须显式排除（Guard 正则只拦 src|sts2src|decompiled，拦不到这里）。 -->
+    <Compile Remove="compat-mods/**" />
+    <None Remove="compat-mods/**" />
     <!-- Unit tests live in tests/; never compile them into the mod assembly -->
     <Compile Remove="tests/**" />
     <None Remove="tests/**" />

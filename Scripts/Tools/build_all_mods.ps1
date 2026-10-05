@@ -131,7 +131,53 @@ function Read-ModRegistry {
     return $map
 }
 
-# 自动发现 mod 仓库：$ReposRoot 下每个含 *.csproj 的目录即一个 mod（主仓库除外，单独处理）
+# 单个 mod 目录 → mod 条目（无 csproj 返回 $null）。槽位默认取目录名，可用 mod_registry.json 覆盖。
+function New-ModEntry {
+    param([System.IO.DirectoryInfo]$Dir, [hashtable]$RegistryMap)
+
+    $csproj = Join-Path $Dir.FullName ($Dir.Name + ".csproj")
+    if (-not (Test-Path -LiteralPath $csproj)) {
+        $any = @(Get-ChildItem -LiteralPath $Dir.FullName -Filter *.csproj -File)
+        if ($any.Count -eq 0) { return $null }
+        $csproj = $any[0].FullName
+    }
+
+    # 产物名以 csproj 的 <AssemblyName> 为准（不一定等于目录名）
+    $assemblyName = $Dir.Name
+    try {
+        $text = [System.IO.File]::ReadAllText($csproj)
+        $m = [regex]::Match($text, "<AssemblyName>(.*?)</AssemblyName>")
+        if ($m.Success -and $m.Groups[1].Value.Trim()) { $assemblyName = $m.Groups[1].Value.Trim() }
+    } catch { }
+
+    $enabled = $true
+    $slot = $Dir.Name
+    $slotDll = "$assemblyName.dll"
+    $note = ""
+    if ($RegistryMap.ContainsKey($Dir.Name)) {
+        $entry = $RegistryMap[$Dir.Name]
+        $enabled = $entry.enabled
+        if ($entry.slot) { $slot = $entry.slot }
+        if ($entry.dll) { $slotDll = $entry.dll }
+        $note = $entry.note
+    }
+
+    return [pscustomobject]@{
+        Name     = $Dir.Name
+        RepoDir  = $Dir.FullName
+        Csproj   = $csproj
+        OutDll   = Join-Path $Dir.FullName "$assemblyName.dll"
+        Slot     = $slot
+        SlotDll  = $slotDll
+        Enabled  = $enabled
+        Note     = $note
+    }
+}
+
+# 自动发现 mod 仓库：
+#   ① $ReposRoot 下每个含 *.csproj 的目录（主仓库除外，单独处理）；
+#   ② 主仓库内 compat-mods\<ModName>\（2026-10-05 起：独立补丁 mod 收进主仓库托管，
+#      同仓托管但**独立 csproj / dll / 槽位**，见 decision-records/补丁mod收进主仓库compat-mods.md）。
 function Discover-Mods {
     param([string]$Root, [hashtable]$RegistryMap)
 
@@ -141,44 +187,19 @@ function Discover-Mods {
         if ($SkipDirs -contains $dir.Name) { continue }
         if ($dir.Name -eq $MainRepo) { continue }
 
-        $csproj = Join-Path $dir.FullName ($dir.Name + ".csproj")
-        if (-not (Test-Path -LiteralPath $csproj)) {
-            $any = @(Get-ChildItem -LiteralPath $dir.FullName -Filter *.csproj -File)
-            if ($any.Count -eq 0) { continue }
-            $csproj = $any[0].FullName
-        }
+        $entry = New-ModEntry -Dir $dir -RegistryMap $RegistryMap
+        if ($null -ne $entry) { $found += $entry }
+    }
 
-        # 产物名以 csproj 的 <AssemblyName> 为准（不一定等于目录名）
-        $assemblyName = $dir.Name
-        try {
-            $text = [System.IO.File]::ReadAllText($csproj)
-            $m = [regex]::Match($text, "<AssemblyName>(.*?)</AssemblyName>")
-            if ($m.Success -and $m.Groups[1].Value.Trim()) { $assemblyName = $m.Groups[1].Value.Trim() }
-        } catch { }
-
-        $enabled = $true
-        $slot = $dir.Name
-        $slotDll = "$assemblyName.dll"
-        $note = ""
-        if ($RegistryMap.ContainsKey($dir.Name)) {
-            $entry = $RegistryMap[$dir.Name]
-            $enabled = $entry.enabled
-            if ($entry.slot) { $slot = $entry.slot }
-            if ($entry.dll) { $slotDll = $entry.dll }
-            $note = $entry.note
-        }
-
-        $found += [pscustomobject]@{
-            Name     = $dir.Name
-            RepoDir  = $dir.FullName
-            Csproj   = $csproj
-            OutDll   = Join-Path $dir.FullName "$assemblyName.dll"
-            Slot     = $slot
-            SlotDll  = $slotDll
-            Enabled  = $enabled
-            Note     = $note
+    $compatRoot = Join-Path (Join-Path $Root $MainRepo) "compat-mods"
+    if (Test-Path -LiteralPath $compatRoot) {
+        foreach ($dir in (Get-ChildItem -LiteralPath $compatRoot -Directory)) {
+            if ($dir.Name.StartsWith(".")) { continue }
+            $entry = New-ModEntry -Dir $dir -RegistryMap $RegistryMap
+            if ($null -ne $entry) { $found += $entry }
         }
     }
+
     return $found
 }
 
