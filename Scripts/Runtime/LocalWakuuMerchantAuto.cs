@@ -491,9 +491,9 @@ internal static class LocalWakuuMerchantAuto
             };
 
             using (WakuuSelectorRegistry.Open(player.NetId, new LocalWakuuStrategySelector(WakuuPickScenario.Remove)
-                   {
-                       LogLabel = "商店删牌服务",
-                   }))
+            {
+                LogLabel = "商店删牌服务",
+            }))
             {
                 CardModel? card = (await CardSelectCmd.FromDeckForRemoval(player, prefs)).FirstOrDefault();
                 if (card == null)

@@ -101,58 +101,58 @@ internal static class CardTransformNetIdPinPatch
                 break;
 
             case CardTransformNetIdAction.ShiftAwayFromOwner:
-            {
-                // 后台角色的手牌变换 / 原牌节点缺失（BUG-25）：原版视觉分支会在前台手牌里找原卡节点，
-                // 找不到就抛 "Couldn't get hand node for original card ..."（实机：瓦库打「数据链」/酒狐
-                // 「不等价交换」、回合结束触发「唯我」诅咒牌），异常抛穿异步链 → 出牌中断/回合循环死亡、
-                // 牌停在屏幕中间不生效不消耗。必须显式把 NetId 让开，让 vanilla 按 IsMine=false 跳过视觉。
-                // 数据层在视觉分支之前就已生效，不受影响；UI 由 RestoreNetIdAfterAsync 的顺序自愈兜底。
-                //
-                // ⚠ 安全值**不能**是牌主人自己：r185 实机（唯我）里 owner=前台=受控位，
-                // 旧实现取受控位会让 NetId 原地不动、IsMine 仍为 true ⇒ 照抛。所以受控位==主人时让到 null。
-                SeatRegistry seatsShifted = LocalSeatSource.CurrentSeats();
-                ulong? controlledId = seatsShifted.ControlledSeatId;
-                ulong? safeNetId = controlledId.HasValue
-                    && controlledId.Value != owner.NetId
-                    && seatsShifted.IsLocalSeat(controlledId.Value)
-                    ? controlledId
-                    : null;
-
-                _previousNetId.Value = LocalSeatSource.ContextSeatId();
-                LocalContext.NetId = safeNetId;
-                _pinActive.Value = true;
-
-                if (isOwnerAutomated)
                 {
-                    // r199（BUG-29）：托管席位的变换一律跳过原版视觉。原版把变换分成
-                    // 「数据阶段（中间有 await 挂钩点）→ 视觉阶段」，视觉阶段才查原牌手牌节点；
-                    // 托管席位的手牌 UI 根本不存在 ⇒ 一旦被当成"我的牌"就必抛 Couldn't get hand node
-                    // ⇒ 出牌以异常结束、牌停在屏幕中央、只换了一半（实机：猪猪 mod【猪猪王】换 3 张只换 1 张）。
-                    // ⚠ 只靠"把 NetId 让开一次"挡不住（异步窗口里会被写回，r199/r201 实机两次证实）
-                    // ⇒ 这里只是保底层，真正把关的是 CardTransformAutomatedSeatContextGuardPatch 的 transpiler
-                    //（把视觉阶段那句 IsMine 调用点改写掉，见 AutomatedSeatTransformVisualGate）。
-                    LocalMultiControlLogger.Info(
-                        $"[手牌同步修复] 托管席位（瓦库）的变换一律跳过原版视觉（防异步窗口内原牌节点消失导致抛异常卡屏）: "
-                        + $"owner={owner.NetId}, netId={_previousNetId.Value?.ToString() ?? "null"} -> {safeNetId?.ToString() ?? "null"}");
-                }
-                else if (handNodeExists == false)
-                {
-                    // BUG-25 实机锚点：点名是"节点缺失"这一路，便于后续统计与回归。
-                    LocalMultiControlLogger.Info(
-                        $"[手牌同步修复] 变换原牌的手牌节点不存在，让开 NetId 跳过原版视觉（防回合结束软锁）: "
-                        + $"owner={owner.NetId}, original={firstMissingOriginal}, "
-                        + $"netId={_previousNetId.Value?.ToString() ?? "null"} -> {safeNetId?.ToString() ?? "null"}");
-                }
-                else
-                {
-                    LocalMultiControlLogger.Info(
-                        $"[手牌同步修复] 后台角色手牌变换：临时让开 NetId 以跳过前台动画查找: owner={owner.NetId}, "
-                        + $"controlled={controlledId?.ToString() ?? "none"}, "
-                        + $"netId={_previousNetId.Value?.ToString() ?? "null"} -> {safeNetId?.ToString() ?? "null"}");
-                }
+                    // 后台角色的手牌变换 / 原牌节点缺失（BUG-25）：原版视觉分支会在前台手牌里找原卡节点，
+                    // 找不到就抛 "Couldn't get hand node for original card ..."（实机：瓦库打「数据链」/酒狐
+                    // 「不等价交换」、回合结束触发「唯我」诅咒牌），异常抛穿异步链 → 出牌中断/回合循环死亡、
+                    // 牌停在屏幕中间不生效不消耗。必须显式把 NetId 让开，让 vanilla 按 IsMine=false 跳过视觉。
+                    // 数据层在视觉分支之前就已生效，不受影响；UI 由 RestoreNetIdAfterAsync 的顺序自愈兜底。
+                    //
+                    // ⚠ 安全值**不能**是牌主人自己：r185 实机（唯我）里 owner=前台=受控位，
+                    // 旧实现取受控位会让 NetId 原地不动、IsMine 仍为 true ⇒ 照抛。所以受控位==主人时让到 null。
+                    SeatRegistry seatsShifted = LocalSeatSource.CurrentSeats();
+                    ulong? controlledId = seatsShifted.ControlledSeatId;
+                    ulong? safeNetId = controlledId.HasValue
+                        && controlledId.Value != owner.NetId
+                        && seatsShifted.IsLocalSeat(controlledId.Value)
+                        ? controlledId
+                        : null;
 
-                break;
-            }
+                    _previousNetId.Value = LocalSeatSource.ContextSeatId();
+                    LocalContext.NetId = safeNetId;
+                    _pinActive.Value = true;
+
+                    if (isOwnerAutomated)
+                    {
+                        // r199（BUG-29）：托管席位的变换一律跳过原版视觉。原版把变换分成
+                        // 「数据阶段（中间有 await 挂钩点）→ 视觉阶段」，视觉阶段才查原牌手牌节点；
+                        // 托管席位的手牌 UI 根本不存在 ⇒ 一旦被当成"我的牌"就必抛 Couldn't get hand node
+                        // ⇒ 出牌以异常结束、牌停在屏幕中央、只换了一半（实机：猪猪 mod【猪猪王】换 3 张只换 1 张）。
+                        // ⚠ 只靠"把 NetId 让开一次"挡不住（异步窗口里会被写回，r199/r201 实机两次证实）
+                        // ⇒ 这里只是保底层，真正把关的是 CardTransformAutomatedSeatContextGuardPatch 的 transpiler
+                        //（把视觉阶段那句 IsMine 调用点改写掉，见 AutomatedSeatTransformVisualGate）。
+                        LocalMultiControlLogger.Info(
+                            $"[手牌同步修复] 托管席位（瓦库）的变换一律跳过原版视觉（防异步窗口内原牌节点消失导致抛异常卡屏）: "
+                            + $"owner={owner.NetId}, netId={_previousNetId.Value?.ToString() ?? "null"} -> {safeNetId?.ToString() ?? "null"}");
+                    }
+                    else if (handNodeExists == false)
+                    {
+                        // BUG-25 实机锚点：点名是"节点缺失"这一路，便于后续统计与回归。
+                        LocalMultiControlLogger.Info(
+                            $"[手牌同步修复] 变换原牌的手牌节点不存在，让开 NetId 跳过原版视觉（防回合结束软锁）: "
+                            + $"owner={owner.NetId}, original={firstMissingOriginal}, "
+                            + $"netId={_previousNetId.Value?.ToString() ?? "null"} -> {safeNetId?.ToString() ?? "null"}");
+                    }
+                    else
+                    {
+                        LocalMultiControlLogger.Info(
+                            $"[手牌同步修复] 后台角色手牌变换：临时让开 NetId 以跳过前台动画查找: owner={owner.NetId}, "
+                            + $"controlled={controlledId?.ToString() ?? "none"}, "
+                            + $"netId={_previousNetId.Value?.ToString() ?? "null"} -> {safeNetId?.ToString() ?? "null"}");
+                    }
+
+                    break;
+                }
 
             default:
                 if (!isOwnerForeground && currentNetIdIsOwner)
