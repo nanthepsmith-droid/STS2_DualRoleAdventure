@@ -60,6 +60,10 @@ internal static class PurifyWakuuRestSiteRuntime
             return;
         }
 
+        // 图标必须在房间预加载**之前**注册好（注入发生在 BeginRestSite，早于 Preloading 'RestSite Room'）：
+        // 否则缺失的 png 会被 AssetCache 记成 failed，之后 RestSiteOption.Icon 抛异常 ⇒ 按钮连名字都设不上。
+        PurifyWakuuRestSiteOption.EnsureIconRegistered();
+
         options.Add(new PurifyWakuuRestSiteOption(player));
         LocalMultiControlLogger.Info(
             $"休息区已注入瓦库净化选项: owner={player.NetId}, candidates={CollectCandidates(player).Count}");

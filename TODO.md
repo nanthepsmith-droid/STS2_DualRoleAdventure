@@ -2596,7 +2596,7 @@ BUG-29（用户「猪猪王 BUG 全无」）与 BUG-30 均已实机收掉。2026
 
 ---
 
-## 瓦库四功能（2026-10-05 开工）—— ① 净化（r208 已部署，⏳ 待实机）
+## 瓦库四功能（2026-10-05 开工）—— ① 净化（r209 已部署，⏳ 待实机；r208 首测暴露 2 个缺陷均已修）
 
 > 提案 `瓦库炼化净化联合地狱战神-功能提案与可行性分析.md` + 逐条核验 `瓦库四功能-可行性核验报告.md`
 > （**均在仓库外 `maintenance-docs/decision-records/`**）。**4 个设计点 2026-10-05 已拍定**，
@@ -2630,17 +2630,46 @@ BUG-29（用户「猪猪王 BUG 全无」）与 BUG-30 均已实机收掉。2026
 - `Scripts/Runtime/PureLogic/WakuuConfigData.cs` / `LocalWakuuAutopilotConfig.cs` / `Scripts/UI/LocalWakuuConfigSubmenu.cs`：配置项。
 - `Scripts/Entry.cs`（marker **r208** + 本地化注册）、`Scripts/Runtime/LocalMultiControlRuntime.cs`（进局重注入本地化）。
 
-**⏳ 实机复测契约（r208）**
+### r208 首测结论与修复（⇒ r209）
+
+**用户实测（`logs-archive/godot__20261005-213455__r208.log`）**：按钮出现了，但 ① 按钮名字是占位文字
+「Dig」而不是「净化」；② **删牌不能自己选** —— 选完目标后没弹选牌界面，直接删掉 5 张
+（`净化完成 … count=5, cards=[BURNING_PACT, OUTRAGE, …]`）。
+
+**两个根因（均已修，r209）**：
+1. **图标把按钮名字一起吃掉了**：基类按 `OptionId` 硬拼 `ui/rest_site/option_lmc_purify.png`，
+   该 png 在游戏 pck 里不存在 ⇒ 房间预加载失败后被 `AssetCache` 记进 `_failedAssets` ⇒
+   之后 `RestSiteOption.Icon` **抛 `AssetLoadException`**（日志：`Asset previously failed to load…`），
+   而 `NRestSiteButton.Reload`（`NRestSiteButton.cs:115-116`）是「先设图标、再设按钮名字」⇒
+   异常中断后**名字永远没被赋值**，按钮显示场景占位文字。
+   ⚠ **核验报告 §3.2「缺图标不崩」的结论是错的**（它只跟到 `ResourceLoader.Load` 返 null，没跟到
+   `AssetCache` 的 failed 记账）。
+   **修法**：`AssetPaths` 返空（不让预加载去碰它）+ `EnsureIconRegistered()` 把原版【烹饪】图标
+   注册到本路径下（`PreloadManager.Cache.SetAsset`，公开 API），注入时调用（早于房间预加载）。
+2. **净化选牌被我们自己的瓦库自动作答替答**：`CardSelectWakuuTurnStartAutoAnswerPatch` 把
+   `FromDeckGeneric` 也列为「瓦库作用域外自动作答」入口，而 `FromDeckForRemoval` 内部就走它 ⇒
+   目标瓦库被按 `cardPickMode=last` 直接作答（`瓦库作用域外牌组选牌自动作答 … source=FromDeckGeneric`）。
+   之前的 `PushChoiceOwner` 只管了**选择器守卫**这一条路，没管这条自动作答链。
+   **修法**：该补丁新增 `SuppressForHumanChoice()` 作用域（AsyncLocal，命中时 `ShouldAutoAnswer` 一律 false），
+   净化流程内压制；`PushChoiceOwner` 保留（防并发瓦库选择器抢答）—— 两道防护缺一不可。
+
+**⏳ 实机复测契约（r209）**
 1. 设置页打开「瓦库形态托管」+「火堆净化」，开一局（真人 + ≥1 瓦库），进任意休息处。
-2. 期望日志有 `休息区已注入瓦库净化选项: owner=…, candidates=N`（`owner` = 真人席位，**绝不能是瓦库席位**）。
-3. 点「净化」→ 期望 `选玩家选择器已打开: title=净化 · 选择目标瓦库, candidates=N` → 弹层出现、能点选、能取消。
-4. 选完 → 弹原版删牌界面（标题是"选择要移除的牌"类文案）→ 选 1~5 张确认 →
+2. 期望日志有 `休息区已注入瓦库净化选项: owner=…, candidates=N`（`owner` = 真人席位，**绝不能是瓦库席位**）
+   + `净化选项图标已复用原版图标: ui/rest_site/option_cook.png -> …`。
+3. **按钮应显示「净化」**（不再是占位文字）；预期图标 = 原版【烹饪】的图标。
+4. 点「净化」→ 期望 `选玩家选择器已打开: title=净化 · 选择目标瓦库, candidates=N` → 弹层出现、能点选、能取消。
+5. 选完 → 期望 `净化选牌交给真人（已压制瓦库自动作答与归属者抢答）: target=…, 可删牌=N` →
+   **弹原版删牌界面**（真人可逐张勾选）→ 选 1~5 张确认 →
    `净化完成: owner=…, target=…, count=N, cards=[…], 剩余可删牌=…`，且目标瓦库卡组确实少了这几张。
-5. 取消路径：选择器取消 ⇒ `净化取消：未选择目标瓦库`；删牌界面取消 ⇒ `净化取消：未选择任何卡牌`，**选项仍可用**。
-6. **期望 0**：`注入瓦库净化选项失败` / `枚举可净化瓦库失败` / `选玩家选择器构建失败` / `选玩家选择器打开失败` /
-   `注入瓦库休息区选项本地化失败` / 我方 `[ERROR]`。
-7. 关闭「火堆净化」⇒ 休息处**不应**出现该选项（回归：与原版一致）。
-8. 顺带看：并发瓦库火堆选项进行中时点净化，若出现
+6. 取消路径：选择器取消 ⇒ `净化取消：未选择目标瓦库`；删牌界面取消 ⇒ `净化取消：未选择任何卡牌`，**选项仍可用**。
+7. **期望 0**：
+   - `注入瓦库净化选项失败` / `枚举可净化瓦库失败` / `选玩家选择器构建失败` / `选玩家选择器打开失败` /
+     `注入瓦库休息区选项本地化失败` / `注册净化选项图标失败` / 我方 `[ERROR]`；
+   - `AssetLoadException` / `No loader found for resource` / `option_lmc_purify.png`（图标路径不该再被加载）；
+   - **净化期间**的 `瓦库作用域外牌组选牌自动作答 … source=FromDeckGeneric, player=<目标瓦库>`（r208 就是被它替答）。
+8. 关闭「火堆净化」⇒ 休息处**不应**出现该选项（回归：与原版一致）。
+9. 顺带看：并发瓦库火堆选项进行中时点净化，若出现
    `检测到真人选牌请求，本次跳过瓦库选择器改走正常UI: chooser=…` = **守卫按预期拦截**（不是异常）。
 
 **已知风险 / 未覆盖（实机重点看）**

@@ -127,6 +127,12 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
     /// </summary>
     internal static bool ShouldAutoAnswer(Player player)
     {
+        // 「本次选牌由真人亲自作答」作用域内一律不自动作答（见 SuppressForHumanChoice）。
+        if (HumanChoiceScope.Value)
+        {
+            return false;
+        }
+
         if (!LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.UseSingleAdventureMode)
         {
             return false;
@@ -393,5 +399,52 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
         // 与 CardSelectCmd.FromSimpleGrid 走全局选择器时的口径一致：min/max 取自 prefs。
         LocalWakuuStrategySelector selector = new();
         return await selector.GetSelectedCards(cards, prefs.MinSelect, prefs.MaxSelect);
+    }
+
+    /// <summary>
+    /// 「本次选牌由**真人**亲自作答」作用域（AsyncLocal）：命中时 <see cref="ShouldAutoAnswer"/> 一律 false。
+    ///
+    /// 用途 = **模组自己发起、但要交给真人点选**的流程。首例：休息处净化 —— 真人替瓦库删牌，
+    /// 走的是 <c>CardSelectCmd.FromDeckForRemoval</c> → 内部 <c>FromDeckGeneric</c>，而本补丁把
+    /// `FromDeckGeneric` 也列为自动作答入口 ⇒ 不加这个的话目标瓦库会被按 `cardPickMode` 直接作答，
+    /// **真人根本看不到选牌界面**（r208 实机：`瓦库作用域外牌组选牌自动作答 … source=FromDeckGeneric`，
+    /// 一次删掉 5 张，用户报"不能自己选删什么牌"）。
+    ///
+    /// AsyncLocal 沿异步链流动 + 释放时恢复原值 ⇒ 不影响并发的其他选牌链。
+    /// </summary>
+    private static readonly System.Threading.AsyncLocal<bool> HumanChoiceScope = new();
+
+    /// <summary>进入「真人亲自作答」作用域；释放时恢复原值（嵌套安全）。</summary>
+    internal static IDisposable SuppressForHumanChoice()
+    {
+        bool previous = HumanChoiceScope.Value;
+        HumanChoiceScope.Value = true;
+        return new HumanChoiceScopeToken(previous);
+    }
+
+    /// <summary>
+    /// ⚠ 本类必须声明在类体**末尾**（所有带 [HarmonyPatch] 的方法之后）—— 离线静态层 S4/S7 的解析器
+    /// 按"最近出现过的 class 名"归属方法级 [HarmonyPatch]，插在方法前会被误判成"只有方法级补丁的类"。
+    /// </summary>
+    private sealed class HumanChoiceScopeToken : IDisposable
+    {
+        private readonly bool _previous;
+        private bool _disposed;
+
+        internal HumanChoiceScopeToken(bool previous)
+        {
+            _previous = previous;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            HumanChoiceScope.Value = _previous;
+        }
     }
 }

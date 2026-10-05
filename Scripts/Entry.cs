@@ -24,7 +24,12 @@ public partial class Entry
     // r208：瓦库四功能开工（第一件「净化」，默认关）—— 休息处给真人席位注入「净化」选项，
     //       先弹新造的局内「选玩家」选择器选目标瓦库，再走原版删牌界面删其最多 5 张牌；
     //       顺带把选择器守卫从"类型白名单"改成"按 WakuuSelectorRegistry 登记身份判"。
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-05-r208)";
+    // r209：r208 实机两个缺陷 —— ① 缺图标被 AssetCache 记 failed ⇒ RestSiteOption.Icon 抛异常，
+    //       NRestSiteButton.Reload 在"设图标"处中断 ⇒ 按钮连名字都没设上（实机显示占位文字"Dig"）；
+    //       改为 AssetPaths 返空 + 借用原版【烹饪】图标注册到本路径。
+    //       ② 瓦库「作用域外牌组选牌自动作答」把净化选牌替真人答了（真人看不到删牌界面）⇒ 新增
+    //       CardSelectWakuuTurnStartAutoAnswerPatch.SuppressForHumanChoice 作用域，净化流程内压制。
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-05-r209)";
 
     private static Harmony? _harmony;
 
