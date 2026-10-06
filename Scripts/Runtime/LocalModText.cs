@@ -184,6 +184,20 @@ internal static class LocalModText
         };
     }
 
+    // ---- 瓦库四功能 · ④ 地狱战神（2026-10-06 开工；本轮只做「卡池注册」的最小验证）----
+
+    /// <summary>
+    /// 地狱战神验证卡的标题。占位名（`地狱战神` / `地狱耳环` 的正式名字用户另有安排）。
+    /// </summary>
+    public static string HellGodPlaceholderCardTitle => Select("瓦库的爹（占位）", "Vakuu's Daddy (placeholder)");
+
+    /// <summary>
+    /// 地狱战神验证卡的描述。**明说效果未实现**，免得实机看到这张卡时误判成"功能坏了"。
+    /// </summary>
+    public static string HellGodPlaceholderCardDescription => Select(
+        "占位卡：仅用于验证「mod 自定卡能挂进卡池」。效果尚未实现，也不会通过任何奖励/商店入口出现。",
+        "Placeholder: proves a mod card can register into a card pool. No effect yet; it never appears in rewards or shops.");
+
     public static string GlobalWakuuLabel => Select("全瓦库", "All Vakuu");
 
     public static string VakuuControlsPlayer(string slotLabel)

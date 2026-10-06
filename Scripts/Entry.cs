@@ -4,7 +4,9 @@ using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Models.CardPools;
 using MegaCrit.Sts2.Core.Models.RelicPools;
+using LocalMultiControl.Scripts.Models.Cards;
 using LocalMultiControl.Scripts.Models.Relics;
 using LocalMultiControl.Scripts.Patch;
 using LocalMultiControl.Scripts.Runtime;
@@ -132,7 +134,37 @@ public partial class Entry
     //     已记为复测契约"期望 0"的例外。
     //  同轮实证：LexKela 守卫**补键生效**（补键处数=2）且**回合循环正常**（两场战斗均能"结束回合 →
     //  自动补齐敌方回合就绪 → 敌方回合"）；整场站位**0 对调**；快照 `已死席位=[角色2]` 锚点生效。
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-06-r223)";
+    // r224：④「地狱战神」前置功课（不是功能）—— 验证「mod 自定卡如何挂进卡池」这条链路。
+    //  ① 新卡 `LocalWakuuHellGodPlaceholderCard`（`Scripts/Models/Cards/`）：占位、**无效果**；
+    //     稀有度 Event（事件池没有任何随机奖励入口 ⇒ 不会污染奖励/商店/战斗生成）；
+    //     本项目**没有 PCK** ⇒ 覆写 PortraitPath **借原版 Stack 的立绘**（同遗物借原版图标）。
+    //  ② `Entry` 阶段 3 新增 `RegisterWakuuHellGodCardToPool()` =
+    //     `ModHelper.AddModelToPool<EventCardPool, …>()` —— **必须早于游戏初始化**，
+    //     否则卡池首次访问（ModelDb.Preload 读 AllCards）即冻结、再登记会抛 `InvalidOperationException`。
+    //     卡类型本身**不用手动注册**：`ModelDb.Init()` 经 `GetSubtypesInMods<AbstractModel>` 自动扫到。
+    //  ③ 新 `LocalWakuuHellGodLocalization`：往游戏 `cards` 表注入 `<entry>.title/.description`
+    //     （缺键会让 LocString 抛 LocException 冒穿卡牌渲染）；Entry 阶段 3 + 每次进局各注入一次。
+    //  ④ 新 `WakuuHellGodCardProbe`：登记发生在游戏初始化前、那时**读不了池** ⇒ 自检延迟到
+    //     `OnRunLaunched`，一条日志同时报「池内 / AllCards / 标题本地化 / 描述本地化 / 立绘可用」，
+    //     把"卡没挂进池时不报错、只是不出现"这件事变成可 grep 的锚点 `[地狱战神验证]`。
+    //  本轮**没有**给牌入口：遗物 + 「开战给 3 张占位牌」属下一步。
+    // r225：**口径落地，无行为变化**（仅注释/文档）。用户点名「新加的牌不能是无色牌，不然玩家可以通过
+    //  一般方式获取，就应该做成其它里面的牌」⇒ 逐条 grep 反编译源码核实后**确认现状已满足**（卡在
+    //  `EventCardPool`：全游戏零获取入口；`ColorlessCardPool` 才是商店/无色药水/工具箱等遗物/多个事件的来源；
+    //  卡牌库「无色」判 `Pool is ColorlessCardPool`、「其它」判稀有度 ⇒ 我们的卡本来就在「其它」），
+    //  于是把这条口径**写死在代码注释**（卡模型类注释 + 本方法的注释）与参考文档（坑 AA）。
+    //  本轮只改注释，**没有**改任何行为，marker 仍要升（DLL 字节变了，日志才能区分这一版）。
+    // r226：**修正 r224/r225 的自检挂点**（r225 实机日志实证的缺陷）。用户 r225 那局
+    //  `run-launched` 命中 0 / 回环网络服务 0 次 ⇒ **压根没进局**，而我把自检挂在「每次进局」
+    //  （`RunManager.Launch`）上 ⇒ 锚点 `[地狱战神验证]` 一次都没打（注册日志有、自检日志无）。
+    //  而且卡牌库是**主菜单就能打开**的界面。改为两个初始化早期挂点（新增 `WakuuHellGodContentPatch`，
+    //  Wakuu 域，非 Critical）：
+    //  ① `LocManager.Initialize()` 后置 ⇒ 注入 `cards` 表（卡牌缺键会抛 `LocException` 冒穿卡牌渲染，
+    //     必须在主菜单卡牌库之前就绪；mod 初始器跑在该方法之前、那时 `Instance` 还是 null）；
+    //  ② `ModelDb.Preload()` 后置 ⇒ 跑卡池自检（卡池刚冻结、主菜单显示后不久、任何进局之前；
+    //     此时 `LoadAllAtlases()` 已跑完 ⇒ 立绘检查也成立）。
+    //  两个目标都进 `OptionalPatchTargets`（缺了只 WARN）；进局那次调用保留（幂等）。
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-06-r226)";
 
     private static Harmony? _harmony;
 
@@ -245,6 +277,10 @@ public partial class Entry
         "MegaCrit.Sts2.Core.Daily.DailyRunUtility.UploadScore",
         // 每日挑战（r156）：出征前强制校正席位/角色/sender
         "MegaCrit.Sts2.Core.Nodes.Screens.DailyRun.NDailyRunScreen.OnEmbarkPressed",
+        // ④ 地狱战神（r226）：卡牌本地化必须在**主菜单卡牌库**之前注入（缺了卡牌渲染抛 LocException）
+        "MegaCrit.Sts2.Core.Localization.LocManager.Initialize",
+        // ④ 地狱战神（r226）：卡池冻结那一刻校验自定卡入池（缺了锚点 `[地狱战神验证]` 不出现）
+        "MegaCrit.Sts2.Core.Models.ModelDb.Preload",
     };
 
     /// <summary>
@@ -277,7 +313,9 @@ public partial class Entry
         RunStage(fatalFailures, "MODEL_REGISTRATION", () =>
         {
             RegisterWakuuRelicsToPool();
+            RegisterWakuuHellGodCardToPool();
             SafeAction(fatalFailures, FatalCode.Model, "瓦库遗物本地化", () => LocalWakuuRelicLocalization.Initialize());
+            SafeAction(fatalFailures, FatalCode.Model, "地狱战神卡牌本地化", () => LocalWakuuHellGodLocalization.Initialize());
             SafeAction(fatalFailures, FatalCode.Model, "瓦库休息区选项本地化", () => LocalWakuuRestSiteLocalization.Initialize());
             SafeAction(fatalFailures, FatalCode.Model, "瓦库联合选牌提示本地化", () => LocalWakuuUniteLocalization.Initialize());
             SafeAction(fatalFailures, FatalCode.Model, "瓦库炼化本地化", () => LocalWakuuRefineLocalization.Initialize());
@@ -706,6 +744,35 @@ public partial class Entry
         catch (Exception exception)
         {
             LocalMultiControlLogger.Warn($"注册瓦库遗物到遗物池失败（遗物描述页可能异常）: {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// ④「地狱战神」前置功课：把 mod 自定卡注册进**事件卡池**（与原版事件牌同池）。
+    ///
+    /// 与遗物同理，**必须在游戏初始化前**登记 —— 调用点 = mod 初始器（<see cref="Init"/> 阶段 3），
+    /// 此时 <c>ModelDb.Init()</c> / <c>ModelDb.Preload()</c> 都还没跑；
+    /// 卡池一旦被首次访问（Preload 会读 <c>ModelDb.AllCards</c>）就**冻结**，
+    /// 之后再 <c>AddModelToPool</c> 会抛 <c>InvalidOperationException</c>（"it's too late!"）。
+    ///
+    /// 卡类型本身无需手动注册：<c>ModelDb.Init()</c> 经
+    /// <c>ReflectionHelper.GetSubtypesInMods&lt;AbstractModel&gt;</c> 自动扫到本 mod 程序集里的卡。
+    /// 是否真的进了池由 <see cref="WakuuHellGodCardProbe"/> 在进局时报出来（这里读不了池）。
+    ///
+    /// ⚠ **池子只能是 <see cref="EventCardPool"/>，绝不要改成 <c>ColorlessCardPool</c>** ——
+    /// 后者是一般方式可得的（商店 / 无色药水 / 工具箱等遗物 / 多个事件都直接引用它）。
+    /// 完整口径与证据见 <see cref="LocalWakuuHellGodPlaceholderCard"/> 的类注释。
+    /// </summary>
+    private static void RegisterWakuuHellGodCardToPool()
+    {
+        try
+        {
+            ModHelper.AddModelToPool<EventCardPool, LocalWakuuHellGodPlaceholderCard>();
+            LocalMultiControlLogger.Info("已登记地狱战神验证卡到事件卡池（实际入池校验见进局日志 [地狱战神验证]）。");
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"登记地狱战神验证卡到卡池失败（卡牌库/给牌可能异常）: {exception.Message}");
         }
     }
 }

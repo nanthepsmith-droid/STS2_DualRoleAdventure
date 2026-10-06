@@ -68,6 +68,10 @@ internal static class LocalMultiControlRuntime
         LocalWakuuRestSiteLocalization.Initialize();
         LocalWakuuUniteLocalization.Initialize();
         LocalWakuuRefineLocalization.Initialize();
+        // ④ 地狱战神（前置功课）：卡牌本地化在 mod 初始器里 LocManager 还没就绪 ⇒ 每次进局重试；
+        // 同时校验自定卡是否真的挂进了事件卡池（登记发生在游戏初始化前，那时读不了池）。
+        LocalWakuuHellGodLocalization.Initialize();
+        WakuuHellGodCardProbe.VerifyPoolMembership();
         // 第三方交互守卫（LexNinja2）：它的程序集常晚于本 mod 的 PatchAll ⇒ 每次进局重试挂载。
         LexNinja2KelaTurnEndGuardPatch.TryApplyLate();
         try
