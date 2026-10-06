@@ -13,6 +13,9 @@ internal static class NCombatRoomGhostHandsPatch
     private static void Postfix(NCombatRoom __instance)
     {
         LocalGhostHandsRuntime.OnCombatRoomReady(__instance);
+        // r215：入战站位快照（此刻 CreateAllyNodes 刚按 LocalContext 算完站位）——
+        // 只为诊断「打一半我和瓦库的立绘左右站位对调了」；见 LocalCreaturePositionProbe。
+        LocalCreaturePositionProbe.LogCombatLayoutSnapshot(__instance, "combat-room-ready");
     }
 }
 

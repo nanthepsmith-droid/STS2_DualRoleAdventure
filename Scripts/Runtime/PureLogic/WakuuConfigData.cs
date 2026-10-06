@@ -47,6 +47,16 @@ internal sealed class WakuuConfigData
     /// </summary>
     public bool purifyVakuu { get; set; }
 
+    /// <summary>
+    /// 瓦库四功能 · 我们联合（默认关）：战斗界面给**真人**多一个「我们联合」按钮（每场战斗一次）——
+    /// ① 从自己卡组**复制** 1 张牌进指定瓦库的战斗手牌；② 从指定瓦库卡组**复制** 1 张牌进真人战斗手牌。
+    /// 两向都不改主卡组（2026-10-06 拍板：双向复制，零存档副作用）。见 <see cref="LocalWakuuUniteRuntime"/>。
+    ///
+    /// ⚠ 键名用官方拼写 <c>vakuu</c>（不是 Wakuu）—— 与 r140 的拼写统一一致，
+    /// 由单测 `旧拼写配置键_自动迁移到新键` 的「序列化里不得出现 Wakuu」哨兵钉住。
+    /// </summary>
+    public bool uniteVakuu { get; set; }
+
     /// <summary>战斗中自动用药水：默认关（拍板：保守版写死规则，先观察）。</summary>
     public bool autoUsePotions { get; set; }
 

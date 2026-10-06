@@ -44,6 +44,7 @@ public class WakuuConfigJsonTests
             Assert.That(data.autoChooseEvents, Is.True);
             Assert.That(data.autoRestChoice, Is.True);
             Assert.That(data.purifyVakuu, Is.False); // 瓦库四功能 · 净化：可开关且默认关
+            Assert.That(data.uniteVakuu, Is.False); // 瓦库四功能 · 我们联合：可开关且默认关
             // 策略默认值
             Assert.That(data.eventChoiceMode, Is.EqualTo("first"));
             Assert.That(data.cardPickMode, Is.EqualTo("last"));
@@ -243,6 +244,19 @@ public class WakuuConfigJsonTests
         });
     }
 
+    /// <summary>瓦库四功能 · 我们联合开关（2026-10-06，默认关；键名用官方拼写 vakuu）。</summary>
+    [Test]
+    public void 解析联合开关_true生效()
+    {
+        WakuuConfigData data = WakuuConfigJson.Parse("""{ "uniteVakuu": true }""")!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(data.uniteVakuu, Is.True);
+            Assert.That(data.purifyVakuu, Is.False, "未提供的字段保持默认值");
+        });
+    }
+
     [Test]
     public void 解析null字面量_返回null()
     {
@@ -307,6 +321,8 @@ public class WakuuConfigJsonTests
             Assert.That(json, Does.Contain("\"eventChoiceMode\""));
             Assert.That(json, Does.Contain("\"cardPickMode\""));
             Assert.That(json, Does.Contain("\"vakuuBrain\""));
+            Assert.That(json, Does.Contain("\"purifyVakuu\""));
+            Assert.That(json, Does.Contain("\"uniteVakuu\""));
         });
     }
 }

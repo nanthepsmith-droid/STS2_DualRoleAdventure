@@ -61,6 +61,12 @@ internal static class LocalWakuuAutopilotConfig
     public static bool PurifyWakuu { get; private set; }
 
     /// <summary>
+    /// 瓦库四功能 · 我们联合（默认关）：战斗界面给真人一个「我们联合」按钮（每场战斗一次）——
+    /// 双向复制（真人卡组 → 瓦库手牌 / 瓦库卡组 → 真人手牌）。见 <see cref="LocalWakuuUniteRuntime"/>。
+    /// </summary>
+    public static bool UniteVakuu { get; private set; }
+
+    /// <summary>
     /// 瓦库形态：战斗中自动用药水（Phase 2.5 保守版，默认关，已拍板）。
     /// 血液/再生低血自用；果汁到手立刻喝；增益/攻击/卡牌授予类精英 Boss 战首回合用；
     /// mod 药水普通战斗随机回合消耗；未分类原版药水保守跳过。
@@ -265,6 +271,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.autoChooseEvents): data.autoChooseEvents = value; break;
                     case nameof(WakuuConfigData.autoRestChoice): data.autoRestChoice = value; break;
                     case nameof(WakuuConfigData.purifyVakuu): data.purifyVakuu = value; break;
+                    case nameof(WakuuConfigData.uniteVakuu): data.uniteVakuu = value; break;
                     case nameof(WakuuConfigData.autoUsePotions): data.autoUsePotions = value; break;
                     case nameof(WakuuConfigData.neowAutoChoose): data.neowAutoChoose = value; break;
                     case nameof(WakuuConfigData.skadaAssist): data.skadaAssist = value; break;
@@ -600,6 +607,7 @@ internal static class LocalWakuuAutopilotConfig
         AutoChooseEvents = data.autoChooseEvents;
         AutoRestChoice = data.autoRestChoice;
         PurifyWakuu = data.purifyVakuu;
+        UniteVakuu = data.uniteVakuu;
         AutoUsePotions = data.autoUsePotions;
         NeowAutoChoose = data.neowAutoChoose;
         SkadaAssist = data.skadaAssist;

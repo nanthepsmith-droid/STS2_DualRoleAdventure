@@ -39,7 +39,19 @@ public partial class Entry
     //       卸载并 Dispose，Icon 又变 null。修法 = **不覆写 AssetPaths**（路径留在需求集里）+ 预加载前登记
     //       自持纹理（needLoaded 因已缓存而跳过它）⇒ 既不被卸、也不加载不存在的文件。
     // r212：再加一道兜底 —— 选项 IsEnabled 求值（建按钮时）时补一次图标注册，防时序意外。
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-05-r212)";
+    // r213：瓦库四功能第二件「我们联合」（默认关）—— 战斗界面加一个「我们联合」按钮（每场一次）：
+    //       ① 从自己卡组**复制** 1 张 → 指定瓦库战斗手牌；② 从指定瓦库卡组**复制** 1 张 → 自己手牌
+    //       （双向复制、主卡组不动）。建卡走 CombatState.CreateCard、塞手牌走 CardPileCmd.Add(PileType.Hand)，
+    //       选牌走 CardSelectCmd.FromDeckGeneric + 两道防护（PushChoiceOwner / SuppressForHumanChoice）。
+    // r213b：② 我们联合首测报「复制了没效果」—— 日志 `我们联合执行失败: Mutable model of type X used in incorrect place.`：
+    //       建卡用 CombatState.CreateCard(卡组牌, 目标) 是错的（它要**规范模型**，内部 ToMutable() → AssertCanonical()
+    //       会抛 MutableModelException），而喂 canonical 又会丢升级/附魔。改走
+    //       CombatState.CloneCard(可变实例)（保留当前状态）+ CardModel.GiveToAnotherPlayer(目标) 改归属。
+    // r215：用户报「打一半我和瓦库的立绘左右站位对调了」（不影响战斗）—— 原版站位只在
+    //       NCombatRoom.CreateAllyNodes 里按 LocalContext.IsMe 排一次，本地多控下"谁是『我』"会漂。
+    //       本轮只加**诊断**（不改行为）：入战站位快照 + 逐帧位移探针（LocalCreaturePositionProbe），
+    //       等下一局复现时定位是"一开始就摆反"还是"中途被谁挪的"。
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-06-r215)";
 
     private static Harmony? _harmony;
 
@@ -186,6 +198,7 @@ public partial class Entry
             RegisterWakuuRelicsToPool();
             SafeAction(fatalFailures, FatalCode.Model, "瓦库遗物本地化", () => LocalWakuuRelicLocalization.Initialize());
             SafeAction(fatalFailures, FatalCode.Model, "瓦库休息区选项本地化", () => LocalWakuuRestSiteLocalization.Initialize());
+            SafeAction(fatalFailures, FatalCode.Model, "瓦库联合选牌提示本地化", () => LocalWakuuUniteLocalization.Initialize());
             // 社区统计（SkadaHelper）为可选第三方依赖：探测失败只打日志，永不阻断
             WakuuSkadaAdapter.Probe();
             // 联机 AI 队友（Co-op Bots）同为可选第三方依赖：只探测 + 登记配置里的席位，绝不接管（进局时才接管）

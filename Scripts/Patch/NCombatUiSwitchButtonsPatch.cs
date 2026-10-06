@@ -75,9 +75,16 @@ internal static class LocalCombatSwitchButtons
     private const string ContainerName = "LocalCombatSwitchContainer";
     private const string PrevButtonName = "LocalCombatSwitchPrevButton";
     private const string NextButtonName = "LocalCombatSwitchNextButton";
+
+    /// <summary>瓦库四功能 · 我们联合：战斗内按钮（条件显示，见 <see cref="LocalWakuuUniteRuntime"/>）。</summary>
+    private const string UniteButtonName = "LocalCombatUniteButton";
+
     private const string TrackerName = "LocalCombatSwitchTracker";
     private static readonly Vector2 PingShowPosRatio = new Vector2(1536f, 932f) / NGame.devResolution;
     private static readonly Vector2 EndTurnAnchorOffset = new Vector2(-28f, -42f);
+
+    /// <summary>「我们联合」按钮相对容器原点的位置（两个切人钮在 (0,0) / (136,0)，这个放它们上面）。</summary>
+    private static readonly Vector2 UniteButtonOffset = new Vector2(0f, -40f);
 
     public static void Ensure(NCombatUi combatUi)
     {
@@ -128,9 +135,29 @@ internal static class LocalCombatSwitchButtons
                 LocalControlSwitchGuard.TrySwitchNext("combat-ui-down")));
         container.AddChild(nextButton);
 
+        // 瓦库四功能 · 我们联合：条件显示的战斗内按钮（每场战斗一次，见 LocalWakuuUniteRuntime）。
+        // 刻意挂在同一个容器里（复用 NCombatUi._Ready 这个既有挂点，不新增 Harmony 目标）。
+        LocalSimpleTextButton uniteButton = new LocalSimpleTextButton
+        {
+            Name = UniteButtonName,
+            ButtonText = LocalModText.UniteButtonName,
+            FocusMode = Control.FocusModeEnum.None,
+            FontSize = 18,
+            Size = new Vector2(140f, 32f),
+            CustomMinimumSize = new Vector2(140f, 32f),
+            Position = UniteButtonOffset,
+            Visible = false
+        };
+        uniteButton.Connect(
+            MegaCrit.Sts2.Core.Nodes.GodotExtensions.NClickableControl.SignalName.Released,
+            Callable.From<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NClickableControl>((_) =>
+                LocalWakuuUniteRuntime.OnButtonPressed()));
+        container.AddChild(uniteButton);
+
         combatUi.AddChildSafely(container);
         EnsureTracker(combatUi);
         LocalMultiControlLogger.Info("战斗界面已创建 Ping 右侧上下切人按钮。");
+        LocalMultiControlLogger.Info($"战斗界面已创建「{LocalModText.UniteButtonName}」按钮（按条件显示）。");
     }
 
     private static void EnsureTracker(NCombatUi combatUi)
@@ -167,6 +194,15 @@ internal static class LocalCombatSwitchButtons
                           && hasMultiplePlayers;
 
         container.Visible = shouldShow;
+
+        // 「我们联合」按钮自己再判一层（开关 / 每场一次 / 有没有候选瓦库）——
+        // 放在早退之前求值，短路顺序保证容器隐藏时不会白算。
+        Control? uniteButton = container.GetNodeOrNull<Control>(UniteButtonName);
+        if (uniteButton != null)
+        {
+            uniteButton.Visible = shouldShow && LocalWakuuUniteRuntime.ShouldShowButton();
+        }
+
         if (!shouldShow)
         {
             return;
@@ -234,6 +270,8 @@ internal sealed partial class LocalCombatSwitchTracker : Node
         }
 
         LocalCombatSwitchButtons.Refresh(_combatUi);
+        // r215：角色立绘站位位移探针（内部 250ms 节流、只在真的变了时打日志）。
+        LocalCreaturePositionProbe.Sample("combat-tick");
         LocalMultiControlRuntime.TryAutoEndTurnForRelicControlledPlayer();
         // r104（BUG-2）：结束回合按钮状态机绑定前台角色，而自动切人/瓦库自动结束回合会绕开
         // 原版按钮事件，可能把按钮留在禁用/隐藏状态 → 点结束回合没反应。这里逐帧兜底自愈（内部节流）。

@@ -98,6 +98,27 @@ internal static class LocalModText
         "删除目标瓦库卡组中最多 {Amount} 张牌。",
         "Remove up to {Amount} cards from the chosen Vakuu's deck.");
 
+    /// <summary>我们联合：战斗界面按钮文案。</summary>
+    public static string UniteButtonName => Select("我们联合", "Unite");
+
+    /// <summary>我们联合 ①（自己卡组 → 瓦库手牌）：选玩家选择器标题。</summary>
+    public static string UniteGivePickTitle => Select("我们联合 · 选择目标瓦库", "Unite · Choose a Vakuu");
+
+    /// <summary>我们联合 ②（瓦库卡组 → 自己手牌）：选玩家选择器标题。</summary>
+    public static string UniteTakePickTitle => Select("我们联合 · 选择要复制的瓦库", "Unite · Choose a Vakuu to copy from");
+
+    /// <summary>
+    /// 我们联合 ①：选牌提示（从真人自己卡组里选 1 张复制给瓦库）。
+    /// 注入到游戏 <c>card_selection</c> 表（键 <c>LMC_UNITE_GIVE</c>），见 <see cref="LocalWakuuUniteLocalization"/>。
+    /// </summary>
+    public static string UniteGivePrompt => Select("选择要复制给瓦库的牌", "Choose a card to copy to the Vakuu");
+
+    /// <summary>
+    /// 我们联合 ②：选牌提示（从瓦库卡组里选 1 张复制给真人）。
+    /// 注入到游戏 <c>card_selection</c> 表（键 <c>LMC_UNITE_TAKE</c>）。
+    /// </summary>
+    public static string UniteTakePrompt => Select("选择要从瓦库复制的牌", "Choose a card to copy from the Vakuu");
+
     public static string GlobalWakuuLabel => Select("全瓦库", "All Vakuu");
 
     public static string VakuuControlsPlayer(string slotLabel)

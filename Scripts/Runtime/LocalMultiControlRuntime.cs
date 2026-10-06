@@ -66,6 +66,7 @@ internal static class LocalMultiControlRuntime
         ReportResetResiduals("进局");
         LocalWakuuRelicLocalization.Initialize();
         LocalWakuuRestSiteLocalization.Initialize();
+        LocalWakuuUniteLocalization.Initialize();
         try
         {
             LocalWakuuAutopilotConfig.Reload("run-launched");
@@ -151,6 +152,10 @@ internal static class LocalMultiControlRuntime
         _endTurnReconcileLogCount = 0;
         LocalMerchantInventoryRuntime.Clear();
         LocalRestSiteSeatBubble.Reset("run-cleanup");
+        // 瓦库四功能 · 我们联合：「本场战斗已发动」的记忆与流程中的防重入标记（R5 生命周期契约）。
+        LocalWakuuUniteRuntime.ResetForRun("run-cleanup");
+        // 立绘站位探针的采样快照（r215 诊断用）。
+        LocalCreaturePositionProbe.Reset("run-cleanup");
         LocalWakuuRelicRuntime.ProbeAndRecoverSelectorStack("run-cleanup", allowRecover: true);
         // 联机机器人席位：退局释放（只放本 mod 接管过的那些；CB 的接管集合是进程内静态的，不清会跨局残留）。
         CoopBotsSeatRuntime.ReleaseOnRunCleanup();

@@ -243,6 +243,13 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.PurifyWakuu,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("purifyVakuu", value));
         AddToggleRow(column,
+            LocalModText.Select("战斗联合（瓦库四功能）", "Unite in Combat (Wakuu Feature)"),
+            LocalModText.Select(
+                "默认关。开启后战斗中会多出一个「我们联合」按钮（每场战斗一次）：先把自己卡组里的一张牌复制给某个瓦库的手牌，再从某个瓦库卡组复制一张牌到自己手牌（两向都是复制，不改卡组）。",
+                "Off by default. When on, combat shows an \"Unite\" button (once per combat): copy one card from your deck into a chosen Vakuu's hand, then copy one card from a chosen Vakuu's deck into your hand (both are copies; decks are unchanged)."),
+            () => LocalWakuuAutopilotConfig.UniteVakuu,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("uniteVakuu", value));
+        AddToggleRow(column,
             LocalModText.Select("战斗中自动用药水", "Auto-Use Potions in Combat"),
             LocalModText.Select(
                 "默认关。按药水规则表逐药自动使用：血液/再生低血自用；果汁到手即喝；混沌药水填空位；力量等增益与火焰等攻击类精英/Boss战首回合；格挡/免伤类回合结束前按敌方意图伤害兜底；能量/迅捷/异蛇剩能量补牌；灰水/赌徒等定向消耗坏牌；故障机器人/储君/亡灵契约师/铁甲战士专属药水自动给对应队友，复制/超巨化优先给真人；污浊药水只在商人投掷；mod 药水普通战斗随机回合消耗。",
