@@ -16,6 +16,9 @@ internal static class NCombatRoomGhostHandsPatch
         // r215：入战站位快照（此刻 CreateAllyNodes 刚按 LocalContext 算完站位）——
         // 只为诊断「打一半我和瓦库的立绘左右站位对调了」；见 LocalCreaturePositionProbe。
         LocalCreaturePositionProbe.LogCombatLayoutSnapshot(__instance, "combat-room-ready");
+        // r222：第三方交互守卫（LexNinja2）—— 进战斗前确保已挂上，否则"死在战斗外的席位"会让它的
+        // 侧回合结束补键失败、KeyNotFound 打断回合循环（实机：炼化后结束回合、敌方回合不开始）。
+        LexNinja2KelaTurnEndGuardPatch.TryApplyLate();
     }
 }
 

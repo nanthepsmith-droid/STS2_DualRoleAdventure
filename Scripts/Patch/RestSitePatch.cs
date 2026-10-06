@@ -33,6 +33,8 @@ internal static class RestSiteOptionPatch
         // 2026-10-05 起：瓦库四功能之「净化」在这里给**真人席位**追加一条自定义选项
         // （开关 purifyWakuu，默认关）。目标瓦库由局内「选玩家」选择器选定 —— 见
         // PurifyWakuuRestSiteOption / PurifyWakuuRestSiteRuntime。
+        // 2026-10-06 起：「炼化」走同一注入点（开关 refineVakuu，默认关）——
+        // 见 RefineWakuuRestSiteOption / RefineWakuuRestSiteRuntime。
         // 整段兜异常：休息区选项生成失败会直接影响进房，绝不能因本功能把流程炸掉。
         try
         {
@@ -41,6 +43,15 @@ internal static class RestSiteOptionPatch
         catch (Exception exception)
         {
             LocalMultiControlLogger.Warn($"注入瓦库净化选项失败: {exception.Message}");
+        }
+
+        try
+        {
+            RefineWakuuRestSiteRuntime.TryInjectRefineOption(player, __result);
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"注入瓦库炼化选项失败: {exception.Message}");
         }
     }
 }
@@ -94,8 +105,11 @@ internal static class RestSiteSynchronizerChooseLocalOptionPatch
 
         if (!success)
         {
+            // OnSelect 返回 false —— 对**我方自定义选项**（净化 / 炼化）而言这是**正常**的取消路径
+            // （玩家在自建选择器里点了取消 ⇒ 选项不被消费），故措辞里点明，免得日后误当异常。
             LocalMultiControlLogger.Warn(
-                $"休息区选项执行失败，不触发自动切人: player={localPlayerId.Value}, optionIndex={optionIndex}, snapshot={DescribeOptions(sourceOptionsSnapshot)}");
+                $"休息区选项返回 false，不触发自动切人（我方自定义选项的取消属正常）: "
+                + $"player={localPlayerId.Value}, optionIndex={optionIndex}, snapshot={DescribeOptions(sourceOptionsSnapshot)}");
             return success;
         }
 

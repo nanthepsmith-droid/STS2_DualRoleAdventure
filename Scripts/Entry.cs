@@ -51,7 +51,88 @@ public partial class Entry
     //       NCombatRoom.CreateAllyNodes 里按 LocalContext.IsMe 排一次，本地多控下"谁是『我』"会漂。
     //       本轮只加**诊断**（不改行为）：入战站位快照 + 逐帧位移探针（LocalCreaturePositionProbe），
     //       等下一局复现时定位是"一开始就摆反"还是"中途被谁挪的"。
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-06-r215)";
+    // r216：瓦库四功能第三件「炼化」（默认关）—— 休息处给真人席位注入「炼化」选项：
+    //       选目标瓦库 → 收编卡牌（档位 不限/20/5，至少 1 张）→ 选收编 1 件遗物（排除耳环/形态）
+    //       → 按比例收编血量与血上限（GainMaxHp）→ 炼掉目标（SetMaxHpInternal(0) + Kill(force:true)）。
+    //       席位不摘名单、不缩队、不做存档标记（用户拍板「炼化了≠死透了」）。
+    //       同时把选玩家/选遗物弹层抽成共用基建 LocalWakuuChoiceOverlay（行为不变，日志锚点不变）。
+    // r217：用户实机小测（r216）反馈 ——
+    //  ① **战斗中两人立绘又换位**：r215 的位移探针这次采到了（快照反而一行没打：`NCombatRoom._Ready`
+    //     那一刻 `CombatManager.IsInProgress` 还是 false ⇒ 旧实现静默 return）。实锤换位是
+    //     **第三方 NinjaSlayer 的 `YamotoKokiAllyLayoutPatch`** 重排站位（它给自己的同伴排布局，
+    //     先按 `LocalContext.IsMe` 给 `PositionPlayersAndPets` 的入参排序）；
+    //     而原版落位是 `foreach(node) if (IsMe(node)) list.Insert(0, node)` —— 我们的 IsMe 放行口子
+    //     让"瓦库也算 me"⇒ **两个 me 被 Insert(0) 反转相对次序** ⇒ 每次它重排就把两人对调。
+    //     修法 = 把该调用方加进放行黑名单（维持原判 ⇒ 全场只有一个 me，排序确定、重排不再对调）；
+    //     同时把入战快照判定放宽 + 首次采样兜底 + 跳过原因日志，防下次又"一片空白"。
+    //  ② **炼化选遗物一页放不下** ⇒ 选玩家/选遗物/选药水共用的弹层加滚动（列表封顶 520px）。
+    //  ③ 炼化加两个开关：`refineTakeVakuuAssets`（默认开；关掉则不吃瓦库的牌与遗物，
+    //     给"日后把瓦库复活"留活路）、`refineTakeVakuuPotions`（默认开；自选 1 瓶药水后
+    //     移除瓦库全部药水；真人药水栏满则整步跳过、不动它的药水）。
+    // r218：用户小测 r217 的两条 ——
+    //  ① **修 BUG**：药水"跳过"分支照样把瓦库药水删了（实机 10742 `炼化跳过药水收编: … 真人空位=False`
+    //     紧接 10744 `移除瓦库药水=4`）。修法 = 把"拿走"与"移除"解耦：只有**真的拿走了 ≥1 瓶**
+    //     才移除瓦库其余药水；跳过 / 一瓶不拿都**不动**它的药水。
+    //  ② **药水改多选**（用户口径「瓦库都死了，我不是想拿几瓶就拿几瓶」）：共用弹层加**多选模式**
+    //     （行可反复勾选、标题下显示 `已选 x/N`、确认按钮显示件数），选药水走
+    //     `LocalWakuuPotionPicker.PickManyAsync(…, maxSelect)`，上限 = 真人药水栏**空位数**
+    //     （与"战斗奖励拿药水"同口径），确认后没拿的也一并移除。
+    // r219：用户两条口径 ——
+    //  ① 「遗物要玩家拿走了瓦库就没有了；要防的是**无限强力遗物**；重复件本身是正常玩法」：
+    //     遗物收编本来就是"先 RelicCmd.Remove 再授新实例"（真·拿走，不是复制），但**一旦移除被第三方前缀
+    //     拦下**，继续授副本就等于白送一件 ⇒ 反复炼化同一件强力遗物可无限复制。故本轮加两道
+    //     "先确认拿走、再给新的"守卫 + 证据日志：遗物 = Remove 后校验目标身上已无该遗物（未生效就放弃收编）；
+    //     药水 = 改成**先全部移除（逐瓶校验）再授**，且只授"确实已移除"的那些。
+    //     **不**做"玩家已有同件就过滤"（重复件是用户认可的正常玩法）。
+    //  ② 「遗物也要能拿多件，且有多档（1/3/5/任意），不然最多拿 1 件收益太低、不如让瓦库活着」：
+    //     新增档位 `refineRelicLimit`（**默认 any=不限**，循环 不限→5→3→1），选遗物改**多选弹层**
+    //     （复用 r218 给药水做的多选模式 `PickIndexesAsync`），上限 = 档位与候选数取小；
+    //     选项描述加 `{Relics}` 占位符。
+    // r220：用户小测 r219 后两条 ——
+    //  ① **炼化时"不能一张牌都不要"妨碍玩小卡组** ⇒ 卡组选牌界面 `Min` 1 → **0**（可一张不选）。
+    //     代价：`Min=0` 后"确认 0 张"与"取消/关闭"都返回空表、无法区分 ⇒ 该步不再有"取消 = 中止"，
+    //     空返回一律按"不拿牌、继续炼化"处理；想中止整次炼化请用选目标 / 选遗物 / 选药水三步的取消。
+    //     选牌提示文案也写明"可以一张都不选，直接确认"。
+    //  ② **两条日志措辞**（r219 实测时一度被误读）：`炼化未拿走任何药水（已确认「不拿」）` 现在只在
+    //     "弹层里确认了 0 瓶"时打（整步跳过另有日志）；`RestSitePatch` 的 `休息区选项执行失败`
+    //     改为 `休息区选项返回 false，不触发自动切人（我方自定义选项的取消属正常）`。
+    // r221：r220 那局"炼化时一张牌都不选 ⇒ 直接退出炼化"的**根因 = 我自己漏删的一段代码**：
+    //   `SelectCardsAsync` 里还留着 r219 时代的 `if (selected.Count == 0) return null;`，
+    //   而 r220 已把签名改成非空、调用点直接读 `.Count` ⇒ 0 张时抛 NRE 冒穿 OnSelect
+    //   （实机日志：`Player … chose cards []` 紧接 `NullReferenceException at RefineWakuuRestSiteOption.OnSelect()`）。
+    //   修法 = 删掉那段（空表就是"不拿牌"）+ 给 OnSelect 包一层 try/catch 兜底（打异常全文 + 返回 false 不消费选项），
+    //   并把炼化那一组新文件统一加 `#nullable enable`（项目级没开可空检查 ⇒ 这类"声明非空却返回 null"
+    //   以前编译器不会提醒；开了之后构建门禁的 0 警告要求就是一道闸）。
+    //   同轮确认：**站位修复实机通过**（快照 `source=first-tick` 只有一个 `IsMe=True`，
+    //   位移探针全程只有等量抖动、再没出现"节点索引 1→0 / 0→1"的对调）。
+    // r222：用户实机「炼化瓦库后**结束回合、敌方回合不会开始**」的根因定位与修复 ——
+    //   `Combat #2 turn loop died … KeyNotFoundException: The given key 'Player' was not present in the dictionary`
+    //   ← 第三方 **LexNinja2 的 `LexKelaSingleton.AfterSideTurnEnd`**：它按 `CurrentCombatState.Players`
+    //   直接索引两个 `Dictionary<Player,bool>`（`_isActive`/`_usedLexKela`），而这两个键**只在
+    //   该玩家"开始过回合"时写入** ⇒ 被炼化的瓦库**死在战斗外**、下一场战斗里一直在 Players 里却
+    //   永不开始回合 ⇒ 键缺失 ⇒ 首次侧回合结束就抛 ⇒ 回合循环死掉。
+    //   修法 = 新增 `LexNinja2KelaTurnEndGuardPatch`（延迟补丁：在它的 `AfterSideTurnEnd` 前把
+    //   本场所有玩家在两个字典里补齐缺失键，补 false），只在本地多控会话生效、未装该 mod 只记日志；
+    //   挂载点 = Entry 阶段 3 / 每次进局 / 战斗房间就绪（它的程序集常晚于本 mod 的 PatchAll）。
+    //   另：入战快照新增 `已死席位=[…]`（这类"死在战斗外的席位"是第三方按回合登记状态的通用前提缺口）。
+    // r223：r222 那局的两条 ERROR 定性（一条是我方副作用，已修；一条是游戏自身分支，记档）——
+    //  ① **我方副作用（修）**：宝箱手势层 `NHandImageCollectionUpdateVisibilityPatch` 用
+    //     `PeerInputSynchronizer.GetScreenType(playerId)` 探测屏幕类型，而它的实现是
+    //     `GetOrCreateStateForPlayer(playerId).netScreenType` ⇒ **不存在就创建**；创建触发它自己的
+    //     `StateAdded` ⇒ `NHandImageCollection.OnInputStateAdded` ⇒ `AddHand(playerId)`，而宝箱界面
+    //     `Initialize` 已加过手势 ⇒ 游戏打 `[ERROR] Tried to add hand for player … twice!`
+    //     （实机：炼化过的死席位 …327 没有输入状态，我们这次探测把它"造"了出来）。
+    //     修法 = 改走**私有只读** `GetStateForPlayer(ulong)`（反射只解析一次）：拿不到状态就按"无屏幕类型"
+    //     处理（调用方既有回退：用本机屏幕类型推断），**绝不产生副作用**；反射解析失败只 WARN 一次、
+    //     退化为"不显示手势"（纯观感），换来不再触发那条游戏 ERROR。
+    //  ② **游戏自身分支（记档，不改）**：进事件房间时游戏对每个玩家跑 `EventModel.BeginEvent`，
+    //     碰到死席位会自己走 `if (player.Creature.IsDead) { Log.Error("The generic event death message
+    //     should not appear!"); SetEventFinished(GENERIC.youAreDead.description); }` ⇒ 属"死者滞留"设计的
+    //     **预期噪声**（vanilla 多人里"上一场死掉的队友"同类；游戏自己已把该席位的事件收尾），
+    //     已记为复测契约"期望 0"的例外。
+    //  同轮实证：LexKela 守卫**补键生效**（补键处数=2）且**回合循环正常**（两场战斗均能"结束回合 →
+    //  自动补齐敌方回合就绪 → 敌方回合"）；整场站位**0 对调**；快照 `已死席位=[角色2]` 锚点生效。
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-06-r223)";
 
     private static Harmony? _harmony;
 
@@ -199,10 +280,14 @@ public partial class Entry
             SafeAction(fatalFailures, FatalCode.Model, "瓦库遗物本地化", () => LocalWakuuRelicLocalization.Initialize());
             SafeAction(fatalFailures, FatalCode.Model, "瓦库休息区选项本地化", () => LocalWakuuRestSiteLocalization.Initialize());
             SafeAction(fatalFailures, FatalCode.Model, "瓦库联合选牌提示本地化", () => LocalWakuuUniteLocalization.Initialize());
+            SafeAction(fatalFailures, FatalCode.Model, "瓦库炼化本地化", () => LocalWakuuRefineLocalization.Initialize());
             // 社区统计（SkadaHelper）为可选第三方依赖：探测失败只打日志，永不阻断
             WakuuSkadaAdapter.Probe();
             // 联机 AI 队友（Co-op Bots）同为可选第三方依赖：只探测 + 登记配置里的席位，绝不接管（进局时才接管）
             CoopBotsAdapter.Probe();
+            // 第三方交互守卫（LexNinja2 / 蕾忍）：炼化把席位"死在战斗外"后，它的 LexKelaSingleton 会在
+            // 侧回合结束时 KeyNotFound 打断回合循环 ⇒ 补键守卫。晚加载属常态，进局与战斗就绪时会重试。
+            LexNinja2KelaTurnEndGuardPatch.TryApplyLate();
             SafeAction(fatalFailures, FatalCode.Config, "联机机器人席位配置", () => CoopBotsSeatRuntime.LoadFromConfig("entry-init"));
         });
 

@@ -48,18 +48,33 @@ internal static class LocalContextThirdPartyIsMePatch
 
     /// <summary>
     /// 放行口子的**调用方黑名单**（BUG-26，r185）：这些第三方调用方的 `IsMe=true` 本地分支
-    /// **不是**弹选牌界面，而是需要前台/真人配合的转场或对话序列 —— 放行只会让它在后台席位上挂死。
-    /// 实证（2026-09-28）：TouhouAncients 梦境事件选「离开梦境」后，
-    /// `LeaveDreamReentry.OnChosen` 被放行走进 `await LeaveDreamSequence.Play(...)`（对话序列，
-    /// 后台席位永远等不到推进）⇒ `option.Chosen()` 挂死 ⇒ 事件自动选择卡死、选择器残留、
-    /// 8 秒后被安全网切人工（用户观感 = "瓦库在事件里不会自己选了"）。
-    /// 黑名单 = 维持原判 false ⇒ 走原版联机的远端分支（事件转场由房间重建链路完成，方案 A 兜底兜住
-    /// 无人作答的等待），这正是 r183 之前一直正常的行为。
+    /// **不是**弹选牌界面，而是需要单一本地语义（或前台/真人配合）的流程 —— 放行会把流程带错。
+    ///
+    /// 两类实证：
+    /// <list type="number">
+    /// <item><b>转场/对话类</b>（BUG-26，2026-09-28）：TouhouAncients 梦境事件选「离开梦境」后，
+    ///   `LeaveDreamReentry.OnChosen` 被放行走进 `await LeaveDreamSequence.Play(...)`（对话序列，
+    ///   后台席位永远等不到推进）⇒ `option.Chosen()` 挂死 ⇒ 事件自动选择卡死、选择器残留、
+    ///   8 秒后被安全网切人工（用户观感 = "瓦库在事件里不会自己选了"）；</item>
+    /// <item><b>布局类</b>（r217，2026-10-06）：NinjaSlayer 的 <c>YamotoKokiAllyLayoutPatch</c>
+    ///   给自己的同伴（YamotoKoki 等召唤物）重排队友站位 —— 它先按 `LocalContext.IsMe` 给
+    ///   `NCombatRoom.PositionPlayersAndPets` 的入参排序，再让原版方法落位；而原版落位是
+    ///   <c>foreach (node) if (IsMe(node)) list.Insert(0, node)</c> ⇒ **两个 `IsMe=true` 的节点会被
+    ///   `Insert(0)` 反转相对次序**。放行后"瓦库"也成了 me ⇒ 每次第三方重排都会把两人左右对调
+    ///   （实机证据：`caller=NinjaSlayer.Code.Patches.YamotoKokiAllyLayoutPatch, player=<瓦库>` 紧接
+    ///   探针的 `节点索引 1 -> 0 / 0 -> 1` 对调；见 `references/local-multicontrol-pitfalls.md` 坑 X）。
+    ///   黑名单 = 维持原判 ⇒ 全场只有一个 me ⇒ 排序确定，重排不再对调。</item>
+    /// </list>
+    ///
+    /// 黑名单 = 维持原判 false（走原版联机的远端/单一本地语义分支），这正是放行口子出现之前一直正常的行为。
     /// 命中黑名单时打一条去重 INFO（键加 deny# 前缀与放行日志分开），便于后续把新调用方补进名单。
+    /// ⚠ 新增条目时请同时看它在**排序/`Insert(0)`/布局**里怎么用 `IsMe` 的结果 ——
+    /// "两个 me" 在那种代码里不只是语义问题，是会**改变顺序**的。
     /// </summary>
     private static readonly string[] DenylistedCallerPrefixes =
     [
         "TouhouAncients.Scripts.LeaveDreamReentry",
+        "NinjaSlayer.Code.Patches.YamotoKokiAllyLayoutPatch",
     ];
 
     [HarmonyPostfix]

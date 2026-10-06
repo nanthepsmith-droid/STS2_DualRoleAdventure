@@ -57,6 +57,49 @@ internal sealed class WakuuConfigData
     /// </summary>
     public bool uniteVakuu { get; set; }
 
+    /// <summary>
+    /// 瓦库四功能 · 炼化（默认关）：休息处给**真人席位**注入一条「炼化」选项 —— 选中后先选一个瓦库，
+    /// 再依次选走它的牌与 1 件遗物、按比例收编它的血量与血上限，最后把它的血量/血上限清零
+    /// （= 该瓦库"死者滞留"，不摘名单、不缩队）。见 <see cref="RefineWakuuRestSiteOption"/>。
+    ///
+    /// ⚠ 键名用官方拼写 <c>vakuu</c>（不是 Wakuu）—— 与 r140 的拼写统一一致，
+    /// 由单测 `旧拼写配置键_自动迁移到新键` 的「序列化里不得出现 Wakuu」哨兵钉住。
+    /// </summary>
+    public bool refineVakuu { get; set; }
+
+    /// <summary>
+    /// 炼化 · 血量/血上限收编比例（默认 <see cref="WakuuRefinePolicy.HpRatioAll"/> = 全部）。
+    /// 取值 all / half / quarter，非法值按 all 兜底（见 <see cref="WakuuRefinePolicy.NormalizeHpRatio"/>）。
+    /// </summary>
+    public string refineHpRatio { get; set; } = WakuuRefinePolicy.HpRatioAll;
+
+    /// <summary>
+    /// 炼化 · 卡组自选张数上限（默认 <see cref="WakuuRefinePolicy.CardLimitAny"/> = 不限，可拿全部）。
+    /// 取值 any / 20 / 5，非法值按 any 兜底（见 <see cref="WakuuRefinePolicy.NormalizeCardLimit"/>）。
+    /// </summary>
+    public string refineCardLimit { get; set; } = WakuuRefinePolicy.CardLimitAny;
+
+    /// <summary>
+    /// 炼化 · 遗物自选件数上限（默认 <see cref="WakuuRefinePolicy.RelicLimitAny"/> = 不限，可全拿）。
+    /// 取值 1 / 3 / 5 / any，非法值按 any 兜底（见 <see cref="WakuuRefinePolicy.NormalizeRelicLimit"/>）。
+    /// 用户口径（2026-10-06）：只让拿 1 件则炼化收益太低，「完全不如让瓦库活着」。
+    /// </summary>
+    public string refineRelicLimit { get; set; } = WakuuRefinePolicy.RelicLimitAny;
+
+    /// <summary>
+    /// 炼化时**是否收编瓦库的牌与遗物**（默认 **true** = 收编，即 r216 的行为）。
+    /// 关掉后炼化只做"按比例收编血量 + 把它炼掉"，瓦库的卡组与遗物**原样留在它身上** ——
+    /// 给"日后要把瓦库复活"的玩法留活路（不然核心牌/遗物被拿走，复活也白复活）。
+    /// </summary>
+    public bool refineTakeVakuuAssets { get; set; } = true;
+
+    /// <summary>
+    /// 炼化时**是否收编瓦库的药水**（默认 **true**）：流程里多一步"把瓦库药水全列出来任你挑几瓶拿"
+    /// （多选，上限 = 真人药水栏空位数；一瓶拿不了就整步跳过、不动瓦库药水），
+    /// 确认后**没拿的也一并移除**；若一瓶都没拿则**不动**它的药水。
+    /// </summary>
+    public bool refineTakeVakuuPotions { get; set; } = true;
+
     /// <summary>战斗中自动用药水：默认关（拍板：保守版写死规则，先观察）。</summary>
     public bool autoUsePotions { get; set; }
 

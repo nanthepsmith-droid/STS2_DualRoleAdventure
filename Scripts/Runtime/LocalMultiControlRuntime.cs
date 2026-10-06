@@ -67,6 +67,9 @@ internal static class LocalMultiControlRuntime
         LocalWakuuRelicLocalization.Initialize();
         LocalWakuuRestSiteLocalization.Initialize();
         LocalWakuuUniteLocalization.Initialize();
+        LocalWakuuRefineLocalization.Initialize();
+        // 第三方交互守卫（LexNinja2）：它的程序集常晚于本 mod 的 PatchAll ⇒ 每次进局重试挂载。
+        LexNinja2KelaTurnEndGuardPatch.TryApplyLate();
         try
         {
             LocalWakuuAutopilotConfig.Reload("run-launched");

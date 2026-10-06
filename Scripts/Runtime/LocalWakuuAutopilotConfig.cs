@@ -67,6 +67,28 @@ internal static class LocalWakuuAutopilotConfig
     public static bool UniteVakuu { get; private set; }
 
     /// <summary>
+    /// 瓦库四功能 · 炼化（默认关）：休息处给真人席位注入「炼化」选项 ——
+    /// 先选一个瓦库，再收编它的牌 / 1 件遗物 / 按比例的血量与血上限，最后把它的血量与血上限清零。
+    /// 见 <see cref="RefineWakuuRestSiteOption"/>。
+    /// </summary>
+    public static bool RefineVakuu { get; private set; }
+
+    /// <summary>炼化 · 血量/血上限收编比例档位（all / half / quarter，默认 all）。</summary>
+    public static string RefineHpRatio { get; private set; } = WakuuRefinePolicy.HpRatioAll;
+
+    /// <summary>炼化 · 卡组自选张数上限档位（any / 20 / 5，默认 any）。</summary>
+    public static string RefineCardLimit { get; private set; } = WakuuRefinePolicy.CardLimitAny;
+
+    /// <summary>炼化 · 遗物自选件数上限档位（any / 5 / 3 / 1，默认 any = 不限）。</summary>
+    public static string RefineRelicLimit { get; private set; } = WakuuRefinePolicy.RelicLimitAny;
+
+    /// <summary>炼化 · 是否收编瓦库的牌与遗物（默认开；关掉 = 只收血量并炼掉，给复活留活路）。</summary>
+    public static bool RefineTakeVakuuAssets { get; private set; } = true;
+
+    /// <summary>炼化 · 是否收编瓦库的药水（默认开；拿 1 瓶后移除它全部药水）。</summary>
+    public static bool RefineTakeVakuuPotions { get; private set; } = true;
+
+    /// <summary>
     /// 瓦库形态：战斗中自动用药水（Phase 2.5 保守版，默认关，已拍板）。
     /// 血液/再生低血自用；果汁到手立刻喝；增益/攻击/卡牌授予类精英 Boss 战首回合用；
     /// mod 药水普通战斗随机回合消耗；未分类原版药水保守跳过。
@@ -272,6 +294,9 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.autoRestChoice): data.autoRestChoice = value; break;
                     case nameof(WakuuConfigData.purifyVakuu): data.purifyVakuu = value; break;
                     case nameof(WakuuConfigData.uniteVakuu): data.uniteVakuu = value; break;
+                    case nameof(WakuuConfigData.refineVakuu): data.refineVakuu = value; break;
+                    case nameof(WakuuConfigData.refineTakeVakuuAssets): data.refineTakeVakuuAssets = value; break;
+                    case nameof(WakuuConfigData.refineTakeVakuuPotions): data.refineTakeVakuuPotions = value; break;
                     case nameof(WakuuConfigData.autoUsePotions): data.autoUsePotions = value; break;
                     case nameof(WakuuConfigData.neowAutoChoose): data.neowAutoChoose = value; break;
                     case nameof(WakuuConfigData.skadaAssist): data.skadaAssist = value; break;
@@ -322,7 +347,9 @@ internal static class LocalWakuuAutopilotConfig
                 if (key is nameof(WakuuConfigData.eventChoiceMode) or nameof(WakuuConfigData.cardPickMode)
                     or nameof(WakuuConfigData.vakuuBrain) or nameof(WakuuConfigData.personalTier)
                     or nameof(WakuuConfigData.statBadgeCorner) or nameof(WakuuConfigData.statBadgeSource)
-                    or nameof(WakuuConfigData.vakuuViewMode))
+                    or nameof(WakuuConfigData.vakuuViewMode)
+                    or nameof(WakuuConfigData.refineHpRatio) or nameof(WakuuConfigData.refineCardLimit)
+                    or nameof(WakuuConfigData.refineRelicLimit))
                 {
                     string? normalized = key switch
                     {
@@ -332,6 +359,9 @@ internal static class LocalWakuuAutopilotConfig
                         nameof(WakuuConfigData.statBadgeCorner) => WakuuStatBadgeCorner.Normalize(value),
                         nameof(WakuuConfigData.statBadgeSource) => WakuuStatBadgeSource.Normalize(value),
                         nameof(WakuuConfigData.vakuuViewMode) => WakuuViewModes.Normalize(value),
+                        nameof(WakuuConfigData.refineHpRatio) => NormalizeRefineHpRatio(value),
+                        nameof(WakuuConfigData.refineCardLimit) => NormalizeRefineCardLimit(value),
+                        nameof(WakuuConfigData.refineRelicLimit) => NormalizeRefineRelicLimit(value),
                         _ => NormalizeChoiceMode(value),
                     };
                     if (normalized == null)
@@ -362,6 +392,15 @@ internal static class LocalWakuuAutopilotConfig
                             break;
                         case nameof(WakuuConfigData.vakuuViewMode):
                             data.vakuuViewMode = normalized;
+                            break;
+                        case nameof(WakuuConfigData.refineHpRatio):
+                            data.refineHpRatio = normalized;
+                            break;
+                        case nameof(WakuuConfigData.refineCardLimit):
+                            data.refineCardLimit = normalized;
+                            break;
+                        case nameof(WakuuConfigData.refineRelicLimit):
+                            data.refineRelicLimit = normalized;
                             break;
                         default:
                             data.vakuuBrain = normalized;
@@ -402,6 +441,10 @@ internal static class LocalWakuuAutopilotConfig
         string corner = WakuuStatBadgeCorner.Normalize(data.statBadgeCorner);
         string source = WakuuStatBadgeSource.Normalize(data.statBadgeSource);
         string viewMode = WakuuViewModes.Normalize(data.vakuuViewMode);
+        // 炼化档位：宽松归一（非法值兜默认），避免手改脏值让功能落到未定义分支。
+        string refineHpRatio = WakuuRefinePolicy.NormalizeHpRatio(data.refineHpRatio);
+        string refineCardLimit = WakuuRefinePolicy.NormalizeCardLimit(data.refineCardLimit);
+        string refineRelicLimit = WakuuRefinePolicy.NormalizeRelicLimit(data.refineRelicLimit);
 
         bool changed =
             brain != data.vakuuBrain
@@ -410,7 +453,10 @@ internal static class LocalWakuuAutopilotConfig
             || tier != data.personalTier
             || corner != data.statBadgeCorner
             || source != data.statBadgeSource
-            || viewMode != data.vakuuViewMode;
+            || viewMode != data.vakuuViewMode
+            || refineHpRatio != data.refineHpRatio
+            || refineCardLimit != data.refineCardLimit
+            || refineRelicLimit != data.refineRelicLimit;
 
         if (changed)
         {
@@ -421,6 +467,9 @@ internal static class LocalWakuuAutopilotConfig
             data.statBadgeCorner = corner;
             data.statBadgeSource = source;
             data.vakuuViewMode = viewMode;
+            data.refineHpRatio = refineHpRatio;
+            data.refineCardLimit = refineCardLimit;
+            data.refineRelicLimit = refineRelicLimit;
         }
 
         return changed;
@@ -491,6 +540,65 @@ internal static class LocalWakuuAutopilotConfig
             CharacterFirstTier => CharacterFirstTier,
             VolumeFirstTier => VolumeFirstTier,
             CharacterOnlyTier => CharacterOnlyTier,
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// 严格归一炼化血量比例档位（all / half / quarter）；空值 / 非法返回 null（供设置页写入口拒绝非法值）。
+    /// 与 <see cref="WakuuRefinePolicy.NormalizeHpRatio"/>（宽松兜默认）分开：写入口要"拒绝"，读入口要"兜底"。
+    /// </summary>
+    public static string? NormalizeRefineHpRatio(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            WakuuRefinePolicy.HpRatioAll => WakuuRefinePolicy.HpRatioAll,
+            WakuuRefinePolicy.HpRatioHalf => WakuuRefinePolicy.HpRatioHalf,
+            WakuuRefinePolicy.HpRatioQuarter => WakuuRefinePolicy.HpRatioQuarter,
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// 严格归一炼化卡组档位（any / 20 / 5）；空值 / 非法返回 null（供设置页写入口拒绝非法值）。
+    /// </summary>
+    public static string? NormalizeRefineCardLimit(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            WakuuRefinePolicy.CardLimitAny => WakuuRefinePolicy.CardLimitAny,
+            WakuuRefinePolicy.CardLimit20 => WakuuRefinePolicy.CardLimit20,
+            WakuuRefinePolicy.CardLimit5 => WakuuRefinePolicy.CardLimit5,
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// 严格归一炼化遗物件数档位（any / 5 / 3 / 1）；空值 / 非法返回 null（供设置页写入口拒绝非法值）。
+    /// </summary>
+    public static string? NormalizeRefineRelicLimit(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            WakuuRefinePolicy.RelicLimitAny => WakuuRefinePolicy.RelicLimitAny,
+            WakuuRefinePolicy.RelicLimit5 => WakuuRefinePolicy.RelicLimit5,
+            WakuuRefinePolicy.RelicLimit3 => WakuuRefinePolicy.RelicLimit3,
+            WakuuRefinePolicy.RelicLimit1 => WakuuRefinePolicy.RelicLimit1,
             _ => null,
         };
     }
@@ -591,7 +699,13 @@ internal static class LocalWakuuAutopilotConfig
                 + $"shopAssistBuyRemoval={data.shopAssistBuyRemoval}, "
                 + $"statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, fastVakuuPlay={data.fastVakuuPlay}, vakuuPlayQueue={data.vakuuPlayQueue}, vakuuPlayOverlap={data.vakuuPlayOverlap}, vakuuViewMode={WakuuViewModes.Normalize(data.vakuuViewMode)}, "
                 + $"personalTier={NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier}, "
-                + $"purifyVakuu={data.purifyVakuu}, "
+                + $"purifyVakuu={data.purifyVakuu}, uniteVakuu={data.uniteVakuu}, "
+                + $"refineVakuu={data.refineVakuu}, "
+                + $"refineHpRatio={WakuuRefinePolicy.NormalizeHpRatio(data.refineHpRatio)}, "
+                + $"refineCardLimit={WakuuRefinePolicy.NormalizeCardLimit(data.refineCardLimit)}, "
+                + $"refineRelicLimit={WakuuRefinePolicy.NormalizeRelicLimit(data.refineRelicLimit)}, "
+                + $"refineTakeVakuuAssets={data.refineTakeVakuuAssets}, "
+                + $"refineTakeVakuuPotions={data.refineTakeVakuuPotions}, "
                 + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}, "
                 + $"vakuuBrain={data.vakuuBrain}, coopBotsSeats={data.coopBotsSeats}");
         }
@@ -608,6 +722,12 @@ internal static class LocalWakuuAutopilotConfig
         AutoRestChoice = data.autoRestChoice;
         PurifyWakuu = data.purifyVakuu;
         UniteVakuu = data.uniteVakuu;
+        RefineVakuu = data.refineVakuu;
+        RefineHpRatio = WakuuRefinePolicy.NormalizeHpRatio(data.refineHpRatio);
+        RefineCardLimit = WakuuRefinePolicy.NormalizeCardLimit(data.refineCardLimit);
+        RefineRelicLimit = WakuuRefinePolicy.NormalizeRelicLimit(data.refineRelicLimit);
+        RefineTakeVakuuAssets = data.refineTakeVakuuAssets;
+        RefineTakeVakuuPotions = data.refineTakeVakuuPotions;
         AutoUsePotions = data.autoUsePotions;
         NeowAutoChoose = data.neowAutoChoose;
         SkadaAssist = data.skadaAssist;

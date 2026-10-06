@@ -45,6 +45,12 @@ public class WakuuConfigJsonTests
             Assert.That(data.autoRestChoice, Is.True);
             Assert.That(data.purifyVakuu, Is.False); // 瓦库四功能 · 净化：可开关且默认关
             Assert.That(data.uniteVakuu, Is.False); // 瓦库四功能 · 我们联合：可开关且默认关
+            Assert.That(data.refineVakuu, Is.False); // 瓦库四功能 · 炼化：可开关且默认关
+            Assert.That(data.refineHpRatio, Is.EqualTo(WakuuRefinePolicy.HpRatioAll)); // 炼化默认收编全部血量
+            Assert.That(data.refineCardLimit, Is.EqualTo(WakuuRefinePolicy.CardLimitAny)); // 炼化默认卡数不限
+            Assert.That(data.refineRelicLimit, Is.EqualTo(WakuuRefinePolicy.RelicLimitAny)); // 炼化默认遗物件数不限
+            Assert.That(data.refineTakeVakuuAssets, Is.True); // 炼化默认收编瓦库的牌与遗物
+            Assert.That(data.refineTakeVakuuPotions, Is.True); // 炼化默认收编瓦库的药水
             // 策略默认值
             Assert.That(data.eventChoiceMode, Is.EqualTo("first"));
             Assert.That(data.cardPickMode, Is.EqualTo("last"));
@@ -254,6 +260,22 @@ public class WakuuConfigJsonTests
         {
             Assert.That(data.uniteVakuu, Is.True);
             Assert.That(data.purifyVakuu, Is.False, "未提供的字段保持默认值");
+        });
+    }
+
+    /// <summary>瓦库四功能 · 炼化开关与两个档位（2026-10-06，默认关 / 全部 / 不限；键名用官方拼写 vakuu）。</summary>
+    [Test]
+    public void 解析炼化开关与档位_生效()
+    {
+        WakuuConfigData data = WakuuConfigJson.Parse(
+            """{ "refineVakuu": true, "refineHpRatio": "half", "refineCardLimit": "5" }""")!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(data.refineVakuu, Is.True);
+            Assert.That(data.refineHpRatio, Is.EqualTo(WakuuRefinePolicy.HpRatioHalf));
+            Assert.That(data.refineCardLimit, Is.EqualTo(WakuuRefinePolicy.CardLimit5));
+            Assert.That(data.uniteVakuu, Is.False, "未提供的字段保持默认值");
         });
     }
 

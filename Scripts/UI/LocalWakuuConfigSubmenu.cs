@@ -250,6 +250,54 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.UniteVakuu,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("uniteVakuu", value));
         AddToggleRow(column,
+            LocalModText.Select("火堆炼化（瓦库四功能）", "Refine at Rest Sites (Wakuu Feature)"),
+            LocalModText.Select(
+                "默认关。开启后休息处会给你（真人）多出一条「炼化」选项：选中后先选一个瓦库，再依次选走它的牌（张数上限见下方档位）与 1 件遗物（【永久低语耳环】与【瓦库形态】不可选），按下方比例收编它的血量与血上限，最后把它炼掉——它的血量与血上限清零、就此退场（不缩队、不退名单，血上限被加回来还能复活）。⚠ 炼化不可撤销，选目标前请确认。",
+                "Off by default. When on, rest sites give you an extra \"Refine\" option: pick a Vakuu, then take cards from its deck (up to the limit below) and 1 relic (the Whispering Earring and Vakuu Form are excluded), absorb a share of its HP and Max HP per the ratio below, and finally melt it down — its HP and Max HP are zeroed and it leaves the fight (the party isn't shrunk and the roster keeps it; if Max HP is ever restored it can come back). ⚠ Refining is irreversible; confirm before picking a target."),
+            () => LocalWakuuAutopilotConfig.RefineVakuu,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("refineVakuu", value));
+        column.AddChild(CreateCycleRow(
+            LocalModText.Select("炼化 · 收编血量比例", "Refine · Absorbed HP Ratio"),
+            LocalModText.Select(
+                "炼化时从目标瓦库身上收编多少血量与血上限（基数是它的血上限）。三档循环：全部（100%）→ 一半（50%）→ 四分之一（25%）。默认全部。仅影响已开启的「火堆炼化」。",
+                "How much HP and Max HP to absorb from the target Vakuu when refining (based on its Max HP). Cycles: All (100%) → Half (50%) → Quarter (25%). Default All. Only affects \"Refine at Rest Sites\" when enabled."),
+            "refineHpRatio",
+            () => LocalWakuuAutopilotConfig.RefineHpRatio,
+            NextRefineHpRatio,
+            GetRefineHpRatioDisplayText));
+        column.AddChild(CreateCycleRow(
+            LocalModText.Select("炼化 · 卡牌张数上限", "Refine · Card Limit"),
+            LocalModText.Select(
+                "炼化时最多能从目标瓦库卡组里拿走几张牌。三档循环：不限（可拿全部）→ 20 张 → 5 张。默认不限。至少要拿 1 张（选牌界面取消即中止炼化）。仅影响已开启的「火堆炼化」。",
+                "How many cards you may take from the target Vakuu's deck when refining. Cycles: Unlimited (all) → 20 → 5. Default Unlimited. At least 1 card must be taken (canceling the pick screen aborts the refine). Only affects \"Refine at Rest Sites\" when enabled."),
+            "refineCardLimit",
+            () => LocalWakuuAutopilotConfig.RefineCardLimit,
+            NextRefineCardLimit,
+            GetRefineCardLimitDisplayText));
+        column.AddChild(CreateCycleRow(
+            LocalModText.Select("炼化 · 遗物件数上限", "Refine · Relic Limit"),
+            LocalModText.Select(
+                "炼化时最多能从目标瓦库身上拿走几件遗物。四档循环：不限（可全拿）→ 5 件 → 3 件 → 1 件。**默认不限** —— 只让拿 1 件的话炼化收益太低（不如让瓦库活着）。仅影响已开启的「火堆炼化」；关掉上面的「收编瓦库的牌与遗物」则根本不碰遗物。",
+                "How many relics you may take from the target Vakuu when refining. Cycles: Unlimited (all) → 5 → 3 → 1. **Unlimited by default** — capping it at 1 makes refining too weak to be worth it (you'd rather keep the Vakuu alive). Only affects \"Refine at Rest Sites\" when enabled; turning off \"Take the Vakuu's Cards & Relics\" above leaves relics untouched entirely."),
+            "refineRelicLimit",
+            () => LocalWakuuAutopilotConfig.RefineRelicLimit,
+            NextRefineRelicLimit,
+            GetRefineRelicLimitDisplayText));
+        AddToggleRow(column,
+            LocalModText.Select("炼化时收编瓦库的牌与遗物（默认开）", "Refine · Take the Vakuu's Cards & Relics (default ON)"),
+            LocalModText.Select(
+                "**默认开**（= 当前行为）。开启后炼化会先让你从目标瓦库的卡组自选若干张牌、再自选 1 件遗物，收编到自己名下。**关掉**则炼化只按下方比例收编它的血量与血上限、然后把它炼掉，瓦库的卡组与遗物**原样留在它身上** —— 给「日后把瓦库复活」留活路（不然核心牌被拿走，复活也白复活）。",
+                "**On by default** (= current behavior). When on, refining lets you take cards from the target Vakuu's deck and 1 relic into your own name. When off, refining only absorbs its HP/Max HP at the ratio below and melts it down — the Vakuu's deck and relics stay on it untouched, leaving a future revival viable (its key cards won't have been taken)."),
+            () => LocalWakuuAutopilotConfig.RefineTakeVakuuAssets,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("refineTakeVakuuAssets", value));
+        AddToggleRow(column,
+            LocalModText.Select("炼化时收编瓦库的药水（默认开）", "Refine · Take the Vakuu's Potions (default ON)"),
+            LocalModText.Select(
+                "**默认开**。开启后炼化流程里多一步：把目标瓦库的药水全列出来**任你挑几瓶拿**（多选，上限 = 你自己药水栏的空位数，与『战斗奖励拿药水』同一口径：没空位就拿不了；弹层标题下会显示 `已选 x/N`），确认后**没拿的那些也一并移除**。若有一步都拿不了（自己没空位 / 瓦库没药水）则整步跳过、**也不动它的药水**；确认时一瓶都不拿同样**不动**它的药水。关掉则不碰药水。",
+                "**On by default.** Adds a step to refining: all of the target Vakuu's potions are listed and you pick **as many as you want** (multi-select; the cap is your free potion slots, same rule as taking a potion as a combat reward — a full belt can't take any; the panel shows `selected x/N`). Confirming **also removes the ones you didn't take**. If the step can't run at all (no free slot / the Vakuu has no potions) it is skipped and its potions are **left alone**; confirming with nothing selected also leaves them alone. When off, potions are untouched."),
+            () => LocalWakuuAutopilotConfig.RefineTakeVakuuPotions,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("refineTakeVakuuPotions", value));
+        AddToggleRow(column,
             LocalModText.Select("战斗中自动用药水", "Auto-Use Potions in Combat"),
             LocalModText.Select(
                 "默认关。按药水规则表逐药自动使用：血液/再生低血自用；果汁到手即喝；混沌药水填空位；力量等增益与火焰等攻击类精英/Boss战首回合；格挡/免伤类回合结束前按敌方意图伤害兜底；能量/迅捷/异蛇剩能量补牌；灰水/赌徒等定向消耗坏牌；故障机器人/储君/亡灵契约师/铁甲战士专属药水自动给对应队友，复制/超巨化优先给真人；污浊药水只在商人投掷；mod 药水普通战斗随机回合消耗。",
@@ -635,6 +683,104 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             LocalWakuuAutopilotConfig.CharacterFirstTier => LocalWakuuAutopilotConfig.VolumeFirstTier,
             LocalWakuuAutopilotConfig.VolumeFirstTier => LocalWakuuAutopilotConfig.CharacterOnlyTier,
             _ => LocalWakuuAutopilotConfig.CharacterFirstTier,
+        };
+    }
+
+    /// <summary>
+    /// 通用「字符串档位循环行」：右侧按钮按 <paramref name="next"/> 在当前档位间循环，
+    /// 按钮文本由 <paramref name="display"/> 渲染；点击经 <c>TrySetAndSaveString(配置键, 值)</c> 即时写回 json。
+    /// 用于炼化血量比例 / 卡牌张数上限这类自定义档位（游戏自带策略档位另有专用行）。
+    /// </summary>
+    private static Control CreateCycleRow(
+        string title,
+        string description,
+        string configKey,
+        Func<string> getter,
+        Func<string, string> next,
+        Func<string, string> display)
+    {
+        HBoxContainer row = new();
+        row.AddThemeConstantOverride("separation", 28);
+
+        VBoxContainer textColumn = new();
+        textColumn.CustomMinimumSize = new Vector2(880f, 0f);
+        textColumn.SizeFlagsHorizontal = (SizeFlags)3; // ExpandFill
+        textColumn.AddThemeConstantOverride("separation", 2);
+
+        Label titleLabel = CreateLabel(title, 26, new Color(1f, 0.85f, 0.35f));
+        titleLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        textColumn.AddChild(titleLabel);
+
+        Label descLabel = CreateLabel(description, 19, new Color(0.8f, 0.78f, 0.72f));
+        descLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        descLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        textColumn.AddChild(descLabel);
+
+        row.AddChild(textColumn);
+
+        LocalSimpleTextButton modeButton = new()
+        {
+            ButtonText = display(getter()),
+            FontSize = 24,
+            SizeFlagsVertical = (SizeFlags)4, // ShrinkCenter
+        };
+        modeButton.CustomMinimumSize = new Vector2(260f, 64f);
+        modeButton.Connect(NClickableControl.SignalName.Released, Callable.From<NClickableControl>(_ =>
+        {
+            string nextValue = next(getter());
+            if (LocalWakuuAutopilotConfig.TrySetAndSaveString(configKey, nextValue))
+            {
+                modeButton.ButtonText = display(getter());
+                LocalMultiControlLogger.Info($"策略已切换: {configKey}={nextValue}");
+            }
+        }));
+        row.AddChild(modeButton);
+        return row;
+    }
+
+    private static string GetRefineHpRatioDisplayText(string ratio)
+    {
+        return LocalModText.RefineHpRatioLabel(ratio);
+    }
+
+    private static string NextRefineHpRatio(string ratio)
+    {
+        return ratio switch
+        {
+            WakuuRefinePolicy.HpRatioAll => WakuuRefinePolicy.HpRatioHalf,
+            WakuuRefinePolicy.HpRatioHalf => WakuuRefinePolicy.HpRatioQuarter,
+            _ => WakuuRefinePolicy.HpRatioAll,
+        };
+    }
+
+    private static string GetRefineCardLimitDisplayText(string limit)
+    {
+        return LocalModText.RefineCardLimitLabel(limit);
+    }
+
+    private static string GetRefineRelicLimitDisplayText(string limit)
+    {
+        return LocalModText.RefineRelicLimitLabel(limit);
+    }
+
+    private static string NextRefineRelicLimit(string limit)
+    {
+        return limit switch
+        {
+            WakuuRefinePolicy.RelicLimitAny => WakuuRefinePolicy.RelicLimit5,
+            WakuuRefinePolicy.RelicLimit5 => WakuuRefinePolicy.RelicLimit3,
+            WakuuRefinePolicy.RelicLimit3 => WakuuRefinePolicy.RelicLimit1,
+            _ => WakuuRefinePolicy.RelicLimitAny,
+        };
+    }
+
+    private static string NextRefineCardLimit(string limit)
+    {
+        return limit switch
+        {
+            WakuuRefinePolicy.CardLimitAny => WakuuRefinePolicy.CardLimit20,
+            WakuuRefinePolicy.CardLimit20 => WakuuRefinePolicy.CardLimit5,
+            _ => WakuuRefinePolicy.CardLimitAny,
         };
     }
 
