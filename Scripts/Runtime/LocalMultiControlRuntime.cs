@@ -163,6 +163,9 @@ internal static class LocalMultiControlRuntime
         LocalRestSiteSeatBubble.Reset("run-cleanup");
         // 瓦库四功能 · 我们联合：「本场战斗已发动」的记忆与流程中的防重入标记（R5 生命周期契约）。
         LocalWakuuUniteRuntime.ResetForRun("run-cleanup");
+        // ④ 瓦库的爹：三张牌的「本回合」登记处（集火目标 + 合体链接）。中途退战斗不走清空路径
+        // ⇒ 必须在这里兜住，否则残留链接会在下一局同 NetId 的席位对上"复活"（r230 判读日志时发现）。
+        WakuuDaddyCombatState.ResetForRun("run-cleanup");
         // 立绘站位探针的采样快照（r215 诊断用）。
         LocalCreaturePositionProbe.Reset("run-cleanup");
         LocalWakuuRelicRuntime.ProbeAndRecoverSelectorStack("run-cleanup", allowRecover: true);

@@ -191,7 +191,14 @@ public partial class Entry
     //     原版正常弃完，再把牌搬去掷硬币选中的那一方弃牌堆（先摘 → 改归属 → AddInternal，全同步内部方法）。
     //  ③ 兜底：瓦库自动出牌的手牌读数过滤掉"不属于它的牌"（`ResolveAutoplayHand`），命中打一条限流 WARN
     //     —— 即使将来再出现"牌没搬干净"，最坏也只是它不碰那张牌，而不会变成无限重打。
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-07-r230)";
+    // r231（2026-10-07，r230 实机日志判读后的小补）：
+    //  ① **退局复位枢纽补登**：`WakuuDaddyCombatState.ResetForRun("run-cleanup")`（挂进 `OnRunCleanup`，与
+    //     我们联合同款）—— 本登记处是进程级静态，而"战斗中途退出"既不走玩家侧回合结束、也不走战斗结束
+    //     ⇒ 残留链接会在**下一局**同 NetId 的席位对上复活（判读 r230 那局日志时发现：那局中途退出，
+    //     全程没有 `本回合登记已清空`）。
+    //  ② `合体混抽` / `合体混弃` 两条日志补 `round=` —— r230 判读时正是"没写回合号"导致要额外反推
+    //     那两次混抽属于哪一回合（是不是跨回合残留）。纯日志，无行为变化。
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-07-r231)";
 
     private static Harmony? _harmony;
 

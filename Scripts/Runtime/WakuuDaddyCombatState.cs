@@ -196,7 +196,8 @@ internal static class WakuuDaddyCombatState
         if (injected > 0)
         {
             LocalMultiControlLogger.Info(
-                $"[瓦库的爹] 合体混抽：本次从瓦库抽牌堆移入 {injected} 张到 {player.NetId} 的抽牌堆顶部");
+                $"[瓦库的爹] 合体混抽：本次从瓦库抽牌堆移入 {injected} 张到 {player.NetId} 的抽牌堆顶部"
+                + $"（round={player.Creature.CombatState?.RoundNumber.ToString() ?? "?"}）");
         }
     }
 
@@ -265,8 +266,24 @@ internal static class WakuuDaddyCombatState
         if (moved > 0)
         {
             LocalMultiControlLogger.Info(
-                $"[瓦库的爹] 合体混弃：{moved} 张弃牌改归瓦库 {wakuu.NetId} 的弃牌堆（施牌者 {actor.NetId}）");
+                $"[瓦库的爹] 合体混弃：{moved} 张弃牌改归瓦库 {wakuu.NetId} 的弃牌堆（施牌者 {actor.NetId}, "
+                + $"round={actor.Creature.CombatState?.RoundNumber.ToString() ?? "?"}）");
         }
+    }
+
+    /// <summary>
+    /// 退局复位（R5 生命周期契约，与 <see cref="LocalWakuuUniteRuntime.ResetForRun"/> 同款）。
+    ///
+    /// 为什么必须挂在**退局枢纽**上：本登记处是**进程级静态**，而"战斗中途退出"（既没有玩家侧回合结束、
+    /// 也没有战斗结束）**不会**走任何清空路径 ⇒ 残留的 (caster, wakuu) 链接会在**下一局**、
+    /// 同一份档案同一台机器（NetId 不变）的席位对上重新成立，表现为"下一局第一场战斗一开始就在混抽"。
+    /// 2026-10-07 r230 判读实机日志时发现（那局 r230 是中途退出，全程没有 `本回合登记已清空`）。
+    /// </summary>
+    internal static void ResetForRun(string source)
+    {
+        _focusTarget = null;
+        Merges.Clear();
+        LocalMultiControlLogger.Info($"[瓦库的爹] 本回合登记已复位: {source}");
     }
 
     /// <summary>玩家侧回合结束 / 战斗结束：清掉所有「本回合」登记。</summary>
