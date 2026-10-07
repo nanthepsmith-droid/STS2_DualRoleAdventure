@@ -89,6 +89,12 @@ internal static class LocalWakuuAutopilotConfig
     public static bool RefineTakeVakuuPotions { get; private set; } = true;
 
     /// <summary>
+    /// 瓦库四功能 · ④「瓦库的爹」（默认关）：开关开时开局给**真人席位**发一件遗物【瓦库的爹】，
+    /// 战斗开始时给 3 张占位牌（效果留空）。见 <see cref="WakuuDaddyPolicy"/> / <c>LocalWakuuDaddyRelic</c>。
+    /// </summary>
+    public static bool VakuuDaddy { get; private set; }
+
+    /// <summary>
     /// 瓦库形态：战斗中自动用药水（Phase 2.5 保守版，默认关，已拍板）。
     /// 血液/再生低血自用；果汁到手立刻喝；增益/攻击/卡牌授予类精英 Boss 战首回合用；
     /// mod 药水普通战斗随机回合消耗；未分类原版药水保守跳过。
@@ -297,6 +303,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.refineVakuu): data.refineVakuu = value; break;
                     case nameof(WakuuConfigData.refineTakeVakuuAssets): data.refineTakeVakuuAssets = value; break;
                     case nameof(WakuuConfigData.refineTakeVakuuPotions): data.refineTakeVakuuPotions = value; break;
+                    case nameof(WakuuConfigData.vakuuDaddy): data.vakuuDaddy = value; break;
                     case nameof(WakuuConfigData.autoUsePotions): data.autoUsePotions = value; break;
                     case nameof(WakuuConfigData.neowAutoChoose): data.neowAutoChoose = value; break;
                     case nameof(WakuuConfigData.skadaAssist): data.skadaAssist = value; break;
@@ -728,6 +735,7 @@ internal static class LocalWakuuAutopilotConfig
         RefineRelicLimit = WakuuRefinePolicy.NormalizeRelicLimit(data.refineRelicLimit);
         RefineTakeVakuuAssets = data.refineTakeVakuuAssets;
         RefineTakeVakuuPotions = data.refineTakeVakuuPotions;
+        VakuuDaddy = data.vakuuDaddy;
         AutoUsePotions = data.autoUsePotions;
         NeowAutoChoose = data.neowAutoChoose;
         SkadaAssist = data.skadaAssist;

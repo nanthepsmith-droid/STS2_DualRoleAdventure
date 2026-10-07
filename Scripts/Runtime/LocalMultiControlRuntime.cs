@@ -68,10 +68,10 @@ internal static class LocalMultiControlRuntime
         LocalWakuuRestSiteLocalization.Initialize();
         LocalWakuuUniteLocalization.Initialize();
         LocalWakuuRefineLocalization.Initialize();
-        // ④ 地狱战神（前置功课）：卡牌本地化在 mod 初始器里 LocManager 还没就绪 ⇒ 每次进局重试；
-        // 同时校验自定卡是否真的挂进了事件卡池（登记发生在游戏初始化前，那时读不了池）。
-        LocalWakuuHellGodLocalization.Initialize();
-        WakuuHellGodCardProbe.VerifyPoolMembership();
+        // ④ 瓦库的爹：本地化在 mod 初始器里 LocManager 还没就绪 ⇒ 每次进局重试；
+        // 同时校验三张占位牌与遗物是否真的挂进了事件池（登记发生在游戏初始化前，那时读不了池）。
+        LocalWakuuDaddyLocalization.Initialize();
+        WakuuDaddyContentProbe.VerifyContent();
         // 第三方交互守卫（LexNinja2）：它的程序集常晚于本 mod 的 PatchAll ⇒ 每次进局重试挂载。
         LexNinja2KelaTurnEndGuardPatch.TryApplyLate();
         try
@@ -134,6 +134,8 @@ internal static class LocalMultiControlRuntime
         // r83：重置托管遗物兜底状态；若上一局/读档前遗物被第三方效果移除，本次会重新补发。
         LocalWakuuRelicRuntime.ResetTakeoverFallbackState();
         TaskHelper.RunSafely(GrantWakuuRelicsAsync(runState));
+        // r227：④「瓦库的爹」—— 开关开时给**真人席位**发一件（瓦库席位不发；已持有则跳过）。
+        TaskHelper.RunSafely(GrantWakuuDaddyRelicAsync(runState));
     }
 
     public static void OnRunCleanup()
@@ -627,6 +629,49 @@ internal static class LocalMultiControlRuntime
             await granted.AfterObtained();
             LocalMultiControlLogger.Info(
                 $"已为瓦库角色自动发放托管遗物: player={playerId}, relic={granted.Id.Entry}, mode={(useForm ? "瓦库形态" : "永久低语耳环")}");
+        }
+    }
+
+    /// <summary>
+    /// ④「瓦库的爹」：给**真人席位**（= 本地多控会话内、未被瓦库接管的席位）发放遗物【瓦库的爹】
+    /// （已持有则跳过，可重复调用 —— 与 <see cref="GrantWakuuRelicsAsync"/> 同一套写法）。
+    ///
+    /// 门禁 = 配置开关 <see cref="LocalWakuuAutopilotConfig.VakuuDaddy"/>（**默认关**）+ 本地多控会话；
+    /// 逐席位判据收在纯逻辑 <see cref="WakuuDaddyPolicy.ShouldGrantRelic"/>（有单测）。
+    /// 遗物的效果（战斗开始时给 3 张占位牌）在 <see cref="LocalWakuuDaddyRelic"/> 里。
+    /// </summary>
+    public static async Task GrantWakuuDaddyRelicAsync(RunState runState)
+    {
+        if (!LocalSelfCoopContext.IsEnabled)
+        {
+            return;
+        }
+
+        bool featureEnabled = LocalWakuuAutopilotConfig.VakuuDaddy;
+        foreach (ulong playerId in LocalSelfCoopContext.LocalPlayerIds)
+        {
+            bool shouldGrant = WakuuDaddyPolicy.ShouldGrantRelic(
+                featureEnabled,
+                LocalSelfCoopContext.IsLocalSessionSeat(playerId),
+                LocalSelfCoopContext.IsWakuuEnabled(playerId));
+            if (!shouldGrant)
+            {
+                continue;
+            }
+
+            Player? player = runState.GetPlayer(playerId);
+            if (player == null || player.Relics.Any(relic => relic is LocalWakuuDaddyRelic))
+            {
+                continue;
+            }
+
+            RelicModel granted = ModelDb.Relic<LocalWakuuDaddyRelic>().ToMutable();
+            granted.FloorAddedToDeck = Math.Max(1, runState.TotalFloor);
+            player.AddRelicInternal(granted);
+            SaveManager.Instance.MarkRelicAsSeen(granted);
+            await granted.AfterObtained();
+            LocalMultiControlLogger.Info(
+                $"已为真人角色发放【瓦库的爹】遗物（战斗开始给 3 张占位牌）: player={playerId}, relic={granted.Id.Entry}");
         }
     }
 

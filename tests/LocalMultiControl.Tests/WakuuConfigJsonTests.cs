@@ -51,6 +51,7 @@ public class WakuuConfigJsonTests
             Assert.That(data.refineRelicLimit, Is.EqualTo(WakuuRefinePolicy.RelicLimitAny)); // 炼化默认遗物件数不限
             Assert.That(data.refineTakeVakuuAssets, Is.True); // 炼化默认收编瓦库的牌与遗物
             Assert.That(data.refineTakeVakuuPotions, Is.True); // 炼化默认收编瓦库的药水
+            Assert.That(data.vakuuDaddy, Is.False); // 瓦库四功能 · ④「瓦库的爹」：可开关且默认关
             // 策略默认值
             Assert.That(data.eventChoiceMode, Is.EqualTo("first"));
             Assert.That(data.cardPickMode, Is.EqualTo("last"));
@@ -279,6 +280,19 @@ public class WakuuConfigJsonTests
         });
     }
 
+    /// <summary>瓦库四功能 · ④「瓦库的爹」开关（2026-10-07，默认关；键名用官方拼写 vakuu）。</summary>
+    [Test]
+    public void 解析瓦库的爹开关_true生效()
+    {
+        WakuuConfigData data = WakuuConfigJson.Parse("""{ "vakuuDaddy": true }""")!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(data.vakuuDaddy, Is.True);
+            Assert.That(data.refineVakuu, Is.False, "未提供的字段保持默认值");
+        });
+    }
+
     [Test]
     public void 解析null字面量_返回null()
     {
@@ -345,6 +359,7 @@ public class WakuuConfigJsonTests
             Assert.That(json, Does.Contain("\"vakuuBrain\""));
             Assert.That(json, Does.Contain("\"purifyVakuu\""));
             Assert.That(json, Does.Contain("\"uniteVakuu\""));
+            Assert.That(json, Does.Contain("\"vakuuDaddy\""));
         });
     }
 }

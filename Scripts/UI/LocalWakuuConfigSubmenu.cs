@@ -298,6 +298,13 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.RefineTakeVakuuPotions,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("refineTakeVakuuPotions", value));
         AddToggleRow(column,
+            LocalModText.Select("瓦库的爹（瓦库四功能）", "Vakuu's Daddy (Wakuu Feature)"),
+            LocalModText.Select(
+                "默认关。开启后**开局给你的真人席位发一件遗物【瓦库的爹】**：每场战斗开始时获得【我挡】【你攻】【合体】各一张（0 费技能牌）。⚠ 首版占位：**这三张牌的效果尚未实现**，打出去只消耗 0 费、不会通过任何奖励/商店入口出现。瓦库席位不发这件遗物。开关在**下一局开局**时生效。",
+                "Off by default. When on, your human seats begin the run with the relic Vakuu's Daddy: each combat starts with one 【I Block】, 【You Attack】 and 【Merge】 in hand (0-cost skills). ⚠ First-version placeholder: the three cards have no effects yet — playing them only costs 0, and they never appear in rewards or shops. Vakuu seats don't get this relic. Takes effect at the start of the next run."),
+            () => LocalWakuuAutopilotConfig.VakuuDaddy,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("vakuuDaddy", value));
+        AddToggleRow(column,
             LocalModText.Select("战斗中自动用药水", "Auto-Use Potions in Combat"),
             LocalModText.Select(
                 "默认关。按药水规则表逐药自动使用：血液/再生低血自用；果汁到手即喝；混沌药水填空位；力量等增益与火焰等攻击类精英/Boss战首回合；格挡/免伤类回合结束前按敌方意图伤害兜底；能量/迅捷/异蛇剩能量补牌；灰水/赌徒等定向消耗坏牌；故障机器人/储君/亡灵契约师/铁甲战士专属药水自动给对应队友，复制/超巨化优先给真人；污浊药水只在商人投掷；mod 药水普通战斗随机回合消耗。",

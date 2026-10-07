@@ -184,19 +184,44 @@ internal static class LocalModText
         };
     }
 
-    // ---- 瓦库四功能 · ④ 地狱战神（2026-10-06 开工；本轮只做「卡池注册」的最小验证）----
+    // ---- 瓦库四功能 · ④「瓦库的爹」（遗物 + 我挡/你攻/合体 三张占位牌）----
+    // 2026-10-07 从「卡池注册验证」转正为功能首版。命名口径（2026-10-06 用户拍板）：
+    // 「地狱战神」留给战灵召唤（临时玩家召唤）；本条叫「瓦库的爹」。三张牌的**效果本版留空**。
 
-    /// <summary>
-    /// 地狱战神验证卡的标题。占位名（`地狱战神` / `地狱耳环` 的正式名字用户另有安排）。
-    /// </summary>
-    public static string HellGodPlaceholderCardTitle => Select("瓦库的爹（占位）", "Vakuu's Daddy (placeholder)");
+    /// <summary>遗物【瓦库的爹】的名称（占位名，正式名字用户另有安排）。</summary>
+    public static string DaddyRelicTitle => Select("瓦库的爹", "Vakuu's Daddy");
 
-    /// <summary>
-    /// 地狱战神验证卡的描述。**明说效果未实现**，免得实机看到这张卡时误判成"功能坏了"。
-    /// </summary>
-    public static string HellGodPlaceholderCardDescription => Select(
-        "占位卡：仅用于验证「mod 自定卡能挂进卡池」。效果尚未实现，也不会通过任何奖励/商店入口出现。",
-        "Placeholder: proves a mod card can register into a card pool. No effect yet; it never appears in rewards or shops.");
+    /// <summary>遗物【瓦库的爹】的描述：战斗开始时给三张牌；**明说三张牌的效果未实现**，免得实机误判成"功能坏了"。</summary>
+    public static string DaddyRelicDescription => Select(
+        "战斗开始时，获得【我挡】【你攻】【合体】各一张。\n（首版占位：这三张牌的效果尚未实现，打出去只会消耗 0 费，不会通过任何奖励/商店入口出现。）",
+        "At the start of combat, gain one 【I Block】, 【You Attack】 and 【Merge】.\n(First-version placeholder: those three cards have no effect yet — playing them only costs 0. They never appear in rewards or shops.)");
+
+    /// <summary>遗物【瓦库的爹】的风味文本。</summary>
+    public static string DaddyRelicFlavor => Select("爹来摆平。", "Daddy handles it.");
+
+    /// <summary>占位牌【我挡】的名称。</summary>
+    public static string DaddyShieldCardTitle => Select("我挡", "I Block");
+
+    /// <summary>占位牌【我挡】的描述（照提案 §5.1 写，末尾注明效果未实现）。</summary>
+    public static string DaddyShieldCardDescription => Select(
+        "选择一个队友：它本回合受到的伤害改由你承受，但你只承受一半，抽 1 张牌。\n（效果尚未实现。）",
+        "Choose an ally: damage it takes this turn is redirected to you, but only half of it; draw 1 card.\n(No effect yet.)");
+
+    /// <summary>占位牌【你攻】的名称。</summary>
+    public static string DaddyFocusCardTitle => Select("你攻", "You Attack");
+
+    /// <summary>占位牌【你攻】的描述（照提案 §5.1 写，末尾注明效果未实现）。</summary>
+    public static string DaddyFocusCardDescription => Select(
+        "选择一个敌人：本回合所有瓦库优先攻击它，抽 1 张牌。\n（效果尚未实现。）",
+        "Choose an enemy: every Vakuu focuses it this turn; draw 1 card.\n(No effect yet.)");
+
+    /// <summary>占位牌【合体】的名称。</summary>
+    public static string DaddyMergeCardTitle => Select("合体", "Merge");
+
+    /// <summary>占位牌【合体】的描述（照提案 §5.1 写，末尾注明效果未实现）。</summary>
+    public static string DaddyMergeCardDescription => Select(
+        "选择一个瓦库队友：它的手牌与能量都归你，本回合你抽牌/弃牌随机走双方的抽弃堆，抽 1 张牌。\n（效果尚未实现。）",
+        "Choose a Vakuu ally: its hand and energy become yours, and this turn your draws and discards come from both piles at random; draw 1 card.\n(No effect yet.)");
 
     public static string GlobalWakuuLabel => Select("全瓦库", "All Vakuu");
 

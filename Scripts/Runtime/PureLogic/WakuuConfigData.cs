@@ -100,6 +100,16 @@ internal sealed class WakuuConfigData
     /// </summary>
     public bool refineTakeVakuuPotions { get; set; } = true;
 
+    /// <summary>
+    /// 瓦库四功能 · ④「瓦库的爹」（默认关）：开关开时**开局给真人席位发一件遗物【瓦库的爹】**，
+    /// 效果 = 战斗开始时获得【我挡】【你攻】【合体】各一张（0 费技能，**三张牌的效果本版未实现**）。
+    /// 瓦库席位不发（它们身上已有托管遗物）。判据见 <see cref="WakuuDaddyPolicy.ShouldGrantRelic"/>。
+    ///
+    /// ⚠ 键名用官方拼写 <c>vakuu</c>（不是 Wakuu）—— 与 r140 的拼写统一一致，
+    /// 由单测 `旧拼写配置键_自动迁移到新键` 的「序列化里不得出现 Wakuu」哨兵钉住。
+    /// </summary>
+    public bool vakuuDaddy { get; set; }
+
     /// <summary>战斗中自动用药水：默认关（拍板：保守版写死规则，先观察）。</summary>
     public bool autoUsePotions { get; set; }
 

@@ -2,7 +2,7 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-10-06 21:38  HEAD=91d85be
+# 生成时间=2026-10-07 17:41  HEAD=12a6fd5
 # 统计: patch_classes=192 patch_rows=226 string_targets=200 descriptors=374
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
@@ -219,14 +219,14 @@ P	ToolboxPatch	Toolbox	BeforeHandDraw	nameof
 P	TreasureRoomRelicSynchronizerBeginPatch	TreasureRoomRelicSynchronizer	BeginRelicPicking	nameof
 P	TreasureRoomRelicSynchronizerPatch	TreasureRoomRelicSynchronizer	OnPicked	nameof
 P	UsePotionActionWatchdogPatch	UsePotionAction	ExecuteAction	string
+P	WakuuDaddyContentPatch	LocManager	Initialize	nameof
+P	WakuuDaddyContentPatch	ModelDb	Preload	nameof
 P	WakuuEventEnchantAutoAnswerPatch	CardSelectCmd	FromDeckForEnchantment	nameof
 P	WakuuEventEnchantAutoAnswerPatch	CardSelectCmd	FromDeckForRemoval	nameof
 P	WakuuEventEnchantAutoAnswerPatch	CardSelectCmd	FromDeckForTransformation	nameof
 P	WakuuEventEnchantAutoAnswerPatch	CardSelectCmd	FromDeckForUpgrade	nameof
 P	WakuuEventEnchantAutoAnswerPatch	CardSelectCmd	FromDeckGeneric	nameof
 P	WakuuEventEnchantAutoAnswerPatch	CardSelectCmd	FromHand	nameof
-P	WakuuHellGodContentPatch	LocManager	Initialize	nameof
-P	WakuuHellGodContentPatch	ModelDb	Preload	nameof
 P	WhisperingEarringPatch	WhisperingEarring	AfterAutoPrePlayPhaseEnteredLate	nameof
 S	accesstools	-	-	method
 S	accesstools	ActChangeSynchronizer	_readyPlayers	field

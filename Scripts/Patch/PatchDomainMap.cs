@@ -205,9 +205,9 @@ internal static class PatchDomainMap
             ["PersonalShopPurchasePatch"] = PatchDomain.Wakuu,
             ["PersonalDeckRemovalPatch"] = PatchDomain.Wakuu,
             ["PersonalEventClickPatch"] = PatchDomain.Wakuu,
-            // ④ 地狱战神（r226）：内容层早期挂点 —— LocManager 就绪后注入卡牌本地化（主菜单卡牌库之前）、
-            // ModelDb.Preload 后校验自定卡入池（卡池冻结那一刻，不必进局）
-            ["WakuuHellGodContentPatch"] = PatchDomain.Wakuu,
+            // ④ 瓦库的爹（r226/r227）：内容层早期挂点 —— LocManager 就绪后注入卡牌/遗物本地化
+            // （主菜单卡牌库/遗物库之前）、ModelDb.Preload 后校验自定内容入池（卡池冻结那一刻，不必进局）
+            ["WakuuDaddyContentPatch"] = PatchDomain.Wakuu,
 
             // ============ Ui：纯 UI 表现层 ============
             ["CardPileHandVisualOwnerGuardPatch"] = PatchDomain.Ui,
