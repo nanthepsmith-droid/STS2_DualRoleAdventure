@@ -198,7 +198,7 @@ public partial class Entry
     //     全程没有 `本回合登记已清空`）。
     //  ② `合体混抽` / `合体混弃` 两条日志补 `round=` —— r230 判读时正是"没写回合号"导致要额外反推
     //     那两次混抽属于哪一回合（是不是跨回合残留）。纯日志，无行为变化。
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-07-r231)";
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-07-r232)";
 
     private static Harmony? _harmony;
 

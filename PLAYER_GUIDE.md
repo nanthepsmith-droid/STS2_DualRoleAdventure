@@ -183,6 +183,57 @@ When the third-party **Co-op Bots** mod (online AI teammates) is installed, this
   "an event's last page card-pick cannot advance" and "your card clicks are ignored while Vakuu plays" —
   diagnostics only so far.
 
+### New in v1.45: the four Vakuu features (inside "Vakuu autopilot"; **all off by default**, and they need "Vakuu Form Autopilot (Master Toggle)" on)
+
+- **Purify at rest sites** (`purifyVakuu`): rest sites give you (the human) an extra "Purify" option —
+  pick a Vakuu in a small "choose player" panel, then the **vanilla card-removal screen** opens to remove up
+  to 5 cards from its deck (you tick them one by one). Canceling, or picking none, leaves the option
+  unconsumed so you can try again.
+- **Unite in combat** (`uniteVakuu`): combat gets a "Unite" button (above the end-turn button), **once per
+  combat** — first **copy** one card from your deck into a chosen Vakuu's combat hand, then **copy** one
+  card from a chosen Vakuu's deck into your own hand. Both directions are copies and **decks are unchanged**
+  (the copies vanish when the combat ends); either step can be canceled, and **canceling both means the
+  chance is not used** (the button stays).
+- **Refine at rest sites** (`refineVakuu`): rest sites give you an extra "Refine" option — pick a Vakuu, then:
+  ① take cards from its deck (limit: Unlimited / 20 / 5, **you may take none**) → ② multi-select relics to
+  take (limit: Unlimited / 5 / 3 / 1; the Whispering Earring and Vakuu Form are excluded; these are
+  **really taken**) → ③ take **as many of its potions as you want** (cap = your free potion slots; the ones
+  you leave are removed too) → ④ absorb a share of its HP and Max HP (All / Half / Quarter) →
+  ⑤ **melt it down** (HP and Max HP zeroed, it leaves the fight). The seat stays in the roster and the party
+  isn't shrunk (if its Max HP is ever restored it can come back). ⚠ **Refining is irreversible.**
+  Four extra settings: HP ratio (default All), card limit (default Unlimited), relic limit (default
+  Unlimited), and whether to take its cards & relics / potions (both on by default).
+- **Vakuu's Daddy** (`vakuuDaddy`): **your human seats start the run with the relic Vakuu's Daddy** — each
+  combat starts with one【I Block】【You Attack】【Merge】in hand (0-cost skills; upgraded versions gain
+  Retain; they never show up in rewards or shops):
+  - **【I Block】** (choose an ally): attack damage it takes this turn is redirected to you, but you take
+    **only half** of it, and **your own Block still applies**; expires at the end of the enemy turn.
+  - **【You Attack】** (choose an enemy): **every Vakuu prioritizes attacking it this turn** (your own
+    targeting is unaffected).
+  - **【Merge】** (choose a Vakuu ally): its **hand and energy become yours**; this turn your draws come from
+    either draw pile at random and your discards go to either discard pile (the other deck is not stolen —
+    this only affects this combat's copies).
+  - All three draw 1 card; the toggle takes effect at the **start of the next run**; Vakuu seats never get
+    this relic.
+
+### Fixes in v1.44 / v1.45 (since v1.43)
+
+- **After a save/load, Vakuu no longer sits idle for the rest of the run** (no plays / no automatic event
+  picks / no auto-claimed rewards) — BUG-22, three layers.
+- **Third-party custom card-pick screens and end-of-turn card transforms no longer soft-lock the fight**
+  (Saya's 【色素细胞】, the pig mod's 【猪猪王】, the "唯我" curse, third-party dream dialogues) —
+  BUG-23 / BUG-25 / BUG-26.
+- **Vakuu's cards no longer become "ghost cards" stuck in your hand, and a card left in the middle of the
+  screen after 【群情激愤】 (Outrage) now disappears properly** — BUG-31 / BUG-32.
+- **The pig mod's card-variable mismatch no longer makes the Vakuu Form relic blink non-stop or skip the
+  turn** — BUG-30.
+- **Your and Vakuu's character portraits no longer swap left/right when playing alongside the third-party
+  NinjaSlayer mod.**
+- **Vakuu is no longer misled at rest sites by third-party rest-site options** (it used to keep healing
+  itself) — BUG-27.
+- Plus a batch of internal refactors (**zero behavior change**) and session-state reset self-checks on
+  run entry/exit.
+
 ## During a run
 
 - **Switch characters:** `Tab` (next) / `Shift+Tab` (previous). Legacy keys `]` `R` `/` (next) and `[` `T` (previous) still work.

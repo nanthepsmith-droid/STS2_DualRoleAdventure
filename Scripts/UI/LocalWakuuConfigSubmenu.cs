@@ -252,8 +252,8 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         AddToggleRow(column,
             LocalModText.Select("火堆炼化（瓦库四功能）", "Refine at Rest Sites (Wakuu Feature)"),
             LocalModText.Select(
-                "默认关。开启后休息处会给你（真人）多出一条「炼化」选项：选中后先选一个瓦库，再依次选走它的牌（张数上限见下方档位）与 1 件遗物（【永久低语耳环】与【瓦库形态】不可选），按下方比例收编它的血量与血上限，最后把它炼掉——它的血量与血上限清零、就此退场（不缩队、不退名单，血上限被加回来还能复活）。⚠ 炼化不可撤销，选目标前请确认。",
-                "Off by default. When on, rest sites give you an extra \"Refine\" option: pick a Vakuu, then take cards from its deck (up to the limit below) and 1 relic (the Whispering Earring and Vakuu Form are excluded), absorb a share of its HP and Max HP per the ratio below, and finally melt it down — its HP and Max HP are zeroed and it leaves the fight (the party isn't shrunk and the roster keeps it; if Max HP is ever restored it can come back). ⚠ Refining is irreversible; confirm before picking a target."),
+                "默认关。开启后休息处会给你（真人）多出一条「炼化」选项：选中后先选一个瓦库，再依次 ① 从它卡组自选若干张牌（张数上限见下方档位，可以一张都不选）② 多选收编它的遗物（件数上限见下方档位；【永久低语耳环】与【瓦库形态】不可选）③ 任选它的几瓶药水（上限 = 你自己药水栏的空位数）④ 按下方比例收编它的血量与血上限 ⑤ 把它炼掉——它的血量与血上限清零、就此退场（不缩队、不退名单，血上限被加回来还能复活）。⚠ 炼化不可撤销，选目标前请确认。",
+                "Off by default. When on, rest sites give you an extra \"Refine\" option: pick a Vakuu, then ① take cards from its deck (limit below; you may take none) ② multi-select relics to take (limit below; the Whispering Earring and Vakuu Form are excluded) ③ take as many of its potions as you want (cap = your free potion slots) ④ absorb a share of its HP and Max HP per the ratio below ⑤ melt it down — its HP and Max HP are zeroed and it leaves the fight (the party isn't shrunk and the roster keeps it; if Max HP is ever restored it can come back). ⚠ Refining is irreversible; confirm before picking a target."),
             () => LocalWakuuAutopilotConfig.RefineVakuu,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("refineVakuu", value));
         column.AddChild(CreateCycleRow(
@@ -268,8 +268,8 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         column.AddChild(CreateCycleRow(
             LocalModText.Select("炼化 · 卡牌张数上限", "Refine · Card Limit"),
             LocalModText.Select(
-                "炼化时最多能从目标瓦库卡组里拿走几张牌。三档循环：不限（可拿全部）→ 20 张 → 5 张。默认不限。至少要拿 1 张（选牌界面取消即中止炼化）。仅影响已开启的「火堆炼化」。",
-                "How many cards you may take from the target Vakuu's deck when refining. Cycles: Unlimited (all) → 20 → 5. Default Unlimited. At least 1 card must be taken (canceling the pick screen aborts the refine). Only affects \"Refine at Rest Sites\" when enabled."),
+                "炼化时最多能从目标瓦库卡组里拿走几张牌。三档循环：不限（可拿全部）→ 20 张 → 5 张。默认不限。**可以一张都不选**（直接确认即继续；想中止炼化请在「选目标 / 选遗物 / 选药水」三步里取消）。仅影响已开启的「火堆炼化」。",
+                "How many cards you may take from the target Vakuu's deck when refining. Cycles: Unlimited (all) → 20 → 5. Default Unlimited. **You may take none** (just confirm to continue; to abort the refine, cancel one of the target / relic / potion steps). Only affects \"Refine at Rest Sites\" when enabled."),
             "refineCardLimit",
             () => LocalWakuuAutopilotConfig.RefineCardLimit,
             NextRefineCardLimit,
@@ -300,8 +300,8 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         AddToggleRow(column,
             LocalModText.Select("瓦库的爹（瓦库四功能）", "Vakuu's Daddy (Wakuu Feature)"),
             LocalModText.Select(
-                "默认关。开启后**开局给你的真人席位发一件遗物【瓦库的爹】**：每场战斗开始时获得【我挡】【你攻】【合体】各一张（0 费技能牌）。⚠ 首版占位：**这三张牌的效果尚未实现**，打出去只消耗 0 费、不会通过任何奖励/商店入口出现。瓦库席位不发这件遗物。开关在**下一局开局**时生效。",
-                "Off by default. When on, your human seats begin the run with the relic Vakuu's Daddy: each combat starts with one 【I Block】, 【You Attack】 and 【Merge】 in hand (0-cost skills). ⚠ First-version placeholder: the three cards have no effects yet — playing them only costs 0, and they never appear in rewards or shops. Vakuu seats don't get this relic. Takes effect at the start of the next run."),
+                "默认关。开启后**开局给你的真人席位发一件遗物【瓦库的爹】**：每场战斗开始时获得【我挡】【你攻】【合体】各一张（0 费技能牌）。【我挡】选一个队友，本回合它受到的攻击伤害改由你承受、但你只承受一半（你的格挡照常生效）；【你攻】选一个敌人，本回合瓦库优先攻击它；【合体】选一个瓦库，它的手牌与能量归你，本回合你抽牌/弃牌在双方的抽牌堆与弃牌堆之间随机。三张牌都抽 1 张牌、升级加「保留」；不会通过任何奖励/商店入口出现。瓦库席位不发这件遗物。开关在**下一局开局**时生效。",
+                "Off by default. When on, your human seats begin the run with the relic Vakuu's Daddy: each combat starts with one 【I Block】, 【You Attack】 and 【Merge】 in hand (0-cost skills). 【I Block】: choose an ally — attack damage it takes this turn is redirected to you, halved (your own Block still applies). 【You Attack】: choose an enemy — every Vakuu prioritizes attacking it this turn. 【Merge】: choose a Vakuu — its hand and energy become yours, and this turn your draws/discards randomly use either side's draw/discard piles. All three draw 1 card and gain Retain when upgraded; they never appear in rewards or shops. Vakuu seats don't get this relic. Takes effect at the start of the next run."),
             () => LocalWakuuAutopilotConfig.VakuuDaddy,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("vakuuDaddy", value));
         AddToggleRow(column,

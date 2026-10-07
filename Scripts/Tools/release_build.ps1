@@ -91,19 +91,22 @@ if (Test-Path -LiteralPath $releaseInfo) {
     }
 }
 
-$markerSuffix = ""
+# ⚠ 局部变量名不能叫 `$markerSuffix` —— PowerShell 变量名**不区分大小写**，它会与参数 `$MarkerSuffix`
+#   是同一个变量，于是第 95 行赋空串时把调用方传来的 `-MarkerSuffix r232` 一起清掉 ⇒ 该参数形同虚设、
+#   build-info.json 里的 marker 永远记成"当前 marker + 1"（2026-10-07 出 1.45.0 时踩到）。
+$markerSuffixValue = ""
 if ($MarkerSuffix) {
     if ($MarkerSuffix -notmatch "^r\d+$") { Write-Err "MarkerSuffix 应为 rN 格式，如 r47。" }
-    $markerSuffix = $MarkerSuffix
+    $markerSuffixValue = $MarkerSuffix
 } elseif (Test-Path -LiteralPath $entryPath) {
     $entryText = [System.IO.File]::ReadAllText($entryPath, [System.Text.Encoding]::UTF8)
     $m = [regex]::Match($entryText, "marker=\d{4}-\d{2}-\d{2}-r(\d+)")
-    if ($m.Success) { $markerSuffix = "r" + ([int]$m.Groups[1].Value + 1) }
+    if ($m.Success) { $markerSuffixValue = "r" + ([int]$m.Groups[1].Value + 1) }
 }
-if (-not $markerSuffix) { $markerSuffix = "r1" }
+if (-not $markerSuffixValue) { $markerSuffixValue = "r1" }
 
 $today = Get-Date -Format "yyyy-MM-dd"
-$markerSuggestion = "Revival v$Version (game $gameVersion, marker=$today-$markerSuffix)"
+$markerSuggestion = "Revival v$Version (game $gameVersion, marker=$today-$markerSuffixValue)"
 Write-Step "marker 建议串: $markerSuggestion"
 Write-Host "  (更新到 Scripts\Entry.cs 的 BuildMarker 常量；用 -UpdateMarker 可自动更新并重新构建)"
 
