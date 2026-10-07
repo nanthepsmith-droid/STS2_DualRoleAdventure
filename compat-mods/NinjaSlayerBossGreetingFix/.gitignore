@@ -1,0 +1,19 @@
+# Godot generated
+.godot/
+.import/
+
+# .NET build outputs
+bin/
+obj/
+
+# Build artifact: repo-root <AssemblyName>.dll 由 build_all_mods.ps1 构建后部署到游戏槽位
+# （与主仓库口径一致：产物不入库，从源码重建）
+NinjaSlayerBossGreetingFix.dll
+*.pdb
+
+# IDE / user files
+.vs/
+.idea/
+*.user
+*.suo
+*.tmp

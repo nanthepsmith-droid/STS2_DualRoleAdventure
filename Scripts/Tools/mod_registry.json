@@ -28,8 +28,8 @@
     { "name": "HistoryFilter", "enabled": true, "note": "aux mod, not a fix" },
     { "name": "HistoryLoadoutExport", "enabled": true, "note": "aux mod, not a fix" },
     { "name": "EnchantTargetRandomFix", "enabled": true, "note": "显式登记 2026-10-05（此前靠自动发现）" },
-    { "name": "NinjaSlayerBossGreetingFix", "enabled": true, "note": "显式登记 2026-10-05；本地回环 Host-无-NetHost 致第三方 Boss 问候 NRE 的补丁" },
-    { "name": "PreloadStallGuard", "enabled": true, "note": "显式登记 2026-10-05；第三方预加载未完成致战斗卡 NotPlayPhase 的兜底" },
+    { "name": "NinjaSlayerBossGreetingFix", "enabled": true, "note": "主仓库 compat-mods/ 托管（2026-10-07 迁入）；本地回环 Host-无-NetHost 致第三方 Boss 问候 NRE 的补丁" },
+    { "name": "PreloadStallGuard", "enabled": true, "note": "主仓库 compat-mods/ 托管（2026-10-07 迁入）；第三方预加载未完成致战斗卡 NotPlayPhase 的兜底" },
     { "name": "YuiVfxSceneFix", "enabled": true, "note": "显式登记 2026-10-05（此前靠自动发现）" },
     { "name": "HextechRunesLocalCoopFix", "enabled": true, "note": "主仓库 compat-mods/ 托管（2026-10-05 迁入）；同仓托管、独立 csproj/dll/槽位" }
   ]

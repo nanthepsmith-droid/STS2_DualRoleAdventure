@@ -1,0 +1,11 @@
+{
+    "id": "PreloadStallGuard",
+    "name": "Preload Stall Guard",
+    "author": "fix",
+    "description": "战斗/房间开始时的资源预加载（PreloadManager → NAssetLoader → AssetLoadingSession）一旦停滞，会让等它的游戏流程永久挂起：典型表现是战斗开始后不抽牌、不能换人、点结束回合无效（战斗停在 NotPlayPhase）。本补丁给预加载会话加「停滞检测 + 超时放行」兜底：连续 5 秒既没完成、队列计数也没有任何推进时，打 ERROR 日志并强制放行，让流程继续（代价是那一批资源可能没预加载，后续按原版「未缓存则同步加载」路径兜底）。同时附带「谁创建 / 谁在等 / 战斗推进链」诊断日志（STS2_PRELOAD_STALL_GUARD=quiet 可关）。触发源示例：第三方 GensokyoSpire / MomoLib 在战斗开始时预加载 'MomoVfx'。",
+    "version": "1.1.0",
+    "has_pck": false,
+    "has_dll": true,
+    "dependencies": [],
+    "affects_gameplay": true
+}

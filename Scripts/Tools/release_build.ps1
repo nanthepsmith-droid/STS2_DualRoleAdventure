@@ -31,6 +31,7 @@ param(
     [string]$MarkerSuffix = "",     # 可选 rN；缺省自动从 Entry.cs 当前 marker rN + 1
     [switch]$UpdateMarker,          # 自动把 Entry.cs 的 BuildMarker 更新为新 marker 串
     [switch]$DryRun,                # 只打印计划，不改文件、不构建
+    [switch]$CompatOnly,            # 只打 compat-mods 附件（不动版本号/marker，不重建主 dll、不打主包）
     [switch]$PublishGitHub,         # 提交版本改动 + 打 tag + gh release（原 BuildRelease.ps1 的能力，2026-09-16 并入）
     [switch]$PushGit,               # 仅与 -PublishGitHub 同用：git push origin master --follow-tags
     [string]$ReleaseNotes = "",     # GitHub Release 正文；缺省 "Automated release <tag>"
@@ -60,6 +61,83 @@ if ($Version -notmatch "^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$") {
 }
 $verMajor = [int]$Matches[1]
 $verMinor = [int]$Matches[2]
+$zipTag = "v{0}.{1}" -f $verMajor, $verMinor
+
+# ---------------------------------------------------------------- 1.5 compat-mods 补丁附件
+# 口径（2026-10-07 用户拍板）：补丁 mod **不另开 Release**，作为主 Release 的**独立附件**分发
+# （见 decision-records/补丁mod收进主仓库compat-mods.md）。内容 = compat-mods\<Mod>\ 下的
+# <Mod>.dll + <Mod>.json（槽位目录结构，解压到 mods\ 根即可）。
+# ⚠ 这些补丁 mod **不是确定性构建**，附件里的哈希只能当次快照；源码在 compat-mods/ 里，重装即重建。
+# ⚠ 函数必须定义在 §2 之前：-CompatOnly 分支要**在任何"改文件/构建"之前**退出（否则会顺手改版本号 + 重建主 dll）。
+function Get-Sha256OrEmpty {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return "" }
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLower()
+}
+
+function Invoke-CompatModsPackage {
+    param([string]$Tag, [string]$ProjectRoot, [string]$ReleaseRoot, [switch]$DryRun)
+
+    $compatRoot = Join-Path $ProjectRoot "compat-mods"
+    $mods = @()
+    if (Test-Path -LiteralPath $compatRoot) {
+        foreach ($dir in (Get-ChildItem -LiteralPath $compatRoot -Directory | Sort-Object Name)) {
+            $csproj = Get-ChildItem -LiteralPath $dir.FullName -Filter "*.csproj" | Select-Object -First 1
+            if (-not $csproj) { continue }
+            $asm = [System.IO.Path]::GetFileNameWithoutExtension($csproj.Name)
+            $mods += [pscustomobject]@{
+                Name = $dir.Name
+                Dll  = Join-Path $dir.FullName "$asm.dll"
+                Json = Join-Path $dir.FullName "$asm.json"
+            }
+        }
+    }
+    if ($mods.Count -eq 0) { Write-Host "  (compat-mods/ 下没有可打包的补丁 mod，跳过)"; return }
+
+    $missing = @($mods | Where-Object { -not (Test-Path -LiteralPath $_.Dll) -or -not (Test-Path -LiteralPath $_.Json) })
+    if ($missing.Count -gt 0) {
+        Write-Err ("compat-mods 附件缺产物，先跑 Scripts\Tools\build_all_mods.ps1：" + (($missing | ForEach-Object { $_.Name }) -join ", "))
+    }
+
+    $zipPath = Join-Path $ReleaseRoot "compat-mods-$Tag.zip"
+    Write-Step "打包补丁 mod 附件: $zipPath"
+    foreach ($m in $mods) { Write-Host ("  - {0}  dll sha256={1}" -f $m.Name, (Get-Sha256OrEmpty $m.Dll)) }
+    if ($DryRun) {
+        Write-Host "  [DRY] 组装 <Mod>\<Mod>.dll + <Mod>\<Mod>.json + INSTALL.txt -> zip"
+        return
+    }
+    if (-not (Test-Path -LiteralPath $ReleaseRoot)) { New-Item -ItemType Directory -Path $ReleaseRoot | Out-Null }
+    if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+    $stage = Join-Path $ReleaseRoot ("compat-mods-$Tag.tmp")
+    if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
+    foreach ($m in $mods) {
+        $slotDir = Join-Path $stage $m.Name
+        New-Item -ItemType Directory -Path $slotDir | Out-Null
+        Copy-Item -LiteralPath $m.Dll -Destination (Join-Path $slotDir ([System.IO.Path]::GetFileName($m.Dll))) -Force
+        Copy-Item -LiteralPath $m.Json -Destination (Join-Path $slotDir ([System.IO.Path]::GetFileName($m.Json))) -Force
+    }
+    $install = @"
+可选兼容补丁（compat-mods）—— 按需安装，不装不影响主 mod
+
+1) 把本压缩包里的**每个目录**整个解压到：<Slay the Spire 2>\mods\
+   （最终形态例如 mods\HextechRunesLocalCoopFix\HextechRunesLocalCoopFix.dll + .json）
+2) 启动游戏 -> MOD 列表里勾选你要用的补丁（默认可能未启用）。
+3) 补丁只在「装了对应第三方 mod」且「用本地单人多角色」时起作用；条件不满足时自动退化为「不干预」。
+
+每个补丁的用途、日志锚点与已知限制见仓库 compat-mods\<名称>\README.md。
+"@
+    [System.IO.File]::WriteAllText((Join-Path $stage "INSTALL.txt"), $install, (New-Object System.Text.UTF8Encoding($false)))
+    Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zipPath -Force
+    Remove-Item -LiteralPath $stage -Recurse -Force
+    Write-Ok ("  补丁附件已生成: $zipPath（zip sha256={0}）" -f (Get-Sha256OrEmpty $zipPath))
+}
+
+if ($CompatOnly) {
+    Invoke-CompatModsPackage -Tag $zipTag -ProjectRoot $projectRoot -ReleaseRoot $releaseRoot -DryRun:$DryRun
+    Write-Host ""
+    Write-Ok "CompatOnly 完成（未改版本号 / 未重建主 dll / 未打主包）。"
+    exit 0
+}
 
 # ---------------------------------------------------------------- 2. 三处版本同步（UTF-8 带 BOM，正则替换保真）
 Write-Step "同步版本号到 3 处 json: $Version"
@@ -149,11 +227,7 @@ if (-not $DryRun) {
 # Harmony mod 的 ABI 兼容性完全取决于 sts2.dll / 0Harmony.dll 这些文件的版本与哈希。
 Write-Step "生成构建元数据 build-info.json（源码 commit + 依赖锁定）"
 
-function Get-Sha256OrEmpty {
-    param([string]$Path)
-    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return "" }
-    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLower()
-}
+# （Get-Sha256OrEmpty 已前移到 §1.5 —— -CompatOnly 分支要在此之前就能用它。）
 
 # 原生命令包装：本脚本 $ErrorActionPreference='Stop'，而工具往 stderr 写提示时会抛
 # NativeCommandError 打断脚本（见 tools\powershell-pitfalls.md）。这里临时降级，并把
@@ -175,7 +249,6 @@ function Invoke-TextCommand {
     }
 }
 
-$zipTag = "v{0}.{1}" -f $verMajor, $verMinor
 $builtUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
 $gitCommit = Invoke-TextCommand "git" @("-C", $projectRoot, "rev-parse", "--short", "HEAD")
@@ -362,6 +435,9 @@ if (-not $DryRun) {
 } else {
     Write-Host "  [DRY] 打印 dll / zip / zip 内 dll 的 SHA256"
 }
+
+# ---------------------------------------------------------------- 7.5 compat-mods 补丁附件（主 Release 的独立附件）
+Invoke-CompatModsPackage -Tag $zipTag -ProjectRoot $projectRoot -ReleaseRoot $releaseRoot -DryRun:$DryRun
 
 # ---------------------------------------------------------------- 8. GitHub 发布（可选，原 BuildRelease.ps1 能力）
 if ($PublishGitHub) {

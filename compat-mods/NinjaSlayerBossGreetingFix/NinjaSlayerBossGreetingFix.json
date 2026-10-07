@@ -1,0 +1,11 @@
+{
+    "id": "NinjaSlayerBossGreetingFix",
+    "name": "NinjaSlayer Boss Greeting Fix",
+    "author": "fix",
+    "description": "修复本地双角色/本地多控（本地回环假联机）下迎战 NinjaSlayer 的 Boss 时战斗卡死：NinjaSlayer 的 BossGreetingSync 在 NetGameType.Host 下直接查 NetHost.ConnectedPeerIds 来判断参与者是否在线，但本地回环的 HostGameService 没有真实网络主机（NetHost=null），一旦参与者里出现「非本机 NetId」，就抛 NullReferenceException；异常冒穿 Hook.BeforeCombatStart，战斗停在 NotPlayPhase —— 表现是开局不抽牌、不能换人、结束回合无效。单人模式参与者只有自己，走不到该分支，所以不受影响。本补丁在该场景把问候参与者收缩为网络服务自身（唯一真实进程），既消除异常也不再等待永不回应的第二个席位。ArknightsBoss 的「剑·戟·矛」Boss（碳长矛/玉双剑/枣大刀）等同类战斗均可复现。",
+    "version": "1.0.0",
+    "has_pck": false,
+    "has_dll": true,
+    "dependencies": [],
+    "affects_gameplay": true
+}

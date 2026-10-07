@@ -96,7 +96,8 @@ The mod set is **dynamic** — never hand-maintain a repo list in the script:
 
 - 默认**自动发现**：`D:\Download\pain` 下任何含 `*.csproj` 的目录就是一个 mod 仓库，
   **外加本仓库内 `compat-mods\<ModName>\`**（2026-10-05 起：独立补丁 mod 收进主仓库托管，同仓托管但独立
-  csproj / dll / 槽位；决策与 5 步清单见 `maintenance-docs/decision-records/补丁mod收进主仓库compat-mods.md`），
+  csproj / dll / 槽位；2026-10-07 已迁入 3 个：`HextechRunesLocalCoopFix` / `NinjaSlayerBossGreetingFix` /
+  `PreloadStallGuard`；决策、名单判据与分发口径见 `maintenance-docs/decision-records/补丁mod收进主仓库compat-mods.md`），
   产物名取 csproj 的 `<AssemblyName>`，槽位默认同名。**新增 mod 只需建仓库/建目录，不用改脚本。**
 - ⚠ `compat-mods/**` 在 `LocalMultiControl.csproj` 里有**显式 `<Compile Remove>`**：Godot SDK 默认 `**/*.cs`
   通配，不加排除会把补丁 mod 的源码编进主 dll（源码隔离 Guard 的正则只拦 `src|sts2src|decompiled`）。
