@@ -247,6 +247,10 @@ When the game updates and the mod breaks:
    关单后的 bug 记录去处 = `CHANGELOG.md`（玩家可见）＋ `references/` 对应坑（做法/教训）＋
    `D:\Download\pain\开发进度记录.md`（逐轮记录）；**已收口的重构线逐轮流水**（含当时验证契约）另挪到
    `maintenance-docs\decision-records\archive\`，`TODO.md` 原位只留摘要 + 归档指针。
+   **已关单的 bug / 功能段落**走同一处置（2026-10-07 起）：切到
+   `maintenance-docs\decision-records\archive\TODO-归档（已完成 bug 与功能流水·r96~r226）.md`，
+   `TODO.md` 原位只留「已关单与归档索引」（保留旧 §编号 → 归档的映射，让代码注释 / CHANGELOG / references
+   里的 `TODO.md §xxx` 引用仍能按编号找到落点）。
 6. **现状只写一次（2026-10-04 收敛）**：分支 / marker / 未推送数 / 版本只在上面第 4 条那一处写；
    其他文档（`维护现状分析.md`、memory、`TODO.md` 段首）要提就**指向它**，不复制第二份 ——
    此前四处各写一份，每轮收工要写 4 遍，且必然漂移。
