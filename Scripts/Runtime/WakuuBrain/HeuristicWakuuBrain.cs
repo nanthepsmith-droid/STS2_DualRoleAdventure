@@ -67,13 +67,15 @@ internal sealed class HeuristicWakuuBrain : IWakuuCombatBrain
 
     /// <summary>
     /// 目标解析（原 LocalWakuuRelicRuntime.ResolveTarget 原样搬移）：
-    /// AnyEnemy→第一个可打敌人；AnyAlly→存活真我队友中随机；AnyPlayer→自己；其余→null。
+    /// AnyEnemy→**本回合被【你攻】点名的敌人**（还活着且还能打时）→ 否则第一个可打敌人；
+    /// AnyAlly→存活真我队友中随机；AnyPlayer→自己；其余→null。
     /// </summary>
     private static Creature? ResolveTarget(CardModel card, ICombatState combatState, Player owner)
     {
         return card.TargetType switch
         {
-            TargetType.AnyEnemy => combatState.HittableEnemies.FirstOrDefault(),
+            TargetType.AnyEnemy => WakuuDaddyCombatState.TryGetFocus(combatState.HittableEnemies)
+                ?? combatState.HittableEnemies.FirstOrDefault(),
             TargetType.AnyAlly => owner.RunState.Rng.CombatTargets.NextItem(
                 combatState.Allies.Where((creature) => creature != null && creature.IsAlive && creature.IsPlayer && creature != owner.Creature)),
             TargetType.AnyPlayer => owner.Creature,

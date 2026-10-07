@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using LocalMultiControl.Scripts.Models.Cards;
+using LocalMultiControl.Scripts.Models.Powers;
 using LocalMultiControl.Scripts.Models.Relics;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Models;
@@ -49,6 +50,7 @@ internal static class WakuuDaddyContentProbe
                 DescribeCard<LocalWakuuDaddyFocusCard>("你攻", cardPoolIds),
                 DescribeCard<LocalWakuuDaddyMergeCard>("合体", cardPoolIds),
                 DescribeRelic<LocalWakuuDaddyRelic>("遗物", relicPoolIds),
+                DescribePower<LocalWakuuDaddyShieldPower>("我挡状态"),
             };
 
             bool allOk = !blocks.Any(block => block.Contains("否", StringComparison.Ordinal));
@@ -91,6 +93,17 @@ internal static class WakuuDaddyContentProbe
         bool titleOk = LocString.Exists(LocalWakuuDaddyLocalization.RelicsTable, $"{id.Entry}.title");
         bool descOk = LocString.Exists(LocalWakuuDaddyLocalization.RelicsTable, $"{id.Entry}.description");
         return $"{label}[池={Yes(inPool)},题={Yes(titleOk)},述={Yes(descOk)}]";
+    }
+
+    /// <summary>状态（r228 才有）：不进任何池，只校验「模型能解析 + powers 表有题/述」。
+    /// 图标**不查**：mod 没有 PCK ⇒ 该状态故意做成不可见（见 <see cref="LocalWakuuDaddyShieldPower"/>）。</summary>
+    private static string DescribePower<T>(string label) where T : PowerModel
+    {
+        ModelId id = ModelDb.GetId<T>();
+        bool modelOk = ModelDb.Power<T>() != null;
+        bool titleOk = LocString.Exists(LocalWakuuDaddyLocalization.PowersTable, $"{id.Entry}.title");
+        bool descOk = LocString.Exists(LocalWakuuDaddyLocalization.PowersTable, $"{id.Entry}.description");
+        return $"{label}[模型={Yes(modelOk)},题={Yes(titleOk)},述={Yes(descOk)}]";
     }
 
     private static string Yes(bool value) => value ? "是" : "否";

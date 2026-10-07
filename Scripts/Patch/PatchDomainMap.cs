@@ -208,6 +208,9 @@ internal static class PatchDomainMap
             // ④ 瓦库的爹（r226/r227）：内容层早期挂点 —— LocManager 就绪后注入卡牌/遗物本地化
             // （主菜单卡牌库/遗物库之前）、ModelDb.Preload 后校验自定内容入池（卡池冻结那一刻，不必进局）
             ["WakuuDaddyContentPatch"] = PatchDomain.Wakuu,
+            // ④ 瓦库的爹（r228）：【合体】的「本回合混抽/混弃」两条挂点（CardPileCmd.Draw 前缀搬牌 /
+            // CardCmd.DiscardAndDraw 前缀改归属），只在打过【合体】的那名玩家身上生效
+            ["WakuuDaddyMergePilePatch"] = PatchDomain.Wakuu,
 
             // ============ Ui：纯 UI 表现层 ============
             ["CardPileHandVisualOwnerGuardPatch"] = PatchDomain.Ui,

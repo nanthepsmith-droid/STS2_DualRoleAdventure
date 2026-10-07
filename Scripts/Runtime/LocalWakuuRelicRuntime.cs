@@ -491,7 +491,7 @@ internal static class LocalWakuuRelicRuntime
                     var ctx = new WakuuDecisionContext(
                         wakuu: relic.Owner,
                         combat: combatState,
-                        hand: PileType.Hand.GetPile(relic.Owner).Cards,
+                        hand: ResolveAutoplayHand(relic.Owner, combatState.RoundNumber),
                         energy: relic.Owner.PlayerCombatState?.Energy ?? 0,
                         turnNumber: combatState.RoundNumber,
                         playedThisTurn: cardsPlayed,
@@ -614,6 +614,55 @@ internal static class LocalWakuuRelicRuntime
             ? new LocString("relics", "WHISPERING_EARRING.warning")
             : new LocString("relics", "WHISPERING_EARRING.approval");
         TalkCmd.Play(line, relic.Owner.Creature, VfxColor.Purple);
+    }
+
+    /// <summary>「瓦库手牌里混进了别人的牌」这条 WARN 的限流键（席位 + 回合）。</summary>
+    private static ulong _foreignHandWarnPlayerId;
+
+    /// <summary>见 <see cref="_foreignHandWarnPlayerId"/>。</summary>
+    private static int _foreignHandWarnRound = -1;
+
+    /// <summary>
+    /// 瓦库自动出牌的「手牌」读数（r230 兜底）：**只认属于该瓦库自己的牌**。
+    ///
+    /// 为什么需要这道过滤（2026-10-07 实机事故）：【合体】把牌**改归属**后若牌仍留在瓦库手里，
+    /// 瓦库就会把它当成自己的牌**反复打** —— 实机一局里同一张牌实例每回合重打 60 张（撞
+    /// <see cref="MaxCardsToPlayForm"/> 护栏上限）、卡牌节点暴涨（那局泄漏 6.1 万 CanvasItem）
+    /// ⇒ 严重卡顿。根因（搬牌顺序）已在 <see cref="Models.Cards.LocalWakuuDaddyMergeCard"/> 修掉，
+    /// 这里只是**兜底**：托管席位绝不该碰不属于它的牌；命中时打一条限流 WARN 点名，
+    /// 让"牌没搬干净"这件事在日志里可见（否则表现为"瓦库莫名其妙打我的牌"）。
+    ///
+    /// 无外人的牌（正常路径）**零拷贝直接返回原列表**，行为与旧版逐字相同。
+    /// </summary>
+    private static IReadOnlyList<CardModel> ResolveAutoplayHand(Player wakuu, int round)
+    {
+        CardPile? handPile = PileType.Hand.GetPile(wakuu);
+        if (handPile == null)
+        {
+            return Array.Empty<CardModel>();
+        }
+
+        IReadOnlyList<CardModel> cards = handPile.Cards;
+        foreach (CardModel card in cards)
+        {
+            if (card.Owner == wakuu)
+            {
+                continue;
+            }
+
+            if (_foreignHandWarnPlayerId != wakuu.NetId || _foreignHandWarnRound != round)
+            {
+                _foreignHandWarnPlayerId = wakuu.NetId;
+                _foreignHandWarnRound = round;
+                LocalMultiControlLogger.Warn(
+                    $"瓦库手牌里混进了不属于它的牌，本回合出牌已忽略该牌: player={wakuu.NetId}, round={round}, "
+                    + $"card={card.Id.Entry}, cardOwner={card.Owner?.NetId.ToString() ?? "null"}, handCount={cards.Count}");
+            }
+
+            return cards.Where(candidate => candidate.Owner == wakuu).ToList();
+        }
+
+        return cards;
     }
 
     /// <summary>

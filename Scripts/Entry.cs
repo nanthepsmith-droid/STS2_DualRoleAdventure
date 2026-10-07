@@ -156,7 +156,42 @@ public partial class Entry
     //  ③ 发放：配置开关 `vakuuDaddy`（**默认关**）开时，开局给**真人席位**发一件（判据是纯逻辑
     //     `WakuuDaddyPolicy.ShouldGrantRelic`，瓦库席位不发 —— 它们已有托管遗物）。
     //  ④ 自检锚点改名 `[瓦库的爹验证]`（内容 = 三张牌 + 遗物 的 入池/本地化/立绘 四项）。
-    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-07-r227)";
+    // r228（2026-10-07）：**三张牌的效果实装**（r227 只做了框架）。
+    //  ① 【我挡】= 给队友挂 `LocalWakuuDaddyShieldPower`：`ModifyUnblockedDamageTarget` 把攻击伤害转给施牌者
+    //     （照原版 `DieForYouPower`，那是原版唯一的伤害重定向）+ `ModifyDamageMultiplicative` 返回 0.5
+    //     （照 `GuardedPower`）⇒ "转移 + 只担一半"；敌方回合结束自删（照 `CoveredPower`）。
+    //     该状态**故意不可见 + 关 VFX**：mod 没有 PCK ⇒ 图标固定取 power_atlas 里不存在的资源，
+    //     可见状态下 `NPower.Reload` 会直接 ResourceLoader.Load 它 ⇒ 每次施加都留一条引擎 ERROR（见类注释）。
+    //  ② 【你攻】= `WakuuDaddyCombatState.SetFocus` 登记集火目标，两个瓦库大脑解析 `AnyEnemy` 时优先取它
+    //     （原版侧"敌人/玩家选目标"没有任何钩子可用，而瓦库的目标选择本来就在我们手里）。
+    //  ③ 【合体】= 瓦库手牌改归属进施牌者手牌（`CardPileCmd.GiveToAnotherPlayer`）+ 能量搬运
+    //     （`PlayerCmd.LoseEnergy`/`GainEnergy`）+ 本回合混抽/混弃（`WakuuDaddyMergePilePatch`：
+    //     Draw 前缀把随机来源的牌搬进自己抽牌堆顶部后放行原版流程；DiscardAndDraw 前缀只改归属，
+    //     让原版自己按 owner 落堆）。
+    //  ④ 三张牌都补「抽 1 张牌」；「本回合」登记统一在**玩家侧回合结束**清空（`LocalWakuuDaddyRelic`），
+    //     战斗结束再兜一次。
+    // r229（2026-10-07，r228 首测后的两处修复）：
+    //  ① 【我挡】"转过来的伤害不能格挡" ⇒ 重定向发生在被挡者格挡结算**之后**，承伤者天然是直接掉血；
+    //     在 `ModifyHpLostAfterOsty`（重定向之后那条钩子）里用原版同一个 `Creature.DamageBlockInternal`
+    //     补一次承伤者自己的格挡（`_redirectPending` 一次性标记确保只对该笔重定向生效，不会把直接挨打的
+    //     那笔算两遍 —— `CreatureCmd.Damage:290→291` 之间没有 await，可安全用实例字段）。
+    //     ⚠ 已知副作用：被挡者自己的格挡仍会先吃掉一部分（无法从钩子里绕过）。
+    //  ② 【合体】"牌进手牌不显示、切人才出来" ⇒ `CardPileCmd.GiveToAnotherPlayer` 依赖"桌上已有的卡节点"，
+    //     而瓦库的手牌节点不在共享手牌 UI 里 ⇒ 取不到节点就整个 return，什么都不画。改成
+    //     `CardModel.GiveToAnotherPlayer`（改归属）+ `CardPileCmd.Add(牌, Hand)`（正常流程会建节点并挂进手牌）。
+    // r230（2026-10-07，r229 首测后的关键修复）：
+    //  🔴 **`CardModel.Pile` 是按 Owner 反查的**（`Pile => _owner?.Piles.FirstOrDefault(p => p.Cards.Contains(this))`）
+    //     ⇒ 「跨玩家搬牌」的顺序是**铁律**：**先 `RemoveFromCurrentPile`（此时 Owner 还是原主、Pile 正确）→ 再
+    //     `GiveToAnotherPlayer` 改归属 → 再 `CardPileCmd.Add`**。r229 我为了修"牌不显示"把顺序写成"先改归属再 Add"，
+    //     结果改完归属 `Pile` 立刻变 null、`Add` 以为"牌不在任何牌堆里"而**跳过摘除** ⇒ 同一张牌同时挂在
+    //     原主手牌 + 新主手牌上（一个实例两个牌堆）⇒ 瓦库把这张"自己的牌"每回合重打 60 次（撞护栏上限）、
+    //     卡牌节点暴涨（实机泄漏 6.1 万 CanvasItem）= 严重卡顿（用户口径「超级卡」）。已按铁律修好。
+    //  ① `LocalWakuuDaddyMergeCard` 手牌收编：先摘 → 改归属 → `CardPileCmd.Add(牌, Hand)`（顺序铁律 + 正常视觉路径）。
+    //  ② 「合体混弃」：不要再"弃牌前改归属让原版按新 owner 落堆"（同一个坑）⇒ 改成 `DiscardAndDraw` **后置**：
+    //     原版正常弃完，再把牌搬去掷硬币选中的那一方弃牌堆（先摘 → 改归属 → AddInternal，全同步内部方法）。
+    //  ③ 兜底：瓦库自动出牌的手牌读数过滤掉"不属于它的牌"（`ResolveAutoplayHand`），命中打一条限流 WARN
+    //     —— 即使将来再出现"牌没搬干净"，最坏也只是它不碰那张牌，而不会变成无限重打。
+    private const string BuildMarker = "Revival v1.44.0 (game v0.111.0, marker=2026-10-07-r230)";
 
     private static Harmony? _harmony;
 
@@ -273,6 +308,10 @@ public partial class Entry
         "MegaCrit.Sts2.Core.Localization.LocManager.Initialize",
         // ④ 瓦库的爹（r226）：卡池冻结那一刻校验自定内容入池（缺了锚点 `[瓦库的爹验证]` 不出现）
         "MegaCrit.Sts2.Core.Models.ModelDb.Preload",
+        // ④ 瓦库的爹（r228）：【合体】混抽（Draw 的 4 参数重载；2 参数重载会转发到它）
+        "MegaCrit.Sts2.Core.Commands.CardPileCmd.Draw/4",
+        // ④ 瓦库的爹（r228）：【合体】混弃（缺了只是弃牌不混堆，不影响弃牌本身）
+        "MegaCrit.Sts2.Core.Commands.CardCmd.DiscardAndDraw",
     };
 
     /// <summary>

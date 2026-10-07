@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using LocalMultiControl.Scripts.Models.Cards;
+using LocalMultiControl.Scripts.Models.Powers;
 using LocalMultiControl.Scripts.Models.Relics;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Models;
@@ -16,7 +17,8 @@ namespace LocalMultiControl.Scripts.Runtime;
 /// <list type="bullet">
 /// <item>卡牌固定读 <c>cards</c> 表的 <c>&lt;entry&gt;.title</c> / <c>&lt;entry&gt;.description</c>
 ///   （<c>CardModel.TitleLocString</c> / <c>CardModel.Description</c>）；</item>
-/// <item>遗物读 <c>relics</c> 表的 <c>.title</c> / <c>.description</c> / <c>.eventDescription</c> / <c>.flavor</c>。</item>
+/// <item>遗物读 <c>relics</c> 表的 <c>.title</c> / <c>.description</c> / <c>.eventDescription</c> / <c>.flavor</c>；</item>
+/// <item>状态（r228：【我挡】的承伤状态）读 <c>powers</c> 表的 <c>.title</c> / <c>.description</c>。</item>
 /// </list>
 /// **缺键会让 <c>LocString</c> 抛 <c>LocException</c>** 冒穿渲染（卡牌库 / 手牌 / 遗物描述页全部中招）⇒ 必须注入。
 ///
@@ -31,6 +33,9 @@ internal static class LocalWakuuDaddyLocalization
 
     /// <summary>游戏 <c>relics</c> 表（遗物名称 / 描述 / 事件描述 / 风味文本）。</summary>
     internal const string RelicsTable = "relics";
+
+    /// <summary>游戏 <c>powers</c> 表（状态名称 / 描述；`PowerModel.Title` / `.Description` 读它）。</summary>
+    internal const string PowersTable = "powers";
 
     private static bool _localeCallbackSubscribed;
 
@@ -85,6 +90,15 @@ internal static class LocalWakuuDaddyLocalization
                 [$"{relicEntry}.description"] = LocalModText.DaddyRelicDescription,
                 [$"{relicEntry}.eventDescription"] = LocalModText.DaddyRelicDescription,
                 [$"{relicEntry}.flavor"] = LocalModText.DaddyRelicFlavor,
+            });
+
+            // 【我挡】的承伤状态（r228 实装后才有）：挂在队友身上会显示图标 + 悬停说明，
+            // 缺 keys 同样会让 LocString 抛 LocException。
+            string shieldPowerEntry = ModelDb.GetId<LocalWakuuDaddyShieldPower>().Entry;
+            locManager.GetTable(PowersTable).MergeWith(new Dictionary<string, string>
+            {
+                [$"{shieldPowerEntry}.title"] = LocalModText.DaddyShieldPowerTitle,
+                [$"{shieldPowerEntry}.description"] = LocalModText.DaddyShieldPowerDescription,
             });
         }
         catch (Exception exception)

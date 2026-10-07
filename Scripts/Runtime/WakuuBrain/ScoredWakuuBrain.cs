@@ -310,6 +310,14 @@ internal sealed class ScoredWakuuBrain : IWakuuCombatBrain
             return null;
         }
 
+        // ④ 瓦库的爹【你攻】：本回合被点名的集火目标优先 —— 本人手上那张牌打不打得动它不管，先集火
+        // （目标已经死掉/不可打时 TryGetFocus 会返回 null，自然回落到评分选择）。
+        Creature? focus = WakuuDaddyCombatState.TryGetFocus(enemies);
+        if (focus != null)
+        {
+            return focus;
+        }
+
         List<int> effective = new(enemies.Count);
         foreach (Creature enemy in enemies)
         {
