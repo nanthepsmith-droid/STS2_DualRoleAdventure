@@ -27,13 +27,23 @@ See the **[Player Guide](PLAYER_GUIDE.md)** ([简体中文](PLAYER_GUIDE.zh-CN.m
 
 ## Installation
 
-**Steam Workshop:** [GuyGinat's community continuation](https://steamcommunity.com/sharedfiles/filedetails/?id=3772900244) has resumed updating — we recommend subscribing there. The original author's item ([3747538947](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)) may also see updates; watch it if you like, but note that this fork is distributed only via this repository's Releases.
+**Steam Workshop:** several separate "local multi-control" items exist, each on its own release cadence: the original author's item ([3747538947](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)), [GuyGinat's community continuation](https://steamcommunity.com/sharedfiles/filedetails/?id=3772900244), and [the other authorized fork](https://steamcommunity.com/sharedfiles/filedetails/?id=3810171053) described in the section above. Note: **this repository's builds are distributed only via this repository's Releases** (they are not shipped through any Workshop item).
 
 **Manual (this fork's builds):** download `DualRoleAdventure.dll` + `DualRoleAdventure.json` from [Releases](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/releases) and place both in:
 
 ```
 <Slay the Spire 2 install>\mods\DualRoleAdventure\
 ```
+
+## See also: another **authorized** fork (Workshop)
+
+**[本地多角色 · 全盛瓦库版 | Local Multi-Control · Prime Vakuu](https://steamcommunity.com/sharedfiles/filedetails/?id=3810171053)**
+
+- That fork describes itself as "**based on liwenhao0427's (磁石战士Ω) Local Multi-Control and GuyGinat's community-maintained version — with authorization**". **The authorization is theirs** (granted by the original author and the previous maintainer) — which is exactly why we are glad to point you to it: there is more than one modified build on the Workshop, and **being authorized** is what decides whether one can be trusted.
+  ⚠ To be clear about the boundary: **this repository itself has no such authorization** — it is simply a community continuation line kept alive after the original author stopped at v1.30; the two continuations are independent of each other.
+  (GuyGinat's continuation item updates slowly at the moment — described as a dormant phase; it will likely wake up when a game update breaks compatibility.)
+- Its focus differs from ours: it adds a good deal of enhancement around **Vakuu (AI auto-play)**. This repository's maintainer has played it and found it noticeably better in that area — worth a try.
+- ⚠ It is published **on the Steam Workshop only (no GitHub repository)**. This fork's builds are still distributed **only via this repository's Releases**. The two are independent — pick either one, or try both (note: installing two "local multi-control" mods at once will conflict; disable one first).
 
 ## Building from source
 

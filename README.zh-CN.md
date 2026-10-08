@@ -27,13 +27,23 @@
 
 ## 安装
 
-**Steam 创意工坊：** [GuyGinat 的社区接续条目](https://steamcommunity.com/sharedfiles/filedetails/?id=3772900244)已恢复更新，推荐订阅该条目。原作者的工坊条目（[3747538947](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)）也可能继续更新，可自行关注；注意本仓库的修正版仅通过本仓库的 Releases 分发。
+**Steam 创意工坊：** 工坊上有多个「本地多角色」条目，各自独立、更新节奏不同：原作者的[原条目](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)、[GuyGinat 的社区接续条目](https://steamcommunity.com/sharedfiles/filedetails/?id=3772900244)，以及[上一节介绍的另一个已授权分支](https://steamcommunity.com/sharedfiles/filedetails/?id=3810171053)。注意：**本仓库的修正版只通过本仓库的 Releases 分发**（不随任何工坊条目更新）。
 
 **手动安装（本仓库构建）：** 从 [Releases](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/releases) 下载 `DualRoleAdventure.dll` + `DualRoleAdventure.json`，放入：
 
 ```
 <杀戮尖塔2安装目录>\mods\DualRoleAdventure\
 ```
+
+## 另见：另一个**已获授权**的分支（创意工坊）
+
+**[本地多角色 · 全盛瓦库版 | Local Multi-Control · Prime Vakuu](https://steamcommunity.com/sharedfiles/filedetails/?id=3810171053)**
+
+- 该分支自述为「**基于 liwenhao0427（磁石战士Ω）的 Local Multi-Control 与 GuyGinat 的社区维护版修改，已获授权**」——**获得授权的是它**（经原作者与前任维护者同意），这正是我们愿意推荐它的原因：工坊上"改过的版本"不止一个，**是否获得授权**决定它能不能被信任。
+  ⚠ 说清楚边界：**本仓库自身并没有这类授权**，只是原作者停更后按社区惯例继续维护的一条分支；两条接续线各自独立、互不隶属。
+  （GuyGinat 的接续条目目前更新较慢，按其说法更像"休眠"——等游戏更新导致不兼容时大概会复活）；
+- 它的侧重与本站不同：对**瓦库（AI 代打）**链路做了较多增强。本仓库维护者已实测过，体验确实更好，值得一试；
+- ⚠ 它**只在创意工坊发布，没有 GitHub 仓库**；本仓库的修正版仍**只通过本仓库 Releases 分发**，两者互不依赖，按需二选一或都装（注意：同机同时装两个"本地多角色"类 mod 会冲突，装之前先禁用另一个）。
 
 ## 从源码构建
 
