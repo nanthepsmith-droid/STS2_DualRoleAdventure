@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Reflection;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
+using LocalMultiControl.Scripts.Runtime.PureLogic;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
@@ -91,6 +92,13 @@ internal static class LocalContextThirdPartyIsMePatch
         }
 
         if (!LocalSeatSource.IsLocalSeat(player.NetId))
+        {
+            return;
+        }
+
+        // 战灵召唤 Phase 0 POC：临时席位（战神）虽然是"本地席位"（要享受自动就绪），
+        // 但**绝不能**被第三方当成"我"放行（它不是任何人操作的席位）⇒ 显式排除。
+        if (HellwarPocPolicy.IsTemporarySeat(player.NetId))
         {
             return;
         }

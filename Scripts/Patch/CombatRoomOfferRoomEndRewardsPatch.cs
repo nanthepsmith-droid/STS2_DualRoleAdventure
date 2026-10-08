@@ -36,6 +36,11 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
     [HarmonyPrefix]
     private static bool Prefix(CombatRoom __instance, ref Task __result)
     {
+        // 战灵召唤 Phase 0 POC：**发奖之前**把临时玩家（战神）从战斗里摘掉 ——
+        // 原版 OfferRoomEndRewards 会遍历 CombatState.Players 发奖（设计文档 §5.8 / §13.3.1）。
+        // 在同一补丁里做 ⇒ 不新增 Harmony 目标；环境变量没开时立即返回。
+        HellwarPocRuntime.CleanupBeforeRewards(__instance.CombatState);
+
         if (!LocalSelfCoopContext.IsEnabled
             || !LocalSelfCoopContext.UseSingleAdventureMode
             || __instance.CombatState?.RunState == null

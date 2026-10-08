@@ -143,6 +143,8 @@ internal static class LocalMultiControlRuntime
         // 局都清了，读档窗口没有存在的理由（防止它遮住守卫后续的清理职责）。
         LocalSelfCoopContext.CloseLoadReplayWindow("run-cleanup");
         Session.Reset("RunManager.CleanUp");
+        // 战灵召唤 Phase 0 POC：退局兜底 —— 临时席位与"本场已生成"标记绝不跨局残留。
+        HellwarPocRuntime.ResetForRun("RunManager.CleanUp");
         _wakuuAutoEndIssued.Clear();
         _allPlayersAutoEndedRounds.Clear();
         WakuuRoundSwitchLedger.Reset();

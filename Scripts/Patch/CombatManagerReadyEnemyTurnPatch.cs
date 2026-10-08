@@ -98,9 +98,16 @@ internal static class CombatManagerReadyEnemyTurnPatch
         }
 
         // 规矩 ①：只补我们自己的其他席位。
+        // ⚠ 战灵召唤 POC：**临时席位（战神）也算"我们自己的席位"** —— 它没有对端、也不会自己报就绪，
+        //   而完成判据是 `PlayersReadyToBeginEnemyTurn.Count == State.Players.Count`（含它）
+        //   ⇒ 不补它，真人按了「结束回合」后整局**永远停在 `EndTurnPhaseOne`**（r238 实机：
+        //   能抽牌/出牌/切人，就是结束不了回合，日志只有一串 `忽略切换请求…EndTurnPhaseOne`）。
+        //   注意：另一道门 `AllPlayersReadyToEndTurn` 不受影响 —— 单机/伪联机下它直接返回 true
+        //   （`CombatManager.cs:1058-1074`），所以"结束回合"卡的是**这一道**。
         List<Player> pendingPlayers = state.Players
             .Where((candidate) => candidate.NetId != player.NetId)
-            .Where((candidate) => LocalSeatSource.IsLocalSeat(candidate.NetId))
+            .Where((candidate) => LocalSeatSource.IsLocalSeat(candidate.NetId)
+                || LocalSelfCoopContext.IsTemporarySeat(candidate.NetId))
             .Where((candidate) => !readySet.Contains(candidate))
             .ToList();
         if (pendingPlayers.Count == 0)

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -198,7 +198,7 @@ public partial class Entry
     //     全程没有 `本回合登记已清空`）。
     //  ② `合体混抽` / `合体混弃` 两条日志补 `round=` —— r230 判读时正是"没写回合号"导致要额外反推
     //     那两次混抽属于哪一回合（是不是跨回合残留）。纯日志，无行为变化。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-07-r232)";
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-08-r239)";
 
     private static Harmony? _harmony;
 
@@ -335,6 +335,8 @@ public partial class Entry
         LocalMultiControlLogger.Info($"BUILD_ID {BuildMarker}");
         LocalMultiControlLogger.Info($"BUILD_IDENTITY {DescribeBuildIdentity()}");
         LocalMultiControlLogger.Info("开始初始化 Harmony 补丁。");
+        // 战灵召唤 Phase 0 POC：开机就把开关状态打出来（关着也打 ⇒ 实机能区分"没配变量"与"功能没生效"）。
+        HellwarPocRuntime.LogSwitchStateAtStartup();
 
         // 阶段 1：运行期兼容性（PE/CLR/Assembly/依赖）
         RunStage(fatalFailures, "RUNTIME_COMPAT_CHECK",

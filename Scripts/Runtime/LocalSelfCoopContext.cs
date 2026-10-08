@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Godot;
 using HarmonyLib;
+using LocalMultiControl.Scripts.Runtime.PureLogic;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
 using MegaCrit.Sts2.Core.Helpers;
@@ -96,6 +97,42 @@ internal static class LocalSelfCoopContext
     public static IReadOnlyList<ulong> LocalPlayerIds => _localPlayerIds;
     public static IReadOnlyCollection<ulong> WakuuPlayerIds => _wakuuPlayerIds;
     public static IReadOnlyCollection<ulong> CoopBotsPlayerIds => _coopBotsPlayerIds;
+
+    /// <summary>
+    /// 「临时席位」（战灵召唤 Phase 0 POC：战斗内临时玩家「战神」）—— **独立集合**，
+    /// ⚠ **绝不塞进 `_localPlayerIds`**（2026-10-08 实测教训）：
+    /// 那张表是**全表消费者**的取数点（`SeatRegistry.IsLocalSeat` → `LocalContextThirdPartyIsMePatch`、
+    /// 战斗内切人/前台循环、大厅人数面板、存档标记…）。把临时席位追加进去 ⇒ 切人循环会切到一个没有手牌 UI 的席位
+    /// ⇒ 实测表现 = **不能出牌 / 不能结束回合 / 不能切人 / 瓦库不打牌**（回合链卡在战神身上）。
+    /// 正确做法 = 独立集合 + 由 POC 自己让它"过回合"（见 <c>HellwarPocRuntime</c>）。
+    /// </summary>
+    private static readonly List<ulong> _temporarySeatIds = new();
+
+    /// <summary>当前临时席位（POC 用，供就绪/清理判据读取）。</summary>
+    public static IReadOnlyList<ulong> TemporarySeatIds => _temporarySeatIds;
+
+    /// <summary>登记一个临时席位（幂等）。</summary>
+    public static void AddTemporarySeat(ulong playerId)
+    {
+        if (playerId == 0UL || _temporarySeatIds.Contains(playerId))
+        {
+            return;
+        }
+
+        _temporarySeatIds.Add(playerId);
+    }
+
+    /// <summary>是不是「临时席位」（登记过的，或落在 POC 哨兵号段里的）。</summary>
+    public static bool IsTemporarySeat(ulong playerId)
+        => _temporarySeatIds.Contains(playerId) || HellwarPocPolicy.IsTemporarySeat(playerId);
+
+    /// <summary>移除全部临时席位（战斗结束 / 退局复位用）；返回移除个数。</summary>
+    public static int RemoveAllTemporarySeats()
+    {
+        int removed = _temporarySeatIds.Count;
+        _temporarySeatIds.Clear();
+        return removed;
+    }
 
     public static ulong PrimaryPlayerId
     {
