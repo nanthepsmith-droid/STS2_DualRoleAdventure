@@ -56,6 +56,8 @@ LocalContext.IsMe(player) || player.NetId == runManager.NetService.NetId
 | ③ | `CreateLocalRuneSelectionScreenAsync` 前缀 + `CreateRuneSelectionScreenAsync` 前缀 | 记下「这次是给哪一席建界面」，再给标题补「· 角色N」（符文逐席位，不标注就分不清在给谁选）。⚠ 标题刻意挂在**异步方法**上而不是小的同步工厂 `HextechRuneSelectionScreen.Create` 上：小方法会被 JIT 内联、内联副本不走 Harmony 入口（本仓库同类坑见 skill references「坑 S」第 5 条） |
 | ④ | `HextechRuneSelectionScreen.DismissAfterSelectionComplete` 前缀 | ② 的收尾兜底：界面被提前关掉后，海克斯批次的 finally 仍会对**已释放**节点调收尾方法（它自己 catch 成 `Failed to dismiss blocking rune selection screen: ObjectDisposedException` 的 WARN，v1.0.0 实测 ×5）。功能无影响，但那是我们引入的噪声 ⇒ 节点不可用就跳过 |
 | ⑤ | ③ 的归属绑定 + `RelicsSelected` 前缀里的自动作答（v1.1.0） | ③ 记下的「这一屏属于哪一席」在 `RelicsSelected` 被等待时绑到界面实例；只有该席位是**后台托管中的瓦库**时，才延迟 1.2s 走游戏自己的点击路径（候选按钮的 `Pressed` 信号）替它选一个符文。真人席位的符文界面**一律不碰** |
+| ⑥ | `CreateEnemyHexAdjustmentOptionsForSelection` **后缀**（v1.2.0 / 判定 v1.2.1 修正） | 「敌人 hex 调整面板」的归属收口：这一屏的席位 ≠ **可调席位**时，把刚建好的那份 options 改成**只读**（`ControlsEnabled=false` + `RerollFunc`/`Changed`/`ScreenCreated` 清空）⇒ 面板照旧出现但没有 reroll/移除按钮，也不往同步里发任何东西。**「可调席位」= 权威席位若是真人就是它，否则给第一个真人本地席位**（v1.2.1：权威席位常常正是一个被 ⑤ 自动作答的托管瓦库席位 ⇒ 若把可调权给它，真人那屏就只能看不能动） |
+| ⑦ | `CompleteLocalEnemyHexAdjustmentSync` **前缀**（v1.2.0） | 只读那一屏**不发 final**（判据 = 界面自己的私有字段 `_enemyHexControlsEnabled`，**实例准确**）——否则它会用创建时的初始值把可调席位刚调好的结果覆盖掉 |
 
 - 不引用海克斯 dll（类型按全名反射），海克斯缺席/更新改名 ⇒ 本补丁整体退化为「不干预」；
 - 不改游戏本体行为、不动海克斯的数值与发牌逻辑；
@@ -90,7 +92,10 @@ LocalContext.IsMe(player) || player.NetId == runManager.NetService.NetId
 [HextechRunesLocalCoopFix] INIT_OK: patched=[HextechRuneSelectionCoordinator.IsLocalPlayer,
     HextechRuneSelectionScreen.RelicsSelected, HextechRuneSelectionCoordinator.CreateLocalRuneSelectionScreenAsync,
     HextechRuneSelectionCoordinator.CreateRuneSelectionScreenAsync,
-    HextechRuneSelectionScreen.DismissAfterSelectionComplete], missing=[], source=init
+    HextechRuneSelectionScreen.DismissAfterSelectionComplete,
+    HextechRuneSelectionCoordinator.CreateEnemyHexAdjustmentOptionsForSelection,
+    HextechRuneSelectionCoordinator.CompleteLocalEnemyHexAdjustmentSync], missing=[], source=init
+[HextechRunesLocalCoopFix] 敌人 hex 调整面板：已按「只有权威席位可调」收口（非权威席位的面板变只读、不发 final；**不做**远端镜像）。syncContext 实参下标=7, selection 实参下标=8
 [HextechRunesLocalCoopFix] 瓦库席位符文界面自动作答: 已就绪（后台托管瓦库席位由我们代选，真人席位照旧自己点）。
 [HextechRunesLocalCoopFix] 本地席位已按「本机玩家」放行（…）: player=76561198422527327
 [HextechRunesLocalCoopFix] 将为该席位创建符文界面（…）: player=76561198422527327
@@ -103,7 +108,7 @@ LocalContext.IsMe(player) || player.NetId == runManager.NetService.NetId
 
 | 观察 | 含义 |
 |---|---|
-| `INIT_OK` + `patched=[…5 项…]`, `missing=[]` | 补丁全挂上 |
+| `INIT_OK` + `patched=[…7 项…]`, `missing=[]` | 补丁全挂上（v1.1.0 是 5 项；v1.2.0 起 +2 项 = 敌人 hex 面板归属） |
 | `INIT_DEGRADED` / `missing=[…]` | 海克斯更新改名了，需要按新名字适配（日志点名是哪一项） |
 | `瓦库席位符文界面自动作答: 已就绪` | ⑤ 的私有字段解析成功（`未就绪` = 字段改名，自动作答退化为「真人手点」） |
 | 一个席位一条 `已按「本机玩家」放行` | 该席位不再走远端等待（复现修复的关键锚点） |
@@ -114,6 +119,10 @@ LocalContext.IsMe(player) || player.NetId == runManager.NetService.NetId
 | `瓦库符文界面没有可选项（例如「敌人 hex 预览」屏），交回真人` | 该屏没有符文候选（本轮未适配的屏，见「已知限制」） |
 | `瓦库符文界面单击后仍未关闭…交回真人` | 界面被第三方改写过多选语义 ⇒ 交真人（把日志发我，按它适配） |
 | 仍有 `WaitForRemoteHextechChoice: still waiting` 且没有本 mod 的锚点 | 补丁没生效（看 INIT 行），贴日志继续查 |
+| `敌人 hex 面板归属补丁：目标方法没找齐 / 参数名对不上 / 界面字段没解析齐，跳过` | 海克斯更新改名 ⇒ ⑥⑦ **整体退化**为「不干预」（保留旧行为：两席都能调，后作答那屏的 reroll 不生效） |
+| `后缀已生效` / `final 收口前缀已生效`（每次启动各一条） | ⑥⑦ 真的挂上了（**这两条缺失** = 目标方法被 JIT 内联跳过，把日志发维护者） |
+| `敌人 hex 调整面板：非可调席位改为只读…: 席位=角色N, 可调席位=角色M, 原权威=角色K` | 该席位的面板已收成只读（它不该有 reroll 按钮）；`可调席位` 才是你可以去 reroll 的那一屏（v1.2.1 起：K 若是托管瓦库会与 M 不同） |
+| `敌人 hex 调整面板：只读那一屏不发 final` | ⑦ 生效（该屏不抢 final） |
 
 排查命令：`python tools\log_scan.py --kw HextechRunesLocalCoopFix --file <godot.log> --show`
 
@@ -159,12 +168,39 @@ FAIL:    瓦库那一屏仍需手点 ⇒ 看有没有 `…没有可选项…` / 
 期望 0： 我方 [ERROR] / ### Exception ### / 幽灵弹层 / waitForRemoteHextechChoice 仍等待
 ```
 
+**❌ v1.2.0 首测结果（2026-10-08，marker r238）**：用户「海克斯我也**不能 roll 了**」。
+日志（`logs-archive/godot__20261008-214742__r238.log`）三条锚点全绿
+（`后缀已生效` / `非权威席位改为只读…: 席位=角色1, 权威=角色2`），**但判据错了**：权威是**托管瓦库席位**（角色2
+正是被 ⑤ `已登记自动作答` 的那一席）⇒ 真人（角色1）被收成只读。⇒ v1.2.1 改判据（见上）。
+
+**⭐ v1.2.1（⑥⑦ 敌人 hex 调整面板归属，判据修正）—— 待实机复测**
+
+验证契约（用户侧，留档）：
+
+```
+SETUP:   本地多控 2 席（1 席真人 + 1 席【后台托管瓦库】最好，正是本次复现配置）+ 海克斯大乱斗；部署位 dll = v1.2.1
+ACTION:  走到某幕开局 roll 出「本幕怪物 hex」的地方（符文界面里带敌人 hex 预览的那一屏）
+PASS:    ① 启动日志 `INIT_OK: patched=[…7 项…]` + `敌人 hex 调整面板：已按「只有权威席位可调」收口…`；
+         ② 日志有 `后缀已生效`（⑥ 挂上了）+ `非可调席位改为只读…: 席位=<托管席位>, 可调席位=<你的席位>, 原权威=<托管席位>`
+            ⇒ **可调席位 = 你自己那一屏**；
+         ③ 你自己那一屏有 reroll/移除按钮，托管那一屏只有预览；
+         ④ 在**你自己那一屏** reroll 后点确定 ⇒ **实际生效的就是你刚 roll 的那个**（不再是"之前那个"）；
+         ⑤ 符文选择 / 回合推进照旧正常（没有卡在敌人 hex 这一屏）。
+FAIL:    你那一屏还是没有 reroll 按钮 ⇒ 把 `非可调席位改为只读…` 那一行（连同它前面的 `后缀已生效`）发我：
+         `可调席位` 若不是你 → `IsAutomatedWakuuSeat` 对托管席位的判定没命中（看有没有
+         `自动作答: 已登记`/`交真人作答` 那几行，它们的判据同源）；若整行缺失 ⇒ ⑥ 没跑（看 `后缀已生效`）。
+期望 0： 我方 [ERROR] / ### Exception ### / 幽灵弹层 / waitForRemoteHextechChoice 仍等待 / 卡死在这一屏
+```
+
 ## 复现 / 验证步骤（用户侧）
 
 1. 关游戏 → 确认 `mods\HextechRunesLocalCoopFix\` 槽位里 `HextechRunesLocalCoopFix.{dll,json}` 都在（游戏内 mod 列表里启用它）。
 2. 进「本地·单人多角色」，开一局带**海克斯大乱斗**的 run，走到会弹符文选择的地方（第一幕开局 / 事件给的符文）。
 3. 期望：每个席位各弹一次符文界面，标题带「· 角色1 / 角色2」；选完一个自动露出下一个；两个都选完流程继续。
    **其中后台托管的瓦库席位由本补丁自己选**（它那一屏一闪而过），真人席位照旧自己点。
+   该幕 roll 了「本幕怪物 hex」时还有一条：**只有「可调席位」那一屏带 reroll/移除按钮**
+   （v1.2.1 起可调席位 = 真人席位；托管瓦库席位只读），另一屏只有预览；
+   在你那一屏 reroll + 确定 ⇒ 生效的就是你刚 roll 的那个（见上方验证契约）。
 4. 取日志看上面三个锚点。
 
 ## 构建 / 部署
@@ -206,18 +242,37 @@ cd D:\Download\pain\STS2_DualRoleAdventure-itriedtofix
 - 另注：海克斯**自己也识别瓦库形态**（`HextechRunes.VakuuTurnController` / `HextechAutoPlayHelper.AutoPlayOrMoveToResultPile`），
   瓦库 + 海克斯的交叉点可能不止符文界面，以实机日志为准。
 
-### 敌人 hex 调整面板可能出现在两个席位上（未处理，按需再加）
+### 敌人 hex 调整面板的归属（✅ v1.2.0 已收口为「只有权威席位可调」；⭐ 待实机复测）
 
+用户原话（2026-10-08）：「**每层给敌方 buff 可以 roll 一次，roll 完点确定却还是之前那个**」。
 海克斯每幕开局会 roll「本幕怪物 hex」，并允许**权威席位**在符文界面里顺手调整（reroll / 移除）。
-原版联机下只有权威席位的客户端会弹这个界面；本补丁把两席都判成本机后，两边界面都会带这个面板
-（`ControlsEnabled` 对两席都成立），而「最终值由谁决定」由**先作答的那一屏**说了算
-（海克斯内部 `FinalSent` 只认第一次 final 发送）。表现：第二屏可能显示的是调整前的初始值、且它的调整不生效。
 
-- 影响面：只是这一个可选面板的归属/显示；符文选择与流程推进都正常。
-- 不影响的情况：该幕没有 roll 新怪物 hex、或用户没动这个面板时，行为与之前完全一致。
-- 要彻底对齐原版（只有权威席位可调 + 其它屏只读镜像）需要再补 3 个补丁点
-  （`CreateEnemyHexAdjustmentOptionsForSelection` / `CompleteLocalEnemyHexAdjustmentSync` / `SendEnemyHexAdjustment`），
-  属"看得见问题再修"的范畴。
+**病灶的机制**（反编译 `HextechRunes.dll` v0.111.0 核对过方法/字段名，另用反射离线核对过一遍）：
+
+| 环节 | 原版判定 | 补丁① 之后实际发生 |
+|---|---|---|
+| 建调整面板 | `CreateEnemyHexAdjustmentOptionsForSelection` 里 `controlsEnabled = syncContext != null && IsLocalPlayer(runManager, syncContext.AuthorityPlayer)` | 补丁①把**两席**都判成「本机玩家」⇒ `controlsEnabled` **对两屏都为 true** ⇒ 两屏**都可 reroll**、都挂 `Changed`（每次改动就 `SendEnemyHexAdjustment(…, isFinal: false)`） |
+| 收尾 | `CompleteLocalEnemyHexAdjustmentSync` 里 `if (IsLocalPlayer(runManager, syncContext.AuthorityPlayer))` 才发 final | 同样两屏都发 ⇒ 而 `SendEnemyHexAdjustment` 开头 `if (syncContext.FinalSent) return;` ⇒ **只有先作答的那一屏的 final 生效**，后一屏的 reroll 被静默丢弃（原版只在「面板不可调」那一屏才挂远端镜像，所以它显示的还是自己那份） |
+
+⇒ 表现完全吻合用户描述：在**后作答**的那一屏 reroll + 确定 ⇒ 实际生效的是**先作答那屏**（= 调整前的初始值）。
+
+**修法（= ⑥⑦，用户 2026-10-08 拍板选 A）**：把原版「只有权威席位可调」在单进程里还原出来 ——
+按**这一屏的席位**（`selection.Player` 与「可调席位」，两边都从实参反射读）决定这屏的 options 是否只读；
+只读屏**不发 final**（判据 = 界面私有字段 `_enemyHexControlsEnabled`，实例准确，不依赖任何"归属猜测"）。
+
+**⚠ v1.2.0 首测踩到的坑（用户实测「海克斯我也不能 roll 了」）**：v1.2.0 直接把「可调席位」当成
+`syncContext.AuthorityPlayer`，但**权威席位很可能正是那个【后台托管的瓦库席位】**
+（实测日志 `席位=角色1, 权威=角色2`，而角色2 就是被 ⑤ 自动作答的托管瓦库）⇒ 两处失真叠在一起：
+① 托管席位不会去点这个面板；② 它的符文界面由 ⑤ 自动作答（1.2s）**必定早于真人** ⇒ 结果 = **真人那一屏只剩预览、没有 reroll 按钮**。
+⇒ **v1.2.1 修正「可调席位」的判据**（见 <c>ResolveControllerSeat</c>）：
+**权威席位若是真人本地席位就给它**；否则给**第一个真人本地席位**（按 run 内顺序，稳定）；一个真人都没有（全托管）就退回权威席位＝不干预。
+
+- **刻意不做远端镜像**：原版「非权威客户端只读镜像」靠一条**远端**消息（`ReceiveEnemyHexAdjustments`）。
+  本地多控是单进程回环，权威席位是自己发自己的选择、**原版不回环给自己的客户端** ⇒ 那个 `RemoteReceiveTask`
+  很可能永远等不到 ⇒ **软锁**（比现在这个显示 bug 严重得多）。所以只读屏只显示**创建时那份快照**，
+  权威席位后续 reroll 不会同步到它那一屏（显示层面的一处小不一致，不影响实际数值）。
+- **失败姿态 = 全上或全不上**：两处补丁 + 3 个反射成员（`_enemyHexControlsEnabled` / `CurrentMonsterHexSlots` /
+  `RemoteReceiveTask`）任一缺失 ⇒ 整套退化（保留旧行为）。**半挂状态会造出「只读屏照样发 final」这种更糟的组合**。
 
 ## 其它未做（按需再加）
 

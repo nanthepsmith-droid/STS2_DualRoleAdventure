@@ -97,6 +97,11 @@ public static class Entry
         }
 
         HextechRuneSelectionCompatPatch.Install(_harmony, coordinatorType, screenType, Patched, Missing);
+
+        // ⑥⑦ 敌人 hex 调整面板的归属：把原版「只有权威席位可调」在单进程回环里还原出来
+        //（补丁 ① 把每个本地席位都判成「本机玩家」，会让两屏都可调 ⇒「先作答那屏说了算」）。
+        EnemyHexAuthorityCompatPatch.Install(_harmony, coordinatorType, screenType, Patched, Missing);
+
         _installed = true;
         AppDomain.CurrentDomain.AssemblyLoad -= OnAssemblyLoad;
 
