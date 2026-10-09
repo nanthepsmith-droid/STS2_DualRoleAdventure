@@ -52,6 +52,12 @@ public class WakuuConfigJsonTests
             Assert.That(data.refineTakeVakuuAssets, Is.True); // 炼化默认收编瓦库的牌与遗物
             Assert.That(data.refineTakeVakuuPotions, Is.True); // 炼化默认收编瓦库的药水
             Assert.That(data.vakuuDaddy, Is.False); // 瓦库四功能 · ④「瓦库的爹」：可开关且默认关
+            Assert.That(data.hellwarGod, Is.False); // 战灵召唤（原 ④「地狱战神」）：可开关且默认关
+            Assert.That(data.hellwarSplitHpRatio, Is.EqualTo(HellwarSummonPolicy.DefaultSplitHpRatio)); // 【分裂精神】扣血档位默认 15%
+            Assert.That(data.hellwarSplitFree, Is.True); // 【分裂精神】默认"免费额外选项"（用完还能休息/锻造）
+            Assert.That(data.hellwarActGain, Is.False); // 每幕自动获得计数：可开关且默认关
+            Assert.That(data.hellwarActGainAmount, Is.EqualTo(HellwarSummonPolicy.DefaultActGainAmount)); // 每幕获得量默认 2
+            Assert.That(data.restSiteOptionScroll, Is.True); // 休息处选项滚动条：默认开（UI 修复，非玩法改动）
             // 策略默认值
             Assert.That(data.eventChoiceMode, Is.EqualTo("first"));
             Assert.That(data.cardPickMode, Is.EqualTo("last"));
@@ -360,6 +366,12 @@ public class WakuuConfigJsonTests
             Assert.That(json, Does.Contain("\"purifyVakuu\""));
             Assert.That(json, Does.Contain("\"uniteVakuu\""));
             Assert.That(json, Does.Contain("\"vakuuDaddy\""));
+            Assert.That(json, Does.Contain("\"hellwarGod\""));
+            Assert.That(json, Does.Contain("\"hellwarSplitHpRatio\""));
+            Assert.That(json, Does.Contain("\"hellwarSplitFree\""));
+            Assert.That(json, Does.Contain("\"hellwarActGain\""));
+            Assert.That(json, Does.Contain("\"hellwarActGainAmount\""));
+            Assert.That(json, Does.Contain("\"restSiteOptionScroll\""));
         });
     }
 }

@@ -95,6 +95,28 @@ internal static class LocalWakuuAutopilotConfig
     public static bool VakuuDaddy { get; private set; }
 
     /// <summary>
+    /// 战灵召唤（原 ④「地狱战神」，#21）（默认关）：开局给**真人席位**发遗物【地狱耳环】，
+    /// 休息处多出一条【分裂精神】选项（消耗当前血量百分比换 1 个计数）。
+    /// 见 <see cref="HellwarSummonRuntime"/> / <see cref="HellwarSplitSpiritOption"/>。
+    /// </summary>
+    public static bool HellwarGod { get; private set; }
+
+    /// <summary>战灵召唤 · 【分裂精神】扣血档位（10 / 15 / 20，默认 15%，基数 = 当前血量）。</summary>
+    public static string HellwarSplitHpRatio { get; private set; } = HellwarSummonPolicy.DefaultSplitHpRatio;
+
+    /// <summary>战灵召唤 · D5 档位（默认 true = 用完【分裂精神】后仍能休息 / 锻造）。</summary>
+    public static bool HellwarSplitFree { get; private set; } = true;
+
+    /// <summary>战灵召唤 · 每进入新的一幕自动获得计数（默认关）。</summary>
+    public static bool HellwarActGain { get; private set; }
+
+    /// <summary>战灵召唤 · 每幕自动获得计数的档位（1 / 2 / 3，默认 2）。</summary>
+    public static string HellwarActGainAmount { get; private set; } = HellwarSummonPolicy.DefaultActGainAmount;
+
+    /// <summary>休息处选项横向滚动条（默认开；与其它 mod 改动重合时可关）。</summary>
+    public static bool RestSiteOptionScroll { get; private set; } = true;
+
+    /// <summary>
     /// 瓦库形态：战斗中自动用药水（Phase 2.5 保守版，默认关，已拍板）。
     /// 血液/再生低血自用；果汁到手立刻喝；增益/攻击/卡牌授予类精英 Boss 战首回合用；
     /// mod 药水普通战斗随机回合消耗；未分类原版药水保守跳过。
@@ -304,6 +326,10 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.refineTakeVakuuAssets): data.refineTakeVakuuAssets = value; break;
                     case nameof(WakuuConfigData.refineTakeVakuuPotions): data.refineTakeVakuuPotions = value; break;
                     case nameof(WakuuConfigData.vakuuDaddy): data.vakuuDaddy = value; break;
+                    case nameof(WakuuConfigData.hellwarGod): data.hellwarGod = value; break;
+                    case nameof(WakuuConfigData.hellwarSplitFree): data.hellwarSplitFree = value; break;
+                    case nameof(WakuuConfigData.hellwarActGain): data.hellwarActGain = value; break;
+                    case nameof(WakuuConfigData.restSiteOptionScroll): data.restSiteOptionScroll = value; break;
                     case nameof(WakuuConfigData.autoUsePotions): data.autoUsePotions = value; break;
                     case nameof(WakuuConfigData.neowAutoChoose): data.neowAutoChoose = value; break;
                     case nameof(WakuuConfigData.skadaAssist): data.skadaAssist = value; break;
@@ -356,7 +382,9 @@ internal static class LocalWakuuAutopilotConfig
                     or nameof(WakuuConfigData.statBadgeCorner) or nameof(WakuuConfigData.statBadgeSource)
                     or nameof(WakuuConfigData.vakuuViewMode)
                     or nameof(WakuuConfigData.refineHpRatio) or nameof(WakuuConfigData.refineCardLimit)
-                    or nameof(WakuuConfigData.refineRelicLimit))
+                    or nameof(WakuuConfigData.refineRelicLimit)
+                    or nameof(WakuuConfigData.hellwarSplitHpRatio)
+                    or nameof(WakuuConfigData.hellwarActGainAmount))
                 {
                     string? normalized = key switch
                     {
@@ -369,6 +397,8 @@ internal static class LocalWakuuAutopilotConfig
                         nameof(WakuuConfigData.refineHpRatio) => NormalizeRefineHpRatio(value),
                         nameof(WakuuConfigData.refineCardLimit) => NormalizeRefineCardLimit(value),
                         nameof(WakuuConfigData.refineRelicLimit) => NormalizeRefineRelicLimit(value),
+                        nameof(WakuuConfigData.hellwarSplitHpRatio) => NormalizeHellwarSplitHpRatio(value),
+                        nameof(WakuuConfigData.hellwarActGainAmount) => NormalizeHellwarActGainAmount(value),
                         _ => NormalizeChoiceMode(value),
                     };
                     if (normalized == null)
@@ -408,6 +438,12 @@ internal static class LocalWakuuAutopilotConfig
                             break;
                         case nameof(WakuuConfigData.refineRelicLimit):
                             data.refineRelicLimit = normalized;
+                            break;
+                        case nameof(WakuuConfigData.hellwarSplitHpRatio):
+                            data.hellwarSplitHpRatio = normalized;
+                            break;
+                        case nameof(WakuuConfigData.hellwarActGainAmount):
+                            data.hellwarActGainAmount = normalized;
                             break;
                         default:
                             data.vakuuBrain = normalized;
@@ -610,6 +646,23 @@ internal static class LocalWakuuAutopilotConfig
         };
     }
 
+    /// <summary>
+    /// 严格归一【分裂精神】扣血档位（10 / 15 / 20）；空值 / 非法返回 null（供设置页写入口拒绝非法值）。
+    /// 与 <see cref="HellwarSummonPolicy.NormalizeSplitHpRatio"/>（宽松兜默认）分开：写入口要"拒绝"、读入口要"兜底"。
+    /// </summary>
+    public static string? NormalizeHellwarSplitHpRatio(string? value)
+    {
+        return HellwarSummonPolicy.TryNormalizeSplitHpRatio(value, out string normalized) ? normalized : null;
+    }
+
+    /// <summary>
+    /// 严格归一「每幕自动获得计数」档位（1 / 2 / 3）；空值 / 非法返回 null（供设置页写入口拒绝非法值）。
+    /// </summary>
+    public static string? NormalizeHellwarActGainAmount(string? value)
+    {
+        return HellwarSummonPolicy.TryNormalizeActGainAmount(value, out string normalized) ? normalized : null;
+    }
+
     private static void WriteConfigData(WakuuConfigData data)
     {
         string? directory = Path.GetDirectoryName(ConfigFilePath);
@@ -713,6 +766,12 @@ internal static class LocalWakuuAutopilotConfig
                 + $"refineRelicLimit={WakuuRefinePolicy.NormalizeRelicLimit(data.refineRelicLimit)}, "
                 + $"refineTakeVakuuAssets={data.refineTakeVakuuAssets}, "
                 + $"refineTakeVakuuPotions={data.refineTakeVakuuPotions}, "
+                + $"hellwarGod={data.hellwarGod}, "
+                + $"hellwarSplitHpRatio={HellwarSummonPolicy.NormalizeSplitHpRatio(data.hellwarSplitHpRatio)}, "
+                + $"hellwarSplitFree={data.hellwarSplitFree}, "
+                + $"hellwarActGain={data.hellwarActGain}, "
+                + $"hellwarActGainAmount={HellwarSummonPolicy.NormalizeActGainAmount(data.hellwarActGainAmount)}, "
+                + $"restSiteOptionScroll={data.restSiteOptionScroll}, "
                 + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}, "
                 + $"vakuuBrain={data.vakuuBrain}, coopBotsSeats={data.coopBotsSeats}");
         }
@@ -736,6 +795,12 @@ internal static class LocalWakuuAutopilotConfig
         RefineTakeVakuuAssets = data.refineTakeVakuuAssets;
         RefineTakeVakuuPotions = data.refineTakeVakuuPotions;
         VakuuDaddy = data.vakuuDaddy;
+        HellwarGod = data.hellwarGod;
+        HellwarSplitHpRatio = HellwarSummonPolicy.NormalizeSplitHpRatio(data.hellwarSplitHpRatio);
+        HellwarSplitFree = data.hellwarSplitFree;
+        HellwarActGain = data.hellwarActGain;
+        HellwarActGainAmount = HellwarSummonPolicy.NormalizeActGainAmount(data.hellwarActGainAmount);
+        RestSiteOptionScroll = data.restSiteOptionScroll;
         AutoUsePotions = data.autoUsePotions;
         NeowAutoChoose = data.neowAutoChoose;
         SkadaAssist = data.skadaAssist;

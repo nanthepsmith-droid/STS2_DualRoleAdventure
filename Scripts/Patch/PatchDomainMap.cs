@@ -208,6 +208,9 @@ internal static class PatchDomainMap
             // ④ 瓦库的爹（r226/r227）：内容层早期挂点 —— LocManager 就绪后注入卡牌/遗物本地化
             // （主菜单卡牌库/遗物库之前）、ModelDb.Preload 后校验自定内容入池（卡池冻结那一刻，不必进局）
             ["WakuuDaddyContentPatch"] = PatchDomain.Wakuu,
+            // 战灵召唤（原 ④「地狱战神」）Phase 1：同款内容层早期挂点（LocManager 就绪后注入遗物/休息处选项本地化、
+            // ModelDb.Preload 后打"【地狱耳环】已就绪"锚点）。
+            ["HellwarContentPatch"] = PatchDomain.Wakuu,
             // ④ 瓦库的爹（r228）：【合体】的「本回合混抽/混弃」两条挂点（CardPileCmd.Draw 前缀搬牌 /
             // CardCmd.DiscardAndDraw 前缀改归属），只在打过【合体】的那名玩家身上生效
             ["WakuuDaddyMergePilePatch"] = PatchDomain.Wakuu,

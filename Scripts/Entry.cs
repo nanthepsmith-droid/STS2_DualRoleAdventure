@@ -198,7 +198,60 @@ public partial class Entry
     //     全程没有 `本回合登记已清空`）。
     //  ② `合体混抽` / `合体混弃` 两条日志补 `round=` —— r230 判读时正是"没写回合号"导致要额外反推
     //     那两次混抽属于哪一回合（是不是跨回合残留）。纯日志，无行为变化。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-08-r239)";
+    // r240（2026-10-09）**战灵召唤 Phase 1**（原 ④「地狱战神」，design doc #21 §8）—— 只做"计数"这条线，
+    // 战斗内召唤留到 Phase 2：
+    //  ① 新遗物【地狱耳环】`Scripts/Models/Relics/LocalWakuuHellwarEarring.cs`：计数用原版原生三件套
+    //     （`ShowCounter` + `DisplayAmount` + `[SavedProperty] int SpiritCount` ⇒ 存档往返与格子数字都白得）；
+    //     兼 D5 档位落点（覆写 `ShouldDisableRemainingRestSiteOptions`，照原版 `MiniatureTent`）。
+    //  ② 休息处新选项【分裂精神】`HellwarSplitSpiritOption`（注入点在 `RestSitePatch`，只给真人席位）：
+    //     **先扣当前血量的档位百分比（默认 15%，向下取整，clamp ≥1 不扣死）→ 再给耳环 +1 计数**；
+    //     扣血走 `CreatureCmd.SetCurrentHp`（非战斗环境安全，避开 `SetMaxHp(0)` 的 Log.Error 老坑）。
+    //  ③ 纯逻辑 `HellwarSummonPolicy`（强度→成本 D7 / 可召唤判据 R6 / 扣血档位 D13）+ 单测；
+    //     配置三项 `hellwarGod` / `hellwarSplitHpRatio`(10/15/20) / `hellwarSplitFree`（设置页三行）。
+    //  ④ 内容挂点 `HellwarContentPatch`（LocManager 就绪后注入本地化 + ModelDb.Preload 后打"已就绪"锚点），
+    //     与「瓦库的爹」同款；本轮**不新增目标方法**但新增补丁类 ⇒ 已登记 `PatchDomainMap` 与 targets 基线。
+    // r241（2026-10-09，Phase 1 实机关单后的用户追加）：
+    //  ① 🔴 **休息处选项横向滚动条**（用户：「选项太多了，导致有时候根本放不下」）——
+    //     原版 `%ChoicesContainer` 是写死 799px 宽的居中 HBoxContainer，按钮 247px + 间隔 100px
+    //     ⇒ **5 个选项就开始溢出**（实机 7 个时两端按钮被挤出屏幕、点不到）。做法：**只在真的溢出时**
+    //     把它包进横向 `ScrollContainer`（`ScrollMode.Auto` ⇒ 不溢出时与原版逐像素一致；溢出时给可拖动 / 可滚轮
+    //     的滚动条 + `FollowFocus` 让手柄也够得到）。两条硬要求（见 RestSiteOptionScrollRuntime 类注释）：
+    //     **必须给 HBox 设 `CustomMinimumSize.X`**（否则超出的按钮会被 ScrollContainer 裁掉、永远够不到）、
+    //     **包装层要向下加高**给滚动条留一行（否则按钮底部被切）。开关 `restSiteOptionScroll`（默认开）——
+    //     用户口径「可能与其它 mod 功能重合，需要加个开关」。
+    //  ② 「每进入新的一幕自动获得计数」（用户担心攒不出大招的量）：开关 `hellwarActGain`（默认关）+
+    //     数量档位 `hellwarActGainAmount`（1 / **2（默认）** / 3）。落点 = **遗物自己的原版钩子 `AfterActEntered`**
+    //     （零新增 Harmony 目标）+ 发放点补一次；**幂等靠存档字段 `LastRewardedActIndex`**（进局与进第 1 幕会
+    //     两次经过同一条路、读档还会重进当前幕 ⇒ 没这条水位就会重复发）。
+    //  ③ 【分裂精神】扣血档位**加「不扣血（0%）」**（用户追加），四档循环 0% → 10% → 15%（默认）→ 20%。
+    //  ④ 【地狱耳环】风味文本按用户给的候选换掉（取"达摩经…战纹…地狱开始的时候"那段：直接点题且像遗物风味）。
+    // r242（2026-10-09，r241 首测的三条症状全部由**同一个根因**造成）：
+    //  用户：「滚动条起始处有问题，移到最左边什么选项都没有，移到 1/3 的位置才出现第一个选项，并且看不全选项文字，点不了选项」。
+    //  🔴 **根因**：日志 `需要宽=7183, 可用宽=799, **buttons=21**` —— 游戏 `UpdateRestSiteOptions` 换选项时用
+    //     `QueueFree` 销毁旧按钮，**那一帧旧按钮还在子节点列表里** ⇒ 我按 `GetChildCount()` 算宽度把 3 代 ×7 个
+    //     全算了 ⇒ HBox 被撑到 7183 宽，而它 `alignment = Center` ⇒ **左侧多出约 2427px 空白**
+    //     （"滚到最左什么都没有、1/3 处才见到第一个选项"），可见内容被夹在 `clip_contents` 边缘 ⇒ **文字看不全、
+    //     且裁剪区外的部分不收鼠标 ⇒ 点不到**。
+    //  ✅ 修法三条：① `ResolveRequiredWidth` **只数活着的选项按钮**（`IsQueuedForDeletion()` 过滤 + 只认 `NRestSiteButton`）；
+    //     ② **自愈**：挂 `ChildEnteredTree` / `ChildExitingTree`（旧按钮**真的**退出树才触发）⇒ 下一帧重算内容宽，
+    //     游戏自己调 `UpdateRestSiteOptions`（选完选项后的重排）也能跟上；
+    //     ③ 溢出判据从"超过原版容器 799px"改成"**超过屏幕可用宽**（视口宽 − 2×24）"——
+    //     原版 3~5 个选项本来就摆得下（3 个 = 941、5 个 = 1635，都在 1920 屏幕内）⇒ 不再无谓改变原版观感；
+    //     真要滚时窗口宽取 `min(内容宽+12, 屏幕可用)`（能一屏看多少看多少）。
+    // r243（2026-10-09，r242 复测后剩下的两条症状：**点不了** + **文字不完整**）——
+    //  日志佐证：r242 局 `需要宽=2328, buttons=7`（算术已对）但**「休息区选择完成」0 条**（一个选项都没点成）。
+    //  ① 🔴 **点不了 = Reparent 打断了按钮的 `AnimateIn`**：`rest_site_button.tscn` 里按钮是
+    //     `mouse_filter = 2 (Ignore)`，唯一把它翻成 `Stop` 的是 `NRestSiteButton.AnimateIn()` 里
+    //     `await tween.AwaitFinished(_cts.Token)` **之后**那行；而 `Reparent` 必然走一次 exit/enter tree
+    //     ⇒ 按钮 `_ExitTree()` 先 `_cts.Cancel()` ⇒ 那行不执行 ⇒ 收不到 `MouseEntered` ⇒
+    //     `NClickableControl` 的按下/松开都要求 `IsFocused`（由 hover 驱动）⇒ **整个按钮点不动**
+    //     （r241 只有"没被包层的那个休息处"能点，正是这个原因）。修法 = 包完自己补 `MouseFilter = Stop`
+    //     （`RepairButtonClickability`，并把"修了几个"打进日志）。
+    //  ② **文字不完整 = 选项名字挂在按钮下方**：`%Label` 是 `offset_top = offset_bottom = 165`（在按钮外的
+    //     下方、靠"无人裁剪"才看得见），而包装层 `clip_contents = true` 把下半截裁掉、滚动条还正好压在文字上
+    //     （挡字又挡点击）。修法 = 包装层向下**先留名字带（按主题字号+描边算）再留滚动条那一行**
+    //     ⇒ 滚动条落在文字下面（`ResolveLabelBand`）。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-09-r243)";
 
     private static Harmony? _harmony;
 
@@ -354,8 +407,10 @@ public partial class Entry
         {
             RegisterWakuuRelicsToPool();
             RegisterWakuuDaddyContentToPool();
+            RegisterWakuuHellwarContentToPool();
             SafeAction(fatalFailures, FatalCode.Model, "瓦库遗物本地化", () => LocalWakuuRelicLocalization.Initialize());
             SafeAction(fatalFailures, FatalCode.Model, "瓦库的爹内容本地化", () => LocalWakuuDaddyLocalization.Initialize());
+            SafeAction(fatalFailures, FatalCode.Model, "战灵召唤内容本地化", () => LocalWakuuHellwarLocalization.Initialize());
             SafeAction(fatalFailures, FatalCode.Model, "瓦库休息区选项本地化", () => LocalWakuuRestSiteLocalization.Initialize());
             SafeAction(fatalFailures, FatalCode.Model, "瓦库联合选牌提示本地化", () => LocalWakuuUniteLocalization.Initialize());
             SafeAction(fatalFailures, FatalCode.Model, "瓦库炼化本地化", () => LocalWakuuRefineLocalization.Initialize());
@@ -804,6 +859,27 @@ public partial class Entry
     /// 后者是一般方式可得的（商店 / 无色药水 / 工具箱等遗物 / 多个事件都直接引用它）。
     /// 完整口径与证据见 <see cref="LocalWakuuDaddyShieldCard"/> 的类注释。
     /// </summary>
+    /// <summary>
+    /// 战灵召唤（原 ④「地狱战神」，#21）：遗物【地狱耳环】注册进**事件遗物池**
+    /// （与瓦库托管遗物 / 【瓦库的爹】同池）。
+    ///
+    /// 纪律与 <see cref="RegisterWakuuDaddyContentToPool"/> 完全相同：**必须在游戏初始化前**登记
+    /// （池一旦被 <c>ModelDb.Preload</c> 首次访问即冻结）；类型本身无需手动注册（<c>ModelDb.Init</c> 反射扫本程序集）。
+    /// 是否真的进了池由 <see cref="Patch.HellwarContentPatch"/> 在 <c>ModelDb.Preload</c> 后打锚点。
+    /// </summary>
+    private static void RegisterWakuuHellwarContentToPool()
+    {
+        try
+        {
+            ModHelper.AddModelToPool<EventRelicPool, LocalWakuuHellwarEarring>();
+            LocalMultiControlLogger.Info("已登记战灵召唤遗物【地狱耳环】到事件遗物池（就绪锚点在 ModelDb.Preload 之后）。");
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"登记战灵召唤遗物到遗物池失败（遗物描述页可能异常）: {exception.Message}");
+        }
+    }
+
     private static void RegisterWakuuDaddyContentToPool()
     {
         try

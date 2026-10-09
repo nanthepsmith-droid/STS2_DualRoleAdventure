@@ -305,6 +305,52 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.VakuuDaddy,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("vakuuDaddy", value));
         AddToggleRow(column,
+            LocalModText.Select("战灵召唤（原「地狱战神」，瓦库四功能）", "War God Summon (formerly Hell God)"),
+            LocalModText.Select(
+                "默认关。开启后**开局给你的真人席位发一件遗物【地狱耳环】**，休息处多出一条【分裂精神】选项：消耗当前血量的一定百分比（档位见下方），给耳环**增加 1 个计数**。计数是战斗内召唤战神（临时玩家）的预算 —— **召唤本身在后续阶段实装**，本阶段只做遗物与计数。瓦库席位不发这件遗物。开关在**下一局开局**时生效。",
+                "Off by default. When on, your human seats begin the run with the relic Hell Earring and rest sites gain a Split Spirit option: spend a share of your current HP (ratio below) to add 1 charge to the earring. Charges are the budget for summoning war gods (temporary players) in combat — **the summon itself ships in a later phase**; this phase only adds the relic and the charge source. Vakuu seats don't get this relic. Takes effect at the start of the next run."),
+            () => LocalWakuuAutopilotConfig.HellwarGod,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("hellwarGod", value));
+        column.AddChild(CreateCycleRow(
+            LocalModText.Select("战灵召唤 · 【分裂精神】扣血档位", "War God Summon · Split Spirit HP Cost"),
+            LocalModText.Select(
+                "【分裂精神】每次消耗当前血量的百分比（基数是**当前血量**，向下取整，且**不会把人扣死**——最低留 1 点）。四档循环：**不扣血（0%）** → 10% → 15%（默认）→ 20%。仅影响已开启的「战灵召唤」。",
+                "How much of your current HP Split Spirit spends each use (based on **current HP**, rounded down, and it never kills you — at least 1 HP is left). Cycles: **No cost (0%)** → 10% → 15% (default) → 20%. Only affects \"War God Summon\" when enabled."),
+            "hellwarSplitHpRatio",
+            () => LocalWakuuAutopilotConfig.HellwarSplitHpRatio,
+            NextHellwarSplitHpRatio,
+            GetHellwarSplitHpRatioDisplayText));
+        AddToggleRow(column,
+            LocalModText.Select("战灵召唤 · 【分裂精神】不占用整次休息（默认开）", "War God Summon · Split Spirit Doesn't Use the Whole Rest (default ON)"),
+            LocalModText.Select(
+                "**默认开**。开启后用完【分裂精神】**还能继续休息 / 锻造**（等同原版【迷你帐篷】的「多选一次」）。**关掉**则它按原版规则**占用整次休息**（用完就离店）。仅影响已开启的「战灵召唤」。",
+                "**On by default.** When on, using Split Spirit still lets you rest / smith afterwards (like the vanilla Miniature Tent's extra pick). When off, it follows the vanilla rule and **uses up the whole rest** (you leave right after). Only affects \"War God Summon\" when enabled."),
+            () => LocalWakuuAutopilotConfig.HellwarSplitFree,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("hellwarSplitFree", value));
+        AddToggleRow(column,
+            LocalModText.Select("战灵召唤 · 每进入新的一幕自动获得计数（默认关）", "War God Summon · Gain Charges Each New Act (default OFF)"),
+            LocalModText.Select(
+                "**默认关**。开启后**每进入新的一幕**（含第 1 幕）自动给【地狱耳环】加一次计数（数量见下方档位）。用途：只靠休息处【分裂精神】攒不出后续大招的量。**同一幕只会发一次**（存档里记了已发到哪一幕 ⇒ 读档续局不会补发、也不会重复发）。仅影响已开启的「战灵召唤」。",
+                "**Off by default.** When on, entering **each new act** (including act 1) automatically adds charges to the Hell Earring (amount below). Purpose: Split Spirit alone can't fund the later big summons. **Each act grants only once** (the save records the last act rewarded, so reloading mid-act never re-grants or double-grants). Only affects \"War God Summon\" when enabled."),
+            () => LocalWakuuAutopilotConfig.HellwarActGain,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("hellwarActGain", value));
+        column.AddChild(CreateCycleRow(
+            LocalModText.Select("战灵召唤 · 每幕自动获得的计数数量", "War God Summon · Charges per Act"),
+            LocalModText.Select(
+                "进入每一幕时自动获得几个计数。三档循环：1 个 → **2 个（默认）** → 3 个。仅影响已开启的「战灵召唤 · 每进入新的一幕自动获得计数」。",
+                "How many charges each new act grants. Cycles: 1 → **2 (default)** → 3. Only affects \"War God Summon · Gain Charges Each New Act\" when enabled."),
+            "hellwarActGainAmount",
+            () => LocalWakuuAutopilotConfig.HellwarActGainAmount,
+            NextHellwarActGainAmount,
+            GetHellwarActGainDisplayText));
+        AddToggleRow(column,
+            LocalModText.RestSiteOptionScrollTitle,
+            LocalModText.Select(
+                "**默认开**。休息处选项变多时会横向溢出屏幕（我们自己注入的净化 / 炼化 / 分裂精神，加上其它 mod 的选项，5 个以上就会挤出屏幕两端、点不到）。开启后把选项容器包进可**拖动 / 滚轮**的横向滚动条；**只在你真的溢出的房间**才启用，选项少时与原版完全一致。⚠ **可能与其它 mod 的同类功能重合**（别人也在改这块布局）—— 若发现界面对拼或异常，关掉这个开关即可。",
+                "**On by default.** With many rest-site options the row overflows the screen (our Purify / Refine / Split Spirit plus other mods' options; 5+ pushes the end buttons off-screen and unreachable). When on, the option container is wrapped in a draggable / wheel-scrollable horizontal scrollbar — **only in rooms that actually overflow**, so few options look exactly like vanilla. ⚠ May conflict with another mod doing the same thing; turn this off if the layout looks wrong."),
+            () => LocalWakuuAutopilotConfig.RestSiteOptionScroll,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("restSiteOptionScroll", value));
+        AddToggleRow(column,
             LocalModText.Select("战斗中自动用药水", "Auto-Use Potions in Combat"),
             LocalModText.Select(
                 "默认关。按药水规则表逐药自动使用：血液/再生低血自用；果汁到手即喝；混沌药水填空位；力量等增益与火焰等攻击类精英/Boss战首回合；格挡/免伤类回合结束前按敌方意图伤害兜底；能量/迅捷/异蛇剩能量补牌；灰水/赌徒等定向消耗坏牌；故障机器人/储君/亡灵契约师/铁甲战士专属药水自动给对应队友，复制/超巨化优先给真人；污浊药水只在商人投掷；mod 药水普通战斗随机回合消耗。",
@@ -748,6 +794,38 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
     private static string GetRefineHpRatioDisplayText(string ratio)
     {
         return LocalModText.RefineHpRatioLabel(ratio);
+    }
+
+    private static string GetHellwarSplitHpRatioDisplayText(string ratio)
+    {
+        return LocalModText.HellwarSplitHpRatioLabel(ratio);
+    }
+
+    private static string GetHellwarActGainDisplayText(string amount)
+    {
+        return LocalModText.HellwarActGainLabel(amount);
+    }
+
+    private static string NextHellwarActGainAmount(string amount)
+    {
+        return amount switch
+        {
+            "1" => "2",
+            "2" => "3",
+            _ => "1",
+        };
+    }
+
+    /// <summary>【分裂精神】扣血档位循环：不扣血（0%）→ 10% → 15% → 20% → 回到 0%。</summary>
+    private static string NextHellwarSplitHpRatio(string ratio)
+    {
+        return ratio switch
+        {
+            HellwarSummonPolicy.SplitHpRatioNone => HellwarSummonPolicy.SplitHpRatio10,
+            HellwarSummonPolicy.SplitHpRatio10 => HellwarSummonPolicy.SplitHpRatio15,
+            HellwarSummonPolicy.SplitHpRatio15 => HellwarSummonPolicy.SplitHpRatio20,
+            _ => HellwarSummonPolicy.SplitHpRatioNone,
+        };
     }
 
     private static string NextRefineHpRatio(string ratio)

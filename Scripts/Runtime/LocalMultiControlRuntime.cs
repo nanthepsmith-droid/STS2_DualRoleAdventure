@@ -72,6 +72,8 @@ internal static class LocalMultiControlRuntime
         // 同时校验三张占位牌与遗物是否真的挂进了事件池（登记发生在游戏初始化前，那时读不了池）。
         LocalWakuuDaddyLocalization.Initialize();
         WakuuDaddyContentProbe.VerifyContent();
+        // 战灵召唤（原 ④「地狱战神」）：同样的"每次进局重试本地化"（LocManager 在 mod 初始器时还没就绪）。
+        LocalWakuuHellwarLocalization.Initialize();
         // 第三方交互守卫（LexNinja2）：它的程序集常晚于本 mod 的 PatchAll ⇒ 每次进局重试挂载。
         LexNinja2KelaTurnEndGuardPatch.TryApplyLate();
         try
@@ -136,6 +138,8 @@ internal static class LocalMultiControlRuntime
         TaskHelper.RunSafely(GrantWakuuRelicsAsync(runState));
         // r227：④「瓦库的爹」—— 开关开时给**真人席位**发一件（瓦库席位不发；已持有则跳过）。
         TaskHelper.RunSafely(GrantWakuuDaddyRelicAsync(runState));
+        // Phase 1：战灵召唤（原 ④「地狱战神」）—— 同样的"只发真人席位"口径。
+        TaskHelper.RunSafely(GrantHellwarEarringAsync(runState));
     }
 
     public static void OnRunCleanup()
@@ -677,6 +681,57 @@ internal static class LocalMultiControlRuntime
             await granted.AfterObtained();
             LocalMultiControlLogger.Info(
                 $"已为真人角色发放【瓦库的爹】遗物（战斗开始给 3 张占位牌）: player={playerId}, relic={granted.Id.Entry}");
+        }
+    }
+
+    /// <summary>
+    /// 战灵召唤（原 ④「地狱战神」，#21）Phase 1：给**真人席位**发放遗物【地狱耳环】
+    /// （已持有则跳过，可重复调用 —— 与 <see cref="GrantWakuuDaddyRelicAsync"/> 同一套写法）。
+    ///
+    /// 门禁 = 配置开关 <see cref="LocalWakuuAutopilotConfig.HellwarGod"/>（**默认关**）+ 本地多控会话；
+    /// 逐席位判据收在纯逻辑 <see cref="HellwarSummonPolicy.ShouldGrantEarring"/>（有单测）。
+    /// 计数来源（休息处【分裂精神】）见 <see cref="HellwarSplitSpiritOption"/>。
+    /// </summary>
+    public static async Task GrantHellwarEarringAsync(RunState runState)
+    {
+        if (!LocalSelfCoopContext.IsEnabled)
+        {
+            return;
+        }
+
+        bool featureEnabled = LocalWakuuAutopilotConfig.HellwarGod;
+        foreach (ulong playerId in LocalSelfCoopContext.LocalPlayerIds)
+        {
+            bool shouldGrant = HellwarSummonPolicy.ShouldGrantEarring(
+                featureEnabled,
+                LocalSelfCoopContext.IsLocalSessionSeat(playerId),
+                LocalSelfCoopContext.IsWakuuEnabled(playerId));
+            if (!shouldGrant)
+            {
+                continue;
+            }
+
+            Player? player = runState.GetPlayer(playerId);
+            if (player == null || player.Relics.Any(relic => relic is LocalWakuuHellwarEarring))
+            {
+                continue;
+            }
+
+            RelicModel granted = ModelDb.Relic<LocalWakuuHellwarEarring>().ToMutable();
+            granted.FloorAddedToDeck = Math.Max(1, runState.TotalFloor);
+            player.AddRelicInternal(granted);
+            SaveManager.Instance.MarkRelicAsSeen(granted);
+            await granted.AfterObtained();
+            LocalMultiControlLogger.Info(
+                $"[地狱战神] 已为真人角色发放【地狱耳环】遗物（计数初始 {HellwarSummonPolicy.InitialSpiritCount}）: "
+                + $"player={playerId}, relic={granted.Id.Entry}");
+
+            // 「每幕自动获得计数」：进局这一刻可能已经进入第 1 幕（`EnterAct(0)` 与发放异步竞速），
+            // 所以在发放点也补一次 —— 幂等靠遗物的 `LastRewardedActIndex` 水位（谁先到谁发，只发一次）。
+            if (granted is LocalWakuuHellwarEarring earring)
+            {
+                earring.TryGrantActCharges(runState, "run-launched");
+            }
         }
     }
 

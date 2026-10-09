@@ -2,8 +2,8 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-10-07 18:43  HEAD=f5ab202
-# 统计: patch_classes=193 patch_rows=228 string_targets=200 descriptors=376
+# 生成时间=2026-10-09 12:39  HEAD=e4a0154
+# 统计: patch_classes=194 patch_rows=230 string_targets=200 descriptors=378
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	CardManualPlayContextPatch	CardModel	EnqueueManualPlay	string
@@ -64,6 +64,8 @@ P	FoulPotionOnUsePatch	FoulPotion	OnUse	string
 P	GameActionPlayerChoiceContextPatch	GameActionPlayerChoiceContext	SignalPlayerChoiceEnded	nameof
 P	GhostHandsHotkeysPatch	NGame	_Input	nameof
 P	HealRestSiteOptionPatch	HealRestSiteOption	OnSelect	nameof
+P	HellwarContentPatch	LocManager	Initialize	nameof
+P	HellwarContentPatch	ModelDb	Preload	nameof
 P	HookEnqueueForegroundPatch	ActionQueueSynchronizer	EnqueueHookAction	string
 P	HookPlayerChoiceContextLocalPatch	HookPlayerChoiceContext	-	no-target
 P	HookPlayerChoiceContextPatch	HookPlayerChoiceContext	SignalPlayerChoiceEnded	nameof

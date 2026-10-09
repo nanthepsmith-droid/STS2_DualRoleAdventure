@@ -53,6 +53,17 @@ internal static class RestSiteOptionPatch
         {
             LocalMultiControlLogger.Warn($"注入瓦库炼化选项失败: {exception.Message}");
         }
+
+        // 2026-10-09 起：战灵召唤（原 ④「地狱战神」）的【分裂精神】走同一注入点
+        // （开关 hellwarGod，默认关）—— 见 HellwarSplitSpiritOption / HellwarSummonRuntime。
+        try
+        {
+            HellwarSummonRuntime.TryInjectSplitSpiritOption(player, __result);
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"[地狱战神] 注入【分裂精神】选项失败: {exception.Message}");
+        }
     }
 }
 
@@ -371,6 +382,9 @@ internal static class NRestSiteRoomReadyPatch
 
             // 房间已就绪：第三方席位在 BeginRestSite 当场答完的选择这时才画得出来（纯表现兜底）。
             LocalRestSiteSeatBubble.TryApplyPending($"rest-site-ready-{attempt}");
+
+            // 选项变多会横向溢出屏幕（我们注入的净化/炼化/分裂精神 + 其它 mod 的选项）⇒ 溢出时才包一层横向滚动条。
+            RestSiteOptionScrollRuntime.TryEnsureScrollable(room);
             return;
         }
 
@@ -461,6 +475,8 @@ internal static class RestSiteUiRefreshUtil
             AccessTools.Field(typeof(NRestSiteRoom), "_lastFocused")?.SetValue(room, null);
             AccessTools.Method(typeof(NRestSiteRoom), "UpdateRestSiteOptions")?.Invoke(room, null);
             EnsureChoicesVisibleForLocalPlayer(room, source);
+            // 每次刷新都同步一次滚动条（按钮被 `UpdateRestSiteOptions` 全部重建过 ⇒ 需要的宽度可能变了）。
+            RestSiteOptionScrollRuntime.TryEnsureScrollable(room);
             LocalMultiControlLogger.Info($"休息区选项已刷新: source={source}, player={LocalContext.NetId?.ToString() ?? "null"}");
             return true;
         }

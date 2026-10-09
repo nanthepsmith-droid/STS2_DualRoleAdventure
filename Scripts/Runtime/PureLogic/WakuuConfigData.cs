@@ -110,6 +110,52 @@ internal sealed class WakuuConfigData
     /// </summary>
     public bool vakuuDaddy { get; set; }
 
+    /// <summary>
+    /// 战灵召唤（原 ④「地狱战神」，#21）（默认关）：开关开时**开局给真人席位发一件遗物【地狱耳环】**，
+    /// 休息处多出一条【分裂精神】选项（消耗当前血量的一个百分比换 1 个计数）。
+    /// 瓦库席位不发（D8：首版瓦库不能玩地狱战神）。Phase 1 只做"遗物 + 计数来源"，战斗内召唤见后续阶段。
+    ///
+    /// ⚠ 键名用官方拼写 <c>vakuu</c> 的同类规则只约束含"瓦库"字样的键；本功能的键不含瓦库名，
+    /// 由单测 `序列化必须包含新开关键` 钉住（不得出现 <c>Wakuu</c> 拼写）。
+    /// </summary>
+    public bool hellwarGod { get; set; }
+
+    /// <summary>
+    /// 战灵召唤 · 休息处【分裂精神】的扣血档位（默认 <see cref="HellwarSummonPolicy.SplitHpRatio15"/> = 15%）。
+    /// 取值 10 / 15 / 20（基数是**当前血量**、向下取整、结果 clamp ≥1 —— D13 拍板）；
+    /// 非法值按默认档兜底（见 <see cref="HellwarSummonPolicy.NormalizeSplitHpRatio"/>）。
+    /// </summary>
+    public string hellwarSplitHpRatio { get; set; } = HellwarSummonPolicy.DefaultSplitHpRatio;
+
+    /// <summary>
+    /// 战灵召唤 · D5 档位（默认 **true** = 免费额外选项）：用完【分裂精神】后是否还能继续休息 / 锻造。
+    /// true = 免费额外选项（走原版 <c>MiniatureTent</c> 同款钩子）；false = 占用整次休息（原版默认）。
+    /// </summary>
+    public bool hellwarSplitFree { get; set; } = true;
+
+    /// <summary>
+    /// 战灵召唤 · **每进入新的一幕自动获得计数**（默认关；2026-10-09 用户追加）。
+    /// 用户动机：只靠休息处【分裂精神】攒不出大招的量（无尽战神 / 终极九连环）。
+    /// 获得量见 <see cref="hellwarActGainAmount"/>（1~3）。幂等水位落在遗物的 <c>LastRewardedActIndex</c>（存档字段）。
+    /// </summary>
+    public bool hellwarActGain { get; set; }
+
+    /// <summary>
+    /// 战灵召唤 · 每幕自动获得计数的**数量档位**（1 / 2 / 3，默认 2）。
+    /// 非法值按默认档兜底（见 <see cref="HellwarSummonPolicy.NormalizeActGainAmount"/>）。
+    /// </summary>
+    public string hellwarActGainAmount { get; set; } = HellwarSummonPolicy.DefaultActGainAmount;
+
+    /// <summary>
+    /// 休息处选项**横向滚动条**（默认**开**，2026-10-09 用户追加）：
+    /// 选项变多时（原版 2~3 条 + 我们注入的净化 / 炼化 / 分裂精神 + 其它 mod 的选项）会横向溢出屏幕
+    /// （容器只有 799px 宽、每个按钮 247px、间隔 100px ⇒ **5 个以上就开始挤出屏幕**），
+    /// 开启后把 `%ChoicesContainer` 包进一个可拖动 / 可滚轮的 `ScrollContainer`。
+    ///
+    /// 给玩家一个开关的理由（用户原话）：**可能与其它 mod 的功能重合**（别人也可能在改这块布局）。
+    /// </summary>
+    public bool restSiteOptionScroll { get; set; } = true;
+
     /// <summary>战斗中自动用药水：默认关（拍板：保守版写死规则，先观察）。</summary>
     public bool autoUsePotions { get; set; }
 

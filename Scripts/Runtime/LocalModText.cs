@@ -184,6 +184,66 @@ internal static class LocalModText
         };
     }
 
+    // ---- 战灵召唤（原 ④「地狱战神」，#21）· Phase 1：遗物【地狱耳环】+ 休息处【分裂精神】----
+    // 2026-10-09 开工。Phase 1 只做"计数"这条线（遗物 + 火堆换计数 + 纯逻辑档位），战斗内召唤见后续阶段。
+
+    /// <summary>遗物【地狱耳环】的名称。</summary>
+    public static string HellwarEarringTitle => Select("地狱耳环", "Hell Earring");
+
+    /// <summary>遗物【地狱耳环】的描述（Phase 1 只实装了计数来源，召唤写明"后续阶段"）。</summary>
+    public static string HellwarEarringDescription => Select(
+        "休息处的【分裂精神】可以为它增加计数；战斗中每个回合可消耗计数召唤战神（召唤将在后续阶段实装）。",
+        "The 【Split Spirit】 option at rest sites charges it; in combat you may spend charges to summon war gods each turn (summoning ships in a later phase).");
+
+    /// <summary>
+    /// 遗物【地狱耳环】的风味文本（2026-10-09 用户指定，逐字取自《海虎》的旁白段）。
+    /// 用户给了多段候选，选这一段是因为它**直接点题"地狱"**且读起来像遗物风味（其余候选更像台词，
+    /// 更适合留给后续的战斗内召唤 UI）。
+    /// </summary>
+    public static string HellwarEarringFlavor => Select(
+        "达摩经记载，当战纹现于强者面上，便是人成神的时候。但若战纹现于狂者的额上又如何？……可能这就是地狱开始的时候了。",
+        "The Damo Sutra says: when battle-marks surface on a strong man's face, that is the hour a man becomes a god. But what if those marks surface on a madman's brow? …Perhaps that is when hell begins.");
+
+    /// <summary>【分裂精神】休息区选项名（注入 rest_site_ui 表 <c>OPTION_LMC_SPLIT_SPIRIT.name</c>）。</summary>
+    public static string SplitSpiritOptionName => Select("分裂精神", "Split Spirit");
+
+    /// <summary>
+    /// 【分裂精神】休息区选项描述（注入 rest_site_ui 表 <c>OPTION_LMC_SPLIT_SPIRIT.description</c>）。
+    /// <c>{Hp}</c> / <c>{Ratio}</c> 是游戏 LocString 的占位符，由 <see cref="HellwarSplitSpiritOption"/>
+    /// 用 <c>Add(...)</c> 填充 —— 所以这里**必须是普通字符串字面量**，不能写成 C# 插值。
+    /// </summary>
+    public static string SplitSpiritOptionDescription => Select(
+        "消耗 {Hp} 点生命（当前血量的 {Ratio}），为【地狱耳环】增加 1 个计数。",
+        "Spend {Hp} HP ({Ratio} of your current HP) to add 1 charge to the Hell Earring.");
+
+    /// <summary>【分裂精神】扣血档位按钮文案（不扣血 / 10% / 15% / 20%）。</summary>
+    public static string HellwarSplitHpRatioLabel(string ratioKey)
+    {
+        return ratioKey switch
+        {
+            HellwarSummonPolicy.SplitHpRatioNone => Select("不扣血（0%）", "No cost (0%)"),
+            HellwarSummonPolicy.SplitHpRatio10 => Select("10%", "10%"),
+            HellwarSummonPolicy.SplitHpRatio20 => Select("20%", "20%"),
+            _ => Select("15%", "15%"),
+        };
+    }
+
+    /// <summary>「每幕自动获得计数」数量档位的按钮文案（1 / 2 / 3）。</summary>
+    public static string HellwarActGainLabel(string amountKey)
+    {
+        return amountKey switch
+        {
+            "1" => Select("1 个", "1"),
+            "3" => Select("3 个", "3"),
+            _ => Select("2 个", "2"),
+        };
+    }
+
+    /// <summary>「休息处选项滚动条」的开关说明用标题（设置页）。</summary>
+    public static string RestSiteOptionScrollTitle => Select(
+        "休息处选项横向滚动条（默认开）",
+        "Rest-Site Option Scrollbar (default ON)");
+
     // ---- 瓦库四功能 · ④「瓦库的爹」（遗物 + 我挡/你攻/合体 三张牌）----
     // 2026-10-07 从「卡池注册验证」转正为功能首版，r228 实装三张牌的效果。命名口径（2026-10-06 用户拍板）：
     // 「地狱战神」留给战灵召唤（临时玩家召唤）；本条叫「瓦库的爹」。
