@@ -80,4 +80,25 @@ public class WakuuAutoplaySeatPolicyTests
                 Is.EqualTo(13));
         });
     }
+
+    [Test]
+    public void 战神走托管出牌路径()
+    {
+        // r251 的核心：临时席位必须走队列/并发档（不抢闸门、不钉 LocalContext）——
+        // 否则它出牌的那几秒里真人点不出牌。
+        Assert.That(
+            WakuuAutoplaySeatPolicy.UsesHostedPlayPath(vakuuFormMode: false, isTemporarySeat: true),
+            Is.True);
+        Assert.That(
+            WakuuAutoplaySeatPolicy.UsesHostedPlayPath(vakuuFormMode: true, isTemporarySeat: false),
+            Is.True);
+    }
+
+    [Test]
+    public void 普通席位不走托管出牌路径()
+    {
+        Assert.That(
+            WakuuAutoplaySeatPolicy.UsesHostedPlayPath(vakuuFormMode: false, isTemporarySeat: false),
+            Is.False);
+    }
 }

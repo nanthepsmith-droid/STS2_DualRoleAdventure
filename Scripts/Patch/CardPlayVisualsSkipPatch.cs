@@ -58,7 +58,7 @@ internal static class CardPlayVisualsSkipPatch
             }
 
             Player? owner = __instance.Owner;
-            if (owner == null || !LocalWakuuRelicRuntime.IsVakuuFormMode(owner))
+            if (owner == null || !LocalWakuuRelicRuntime.UsesHostedPlayPath(owner))
             {
                 return;
             }

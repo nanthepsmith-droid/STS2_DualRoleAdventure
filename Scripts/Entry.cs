@@ -348,7 +348,18 @@ public partial class Entry
     //     查不到时返回在册战神（`HellwarWarGodFactory.FindSpawnedWarGod`）；三条收窄 ⇒ 原版/真人/瓦库语义不动。
     //  ② 【无尽战神】新增开关 `hellwarEndlessAncient`（默认关，用户 2026-10-10 追加）：开启后随机池
     //     加入【先古】（原为【九连环】专属）；池口径收进 `HellwarWarGodPresets.ResolveRandomPool(bool)`。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r250)";
+    // r251（2026-10-10，r250 实机反馈）**战神出牌不再锁死真人**：
+    //  用户「战神出牌导致我不能出牌」。根因 = 战神（临时席位）在 `IsVakuuFormMode` 上为 false
+    //  ⇒ `WakuuPlayQueuePolicy.DecidePath` 把它判成 **inline 路径** ⇒ ① 抢全局 1 槽 `SelectorScopeGate`、
+    //  ② `RunWatchdogAsync` 把 **`LocalContext.NetId` 钉成战神**；而战神是"全量出牌"（打到没牌为止，
+    //  多张 × 每张约 1s）⇒ 那几秒里原版把"本机玩家"当成战神 ⇒ 真人手牌被当成别人的牌、点不出牌。
+    //  修法 = 新判据 `LocalWakuuRelicRuntime.UsesHostedPlayPath(player)`（= 瓦库形态 **或** 临时席位；
+    //  纯逻辑 `WakuuAutoplaySeatPolicy.UsesHostedPlayPath`，有单测）替换**出牌路径决策**那 4 处对
+    //  `IsVakuuFormMode` 的使用（3 处 `DecidePath` + 1 处 `ShouldSkipCardPileVisuals`）
+    //  ⟹ 战神改走**队列 + 并发档**：不抢闸门、不钉上下文（出牌由游戏全局动作泵执行、归属走选择器注册表）。
+    //  `CardPlayVisualsSkipPatch` 同步改用同一判据（战神队列出牌也跳过卡牌堆演出）。
+    //  ⚠ 刻意**不动** `IsVakuuFormMode` 本身（它被选牌/奖励/事件等一大批自动作答入口复用，扩大它会误开那些口子）。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r251)";
 
     private static Harmony? _harmony;
 

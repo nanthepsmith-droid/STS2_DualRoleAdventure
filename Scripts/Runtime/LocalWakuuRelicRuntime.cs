@@ -249,6 +249,33 @@ internal static class LocalWakuuRelicRuntime
     }
 
     /// <summary>
+    /// 该席位是否按**瓦库托管出牌路径**出牌（队列 / 并发 / 跳过演出）：瓦库形态 **或临时席位（战神）**。
+    ///
+    /// 为什么与 <see cref="IsVakuuFormMode"/> 分开：后者是"瓦库形态身份"（遗物 + 开关），
+    /// 被选牌 / 奖励 / 事件等一大批自动作答入口复用 —— **不能**为了让战神走托管路径而顺手扩大那些口子。
+    /// 本判据只回答"出牌路径决策"这一个问题（`WakuuPlayQueuePolicy.DecidePath` 的第三个参数、
+    /// `WakuuPlaySpeedPolicy` 的第三个参数）。
+    ///
+    /// 🔴 为什么战神**必须**走队列/并发档（r251 实机："战神出牌导致我不能出牌"）：
+    /// inline 路径要**抢全局 1 槽 `SelectorScopeGate`**、且 `RunWatchdogAsync` 会
+    /// **把 `LocalContext.NetId` 钉在该席位身上** —— 战神全量出牌一打就是好几秒，这段窗口里原版把
+    /// "本机玩家"当成战神 ⇒ 真人的手牌被当成"别人的牌"、点不出牌。
+    /// 并发档既不钉上下文、也不抢闸门（出牌由游戏**全局动作泵**执行、归属走 `WakuuSelectorRegistry`），
+    /// 真人照常出牌（与瓦库形态 `vakuuPlayOverlap` 转正时验证过的语义一致）。
+    /// </summary>
+    public static bool UsesHostedPlayPath(Player? player)
+    {
+        if (player == null)
+        {
+            return false;
+        }
+
+        return WakuuAutoplaySeatPolicy.UsesHostedPlayPath(
+            IsVakuuFormMode(player),
+            LocalSelfCoopContext.IsTemporarySeat(player.NetId));
+    }
+
+    /// <summary>
     /// 托管判据兜底（r83）：托管遗物被第三方效果移除后仍按瓦库名单维持托管，并补发一次遗物。
     ///
     /// 实证案例：TouhouAncients【无底之胃】"吞噬初始遗物与先古遗物以外的全部遗物"
@@ -456,7 +483,7 @@ internal static class LocalWakuuRelicRuntime
         WakuuPlayPath playPath = WakuuPlayQueuePolicy.DecidePath(
             LocalWakuuAutopilotConfig.WakuuPlayQueue,
             LocalSelfCoopContext.IsEnabled,
-            IsVakuuFormMode(player));
+            UsesHostedPlayPath(player));
         bool overlapping = WakuuPlayQueuePolicy.IsOverlappingQueuePlay(
             playPath, LocalWakuuAutopilotConfig.WakuuPlayOverlap);
         ulong enterTick = Time.GetTicksMsec();
@@ -572,7 +599,7 @@ internal static class LocalWakuuRelicRuntime
                     bool skipCardPileVisuals = WakuuPlaySpeedPolicy.ShouldSkipCardPileVisuals(
                         LocalWakuuAutopilotConfig.FastWakuuPlay,
                         LocalSelfCoopContext.IsEnabled,
-                        IsVakuuFormMode(player));
+                        UsesHostedPlayPath(player));
                     await CardCmd.AutoPlay(
                         choiceContext, next.Card, next.Target, AutoPlayType.Default,
                         skipXCapture: true,
@@ -948,7 +975,7 @@ internal static class LocalWakuuRelicRuntime
             WakuuPlayPath path = WakuuPlayQueuePolicy.DecidePath(
                 LocalWakuuAutopilotConfig.WakuuPlayQueue,
                 LocalSelfCoopContext.IsEnabled,
-                IsVakuuFormMode(player));
+                UsesHostedPlayPath(player));
             if (!WakuuPlayQueuePolicy.IsOverlappingQueuePlay(path, LocalWakuuAutopilotConfig.WakuuPlayOverlap))
             {
                 reason = "selector-scope-busy";
@@ -1082,7 +1109,7 @@ internal static class LocalWakuuRelicRuntime
             WakuuPlayPath watchdogPath = WakuuPlayQueuePolicy.DecidePath(
                 LocalWakuuAutopilotConfig.WakuuPlayQueue,
                 LocalSelfCoopContext.IsEnabled,
-                IsVakuuFormMode(player));
+                UsesHostedPlayPath(player));
             if (WakuuPlayQueuePolicy.IsOverlappingQueuePlay(watchdogPath, LocalWakuuAutopilotConfig.WakuuPlayOverlap))
             {
                 LocalMultiControlLogger.Info(

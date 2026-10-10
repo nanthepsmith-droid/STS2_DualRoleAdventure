@@ -35,4 +35,14 @@ internal static class WakuuAutoplaySeatPolicy
     /// <summary>按"是否全量"取每回合出牌上限。</summary>
     internal static int ResolveMaxCardsPerTurn(bool fullPlay)
         => fullPlay ? MaxCardsFull : MaxCardsDefault;
+
+    /// <summary>
+    /// 该席位是否按**瓦库托管出牌路径**（队列 / 并发 / 跳过演出）：瓦库形态 **或临时席位（战神）**。
+    ///
+    /// ⚠ 这条决定"要不要抢全局 `SelectorScopeGate`、要不要把 `LocalContext.NetId` 钉在这个席位身上"
+    /// （见 `LocalWakuuRelicRuntime.UsesHostedPlayPath` 的注释）—— 临时席位**必须**为 true，
+    /// 否则它出牌的那几秒里原版会把"本机玩家"当成战神 ⇒ **真人点不出牌**（r251 实机）。
+    /// </summary>
+    internal static bool UsesHostedPlayPath(bool vakuuFormMode, bool isTemporarySeat)
+        => vakuuFormMode || isTemporarySeat;
 }
