@@ -739,6 +739,44 @@ internal static class LocalWakuuRelicRuntime
         return cards;
     }
 
+    /// <summary>「补登记网络卡牌 id 失败」的日志去重（只用于防刷屏，不参与判定）。</summary>
+    private static readonly HashSet<ulong> _networkCardIdWarned = new();
+
+    /// <summary>
+    /// 把一张（从中途加进来的玩家手里拿到的）战斗牌**补登记**进 <c>NetCombatCardDb</c>。
+    ///
+    /// 背景：`NetCombatCardDb.StartCombat(players)` 只在**开战**时按 `state.Players` 遍历一次
+    /// （登记 + 订阅各牌堆的 `ContentsChanged`）；而战神是**战斗中途中**加进来的、且刻意不进
+    /// `runState.Players` ⇒ 它的牌从未登记 ⇒ 队列路径序列化时
+    /// `NetCombatCard.FromCard(card)` → `GetCardId(card)` **抛**
+    /// `Card … could not be found in combat ID database!`（r251 实机铁证：战神每轮都在
+    /// 「瓦库评分出牌」之后抛这一条，牌一张都入不了队 ⇒ 战神永不 ready ⇒ **不能结束回合**）。
+    ///
+    /// `IdCardForTesting` 是官方公开的唯一登记入口（幂等，内部就是 `IdCardIfNecessary`：
+    /// 已有 id 则跳过、`Owner == null` 则记 Error 并返回）。失败只记一次 WARN、**不打断出牌**。
+    /// </summary>
+    private static void RegisterNetworkCardId(CardModel card, Player player)
+    {
+        try
+        {
+            NetCombatCardDb.Instance.IdCardForTesting(card);
+        }
+        catch (Exception exception)
+        {
+            lock (_networkCardIdWarned)
+            {
+                if (_networkCardIdWarned.Count < 32 && !_networkCardIdWarned.Add(player.NetId))
+                {
+                    return;
+                }
+            }
+
+            LocalMultiControlLogger.Warn(
+                $"补登记战斗牌网络 id 失败（队列出牌可能失败）: player={player.NetId}, "
+                + $"card={card.Id.Entry}, error={exception.Message}");
+        }
+    }
+
     /// <summary>
     /// 改进-2 / 方案 D 实验档：把这张牌作为 <c>PlayCardAction</c> 入**该瓦库自己的**动作队列。
     ///
@@ -773,6 +811,10 @@ internal static class LocalWakuuRelicRuntime
                 + $"card={card.Id.Entry}, targetType={card.TargetType}, target={target?.LogName ?? "无"}");
             return false;
         }
+
+        // ★ 中途加进来的玩家（战神）必须先补登记这张牌的**网络 id**，否则队列动作序列化时必抛
+        //   `Card … could not be found in combat ID database!`（见 RegisterNetworkCardId 的注释）。
+        RegisterNetworkCardId(card, player);
 
         ulong startTick = Time.GetTicksMsec();
         PlayCardAction action = new(card, target);

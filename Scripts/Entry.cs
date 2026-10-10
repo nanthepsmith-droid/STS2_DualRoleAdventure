@@ -359,7 +359,18 @@ public partial class Entry
     //  ⟹ 战神改走**队列 + 并发档**：不抢闸门、不钉上下文（出牌由游戏全局动作泵执行、归属走选择器注册表）。
     //  `CardPlayVisualsSkipPatch` 同步改用同一判据（战神队列出牌也跳过卡牌堆演出）。
     //  ⚠ 刻意**不动** `IsVakuuFormMode` 本身（它被选牌/奖励/事件等一大批自动作答入口复用，扩大它会误开那些口子）。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r251)";
+    // r252（2026-10-10，r251 实机反馈）**战神补登记网络卡牌 id（队列路径才走通）**：
+    //  用户「战神不出牌，我也不能结束回合」。r251 日志铁证：`瓦库评分出牌: player=4096, card=…YI_CUT`
+    //  紧接 `瓦库看门狗重启失败: … error=Card CARD.LEX_NINJA2_CARD_YI_CUT (48902160) could not be found
+    //  in combat ID database!`（每 2 秒 7 次、0 条 `战神已自动结束回合`）。
+    //  真因 = `NetCombatCardDb.StartCombat(players)` **只在开战时按 `state.Players` 登记一次**
+    //  （登记 + 订阅牌堆 `ContentsChanged`），而战神是**途中**加进来的、且刻意不进 `runState.Players`
+    //  ⇒ 它的牌从未登记 ⇒ 队列路径 `NetCombatCard.FromCard(card)` → `GetCardId` 抛
+    //  ⇒ 牌一张都入不了队 ⇒ 战神永不 ready ⇒ 「结束回合」分母多一个（r251/r252 同族：**"不进集合"
+    //  的实体要把按 id 查它的公共设施补齐**，与坑 AE-7 同根因家族）。
+    //  修法 = `LocalWakuuRelicRuntime.RegisterNetworkCardId`：入队前用官方公开的
+    //  `NetCombatCardDb.Instance.IdCardForTesting(card)` 补登记这一张（幂等；失败只记一次 WARN）。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r252)";
 
     private static Harmony? _harmony;
 
