@@ -120,6 +120,19 @@ public class HellwarSummonPolicyTests
             Is.EqualTo(expected));
     }
 
+    // ─────── R10 修订（2026-10-10 用户口径）：战神出场那一回合不当肉盾 ───────
+
+    [TestCase(3, 3, false)]    // 出场当回合（round 相同）⇒ **还不能挡**（它自带【无实体】）
+    [TestCase(3, 4, true)]     // 下一个 round（= 下一个玩家回合）起 ⇒ 可挡
+    [TestCase(3, 5, true)]     // 更晚也当然可挡
+    [TestCase(1, 0, false)]    // 拿不到 round（0）⇒ 保守判为无资格，不乱转伤害
+    public void 战神只在出场回合之后才有肉盾资格(int spawnRound, int currentRound, bool expected)
+    {
+        Assert.That(
+            HellwarSummonPolicy.IsGuardEligible(spawnRound, currentRound),
+            Is.EqualTo(expected));
+    }
+
     [Test]
     public void 计数够且未满员才可召唤()
     {

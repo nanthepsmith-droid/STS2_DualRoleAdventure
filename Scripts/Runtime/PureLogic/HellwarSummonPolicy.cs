@@ -140,6 +140,26 @@ internal static class HellwarSummonPolicy
         => isPoweredAttack && targetIsSummoner && hasAliveGuard;
 
     /// <summary>
+    /// **R10 修订（2026-10-10 用户口径）：「战神刚出场那一回合还不能当肉盾」** —— 一个战神只有在
+    /// **出场回合之后**才有资格替绑主承伤（<paramref name="currentRound"/> &gt; <paramref name="spawnRound"/>）。
+    ///
+    /// **为什么**：战神出场时自带 1 层【无实体】（召唤保命，<c>ApplySummonProtectionAsync</c>），
+    /// 那一层覆盖"召唤当回合 + 紧接着的敌方回合"；若同一窗口里它还能替绑主吃伤害，
+    /// 「打不死 + 白挡一半伤害」叠加 ⇒ 作为肉盾太强（用户 2026-10-10 实机体感：
+    /// "战神刚出来有 1 回合无实体保护，同时可以替代本体玩家承受伤害，作为肉盾疑似有点太强了"）。
+    ///
+    /// **为什么用 round 比较而不是另加状态机**：`CombatState.RoundNumber` 本来就是**按
+    /// "玩家回合 + 敌方回合"一整个 round 递增**的（`CombatManager.cs:1878`：敌方回合结束、切回玩家侧时 +1）
+    /// ⇒ `currentRound > spawnRound` **天然等于**"下一个（玩家）回合起生效"，而且**每个战神各算各的**
+    /// （死了再召一个新的 ⇒ 新战神同样要等一个回合，不需要额外复位逻辑）。
+    ///
+    /// ⚠ 判据落在**查"当前守卫"那一步**（`HellwarWarGodFactory.FindGuardCreature` 带 round 过滤）
+    /// ⇒ `ShouldGuardIncomingDamage` 的第三个条件 `hasAliveGuard` 自动升级为
+    /// "有**已满一个回合**的活战神"，两个钩子仍然共用同一判据（不会出现"减半了但没人承接"）。
+    /// </summary>
+    internal static bool IsGuardEligible(int spawnRound, int currentRound) => currentRound > spawnRound;
+
+    /// <summary>
     /// **R10：绑主本次要掉的 HP 减半**（D4 拍板口径 = **玩家零伤害 + 战神吃一半**）。
     ///
     /// 减半点在 `HpLossHookPhase.BeforeOsty` —— 即**绑主自己的格挡已经结算完**之后（所以"绑主的格挡照常生效"）；

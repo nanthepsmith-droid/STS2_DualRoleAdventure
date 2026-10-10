@@ -31,6 +31,9 @@ namespace LocalMultiControl.Scripts.Models.Powers;
 ///   `_redirectPending` 写法，`LocalWakuuDaddyShieldPower.cs:113-144`）—— 那是另一套语义，先不混进来。</item>
 /// <item>**不保存"是哪个战神"**：每个钩子当场按绑主 NetId 查 <see cref="HellwarWarGodFactory.FindGuardCreature"/>
 ///   ⇒ 战神换人 / 死而复生 / 全部死光 都不需要重挂或摘除（查不到就原样放行，等价于没有守卫）。</item>
+/// <item>**R10 修订（2026-10-10 用户口径）**：查询带**当前 round** ⇒ 战神**出场那一回合不当肉盾**
+///   （它那回合自带 1 层【无实体】：打不死 + 白挡一半 = 太强）。所以"挂上了"≠"开始挡了"，
+///   真正开始挡的那一刻由 `_effectLogged` 锚点 `战灵守卫已生效` 打出来。</item>
 /// </list>
 ///
 /// 已知边界（**别当 bug 修**，见设计文档 §4 R10）：`DieForYouPower`（亡灵契约师的 Osty）是**另一个**重定向源，
@@ -52,15 +55,30 @@ internal sealed class HellwarWarGodGuardPower : PowerModel
 
     public override bool ShouldPlayVfx => false;
 
-    /// <summary>当前该替绑主挨打的那个战神（查不到 = null ⇒ 两个钩子都原样放行）。</summary>
+    /// <summary>
+    /// 当前该替绑主挨打的那个战神（查不到 = null ⇒ 两个钩子都原样放行）。
+    ///
+    /// **R10 修订（2026-10-10 用户口径）**：查询带上**当前 round** —— 战神**出场那一回合不当肉盾**
+    /// （它那回合自带【无实体】，打不死还白挡一半 = 太强；用户实机体感）。
+    /// `RoundNumber` 拿不到时传 0 ⇒ `IsGuardEligible` 恒假 ⇒ 保守地不挡。
+    /// </summary>
     private Creature? Guard
     {
         get
         {
             Player? summoner = Owner.Player;
-            return summoner == null ? null : HellwarWarGodFactory.FindGuardCreature(summoner.NetId);
+            if (summoner == null)
+            {
+                return null;
+            }
+
+            int round = Owner.CombatState?.RoundNumber ?? 0;
+            return HellwarWarGodFactory.FindGuardCreature(summoner.NetId, round);
         }
     }
+
+    /// <summary>"守卫真的开始挡了"的锚点是否已打过（每场战斗一次 —— 复测时要能一眼看到"从哪一回合起生效"）。</summary>
+    private bool _effectLogged;
 
     /// <summary>绑主本次要掉的 HP **减半**（减半后紧接着被下面那条钩子转给战神）。</summary>
     public override decimal ModifyHpLostBeforeOsty(
@@ -84,6 +102,15 @@ internal sealed class HellwarWarGodGuardPower : PowerModel
                 props.IsPoweredAttack(), object.ReferenceEquals(target, Owner), guard != null))
         {
             return target;
+        }
+
+        if (!_effectLogged)
+        {
+            // 复测锚点：R10 修订后"挂上 ≠ 在挡"（出场回合不当肉盾）⇒ 需要一条"真的开始挡了"的证据。
+            _effectLogged = true;
+            LocalMultiControlLogger.Info(
+                $"[地狱战神] 战灵守卫已生效（自本次受击起战神替绑主承伤）: 绑主={Owner.Player?.NetId}, "
+                + $"守卫=seat{guard!.Player?.NetId}, round={Owner.CombatState?.RoundNumber.ToString() ?? "?"}");
         }
 
         return guard!;

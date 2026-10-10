@@ -52,7 +52,10 @@ internal sealed class LocalWakuuDaddyMergeCard : CardModel
         Player? wakuu = cardPlay.Target?.Player;
         if (wakuu != null)
         {
-            bool isWakuuSeat = LocalSelfCoopContext.IsWakuuEnabled(wakuu.NetId);
+            // R13b（2026-10-10 用户口径「【合体】覆盖战神」）：战灵召唤的战神是**托管席位**，
+            // 但它**不在** `IsWakuuEnabled` 那张玩家指定的瓦库名单里 ⇒ 两个判据取并集。
+            bool isWakuuSeat = LocalSelfCoopContext.IsWakuuEnabled(wakuu.NetId)
+                || LocalSelfCoopContext.IsTemporarySeat(wakuu.NetId);
             if (WakuuDaddyCardPolicy.CanMergeTarget(isWakuuSeat, ReferenceEquals(wakuu, Owner)))
             {
                 await MergeAsync(wakuu);
@@ -104,7 +107,10 @@ internal sealed class LocalWakuuDaddyMergeCard : CardModel
         }
 
         WakuuDaddyCombatState.RegisterMerge(Owner, wakuu);
+        bool targetIsWarGod = LocalSelfCoopContext.IsTemporarySeat(wakuu.NetId);
         LocalMultiControlLogger.Info(
-            $"[瓦库的爹] 合体：收编手牌={cards.Count} 张、能量={energy}，施牌者 {Owner.NetId} ← 瓦库 {wakuu.NetId}");
+            $"[瓦库的爹] 合体：收编手牌={cards.Count} 张、能量={energy}，施牌者 {Owner.NetId} ← "
+            + $"瓦库 {wakuu.NetId}{(targetIsWarGod ? "(战神)" : string.Empty)}"
+            + (targetIsWarGod ? "；⚠ 战神是临时席位：本回合混抽/混弃走 TryGetMergedWakuu 的【在册战神】分支" : string.Empty));
     }
 }

@@ -48,7 +48,13 @@ internal static class WakuuDaddyCardPolicy
     /// <summary>合体混弃目的地：<c>true</c> = 进**瓦库**的弃牌堆（否则进自己的）；各半。</summary>
     internal static bool ShouldDiscardToOther(int roll) => (roll & 1) == 1;
 
-    /// <summary>合体目标是否合法：必须点在一个**瓦库托管席位**上、且不是自己。</summary>
+    /// <summary>
+    /// 合体目标是否合法：必须点在一个**瓦库托管席位**上、且不是自己。
+    ///
+    /// "瓦库托管席位"= 玩家指定的瓦库（`IsWakuuEnabled`）**或** 战灵召唤的**临时席位（战神）**
+    /// —— 后者是 2026-10-10 用户口径「【合体】覆盖战神」补上的；两个判据的并集由调用方
+    /// （`LocalWakuuDaddyMergeCard.OnPlay`）算好传进来，本纯函数只看"是不是托管席位"。
+    /// </summary>
     internal static bool CanMergeTarget(bool targetIsWakuuSeat, bool targetIsSelf)
         => targetIsWakuuSeat && !targetIsSelf;
 

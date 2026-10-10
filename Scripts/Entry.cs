@@ -471,7 +471,26 @@ public partial class Entry
     //  ④ ⚠ **边界登记（待用户拍板）**：**【合体】不覆盖战神** —— 战神不在 `IsWakuuEnabled` 名单里
     //     （它只是托管席位）⇒ 点在战神身上**效果不发动**（只抽 1 张）；本轮只把这条日志写清楚，
     //     要不要让合体也吃战神 = 用户口径（设计文档 §8 Phase 5 / TODO.md）。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r258)";
+    // r259（2026-10-10，用户三条口径）**R10 修订（肉盾资格自下一回合起）+ R13b（【合体】覆盖战神）+ 当回合打牌不做**：
+    //  ① **R10 修订**（用户：「战神刚出来有 1 回合无实体保护，同时可以替代本体玩家承受伤害，
+    //     作为肉盾疑似有点太强了，考虑以后肉盾效果在战神出场的下一个回合再挂上去」）：
+    //     判据 = 纯逻辑 `HellwarSummonPolicy.IsGuardEligible(spawnRound, currentRound)`（`currentRound > spawnRound`）。
+    //     为什么用 round 比较而不另加状态机：`CombatState.RoundNumber` 本来就是**按"玩家回合 + 敌方回合"一整个
+    //     round 递增**（敌方回合结束、切回玩家侧时 +1，`CombatManager.cs:1878`）⇒ 天然等于"下一个玩家回合起生效"，
+    //     而且**每个战神各算各的**（死了再召一个新的同样要等一回合，不需要额外复位逻辑）。
+    //     登记项 `Registration` 新增 `SpawnRound`（**召唤 + 复活两条路径都刷新** —— 复活同样补一层【无实体】）；
+    //     资格过滤落在 `FindGuardCreature(绑主, 当前 round)` ⇒ **Power 的两个钩子判据一行没改**
+    //     （`hasAliveGuard` 自动升级成"有**已满一个回合**的活战神"），Power 照旧在召唤时挂（幂等、每场一次）。
+    //     ⚠ "挂上 ≠ 在挡" ⇒ 新增锚点 `战灵守卫已生效（自本次受击起战神替绑主承伤）`（真正开始挡的那一刻，每场一次）+
+    //     挂载日志改成 `round=…, 在册杀手=seat…(可承伤 / 出场回合 N，下一回合起可承伤)`。
+    //  ② **R13b**（用户：「【合体】覆盖战神」）：战神是**托管席位**但**不在** `IsWakuuEnabled` 那张玩家指定名单里
+    //     ⇒ `LocalWakuuDaddyMergeCard.OnPlay` 的席位判据改取**并集**（瓦库名单 ∪ 临时席位）；
+    //     并且 `WakuuDaddyCombatState.TryGetMergedWakuu` 补**在册战神**兜底查询（它刻意不在 `runState.Players`
+    //     ⇒ 老循环永远查不到它；"结构外成员"家族老坑，见 references AE-15/AE-16）⇒ 本回合混抽/混弃对战神也成立；
+    //     手牌 / 能量转移本来就按 `Player` 实例走，不需要改。
+    //  ③ 「战神当回合就能打牌」= 用户明确**不强求、难做就不做** ⇒ 本轮不做，登记为"不做"。
+    //  ④ 「R10 平衡（战神是否太脆）」= 用户要先**完整测几局**再看 ⇒ 本轮不改阈值，结论挂起。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r259)";
 
     private static Harmony? _harmony;
 

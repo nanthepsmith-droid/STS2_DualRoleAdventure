@@ -157,6 +157,21 @@ internal static class WakuuDaddyCombatState
                 wakuu = candidate;
                 return true;
             }
+
+            // **R13b（2026-10-10 用户口径「【合体】覆盖战神」）**：战灵召唤的**临时席位（战神）
+            // 刻意不在 `runState.Players` 里**（H1 硬约束）⇒ 上面那个循环永远查不到它，
+            // 必须在**在册战神表**里再查一次。这正是"结构外成员"家族的老坑：
+            // 凡事按"成员集合"查人的公共设施，都要单独兜住（见 references AE-7 / AE-15 / AE-16）。
+            // 校验条件与上面保持一致（活着 + 有 PlayerCombatState 才能搬手牌 / 混抽混弃）。
+            if (LocalSelfCoopContext.IsTemporarySeat(link.WakuuId))
+            {
+                Player? warGod = HellwarWarGodFactory.FindSpawnedWarGod(link.WakuuId);
+                if (warGod != null && warGod.Creature?.IsDead != true && warGod.PlayerCombatState != null)
+                {
+                    wakuu = warGod;
+                    return true;
+                }
+            }
         }
 
         return false;

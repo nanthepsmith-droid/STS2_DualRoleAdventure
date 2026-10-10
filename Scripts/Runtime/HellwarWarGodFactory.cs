@@ -82,6 +82,13 @@ internal static class HellwarWarGodFactory
 
         /// <summary>"战神已死亡"锚点是否已经打过（复活时复位 ⇒ "死→复活→再死"各打一条）。</summary>
         internal bool DeathLogged { get; set; }
+
+        /// <summary>
+        /// **R10 修订（2026-10-10 用户口径）**：这个战神**出场**时所在的 `CombatState.RoundNumber`
+        /// —— 它只有在**更晚的 round**才有资格当肉盾（<see cref="HellwarSummonPolicy.IsGuardEligible"/>）。
+        /// 出场 = 召唤 **或** 复活（复活同样自带一层【无实体】）⇒ 两条路径都要刷新这个值。
+        /// </summary>
+        internal int SpawnRound { get; set; }
     }
 
     /// <summary>已生成的战神（清理 / 退 run 卡牌表 / 席位号段分配的唯一持有者；不跨局残留）。</summary>
@@ -174,11 +181,19 @@ internal static class HellwarWarGodFactory
     }
 
     /// <summary>
-    /// **R10（Phase 4）**：取某绑主名下**第一个还活着的战神** —— 就是"替它吃那一半伤害"的那个承接者。
-    /// 查不到（没有战神 / 都死了 / 已被清理 / 绑主 NetId 为 0）⇒ 返回 <c>null</c>
+    /// **R10（Phase 4）**：取某绑主名下**第一个还活着、且已有资格承伤的战神** —— 就是"替它吃那一半伤害"的那个承接者。
+    /// 查不到（没有战神 / 都死了 / 已被清理 / 绑主 NetId 为 0 / **刚出场还没满一个回合**）⇒ 返回 <c>null</c>
     /// ⇒ <see cref="HellwarWarGodGuardPower"/> 的两个钩子都**原样放行**（等价于没有守卫）。
+    ///
+    /// ⚠ "资格"= <see cref="HellwarSummonPolicy.IsGuardEligible"/>（**R10 修订，2026-10-10 用户口径**）：
+    /// 战神**出场那一回合不能当肉盾** —— 它那个回合自带 1 层【无实体】（打不死），
+    /// 若同时还能替绑主吃一半伤害，「打不死 + 白挡」叠加作为肉盾太强。
+    /// 资格过滤放在这里（而不是扩散到 Power 的两个钩子）⇒ 钩子判据不用改、
+    /// `hasAliveGuard` 自动变成"有已满一个回合的活战神"。
     /// </summary>
-    internal static Creature? FindGuardCreature(ulong summonerNetId)
+    /// <param name="currentRound">当前 `CombatState.RoundNumber`；拿不到（0 / 异常）时**一律判为无资格**
+    /// （保守：状态不明时宁可不变肉盾，也不乱转伤害）。</param>
+    internal static Creature? FindGuardCreature(ulong summonerNetId, int currentRound)
     {
         if (summonerNetId == 0UL)
         {
@@ -192,6 +207,11 @@ internal static class HellwarWarGodFactory
                 continue;
             }
 
+            if (!HellwarSummonPolicy.IsGuardEligible(registration.SpawnRound, currentRound))
+            {
+                continue;
+            }
+
             Creature? creature = registration.Player.Creature;
             if (creature != null && creature.IsAlive)
             {
@@ -201,6 +221,45 @@ internal static class HellwarWarGodFactory
 
         return null;
     }
+
+    /// <summary>
+    /// 日志用：某绑主名下**在册且活着**的战神席位号（**不带** R10 的"满一个回合"资格过滤），
+    /// 例如 <c>4096(本回合起承伤), 4097(下一回合起)</c> —— 用来解释"为什么现在还不挡"。
+    /// </summary>
+    internal static string DescribeGuardCandidates(ulong summonerNetId, int currentRound)
+    {
+        if (summonerNetId == 0UL)
+        {
+            return "无";
+        }
+
+        List<string> parts = new();
+        foreach (Registration registration in _warGods)
+        {
+            if (registration.SummonerNetId != summonerNetId)
+            {
+                continue;
+            }
+
+            if (registration.Player.Creature?.IsAlive != true)
+            {
+                continue;
+            }
+
+            parts.Add(HellwarSummonPolicy.IsGuardEligible(registration.SpawnRound, currentRound)
+                ? $"seat{registration.Player.NetId}(可承伤)"
+                : $"seat{registration.Player.NetId}(出场回合 {registration.SpawnRound}，下一回合起可承伤)");
+        }
+
+        return parts.Count == 0 ? "无" : string.Join(", ", parts);
+    }
+
+    /// <summary>
+    /// 当前战斗的 `CombatState.RoundNumber`（拿不到时 0 ⇒ 一律判"无承伤资格"，保守）。
+    /// 与 <see cref="HellwarWarGodGuardPower"/> 里那条 `Owner.Creature.CombatState?.RoundNumber` 同源。
+    /// </summary>
+    private static int ResolveCurrentRound()
+        => CombatManager.Instance?.DebugOnlyGetState()?.RoundNumber ?? 0;
 
     /// <summary>
     /// **R10（Phase 4）：给绑主挂上「战灵守卫」**（<see cref="HellwarWarGodGuardPower"/>）——
@@ -226,9 +285,15 @@ internal static class HellwarWarGodFactory
 
             HookPlayerChoiceContext choiceContext = new(summoner, summoner.NetId, GameActionType.CombatPlayPhaseOnly);
             await PowerCmd.Apply<HellwarWarGodGuardPower>(choiceContext, creature, 1m, creature, null);
+
+            // R10 修订（2026-10-10 用户口径）：Power 照旧在召唤时就挂上（幂等、每场战斗一次），
+            // 但**承伤资格从下一回合起**才成立（见 FindGuardCreature / IsGuardEligible）——
+            // 所以这条日志要把"谁在册 / 谁已经有资格"讲清楚，别让人以为挂了就等于在挡。
+            int round = ResolveCurrentRound();
             LocalMultiControlLogger.Info(
-                $"{tag} 已给绑主挂上【战灵守卫】（R10：战神替它吃一半攻击伤害）: 绑主={summoner.NetId}, "
-                + $"当前守卫=seat{FindGuardCreature(summoner.NetId)?.Player?.NetId}");
+                $"{tag} 已给绑主挂上【战灵守卫】（R10：战神替它吃一半攻击伤害；"
+                + $"**肉盾资格自下一回合起** —— 出场回合自带【无实体】，不当肉盾）: 绑主={summoner.NetId}, "
+                + $"round={round}, 在册杀手={DescribeGuardCandidates(summoner.NetId, round)}");
         }
         catch (Exception exception)
         {
@@ -407,12 +472,15 @@ internal static class HellwarWarGodFactory
             await ApplySummonProtectionAsync(creature, tag);
             registration.ReviveCount++;
             registration.DeathLogged = false;   // 复活 ⇒ 复位死亡锚点（"死→复活→再死"各打一条）
+            // R10 修订：复活也算"重新出场"（同样补一层【无实体】）⇒ 同样要等下一回合才能当肉盾。
+            registration.SpawnRound = state.RoundNumber;
 
             LocalMultiControlLogger.Info(
                 $"{tag} 已复活战神（R9）: seat={warGod.NetId}, 档位={registration.Tier}, "
                 + $"血量={creature.CurrentHp}/{creature.MaxHp}, 第 {registration.ReviveCount} 次复活, "
                 + $"抽牌堆={warGod.PlayerCombatState?.DrawPile.Cards.Count ?? 0} 张, "
-                + $"战斗内玩家={state.Players.Count}");
+                + $"战斗内玩家={state.Players.Count}, "
+                + $"肉盾资格=下一回合起（R10 修订：出场回合不当肉盾）");
             return true;
         }
         catch (Exception exception)
@@ -552,7 +620,11 @@ internal static class HellwarWarGodFactory
             MarkReadyToEndTurnIfMidPlayerTurn(state, player, tag);
 
             TaskHelper.RunSafely(FinishSpawnAsync(state, player.Creature, seatId, tag, presetRelics));
-            _warGods.Add(new Registration(player, summoner?.NetId ?? 0UL, preset.Tier));
+            _warGods.Add(new Registration(player, summoner?.NetId ?? 0UL, preset.Tier)
+            {
+                // R10 修订：记下"出场回合" ⇒ 本回合（含紧接的敌方回合）它还不能当肉盾。
+                SpawnRound = state.RoundNumber,
+            });
 
             // ★ R10（Phase 4）：给**绑主**挂「战灵守卫」（它受到的攻击伤害减半后转给战神）。
             // 放在登记**之后**：Power 的钩子要按绑主 NetId 反查"当前守卫"（FindGuardCreature）。
