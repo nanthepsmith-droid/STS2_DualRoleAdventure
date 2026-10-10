@@ -57,6 +57,7 @@ public class WakuuConfigJsonTests
             Assert.That(data.hellwarSplitFree, Is.True); // 【分裂精神】默认"免费额外选项"（用完还能休息/锻造）
             Assert.That(data.hellwarActGain, Is.False); // 每幕自动获得计数：可开关且默认关
             Assert.That(data.hellwarActGainAmount, Is.EqualTo(HellwarSummonPolicy.DefaultActGainAmount)); // 每幕获得量默认 2
+            Assert.That(data.hellwarEndlessAncient, Is.False); // 【无尽战神】默认不开先古（2026-10-10 用户开关，默认关）
             Assert.That(data.restSiteOptionScroll, Is.True); // 休息处选项滚动条：默认开（UI 修复，非玩法改动）
             // 策略默认值
             Assert.That(data.eventChoiceMode, Is.EqualTo("first"));
@@ -371,6 +372,7 @@ public class WakuuConfigJsonTests
             Assert.That(json, Does.Contain("\"hellwarSplitFree\""));
             Assert.That(json, Does.Contain("\"hellwarActGain\""));
             Assert.That(json, Does.Contain("\"hellwarActGainAmount\""));
+            Assert.That(json, Does.Contain("\"hellwarEndlessAncient\""));
             Assert.That(json, Does.Contain("\"restSiteOptionScroll\""));
         });
     }

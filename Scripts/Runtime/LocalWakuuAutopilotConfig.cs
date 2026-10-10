@@ -113,6 +113,9 @@ internal static class LocalWakuuAutopilotConfig
     /// <summary>战灵召唤 · 每幕自动获得计数的档位（1 / 2 / 3，默认 2）。</summary>
     public static string HellwarActGainAmount { get; private set; } = HellwarSummonPolicy.DefaultActGainAmount;
 
+    /// <summary>战灵召唤 · 【无尽战神】允许开出先古档（默认关；2026-10-10 用户追加）。</summary>
+    public static bool HellwarEndlessAncient { get; private set; }
+
     /// <summary>休息处选项横向滚动条（默认开；与其它 mod 改动重合时可关）。</summary>
     public static bool RestSiteOptionScroll { get; private set; } = true;
 
@@ -329,6 +332,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.hellwarGod): data.hellwarGod = value; break;
                     case nameof(WakuuConfigData.hellwarSplitFree): data.hellwarSplitFree = value; break;
                     case nameof(WakuuConfigData.hellwarActGain): data.hellwarActGain = value; break;
+                    case nameof(WakuuConfigData.hellwarEndlessAncient): data.hellwarEndlessAncient = value; break;
                     case nameof(WakuuConfigData.restSiteOptionScroll): data.restSiteOptionScroll = value; break;
                     case nameof(WakuuConfigData.autoUsePotions): data.autoUsePotions = value; break;
                     case nameof(WakuuConfigData.neowAutoChoose): data.neowAutoChoose = value; break;
@@ -771,6 +775,7 @@ internal static class LocalWakuuAutopilotConfig
                 + $"hellwarSplitFree={data.hellwarSplitFree}, "
                 + $"hellwarActGain={data.hellwarActGain}, "
                 + $"hellwarActGainAmount={HellwarSummonPolicy.NormalizeActGainAmount(data.hellwarActGainAmount)}, "
+                + $"hellwarEndlessAncient={data.hellwarEndlessAncient}, "
                 + $"restSiteOptionScroll={data.restSiteOptionScroll}, "
                 + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}, "
                 + $"vakuuBrain={data.vakuuBrain}, coopBotsSeats={data.coopBotsSeats}");
@@ -800,6 +805,7 @@ internal static class LocalWakuuAutopilotConfig
         HellwarSplitFree = data.hellwarSplitFree;
         HellwarActGain = data.hellwarActGain;
         HellwarActGainAmount = HellwarSummonPolicy.NormalizeActGainAmount(data.hellwarActGainAmount);
+        HellwarEndlessAncient = data.hellwarEndlessAncient;
         RestSiteOptionScroll = data.restSiteOptionScroll;
         AutoUsePotions = data.autoUsePotions;
         NeowAutoChoose = data.neowAutoChoose;

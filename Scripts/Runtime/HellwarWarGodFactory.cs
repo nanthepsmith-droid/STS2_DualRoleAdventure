@@ -53,6 +53,26 @@ internal static class HellwarWarGodFactory
     /// <summary>当前在册的战神（供诊断 / 日志）。</summary>
     internal static IReadOnlyList<Player> SpawnedWarGods => _warGods;
 
+    /// <summary>
+    /// 按 NetId 取**在册战神**。
+    ///
+    /// 用途：`LocalContext.GetMe(IPlayerCollection)` 的口子只拿到 id（`playerCollection` 里查不到战神
+    /// —— 它刻意不进 `runState.Players`），必须由我们按 id 反查 Player 实例（见
+    /// <see cref="Patch.LocalContextTemporarySeatGetMePatch"/>）。
+    /// </summary>
+    internal static Player? FindSpawnedWarGod(ulong netId)
+    {
+        foreach (Player warGod in _warGods)
+        {
+            if (warGod.NetId == netId)
+            {
+                return warGod;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>战斗内还活着的临时席位玩家（按战斗态反查，最可靠）。</summary>
     internal static List<Player> CollectWarGods(CombatState? state)
     {

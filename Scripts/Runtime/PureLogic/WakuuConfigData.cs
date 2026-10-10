@@ -147,6 +147,14 @@ internal sealed class WakuuConfigData
     public string hellwarActGainAmount { get; set; } = HellwarSummonPolicy.DefaultActGainAmount;
 
     /// <summary>
+    /// 战灵召唤 · **【无尽战神】允许开出先古档**（默认关；2026-10-10 用户追加）。
+    ///
+    /// 开启后【无尽战神】的随机池 = 普通 / 罕见 / 稀有 / **先古**（先古原本是【终极九连环】的专属，D17）。
+    /// 池见 <see cref="HellwarWarGodPresets.ResolveRandomPool"/>；只影响【无尽战神】，四档单点召唤与【九连环】不变。
+    /// </summary>
+    public bool hellwarEndlessAncient { get; set; }
+
+    /// <summary>
     /// 休息处选项**横向滚动条**（默认**开**，2026-10-09 用户追加）：
     /// 选项变多时（原版 2~3 条 + 我们注入的净化 / 炼化 / 分裂精神 + 其它 mod 的选项）会横向溢出屏幕
     /// （容器只有 799px 宽、每个按钮 247px、间隔 100px ⇒ **5 个以上就开始挤出屏幕**），

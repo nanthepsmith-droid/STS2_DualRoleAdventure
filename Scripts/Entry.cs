@@ -338,7 +338,17 @@ public partial class Entry
     //  ⑤ **台词「唔」**：`relics` 表注入 `LMC_HELLWAR_WARGOD.line`（`LocalWakuuHellwarLocalization.WarGodLineKey`
     //     + `LocalModText.HellwarWarGodLine`），`ResolveAutoplayLine` 按席位分流 + `LocString.Exists` 兜底。
     //  ⑥ 顺带：`EnsureWakuuPerspective` 对临时席位早退（原来会白打一条"切换视角 → 0x1000"的错日志）。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r249)";
+    // r250（2026-10-10，r249 实机首测修复）**战神出牌必抛 + 【无尽战神】先古开关**：
+    //  ① 🔴 **r249 实机真因**：战神**不进 `runState.Players`**（H1），而出牌路径上大量 UI / 状态刷新会调
+    //     `LocalContext.GetMe(runState)`（`IPlayerCollection` 重载，原实现 `?? throw`）⇒ 每次出牌必抛
+    //     `Local player not found in player collection.`（日志铁证：`瓦库评分出牌: player=4096, card=…`
+    //     紧接 `瓦库选择器作用域异常退出` / `瓦库看门狗重启失败: … error=Local player not found in player collection.`）
+    //     ⇒ 牌一张打不出去 + 战神永不 ready ⇒ **真人无法结束回合**（r249 用户实机现象）。
+    //     修法 = 新补丁 `LocalContextTemporarySeatGetMePatch`：`NetId` 是临时席位、且在册、且原集合
+    //     查不到时返回在册战神（`HellwarWarGodFactory.FindSpawnedWarGod`）；三条收窄 ⇒ 原版/真人/瓦库语义不动。
+    //  ② 【无尽战神】新增开关 `hellwarEndlessAncient`（默认关，用户 2026-10-10 追加）：开启后随机池
+    //     加入【先古】（原为【九连环】专属）；池口径收进 `HellwarWarGodPresets.ResolveRandomPool(bool)`。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r250)";
 
     private static Harmony? _harmony;
 

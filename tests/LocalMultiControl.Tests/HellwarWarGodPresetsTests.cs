@@ -71,15 +71,42 @@ public class HellwarWarGodPresetsTests
     }
 
     [Test]
-    public void 先古不进无尽战神的随机池()
+    public void 先古默认不进无尽战神的随机池()
     {
         Assert.Multiple(() =>
         {
             Assert.That(
                 HellwarWarGodPresets.RandomPool.Select((preset) => preset.Tier),
                 Is.EqualTo(new[] { HellwarWarGodTier.Common, HellwarWarGodTier.Rare, HellwarWarGodTier.Epic }));
-            Assert.That(HellwarWarGodPresets.IsInRandomPool(HellwarWarGodTier.Ancient), Is.False, "D17：先古是九连环专属");
-            Assert.That(HellwarWarGodPresets.IsInRandomPool(HellwarWarGodTier.Common), Is.True);
+            Assert.That(
+                HellwarWarGodPresets.IsInRandomPool(HellwarWarGodTier.Ancient, includeAncient: false),
+                Is.False,
+                "D17：先古默认是九连环专属");
+            Assert.That(HellwarWarGodPresets.IsInRandomPool(HellwarWarGodTier.Common, includeAncient: false), Is.True);
+        });
+    }
+
+    [Test]
+    public void 开启开关后先古进无尽战神的随机池()
+    {
+        // 2026-10-10 用户追加的开关：只影响【无尽战神】的随机池，四档单点召唤与【九连环】不变。
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                HellwarWarGodPresets.ResolveRandomPool(includeAncient: true).Select((preset) => preset.Tier),
+                Is.EqualTo(new[]
+                {
+                    HellwarWarGodTier.Common,
+                    HellwarWarGodTier.Rare,
+                    HellwarWarGodTier.Epic,
+                    HellwarWarGodTier.Ancient,
+                }));
+            Assert.That(
+                HellwarWarGodPresets.IsInRandomPool(HellwarWarGodTier.Ancient, includeAncient: true),
+                Is.True);
+            Assert.That(
+                HellwarWarGodPresets.IsInRandomPool(HellwarWarGodTier.Ancient, includeAncient: false),
+                Is.False);
         });
     }
 
@@ -89,10 +116,22 @@ public class HellwarWarGodPresetsTests
         int size = HellwarWarGodPresets.RandomPool.Length;
         Assert.Multiple(() =>
         {
-            Assert.That(HellwarWarGodPresets.PickRandom(0).Tier, Is.EqualTo(HellwarWarGodTier.Common));
-            Assert.That(HellwarWarGodPresets.PickRandom(size).Tier, Is.EqualTo(HellwarWarGodTier.Common), "越界回绕");
-            Assert.That(HellwarWarGodPresets.PickRandom(-1).Tier, Is.EqualTo(HellwarWarGodTier.Epic), "负数回绕不越界");
-            Assert.That(HellwarWarGodPresets.PickRandom(int.MaxValue), Is.Not.Null);
+            Assert.That(
+                HellwarWarGodPresets.PickRandom(0, includeAncient: false).Tier,
+                Is.EqualTo(HellwarWarGodTier.Common));
+            Assert.That(
+                HellwarWarGodPresets.PickRandom(size, includeAncient: false).Tier,
+                Is.EqualTo(HellwarWarGodTier.Common),
+                "越界回绕");
+            Assert.That(
+                HellwarWarGodPresets.PickRandom(-1, includeAncient: false).Tier,
+                Is.EqualTo(HellwarWarGodTier.Epic),
+                "负数回绕不越界");
+            Assert.That(HellwarWarGodPresets.PickRandom(int.MaxValue, includeAncient: false), Is.Not.Null);
+            Assert.That(
+                HellwarWarGodPresets.PickRandom(3, includeAncient: true).Tier,
+                Is.EqualTo(HellwarWarGodTier.Ancient),
+                "含先古池里下标 3 = 先古（开关生效）");
         });
     }
 

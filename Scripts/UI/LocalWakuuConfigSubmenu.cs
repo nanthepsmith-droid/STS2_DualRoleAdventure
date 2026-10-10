@@ -344,6 +344,15 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             NextHellwarActGainAmount,
             GetHellwarActGainDisplayText));
         AddToggleRow(column,
+            LocalModText.Select(
+                "战灵召唤 · 【无尽战神】可能开出先古（默认关）",
+                "War God Summon · Endless War Gods may roll Ancient (default OFF)"),
+            LocalModText.Select(
+                "**默认关**。开启后【无尽战神】的随机池加入【先古】档 —— 原本只有 普通 / 罕见 / 稀有（先古是【终极九连环】的专属）。**只影响【无尽战神】**；四档单点召唤与【九连环】不变。",
+                "**Off by default.** When on, the 【Endless War Gods】 random pool includes the 【Ancient】 tier — by default it only rolls Common / Rare / Epic (Ancient is exclusive to 【Ultimate Nine-Chain】). **Affects 【Endless War Gods】 only**; single-tier summons and 【Nine-Chain】 are unchanged."),
+            () => LocalWakuuAutopilotConfig.HellwarEndlessAncient,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("hellwarEndlessAncient", value));
+        AddToggleRow(column,
             LocalModText.RestSiteOptionScrollTitle,
             LocalModText.Select(
                 "**默认开**。休息处选项变多时会横向溢出屏幕（我们自己注入的净化 / 炼化 / 分裂精神，加上其它 mod 的选项，5 个以上就会挤出屏幕两端、点不到）。开启后把选项容器包进可**拖动 / 滚轮**的横向滚动条；**只在你真的溢出的房间**才启用，选项少时与原版完全一致。⚠ **可能与其它 mod 的同类功能重合**（别人也在改这块布局）—— 若发现界面对拼或异常，关掉这个开关即可。",

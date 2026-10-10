@@ -76,9 +76,17 @@ internal static class HellwarWarGodPresets
     internal static readonly HellwarWarGodPreset[] All = { Common, Rare, Epic, Ancient };
 
     /// <summary>
-    /// 【无尽战神】的**随机池** = 普通 / 罕见 / 稀有（D17：**先古不进随机池** —— 那是【终极九连环】的专属）。
+    /// 【无尽战神】的**默认随机池** = 普通 / 罕见 / 稀有（D17：**先古不进随机池** —— 那是【终极九连环】的专属）。
+    /// 玩家开启「无尽战神允许开出先古」后改用 <see cref="RandomPoolWithAncient"/>（2026-10-10 用户追加）。
     /// </summary>
     internal static readonly HellwarWarGodPreset[] RandomPool = { Common, Rare, Epic };
+
+    /// <summary>【无尽战神】在"允许开出先古"开关下的随机池（四档全进）。</summary>
+    internal static readonly HellwarWarGodPreset[] RandomPoolWithAncient = { Common, Rare, Epic, Ancient };
+
+    /// <summary>按开关取【无尽战神】的随机池（单一来源：运行时与单测共用）。</summary>
+    internal static HellwarWarGodPreset[] ResolveRandomPool(bool includeAncient)
+        => includeAncient ? RandomPoolWithAncient : RandomPool;
 
     /// <summary>取某档的预设（非法值兜普通档）。</summary>
     internal static HellwarWarGodPreset Resolve(HellwarWarGodTier tier)
@@ -97,21 +105,22 @@ internal static class HellwarWarGodPresets
     /// <summary>
     /// 随机池取一个（把随机数收成一个纯函数参数 ⇒ 可单测；运行时用 `RunState.Rng.CombatTargets.NextInt(n)` 传进来）。
     /// </summary>
-    internal static HellwarWarGodPreset PickRandom(int roll)
+    internal static HellwarWarGodPreset PickRandom(int roll, bool includeAncient)
     {
-        if (RandomPool.Length == 0)
+        HellwarWarGodPreset[] pool = ResolveRandomPool(includeAncient);
+        if (pool.Length == 0)
         {
             return Common;
         }
 
-        int index = ((roll % RandomPool.Length) + RandomPool.Length) % RandomPool.Length;
-        return RandomPool[index];
+        int index = ((roll % pool.Length) + pool.Length) % pool.Length;
+        return pool[index];
     }
 
-    /// <summary>某档是否在【无尽战神】的随机池里（先古不在）。</summary>
-    internal static bool IsInRandomPool(HellwarWarGodTier tier)
+    /// <summary>某档是否在【无尽战神】的随机池里（默认池不含先古；<paramref name="includeAncient"/> 开时含）。</summary>
+    internal static bool IsInRandomPool(HellwarWarGodTier tier, bool includeAncient)
     {
-        foreach (HellwarWarGodPreset preset in RandomPool)
+        foreach (HellwarWarGodPreset preset in ResolveRandomPool(includeAncient))
         {
             if (preset.Tier == tier)
             {

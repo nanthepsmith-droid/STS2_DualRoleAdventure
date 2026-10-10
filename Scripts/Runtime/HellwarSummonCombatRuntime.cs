@@ -362,11 +362,14 @@ internal static class HellwarSummonCombatRuntime
         _endlessUsedThisCombat = true;
 
         // D17：每个补位各掷一次（"随机取档"而不是"整批同一档"）。
+        // 随机池按开关取：默认 普通/罕见/稀有（先古是【九连环】专属）；开「无尽战神允许开出先古」则四档全进（2026-10-10）。
+        bool includeAncient = LocalWakuuAutopilotConfig.HellwarEndlessAncient;
+        HellwarWarGodPreset[] pool = HellwarWarGodPresets.ResolveRandomPool(includeAncient);
         List<HellwarWarGodPreset> presets = new();
         for (int i = 0; i < option.Count; i++)
         {
-            int roll = state.RunState.Rng.CombatTargets.NextInt(HellwarWarGodPresets.RandomPool.Length);
-            presets.Add(HellwarWarGodPresets.PickRandom(roll));
+            int roll = state.RunState.Rng.CombatTargets.NextInt(pool.Length);
+            presets.Add(HellwarWarGodPresets.PickRandom(roll, includeAncient));
         }
 
         int spawned = await SpawnWarGodsAsync(state, owner, presets, "endless-war-god");
@@ -382,6 +385,7 @@ internal static class HellwarSummonCombatRuntime
         LocalMultiControlLogger.Info(
             $"{LogTag} 已开【无尽战神】: owner={owner.NetId}, 花费={option.Cost}（本场预算）, "
             + $"预计={option.Count} 实际={spawned} 个, 档位=[{string.Join(",", presets.Select((preset) => preset.Tier))}], "
+            + $"随机池={(includeAncient ? "含先古" : "不含先古")}, "
             + $"可用={earring.AvailableSpirit}/上限={earring.SpiritCount}, "
             + $"战斗内玩家={state.Players.Count}/{LocalSelfCoopContext.MaxLocalPlayerCount}");
     }
