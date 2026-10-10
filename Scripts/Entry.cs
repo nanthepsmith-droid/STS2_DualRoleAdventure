@@ -251,7 +251,94 @@ public partial class Entry
     //     下方、靠"无人裁剪"才看得见），而包装层 `clip_contents = true` 把下半截裁掉、滚动条还正好压在文字上
     //     （挡字又挡点击）。修法 = 包装层向下**先留名字带（按主题字号+描边算）再留滚动条那一行**
     //     ⇒ 滚动条落在文字下面（`ResolveLabelBand`）。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-09-r243)";
+    // r244（2026-10-09）**战灵召唤 Phase 2 —— 召唤闭环**（R3/R4/R7，design doc #21 §8）：
+    //  ① 把 Phase 0 POC 的生成 / 接入 / 清理链抽成 `HellwarWarGodFactory`（POC 与正式召唤共用同一实现，
+    //     免得两条链各写一份、日后只修一处）：`Player.CreateForNewRun`（= D7「普通档」：召唤者角色自身的
+    //     初始遗物 + 初始卡组，运行期读 ⇒ 自动兼容 mod 角色）→ `AttachToRun`（RunState/种子/**卡组 Owner**/
+    //     run 卡牌表）→ `state.AddPlayer` → `ResetCombatState` + `PopulateCombatState`（**战斗态**）→
+    //     `CombatManager.AddCreature` + `NCombatRoom.AddCreature`（**立绘/血条**）→ `AfterCreatureAdded` 收尾；
+    //     席位号从 `0x1000` 起取**第一个空闲**（Phase 2b 一次召唤多个会有空洞，不能再拿"当前个数"当索引）。
+    //  ② 新 `HellwarSummonCombatRuntime`：真人席位**回合开始**弹召唤选择（复用 `LocalWakuuChoiceOverlay`，
+    //     并压制瓦库自动作答 + 钉住归属者两道）⇒ **消耗计数** ⇒ 生成完整战神。挂点仍在既有补丁
+    //     `CombatManagerSetupPlayerTurnForegroundPatch`/`CombatRoomOfferRoomEndRewardsPatch` ⇒ **不新增 Harmony 目标**。
+    //  ③ **R3 口径 A（计数是"每场战斗的预算"）落地**：遗物【地狱耳环】的 `SpiritCount` = 累计**上限**（存档），
+    //     新增**不存档**的 `CombatSpentSpirit`（本场已花）；遗物格子显示 / 判据一律用 `AvailableSpirit = 上限 − 已花`；
+    //     召唤**先扣后生成、生成失败退回**；战后（发奖之前）把战神摘出战斗 + 已花清零 = **自动补满**（日志 `计数已自动补满`）。
+    //  ④ 判据全部走纯逻辑 `HellwarSummonPolicy`（`ResolveAvailableSpirit`/`CanSpendSpirit`/`ShouldOfferSummon`）+ 单测
+    //     （把"每回合最多 1 个（D6）""满 12 不弹（R6）""买不起就不弹空弹层"钉住）。
+    //  ⚠ 本阶段战神仍**不出牌**（托管出牌是 Phase 3），它的回合由 `TryRequestWarGodTurnEnd` 自动收口（同 POC）。
+    // r245（2026-10-09，r244 实机首测翻车）**"召唤战神后不能结束回合"**：
+    //  🔴 根因 = 「结束回合」的完成判据是 `PlayersReadyToEndTurn.Count == State.Players.Count`
+    //     （`CombatManager.cs:1063`；本仓不是 `NetGameType.Singleplayer`，拿不到 `:1073` 的 SP 旁路），
+    //     而这个集合是 `StartTurn` 在**回合开始那一帧**把"不在 `playersStartingTurn` 里"的玩家逐个预填的
+    //     （`CombatManager.cs:802-813`）；Phase 2 的战神要**等真人点完召唤选择**才加进 `State.Players`
+    //     ⇒ 早过了那一圈 ⇒ 战神永远不进集合 ⇒ 分母永远多一个 ⇒ 卡死。
+    //     （Phase 0 POC 是"回合开始 +1 帧"就生成，落在那圈**之前**，所以从没踩到。）
+    //  ✅ 修法 = 加完人**立刻** `SetReadyToEndTurn(warGod, canBackOut:false)`（幂等），
+    //     收在 `HellwarWarGodFactory.MarkReadyToEndTurnIfMidPlayerTurn`，日志锚点 `③b 战神已补登「本回合已结束回合」`。
+    //  ⚠ 这是**第二道**就绪门：gate ① `PlayersReadyToEndTurn`（结束回合）/ gate ②
+    //     `PlayersReadyToBeginEnemyTurn`（进入敌方回合，r238 踩过、由 `CombatManagerReadyEnemyTurnPatch` 认临时席位）——
+    //     **两道都要认临时席位**。通用教训 → references 坑 **AE-3**。
+    // r246（2026-10-09，r245 实机判读：用户「其他没问题，但是**我召唤的第二个战神不会被打**」）—— 两个根因：
+    //  ① 🔴 **两个战神拿到同一个 NetId**（日志铁证 `…自动补齐敌方回合就绪: mirrored=…,4096,4096`）：
+    //     `NextSeatId` 拿 `LocalSelfCoopContext.IsTemporarySeat` 当"这个号被占了吗"用 ——
+    //     而它是**范围谓词**（整个 `0x1000..0x1FFF` 都返回 true）⇒ 逐个试号全判成"已占用" ⇒ 循环走到底
+    //     兜底返回段起点 ⇒ **永远 0x1000**。修法 = 纯逻辑 `HellwarPocPolicy.ResolveFreeSeatId(确切占用集合)`
+    //     （占用集合 = 已登记临时席位 ∪ 在册战神 ∪ 战斗内现有玩家）+ 单测钉住"三个战神必须三号"。
+    //  ② 🔴 **战神「不会被打」的真因**：`CreatureCmd.Damage` 的**受击结算**会
+    //     `CurrentMapPointHistoryEntry.GetEntry(受击者.NetId)` 记 `DamageTaken`，而这张表是按
+    //     `runState.Players` 建的（战神不在其中）⇒ `GetEntry` **抛** `InvalidOperationException
+    //     ("Player with ID 4096 not found in player stats for this run history!")`
+    //     ⇒ 那次攻击整体失败（第三方兜一句 `怪物招式 STRONG_PUNCH_MOVE 执行失败（已兜住）`）
+    //     ⇒ 敌方根本打不到战神。修法 = 照抄 `RunState.AddPlayerDebug` 那一步
+    //     `CurrentMapPointHistoryEntry?.PlayerStats.Add(new PlayerMapPointHistoryEntry { PlayerId = … })`，
+    //     清理时按 `PlayerId` 摘掉（**不进 `runState.Players`** 这条 H1 不变）。通用教训 → references 坑 **AE-4**。
+    // r247（2026-10-09）**战灵召唤 Phase 2b —— 两个"大招" + D7 预设档**（doc §7.3 / §7.3.1 / §8 Phase 2b）：
+    //  ① **D7 预设档表**（`PureLogic/HellwarWarGodPresets`）：普通 = 召唤者自身角色（自动兼容 mod 角色，不变）；
+    //     罕见 / 稀有 / 先古 = 预设表里指定的**原版角色皮**（静默猎手 / 铁甲战士 / 摄政王）+ **卡组全升级**
+    //     （先古额外 +25 血上限）。⚠ 刻意**不硬编码任何卡牌 id**：`ModelDb.Character<T>()` + `StartingDeck`
+    //     是编译期可校验的引用；强度差由"卡组是否全升级"表达（首版不挂额外遗物 —— 战神是中途加人的，
+    //     `Akabeko` / `Anchor` / `Lantern` 那类"开战时机"遗物根本不会触发）。四档因此**都可单点召唤**（1/2/3/4）。
+    //  ② 【无尽战神】R16（整包 **8**，扣**本场预算**，战后补满）：**每个补位各掷一次**随机取「普通/罕见/稀有」
+    //     三档之一（**先古不进随机池** D17），**补满到 12 席**、超员截断（D18）；**每场限 1 次**（D15）。
+    //  ③ 【终极九连环】R17（整包 **12**，**永久扣计数上限** `SpiritCount`，2026-10-09 用户二轮修订 ——
+    //     "开出来就赢" ⇒ 用"永久消耗上限"定价，玩家自然留到最后一场）：召唤先古战神；不足 12 时**部分成功**
+    //     （每 3 点永久消耗换 1 个先古、至少 1 个、门槛 3 点）；按剩余栏位截断；**每场限 1 次**。
+    //  ④ 两个大招都进**同一个召唤选择 UI**（D14）——文案里带"实际会召唤几个"（D18）与"永久消耗"（R17）；
+    //     买不起 / 本场已用则**不出现**（不弹空弹层）。批量生成之间**错开 ~0.1s**（一次建 N 个立绘节点会掉帧）。
+    //  ⑤ 扣费纪律沿用 AE-2：**先扣后生成、一个都没生成就全额退回**（大招连"本场次数"一起退还）。
+    //  ⚠ 本阶段战神仍**不出牌**（托管出牌是 Phase 3）⇒ 档位强度的"体感"要等 Phase 3；
+    //     现在先古档已生效的部分 = 更肉（+25 血）+ 更占敌人攻击次数。
+    // r248（2026-10-09，r247 实机「一切都好正常」后用户对【终极九连环】的预期修正）：
+    //  用户口径：「我的预期是**固定召唤 9 个，除非到栏位上限**。也就是说想要用这招，**计数至少能召唤 9 个**，
+    //  然后再**根据实际召唤的数量**计算消耗的量」⇒ 取消原来"每 3 点 1 个"的部分成功，改成：
+    //  ① **门槛 = 整包价 12**（= "至少够召唤 9 个"，`NineChainMinSpirit` 由 3 改成 12）；
+    //  ② **固定召唤 9 个**，只有剩余栏位不足才截断（`ResolveNineChainSummonCount(freeSlots)`）；
+    //  ③ **消耗按实际召唤数折算整包价**：`round(12 × 实际 / 9)`（9 个 = 12；被截断到 k 个就只扣 `round(12k/9)`）；
+    //  ④ 少生了几个（生成失败 / 中途满员）⇒ **按实际数量退差价**（差额 `RefundPermanentSpirit`）。
+    //  单测把 9 个 = 12 点的自洽性与各 k 的折算值都钉住了。
+    // r249（2026-10-10）**战灵召唤 Phase 3 —— 战神进瓦库托管名单 + 台词「唔」**（设计文档 §8 Phase 3 / R11）：
+    //  ① **"名单"落法 = 显式认临时席位，不塞遗物**：`LocalWakuuRelicRuntime.IsAutoplayHosted(player)`
+    //     = 持接管遗物 **或** `LocalSelfCoopContext.IsTemporarySeat`（纯逻辑 `WakuuAutoplaySeatPolicy`，有单测）。
+    //     看门狗候选处（`TryAutoEndTurnForRelicControlledPlayer`）改用它；`TryScheduleWatchdog` 对临时席位
+    //     不再因 `no-wakuu-relic` 早退。
+    //  ② **出牌链去遗物依赖**：`RunWatchdogAsync` / `ExecuteBeforePlayPhaseStartAsync` 的 `relic` 改**可空**，
+    //     内部一律 `Player owner = relic?.Owner ?? player`；`relic.Flash()` → `relic?.Flash()`。
+    //     🔴 临时席位的 choiceContext 必须走**显式 owner** 重载：原来那个重载在 `source == null` 时会把 Owner
+    //     **静默**解析成"战斗里第一个玩家"（`HookPlayerChoiceContext.cs:97-106`）⇒ 选牌永不本地入队（挂死），
+    //     而 `HookPlayerChoiceContextLocalPatch` 对临时席位不生效、救不回来（references 坑 AE-6）。
+    //  ③ **出牌上限**：战神与瓦库形态同款"**全量出牌**"（`UsesFullPlayLimit`，护栏 60；玩家关掉「打光所有手牌」
+    //     时回落 13）—— 否则先古那一大把牌打不完，Phase 2b 的档位强度无从体现。
+    //  ④ **回合生命周期**：战神回合开始**不再立即收口**（`HellwarSummonCombatRuntime.OnPlayerTurnStart` 只
+    //     返回 true = 别切前台），改由 `HellwarWarGodFactory.TryEndIdleWarGodTurns`（每帧 tick，挂在
+    //     `TryAutoEndTurnForRelicControlledPlayer`）= "活着 + 未 ready + 手牌无可出牌 ⇒ EndTurn"，
+    //     并包裹 `WakuuTurnEndOrigin.BeginModIssuedEnd()`（收口后又拿到新牌会被放行继续打）。
+    //     ⚠ 当回合**不进托管**（召唤当回合手牌为空，且 ③b `MarkReadyToEndTurnIfMidPlayerTurn` 保留）⇒
+    //       r244「不能结束回合」不回归；下一回合 `StartTurn` 会把战神纳入 `playersStartingTurn` ⇒ 正常抽牌 + 托管。
+    //  ⑤ **台词「唔」**：`relics` 表注入 `LMC_HELLWAR_WARGOD.line`（`LocalWakuuHellwarLocalization.WarGodLineKey`
+    //     + `LocalModText.HellwarWarGodLine`），`ResolveAutoplayLine` 按席位分流 + `LocString.Exists` 兜底。
+    //  ⑥ 顺带：`EnsureWakuuPerspective` 对临时席位早退（原来会白打一条"切换视角 → 0x1000"的错日志）。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r249)";
 
     private static Harmony? _harmony;
 

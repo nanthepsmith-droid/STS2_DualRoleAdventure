@@ -88,6 +88,19 @@ internal static class HellwarSummonPolicy
     internal const int AncientCost = 4;
 
     /// <summary>
+    /// **已实装（可以在召唤选择里出现）的档位**（成本从低到高）。
+    /// Phase 2 = 只有「普通」；**Phase 2b 起四档齐全**（罕见 / 稀有 / 先古的预设档见
+    /// <see cref="HellwarWarGodPresets"/>；先古档同时是【终极九连环】的前置，D19）。
+    /// </summary>
+    internal static readonly HellwarWarGodTier[] SelectableTiers =
+    {
+        HellwarWarGodTier.Common,
+        HellwarWarGodTier.Rare,
+        HellwarWarGodTier.Epic,
+        HellwarWarGodTier.Ancient,
+    };
+
+    /// <summary>
     /// 某席位是否应获得遗物【地狱耳环】= 功能开关开 **且** 属于本地多控会话 **且** 不是瓦库托管席位。
     ///
     /// 为什么只发给真人席位（与 <c>WakuuDaddyPolicy.ShouldGrantRelic</c> 同口径）：瓦库席位身上已有托管遗物，
@@ -247,5 +260,178 @@ internal static class HellwarSummonPolicy
         if (spiritCount < cost) { return $"not-enough-spirit({spiritCount}<{cost})"; }
         if (combatPlayerCount >= maxPlayerCount) { return $"party-full({combatPlayerCount}>={maxPlayerCount})"; }
         return "ok";
+    }
+
+    // ───────────────────────── Phase 2：战斗内"计数预算"（R3 口径 A） ─────────────────────────
+    //
+    // R3 的原文是「消耗一个计数（**仅战斗内消耗，战斗结束后自动补满**）」⇒ 计数是**每场战斗的预算**：
+    // 休息处 / 每幕累计出来的是**上限**（存档字段 `SpiritCount`），战斗中花掉的是**本场已花**（不存档），
+    // 战后把"已花"清零 = 自动补满。所以：**可用 = 上限 − 本场已花**。
+
+    /// <summary>本场战斗的可用计数（= 累计上限 − 本场已花；两个入参都先 clamp ≥0）。</summary>
+    internal static int ResolveAvailableSpirit(int spiritCount, int spentThisCombat)
+    {
+        int cap = Math.Max(0, spiritCount);
+        int spent = Math.Max(0, spentThisCombat);
+        return Math.Max(0, cap - spent);
+    }
+
+    /// <summary>本场战斗还够不够花 <paramref name="cost"/> 个计数。</summary>
+    internal static bool CanSpendSpirit(int spiritCount, int spentThisCombat, int cost)
+    {
+        return cost > 0 && ResolveAvailableSpirit(spiritCount, spentThisCombat) >= cost;
+    }
+
+    /// <summary>已花的计数开销（下限 0），用于累加。</summary>
+    internal static int AddSpentSpirit(int spentThisCombat, int cost)
+    {
+        return Math.Max(0, spentThisCombat) + Math.Max(0, cost);
+    }
+
+    /// <summary>
+    /// **回合开始是否该弹「召唤选择」**（Phase 2 / R3 / R7；全部条件都满足才弹）。
+    ///
+    /// <list type="bullet">
+    /// <item><paramref name="featureEnabled"/>：功能总开关（`hellwarGod`，默认关）；</item>
+    /// <item><paramref name="humanSeat"/>：是**真人本地席位**（瓦库托管席位 / 第三方席位不弹 —— R14 首版不做）；</item>
+    /// <item><paramref name="hasEarring"/>：这一席身上有【地狱耳环】（没有就没有"计数"这个概念）；</item>
+    /// <item><paramref name="alreadyOfferedThisTurn"/>：本回合已经弹过一次（D6「每回合最多 1 个」的落点）；</item>
+    /// <item><paramref name="availableSpirit"/> / <paramref name="minCost"/>：还买得起最低档（买不起**安静跳过**，不弹空弹层）；</item>
+    /// <item>未满员（R6：战斗内玩家数 &lt; 12）。</item>
+    /// </list>
+    /// </summary>
+    internal static bool ShouldOfferSummon(
+        bool featureEnabled,
+        bool humanSeat,
+        bool hasEarring,
+        bool alreadyOfferedThisTurn,
+        int availableSpirit,
+        int minCost,
+        int combatPlayerCount,
+        int maxPlayerCount)
+    {
+        return featureEnabled
+            && humanSeat
+            && hasEarring
+            && !alreadyOfferedThisTurn
+            && minCost > 0
+            && availableSpirit >= minCost
+            && combatPlayerCount < maxPlayerCount;
+    }
+
+    // ───────────────── Phase 2b：两个"大招"召唤（R16【无尽战神】/ R17【终极九连环】） ─────────────────
+    //
+    // 拍板口径（doc §7.3 + §7.3.1）：
+    //  ·【无尽战神】整包 **8**，从**本场战斗预算**扣（`CombatSpentSpirit`，战后补满）⇒ 每场都能开（只要那场够）；
+    //    **随机**取「普通 / 罕见 / 稀有」三档之一（先古不进随机池，D17）补满到 12 席，超员截断（D18）。
+    //  ·【终极九连环】整包 **12** 但**扣的是计数上限本身**（`SpiritCount`，**永久消耗、不补满**）
+    //    ⇒ 一轮总产出 9~15 ⇒ 实际整个 run 只开得起一次（2026-10-09 用户二轮修订）；
+    //    **2026-10-09 三轮修订（用户口径）**：「**固定召唤 9 个，除非到栏位上限**；想要用这招，
+    //    计数至少能召唤 9 个（⇒ 门槛 = 整包价 12），然后**按实际召唤的数量**计算消耗的量」
+    //    ⇒ 取消原"每 3 点 1 个"的部分成功，改成：固定 9 个（仅按栏位截断）+ 消耗 = `round(12 × 实际 / 9)`。
+    //  · 两者**每场战斗各限 1 次**（D15），且与"每回合 1 个"的正常召唤并存（D6 只约束正常召唤）。
+
+    /// <summary>【无尽战神】的整包价（计数，从本场预算扣）。</summary>
+    internal const int EndlessWarGodBundleCost = 8;
+
+    /// <summary>
+    /// 【终极九连环】的整包价（计数，**永久扣上限**）。**它同时是开启门槛**
+    /// （2026-10-09 三轮修订：用户口径「计数至少能召唤 9 个」⇒ 先攒到整包价，这一项才会出现）。
+    /// </summary>
+    internal const int UltimateNineChainBundleCost = 12;
+
+    /// <summary>【九连环】固定召唤的先古个数（**只有剩余栏位不足才截断**，2026-10-09 三轮修订）。</summary>
+    internal const int NineChainMaxAncients = 9;
+
+    /// <summary>【九连环】的开启门槛 = 整包价（"至少够召唤 9 个"）。</summary>
+    internal const int NineChainMinSpirit = UltimateNineChainBundleCost;
+
+    /// <summary>剩余可召唤栏位（`MaxLocalPlayerCount` − 当前战斗内玩家数；下限 0）。</summary>
+    internal static int ResolveFreeSlots(int combatPlayerCount, int maxPlayerCount)
+        => Math.Max(0, maxPlayerCount - Math.Max(0, combatPlayerCount));
+
+    /// <summary>D18：一次召唤多个时**截断到剩余栏位**（返回实际会召唤的个数）。</summary>
+    internal static int ResolveTruncatedSummonCount(int desiredCount, int freeSlots)
+        => Math.Max(0, Math.Min(Math.Max(0, desiredCount), Math.Max(0, freeSlots)));
+
+    /// <summary>【无尽战神】实际会召唤几个 = 把空位补满（D18 截断天然成立）。</summary>
+    internal static int ResolveEndlessSummonCount(int combatPlayerCount, int maxPlayerCount)
+    {
+        int freeSlots = ResolveFreeSlots(combatPlayerCount, maxPlayerCount);
+        return ResolveTruncatedSummonCount(freeSlots, freeSlots);
+    }
+
+    /// <summary>
+    /// 【九连环】实际会召唤几个先古（**固定 9 个**，只有剩余栏位不足才截断；2026-10-09 三轮修订）：
+    /// 用户口径「固定召唤 9 个，除非到栏位上限」。
+    /// ⚠ 门槛（`上限 ≥ 12`）由 <see cref="CanOpenNineChain"/> 判，不在这里表达 ⇒ 本函数只回答"栏位够几个"。
+    /// </summary>
+    internal static int ResolveNineChainSummonCount(int freeSlots)
+        => ResolveTruncatedSummonCount(NineChainMaxAncients, freeSlots);
+
+    /// <summary>
+    /// 【九连环】**永久扣掉多少计数上限**（按**实际召唤数**折算整包价；2026-10-09 三轮修订）：
+    /// `round(12 × 实际数量 / 9)`（四舍五入；9 个 = 12 点，被栏位截断到 k 个就只扣 `round(12k/9)`）。
+    /// 返回 0 表示"没召唤 ⇒ 不扣"。
+    /// </summary>
+    internal static int ResolveNineChainSpiritCost(int summonedCount)
+    {
+        int count = Math.Clamp(summonedCount, 0, NineChainMaxAncients);
+        if (count <= 0)
+        {
+            return 0;
+        }
+
+        decimal raw = UltimateNineChainBundleCost * (decimal)count / NineChainMaxAncients;
+        return Math.Clamp(
+            (int)Math.Round(raw, MidpointRounding.AwayFromZero),
+            1,
+            UltimateNineChainBundleCost);
+    }
+
+    /// <summary>能否开【无尽战神】：本场可用计数够整包价 + 还有空位 + 本场没用过（D15）。</summary>
+    internal static bool CanOpenEndlessWarGod(int availableSpirit, int freeSlots, bool usedThisCombat)
+        => !usedThisCombat
+        && availableSpirit >= EndlessWarGodBundleCost
+        && freeSlots > 0;
+
+    /// <summary>
+    /// 能否开【终极九连环】：**计数上限**够整包价（= "至少够召唤 9 个"）+ 还有空位 + 本场没用过（D15）。
+    /// </summary>
+    internal static bool CanOpenNineChain(int capSpirit, int freeSlots, bool usedThisCombat)
+        => !usedThisCombat
+        && capSpirit >= NineChainMinSpirit
+        && freeSlots > 0;
+
+    /// <summary>大招不能开时的一句话原因（打日志用）。</summary>
+    internal static string DescribeUltimateBlockReason(
+        bool isNineChain, int spirit, int freeSlots, bool usedThisCombat)
+    {
+        if (usedThisCombat) { return "already-used-this-combat"; }
+        if (freeSlots <= 0) { return "party-full"; }
+        int required = isNineChain ? NineChainMinSpirit : EndlessWarGodBundleCost;
+        if (spirit < required) { return $"not-enough-spirit({spirit}<{required})"; }
+        return "ok";
+    }
+
+    /// <summary>不弹「召唤选择」时的一句话原因（打日志用 ⇒ 实机能一眼看出卡在哪一步）。</summary>
+    internal static string DescribeOfferSkipReason(
+        bool featureEnabled,
+        bool humanSeat,
+        bool hasEarring,
+        bool alreadyOfferedThisTurn,
+        int availableSpirit,
+        int minCost,
+        int combatPlayerCount,
+        int maxPlayerCount)
+    {
+        if (!featureEnabled) { return "feature-disabled"; }
+        if (!humanSeat) { return "not-human-seat"; }
+        if (!hasEarring) { return "no-earring"; }
+        if (alreadyOfferedThisTurn) { return "already-offered-this-turn"; }
+        if (minCost <= 0) { return "bad-cost"; }
+        if (availableSpirit < minCost) { return $"not-enough-spirit({availableSpirit}<{minCost})"; }
+        if (combatPlayerCount >= maxPlayerCount) { return $"party-full({combatPlayerCount}>={maxPlayerCount})"; }
+        return "offer";
     }
 }

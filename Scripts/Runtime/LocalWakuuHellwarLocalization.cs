@@ -30,6 +30,13 @@ internal static class LocalWakuuHellwarLocalization
     /// <summary>游戏 <c>rest_site_ui</c> 表（休息区选项标题 / 描述）。</summary>
     internal const string RestSiteTable = "rest_site_ui";
 
+    /// <summary>
+    /// 战神（临时席位）出牌收尾台词在 <c>relics</c> 表里的键（Phase 3 / R11）。
+    /// ⚠ 必须注入：<c>LocString</c> 缺键会抛 <c>LocException</c>（见 <see cref="LocalWakuuRelicRuntime"/> 的取用处，
+    /// 那里用 <c>LocString.Exists</c> 兜底）。
+    /// </summary>
+    internal const string WarGodLineKey = "LMC_HELLWAR_WARGOD.line";
+
     private static bool _localeCallbackSubscribed;
 
     public static void Initialize()
@@ -73,6 +80,8 @@ internal static class LocalWakuuHellwarLocalization
                 [$"{relicEntry}.description"] = LocalModText.HellwarEarringDescription,
                 [$"{relicEntry}.eventDescription"] = LocalModText.HellwarEarringDescription,
                 [$"{relicEntry}.flavor"] = LocalModText.HellwarEarringFlavor,
+                // Phase 3（R11）：战神出牌收尾台词「唔」（借用 relics 表，避免新增一张表）。
+                [WarGodLineKey] = LocalModText.HellwarWarGodLine,
             });
 
             string optionKeyPrefix = "OPTION_" + HellwarSplitSpiritOption.SplitSpiritOptionId;

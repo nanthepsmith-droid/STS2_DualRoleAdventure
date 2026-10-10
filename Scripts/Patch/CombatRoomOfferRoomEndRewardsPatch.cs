@@ -41,6 +41,9 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
         // 在同一补丁里做 ⇒ 不新增 Harmony 目标；环境变量没开时立即返回。
         HellwarPocRuntime.CleanupBeforeRewards(__instance.CombatState);
 
+        // 战灵召唤 Phase 2：同样的时机 —— 摘掉正式召唤出来的战神 + 把"本场已花"的计数自动补满（R3）。
+        HellwarSummonCombatRuntime.CleanupBeforeRewards(__instance.CombatState);
+
         if (!LocalSelfCoopContext.IsEnabled
             || !LocalSelfCoopContext.UseSingleAdventureMode
             || __instance.CombatState?.RunState == null

@@ -67,6 +67,56 @@ public class HellwarPocPolicyTests
         Assert.That(HellwarPocPolicy.ParseFlagFile(content), Is.EqualTo(expected));
     }
 
+    // ───────── 空闲席位号分配（r245 实机踩中：拿"范围谓词"当"占用判断" ⇒ 每个战神都拿到同一个 id） ─────────
+
+    [Test]
+    public void 空占用时取段起点()
+    {
+        Assert.That(HellwarPocPolicy.ResolveFreeSeatId(null), Is.EqualTo(HellwarPocPolicy.TempSeatBase));
+        Assert.That(HellwarPocPolicy.ResolveFreeSeatId(new ulong[0]), Is.EqualTo(HellwarPocPolicy.TempSeatBase));
+    }
+
+    [Test]
+    public void 第二个战神必须拿到不同的号()
+    {
+        // 这条就是 r245 的回归钉：如果实现退回成"用 IsTemporarySeat 判占用"，这里会一直返回 0x1000。
+        ulong first = HellwarPocPolicy.ResolveFreeSeatId(new ulong[0]);
+        ulong second = HellwarPocPolicy.ResolveFreeSeatId(new[] { first });
+        ulong third = HellwarPocPolicy.ResolveFreeSeatId(new[] { first, second });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first, Is.EqualTo(HellwarPocPolicy.TempSeatBase));
+            Assert.That(second, Is.EqualTo(HellwarPocPolicy.TempSeatBase + 1));
+            Assert.That(third, Is.EqualTo(HellwarPocPolicy.TempSeatBase + 2));
+            Assert.That(new[] { first, second, third }, Is.Unique, "三个战神不能同号（同号 ⇒ 按 NetId 取数的路径只认第一个）");
+            Assert.That(HellwarPocPolicy.IsTemporarySeat(second), Is.True);
+        });
+    }
+
+    [Test]
+    public void 跳过非临时席位的占用号()
+    {
+        // 正式席位 / 第三方 id 落在别处 ⇒ 不影响临时段的分配。
+        Assert.That(
+            HellwarPocPolicy.ResolveFreeSeatId(new ulong[] { 1, 2, 0xB07B1234UL }),
+            Is.EqualTo(HellwarPocPolicy.TempSeatBase));
+    }
+
+    [Test]
+    public void 号段耗尽时兜底段起点()
+    {
+        List<ulong> full = new();
+        for (ulong seat = HellwarPocPolicy.TempSeatBase; seat < HellwarPocPolicy.TempSeatLimit; seat++)
+        {
+            full.Add(seat);
+        }
+
+        Assert.That(HellwarPocPolicy.ResolveFreeSeatId(full), Is.EqualTo(HellwarPocPolicy.TempSeatBase),
+            "病态场景（没清理干净）下兜底回段起点，至少不会越界");
+        Assert.That(HellwarPocPolicy.ResolveFreeSeatId(full), Is.LessThan(HellwarPocPolicy.TempSeatLimit));
+    }
+
     [Test]
     public void 全部条件满足才生成()
     {

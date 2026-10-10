@@ -40,10 +40,22 @@ internal sealed class LocalWakuuHellwarEarring : RelicModel
     // 一期借原版【低语耳环】图标（与本 mod 其它自制遗物同一张图；本项目没有 PCK，正式美术待定）。
     protected override string IconBaseName => "whispering_earring";
 
-    /// <summary>遗物格子上显示的数字（= 当前计数）。</summary>
+    /// <summary>遗物格子上显示的数字（= **本场战斗的可用计数** = 累计上限 − 本场已花）。</summary>
     public override bool ShowCounter => true;
 
-    public override int DisplayAmount => SpiritCount;
+    public override int DisplayAmount => AvailableSpirit;
+
+    /// <summary>
+    /// **本场战斗已花掉的计数**（R3 口径 A：计数是"每场战斗的预算"，休息处 / 每幕累计出来的是**上限**）。
+    ///
+    /// ⚠ **刻意不标 `[SavedProperty]`**（不存档）：它是"本场战斗的临时开销"，
+    /// 战斗结束（`HellwarSummonCombatRuntime` 的战后清理）会把"已花"清零 = **自动补满**；
+    /// 中途读档重放本来就从头打一场战斗（战神也不入存档）⇒ 预算跟着重新开始是预期行为。
+    /// </summary>
+    internal int CombatSpentSpirit { get; private set; }
+
+    /// <summary>本场战斗的可用计数（= <see cref="SpiritCount"/> − <see cref="CombatSpentSpirit"/>，下限 0）。</summary>
+    internal int AvailableSpirit => HellwarSummonPolicy.ResolveAvailableSpirit(SpiritCount, CombatSpentSpirit);
 
     /// <summary>
     /// 战力预算"计数"（R2：休息处【分裂精神】每次 +1；R3：战斗中召唤战神时消耗）。
@@ -90,6 +102,98 @@ internal sealed class LocalWakuuHellwarEarring : RelicModel
     internal void AddSpirit(int amount)
     {
         SpiritCount = Math.Max(0, SpiritCount + amount);
+    }
+
+    /// <summary>
+    /// 花掉 <paramref name="cost"/> 个**本场战斗预算**（R3）。可用不够 / 档位非法时**不花**并返回 false。
+    /// 花的是"本场已花"那一格，不碰存档字段 <see cref="SpiritCount"/>（战后自动补满）。
+    /// </summary>
+    internal bool TrySpendCombatSpirit(int cost, string source)
+    {
+        if (!HellwarSummonPolicy.CanSpendSpirit(SpiritCount, CombatSpentSpirit, cost))
+        {
+            return false;
+        }
+
+        int before = AvailableSpirit;
+        CombatSpentSpirit = HellwarSummonPolicy.AddSpentSpirit(CombatSpentSpirit, cost);
+        InvokeDisplayAmountChanged(); // 遗物格子上的数字 = 可用值 ⇒ 花掉后必须刷
+        LocalMultiControlLogger.Info(
+            $"[地狱战神] 已消耗计数召唤（{source}）: player={Owner?.NetId}, 花费={cost}, "
+            + $"可用={before}→{AvailableSpirit}（上限={SpiritCount}, 本场已花={CombatSpentSpirit}）");
+        return true;
+    }
+
+    /// <summary>
+    /// **永久消耗计数上限**（【终极九连环】的扣除面，2026-10-09 用户二轮修订）：
+    /// 直接减存档字段 <see cref="SpiritCount"/>（不回补），不足 / 非法时**不扣**并返回 false。
+    /// 扣完**不得为负**（下限 0）。
+    /// </summary>
+    internal bool TrySpendPermanentSpirit(int cost, string source)
+    {
+        if (cost <= 0 || SpiritCount < cost)
+        {
+            return false;
+        }
+
+        int before = SpiritCount;
+        SpiritCount = SpiritCount - cost;
+        LocalMultiControlLogger.Info(
+            $"[地狱战神] 已**永久**消耗计数上限（{source}）: player={Owner?.NetId}, 花费={cost}, "
+            + $"上限={before}→{SpiritCount}（本场已花={CombatSpentSpirit}, 可用={AvailableSpirit}）");
+        return true;
+    }
+
+    /// <summary>永久消耗的镜像（生成全失败时把上限加回去；同样不越界）。</summary>
+    internal void RefundPermanentSpirit(int cost, string source)
+    {
+        if (cost <= 0)
+        {
+            return;
+        }
+
+        int before = SpiritCount;
+        SpiritCount = SpiritCount + cost;
+        LocalMultiControlLogger.Info(
+            $"[地狱战神] 已退回**永久**计数上限（{source}）: player={Owner?.NetId}, 退回={cost}, "
+            + $"上限={before}→{SpiritCount}");
+    }
+
+    /// <summary>
+    /// 退回 <paramref name="cost"/> 个本场预算（召唤生成失败时的补偿 —— 先扣后生成，生成炸了就还回去，
+    /// 免得"弹了选择、扣了计数、却没长出战神"）。
+    /// </summary>
+    internal void RefundCombatSpirit(int cost, string source)
+    {
+        if (cost <= 0)
+        {
+            return;
+        }
+
+        int before = AvailableSpirit;
+        CombatSpentSpirit = Math.Max(0, CombatSpentSpirit - cost);
+        InvokeDisplayAmountChanged();
+        LocalMultiControlLogger.Info(
+            $"[地狱战神] 已退回计数（{source}）: player={Owner?.NetId}, 退回={cost}, 可用={before}→{AvailableSpirit}");
+    }
+
+    /// <summary>
+    /// 战斗结束 / 退局时的**自动补满**（R3：仅战斗内消耗、战后恢复）：把"本场已花"清零并刷显示。
+    /// 返回本次补回的计数（0 = 本来就没花）。
+    /// </summary>
+    internal int RefillCombatSpirit(string source)
+    {
+        int spent = CombatSpentSpirit;
+        if (spent <= 0)
+        {
+            return 0;
+        }
+
+        CombatSpentSpirit = 0;
+        InvokeDisplayAmountChanged();
+        LocalMultiControlLogger.Info(
+            $"[地狱战神] 计数已自动补满（{source}）: player={Owner?.NetId}, 补回={spent}, 可用={AvailableSpirit}");
+        return spent;
     }
 
     /// <summary>

@@ -38,7 +38,7 @@
 | `原版药水一览表.md` / `原版附魔一览表.md` | 参考数据表（非提案）；药水表 r136 已校正 | 改规则表时同步；附魔侧「优先选哪类牌」待用户填期望 | 索引 #14 / #15 |
 | `第三方补丁目标交叉分析-CoopBots.md`（#17） | 参考表（脚本产物，只读勿手改） | 无 | 索引 #17 |
 | `补丁mod收进主仓库compat-mods.md`（#20） | ✅ 已落地（2026-10-05 迁 1 个 + 2026-10-07 再迁 2 个 ⇒ `compat-mods/` 现有 3 个；范围仍为「主 mod ↔ 第三方交互」补丁） | 无（push 已完成；**分发口径 = 主 Release 的独立附件 `compat-mods-v<major>.<minor>.zip`**，已挂 v1.45、`release_build.ps1` 支持自动打与 `-CompatOnly`） | 索引 #20 |
-| **战灵召唤（原 ④「地狱战神」）**（#21） | **D1~D13 已拍板**；**Phase 0 POC ✅ 关单（r239）**；**Phase 1 ✅ 实机关单（r240）**；**r241 追加四项已部署（⭐ 待实机）**：休息处选项滚动条 / 每幕自动获得计数 / 【分裂精神】不扣血档 / 耳环风味文本；分支 `feat/hellwar-god-phase1`（Phase 0/compat 已合回 master）；**🆕 两个"大招"召唤 R16【无尽战神】/ R17【终极九连环】（D14~D19 已同日拍板：整包价 无尽 8 / 九连环 12 + 部分成功），未动工 = Phase 2b** | **下一步 = Phase 2 召唤闭环**（回合开始挂点 + 选择 UI + 生成完整战神 + **D7「普通档」**，见 doc §8）→ **2b（两个大招，前置 = 先古预设档）** → 3/4/5；先「1 席本地会话」入口（D12③） | 索引 #21 + 下方 §战灵召唤（含 §7.1/§7.3 拍板附录、两轮 POC 实测修正、§2.3 追加口径 R18~R21） |
+| **战灵召唤（原 ④「地狱战神」）**（#21） | **D1~D13 已拍板**；**Phase 0 POC ✅ 关单（r239）**；**Phase 1 + r241 四项追加 ✅ 实机关单（r240~r243）**；**Phase 2 召唤闭环 ✅ 实机关单（r244 落地 → r245「不能结束回合」/ r246「第二个战神不会被打」两轮修复 → 2026-10-09 r246 判读全绿，部署位 `2026-10-09-r246`）**：回合开始召唤选择 + 消耗计数 + 生成完整战神（D7「普通档」）+ 战后补满清理；**🆕 两个"大招"召唤 R16【无尽战神】/ R17【终极九连环】（D14~D19 已拍板：整包价 无尽 8 / 九连环 12 + 部分成功；2026-10-09 二轮修订 = 【九连环】改扣"计数上限"本身（永久消耗、不补满），实际一轮只能开一次）**；**Phase 2b（D7 预设档 + 两个大招）✅ 实机关单（r247 落地「一切都好正常」→ r248 修订【九连环】门槛 12/固定 9 个/按实际数量计费 → 2026-10-10 判读全绿：无尽 10/10 补满 12 席·随机各档 / 九连环 9 个先古·永久扣上限 12→0），部署位 `2026-10-09-r248`** | **Phase 3（托管出牌 + 台词「唔」）代码落地 = r249（2026-10-10，部署位 `2026-10-10-r249`，⭐ 待实机）**；**2026-10-10 用户拍板后续口径 = 预设卡组走「手工 id 列表 + 开放到配置文件」/ 预设遗物走「A 方案：只挑不依赖开战时机的遗物」/ 顺序 = Phase 3 → 卡组 → 遗物 → Phase 4/5** | **下一步 = ① Phase 3 实机判读 → ② 手工预设卡组（配置文件可自定义）→ ③ 预设遗物（A）→ ④ Phase 4（生存规则）/ Phase 5（收尾）**；另：D12③「1 席本地会话」入口；**本轮改动仍未提交 / 合回 master（待用户拍板）** | 索引 #21 + 下方 §战灵召唤 + 设计文档 §8（含 r249 落地记录与后续两阶段口径） |
 
 > 注：`PrimeVakuu决策桥接-本地转接头可行性分析.md`（#19）是**本地私有**提案（对方未开源），
 > **不进本表、不进任何公开载体**，只登记在 `decision-records\README.md`。
@@ -50,6 +50,69 @@
 > 下列都是「能用但别扭」或「偶发自愈」的问题，**用户已拍板先记录不修** —— 复现 / 想修时按各条自己的
 > 判据与备选路线走（逐条已写好现象、日志锚点、根因分析与修法备选）。
 > 同类既有备案：`maintenance-docs\decision-records\瓦库托管优化可行性分析.md` §16.2。
+
+### 待查-1 宝藏房共享选遗物界面：本地席位的手牌图像被**重复添加**（`add hand … twice!`，r246 判读时发现，**纯日志、无行为影响**）
+
+- **现象（marker r246，`logs-archive/godot__20261009-204838__r246.log` L14868）**：
+  ```
+  [ERROR] Tried to add hand for player 76561198422527327 twice!
+     at …NHandImageCollection.AddHand(UInt64 playerId)
+     at …NHandImageCollection.OnInputStateAdded(UInt64 playerId)
+     at …PeerInputSynchronizer.GetOrCreateStateForPlayer(UInt64 playerId)
+     at …PeerInputSynchronizer.SyncLocalScreen(NetScreenType)
+     at …ScreenStateTracker.SetIsInSharedRelicPickingScreen(Boolean)
+     at …NTreasureRoomRelicCollection.AnimOut()
+     at …NTreasureRoomRoom.OpenChest()
+  ```
+- **定性**：发生在**宝藏房**、对象是**真人席位**…327（不是战神；战神没有 peer 输入态）⇒ 与本轮战灵召唤无关。
+  触发链 = 本 mod **切前台时更换本地 `NetContext.NetId`**；该 id 的 peer 输入态当前不存在 ⇒
+  `GetOrCreateStateForPlayer` 新建 ⇒ 触发 `StateAdded` ⇒ `AddHand` 发现手牌图像已存在。
+- **影响**：`AddHand` 的守卫**只 `Log.Error` 然后 `return`**（`NHandImageCollection.cs:83-96`），手牌图像本来就在 ⇒ **无行为影响**；
+  唯一代价是**抬高全局 ERROR 计数**（判读回归时容易误判）。
+- **候选修法**（想修时）：① 本 mod 在宝藏房期间不要切 `LocalContext.NetId`（或切前先 `SyncLocalScreen`）；
+  ② 给 `AddHand` 做一条"同 id 且在树内就不重复加"的前缀补丁（新增 Harmony 目标，需权衡）。
+- **优先级**：低（纯日志）。
+
+### 待查-3 战神被打**没有音效**（用户 2026-10-10 口径；**先跑探针定性，别直接改**）
+
+- **现象**：召唤出来的战神被敌人打时**听不到受击音效**（真人被打时有）。
+- **已做的侦查（源码逐处核对，结论：原版玩家侧可能本来就没有"被打"音效）**：
+  - `CreatureCmd.Damage`（`sts2src/src/Core/Commands/CreatureCmd.cs:342-390`）：受击只做
+    `NHitSparkVfx`（**纯粒子，无音频**）+ `TriggerAnim("Hit")` + 屏幕抖动；
+    **受击音效只给怪物**（`:348-351` `receiver.IsMonster && receiver.Monster.HasHurtSfx → SfxCmd.Play(...)`），
+    **伤害音效只给敌方**（`:372-375` `originalTarget.Side == CombatSide.Enemy → SfxCmd.PlayDamage(...)`）。
+  - `CharacterModel` 只有 `AttackSfx / CastSfx / DeathSfx / CharacterSelectSfx`，**没有 `HurtSfx`**（`:209-219`）。
+  - `Nodes/Combat/NCreatureVisuals.cs` 全文件**无 `Sfx`/`Audio`**；`NHitSparkVfx` 只有 `GpuParticles2D`。
+  - `NCombatRoom.CreateAllyNodes()` = `foreach { AddCreature(...) }`（`:277-285`）⇒ 与我们中途
+    `NCombatRoom.AddCreature` **同一条路** ⇒ **不是"我们少配了节点/少了某步"**（与坑 AC/AD/AE 那类"漏抄步骤"不同）。
+  - 原版确实存在：格挡 `event:/sfx/block_hit`、破防 `event:/sfx/block_break`、攻击方的攻击音效。
+- **定性探针（一次实机定死）**：临时给 `NAudioManager.PlayOneShot(...)`（或 `SfxCmd.Play`）挂一个
+  **只打日志的前缀补丁**（`[地狱战神探针] 音频: key=…, 调用栈=…`），在**同一场战斗**里分别让
+  「真人被打一次」与「战神被打一次」，对比音频调用：
+  - 真人那次**也没有额外调用** ⇒ 确认原版没有玩家受击音效 ⇒ **关掉本项**（不是缺陷）；
+  - 真人那次**有我们没有的调用** ⇒ 定位调用点并同款补上（大概率是"只给本地/前台席位"的 UI 反馈路径，
+    ⚠ 与 `LocalContext.IsMe` 同源 —— 而我们**故意**让战神 `IsMe=False`，所以这类反馈需要**单独补**）。
+- **优先级**：低（纯表现，不影响玩法/结算）。
+
+### 待查-2 「进入本地多控流程」时游戏删旧多人 run 存档报 `Error deleting path`（**既有行为、非我方引入**，r239/r240 就有）
+
+- **现象（marker r247，`logs-archive/godot__20261009-224919__r247.log` L9395 起 4 条）**：
+  ```
+  [ERROR] Error deleting path modded/profile2/saves/current_run_mp.save: Failed
+     at MegaCrit.Sts2.Core.Saves.GodotFileIo.DeleteFile(String path)
+     at MegaCrit.Sts2.Core.Saves.CloudSaveStore.DeleteFile(String path)
+     at MegaCrit.Sts2.Core.Saves.Managers.RunSaveManager.DeleteCurrentMultiplayerRun()
+     at MegaCrit.Sts2.Core.Saves.SaveManager.DeleteCurrentMultiplayerRun_Patch1(SaveManager this)
+     at LocalMultiControl.Scripts.Patch.NMultiplayerHostSubmenuPatch.OnLocalSelfCoopPressed(NMultiplayerHostSubmenu)
+  ```
+- **定性**：栈里的最后一行是**我们**的"进入本地多控流程"入口，它调游戏的
+  `SaveManager.DeleteCurrentMultiplayerRun()` 做清理；`GodotFileIo.DeleteFile` 在**目标文件不存在**
+  （或句柄被占）时只打一条 `Log.Error` 就返回 ⇒ **纯日志、无功能影响**。
+- **跨会话证据**：r239 = 2 条、r240 = 2 条、**r243/r245/r246 = 0 条**、r247 = 4 条
+  ⇒ 只在"存在待删的旧多人 run 存档"时出现，**不是本轮（战灵召唤）引入**。
+- **候选修法**（想清日志时）：在 `OnLocalSelfCoopPressed` 里**先判存在再删**（`FileAccess.FileExists` /
+  `File.Exists` 包一层），或把这条清理挪到"删完再打日志"的位置；⚠ 但它是游戏 API 的行为，**改之前先确认不破坏原版清理语义**。
+- **优先级**：低（纯日志，会抬高全局 ERROR 计数）。
 
 ### BUG-17 事件末页效果是「牌组选牌」时，非共享事件房间推不动（2026-09-25 第一幕实机发现，**r147 只加了诊断，未定死根因**）
 
@@ -454,11 +517,55 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     `滚动内容宽已更新: 2328 → 1981, buttons=6, nodes=6`（自愈生效，算式精确）+ `【分裂精神】不扣血（档位=不扣血(0%)）`
     → `已完成: 计数=5→6` + `免费额外选项生效`；`[ERROR]` 仅 1 条（第三方）、异常族全 0。
     ⇒ **Phase 1 + r241 四项追加全部关单**；已知小瑕疵：`可点性已修` 的计数含"待销毁的旧按钮"（21 = 7×3），纯日志美观问题。
-- **🆕 两个"大招"召唤（2026-10-09 登记 + **同日 D14~D19 全部拍板**，未动工 = Phase 2b）**：
+- **✅ Phase 2 召唤闭环 —— 实机关单（2026-10-09，r246；分支 `feat/hellwar-god-phase2`）**：
+  - **判读（`logs-archive/godot__20261009-204838__r246.log`，用户「测了一下，应该没问题」）**：
+    一场战斗三个战神 = `seat=4096/4097/4098`（**同号已修**）；`③b 战神已补登「本回合已结束回合」` ×3；
+    `①b … 地图点统计=True` ×4 / `已从 run 卡牌表除名: … 地图点统计摘除=1` ×4；
+    **`Player with ID … not found in player stats` 0 条 + `怪物招式 … 执行失败（已兜住）` 0 条**（"不会被打"已修），
+    敌人照常行动 4 次；`已从战斗移除战神` + `临时席位已注销: 移除=3` + `计数已自动补满: 补回=3`；
+    异常族全 0（`[ERROR]` 仅 2 条：第三方 Manosaba 分支告警 + 见 §待查-1 的宝藏房手牌图像重复添加，均非本功能）。
+  以下为实现记录（r244 落地 + r245/r246 两轮实机修复）：
+  - **① 低层链抽成工厂** `HellwarWarGodFactory`（POC 与正式召唤共用：生成 / 接入 run / 战斗态 / 立绘 / 清理）；
+    席位号从 `0x1000` 起取**第一个空闲**（Phase 2b 一次召唤多个会有空洞）。
+  - **② `HellwarSummonCombatRuntime`**：真人席位**回合开始**弹召唤选择（复用 `LocalWakuuChoiceOverlay` +
+    压制瓦库自动作答 + 钉住归属者两道）→ **消耗计数** → 生成完整战神（D7「普通档」= 召唤者角色自身的初始遗物 + 初始卡组）；
+    挂点仍是既有补丁 ⇒ **不新增 Harmony 目标**。
+  - **③ R3 口径 A 落地**：`SpiritCount` = 累计**上限**（存档、只增），新增**不存档**的 `CombatSpentSpirit`（本场已花）；
+    显示/判据一律用 `AvailableSpirit`；**先扣后生成、生成失败退回**；战后（发奖之前）摘战神 + 已花清零 = **自动补满**。
+  - **④ 门禁**：构建 0 警告 0 错误（298 .cs）、单测 **1047 全绿**、`preflight -Deploy` **G1 10 PASS / G2 STALE=0 / G5 PASS**，
+    部署位 marker **`2026-10-09-r246`**（字节一致）。
+  - **两轮实机修复**：r244 首测 = 「召唤战神后**不能结束回合**」⇒ r245 补**第二道就绪门**
+    （`SetReadyToEndTurn`，见 references 坑 **AE-3**）；r245 复测 = 「**第二个战神不会被打**」⇒ r246 修两处
+    （① 空闲号分配拿范围谓词当占用判断 ⇒ 两个战神同 NetId；② 受击结算查 `MapPointHistoryEntry.PlayerStats`
+    查不到就抛 ⇒ 那次攻击整体失败 ⇒ 战神看起来免伤；见坑 **AE-4a / AE-4b**）。
+  - **复测抓手**：`本回合不弹召唤选择: … reason=…` / `回合开始可召唤，弹出选择: …` / `已召唤战神: … 花费=…` /
+    `已消耗计数召唤…` / `③b 战神已补登「本回合已结束回合」` / `①b … 地图点统计=True` /
+    `战神已自动结束回合` / `已从战斗移除战神` / `已从 run 卡牌表除名: … 地图点统计摘除=1` / `计数已自动补满`；
+    **两次召唤必须是两个号**（`seat=4096` 然后 `seat=4097`）。
+  - ⚠ 本阶段战神仍**不出牌**（托管出牌是 Phase 3），它的回合由 `TryRequestWarGodTurnEnd` 自动收口（同 POC）。
+  - 通用教训 → `references/local-multicontrol-pitfalls.md` 坑 **AE-1 / AE-2 / AE-3 / AE-4**。
+- **✅ Phase 2b（D7 预设档 + 两个大招）实机关单（2026-10-10，r247 落地 → r248 修订 → r248 判读全绿）**：
   **R16【无尽战神】** = 消耗大量计数、**随机召唤战神直到玩家栏位填满**；**R17【终极九连环】** = 消耗真的很多计数、**召唤九个先古强度的战神**。
+  - **✅ r248 实机判读（2026-10-10，`logs-archive/godot__20261010-131130__r248.log`，用户「都测过了，没问题」）**：
+    `已开【无尽战神】: 花费=8（本场预算）, 预计=10 实际=10 个, 档位=[Rare,Rare,Epic,Common,Epic,Rare,Epic,Epic,Common,Rare], 战斗内玩家=12/12`
+    ⇒ **补满 12 席 + 每补位各掷一次随机取档（先古没进池）**；10 个战神 seat `4096…4105` 无重复；
+    `已开【终极九连环】: 永久花费=12, 上限=12→0, 预计=9 实际=9 个先古` ⇒ **门槛 12 / 固定 9 个 / 满编扣 12**；
+    战后 `移除=10` + `计数已自动补满: 补回=8, 可用=12`；战神回合自动收口 38 次；**异常族全 0**
+    （`[ERROR]` 5 条全是既有非本功能：第三方 Manosaba + `§待查-2` 的删存档失败）。
+    ⇒ **Phase 2b 关单**；另记 `§待查-3`（战神被打无音效，先跑探针定性）。
+  - **r247 落地内容**：**D7 预设档补齐**（`PureLogic/HellwarWarGodPresets`：罕见=静默猎手 / 稀有=铁甲战士 /
+    先古=摄政王，三档**卡组全升级**、先古 **+25 血** ⇒ 四档都能单点召唤 1/2/3/4）；
+    **【无尽战神】** 整包 8（本场预算）· 每个补位各掷一次随机取 普通/罕见/稀有 · 补满 12 席 · 每场 1 次；
+    **【终极九连环】** 门槛 **12（整包价）**· **固定召唤 9 个**（只有栏位不足才截断）· **消耗按实际召唤数折算 `round(12×实际/9)`**（2026-10-09 **三轮修订 r248**，取消原"部分成功"）· 每场 1 次；
+    两个大招都进同一个召唤选择 UI（文案带"实际召唤几个"与"永久消耗"）；扣费"先扣后生成、全失败全额退回"（少生按实际数量退差价）。
+    门禁：构建 0 警告 0 错误（300 .cs）、单测 **1092 全绿**、部署位 marker **`2026-10-09-r248`**。
+    ⚠ 战神**仍不出牌**（Phase 3 才托管）⇒ 档位强度体感要等 Phase 3；现在先古档已生效的部分 = 更肉 + 更占敌人攻击次数。
   - **口径**：design doc **§2.2**；**成本依据 = "计数曲线"**（§7.2 上方块：每幕自动 +2（档位 1~3）+ **火堆【分裂精神】每幕 1~3 个（典型 2~3）**
     ⇒ **整轮 9~15、典型 12~15**；火堆数由用户口径给出，源码侧面 = 每幕地图生成 6~7 个休息处节点、只走路径上的 1~3 个）；
-    **拍板结论 = §7.3**：**整包价【无尽战神】8 /【终极九连环】12 + 部分成功（每 3 点 1 个先古、至少 1 个）**；
+    **拍板结论 = §7.3 + §7.3.1（2026-10-09 二轮修订）**：
+    **整包价【无尽战神】8**（从**每场预算**扣、战后补满）/ **【终极九连环】12 但扣"计数上限"本身（永久、不补满）+ 部分成功**
+    （每 3 点永久消耗 1 个先古、至少 1 个）—— 用户口径「九连环明显太强、比无尽战神远强，估计开出来就赢
+    ⇒ 改成永久消耗计数（上限），这样玩家只会在最后一场战斗开这个」；
     触发入口 = 召唤选择 UI 的两个额外选项；**每场各限 1 次**；无尽随机取 普通/罕见/稀有（先古不进随机池）；
     超 12 席**截断到剩余栏位**；【九连环】**依赖 D7「先古」档（必须先做）**。
   - 两者都超出 D6「每回合最多 1 个」的节奏 ⇒ 分期排在 **Phase 2 召唤闭环之后（Phase 2b）**。

@@ -190,10 +190,10 @@ internal static class LocalModText
     /// <summary>遗物【地狱耳环】的名称。</summary>
     public static string HellwarEarringTitle => Select("地狱耳环", "Hell Earring");
 
-    /// <summary>遗物【地狱耳环】的描述（Phase 1 只实装了计数来源，召唤写明"后续阶段"）。</summary>
+    /// <summary>遗物【地狱耳环】的描述（Phase 2 起召唤已实装；罕见 / 稀有 / 先古档仍是后续阶段）。</summary>
     public static string HellwarEarringDescription => Select(
-        "休息处的【分裂精神】可以为它增加计数；战斗中每个回合可消耗计数召唤战神（召唤将在后续阶段实装）。",
-        "The 【Split Spirit】 option at rest sites charges it; in combat you may spend charges to summon war gods each turn (summoning ships in a later phase).");
+        "休息处的【分裂精神】可以为它增加计数；战斗中每个回合开始可消耗计数召唤一个【普通】战神（更强档位在后续阶段实装）。消耗的计数在战斗结束后自动补满。",
+        "The 【Split Spirit】 option at rest sites charges it; at the start of each combat turn you may spend charges to summon a 【Common】 war god (stronger tiers come in later phases). Spent charges refill after combat.");
 
     /// <summary>
     /// 遗物【地狱耳环】的风味文本（2026-10-09 用户指定，逐字取自《海虎》的旁白段）。
@@ -238,6 +238,64 @@ internal static class LocalModText
             _ => Select("2 个", "2"),
         };
     }
+
+    // ---- 战灵召唤 · Phase 2：回合开始的召唤选择 UI ----
+
+    /// <summary>回合开始「召唤选择」弹层的标题（<see cref="LocalWakuuChoiceOverlay"/>）。</summary>
+    public static string HellwarSummonPickTitle => Select(
+        "召唤战神（消耗计数）",
+        "Summon a War God (spends charges)");
+
+    /// <summary>战神档位的显示名（D7：普通 / 罕见 / 稀有 / 先古）。</summary>
+    public static string HellwarTierName(HellwarWarGodTier tier)
+    {
+        return tier switch
+        {
+            HellwarWarGodTier.Rare => Select("罕见", "Rare"),
+            HellwarWarGodTier.Epic => Select("稀有", "Epic"),
+            HellwarWarGodTier.Ancient => Select("先古", "Ancient"),
+            _ => Select("普通", "Common"),
+        };
+    }
+
+    /// <summary>召唤选择里"某一档"的选项文案（例：召唤【普通】战神（消耗 1 计数））。</summary>
+    public static string HellwarSummonOptionLabel(string tierName, int cost)
+    {
+        return Select(
+            $"召唤【{tierName}】战神（消耗 {cost} 计数）",
+            $"Summon a 【{tierName}】 war god (costs {cost})");
+    }
+
+    // ---- 战灵召唤 · Phase 2b：两个"大招"（R16【无尽战神】/ R17【终极九连环】）----
+
+    /// <summary>
+    /// 【无尽战神】选项文案（D18：**必须显示实际会召唤几个** —— 会被剩余栏位截断）。
+    /// </summary>
+    public static string HellwarEndlessOptionLabel(int count, int cost)
+    {
+        return Select(
+            $"【无尽战神】把空位补满：实际召唤 {count} 个随机战神（消耗 {cost} 计数·本场战斗限 1 次）",
+            $"【Endless War Gods】 fill every free slot: summons {count} random war gods (costs {cost} · once per combat)");
+    }
+
+    /// <summary>
+    /// 【终极九连环】选项文案（**永久扣计数上限**是这条的关键信息，必须写明）。
+    /// </summary>
+    public static string HellwarNineChainOptionLabel(int count, int cost)
+    {
+        return Select(
+            $"【终极九连环】召唤 {count} 个先古战神（**永久**消耗 {cost} 点计数上限·本场战斗限 1 次）",
+            $"【Ultimate Nine-Chain】 summons {count} ancient war gods (**permanently** spends {cost} charges from your cap · once per combat)");
+    }
+
+    // ---- 战灵召唤 · Phase 3：战神托管出牌（R11）----
+
+    /// <summary>
+    /// 战神（临时席位）出牌收尾台词（R11 用户口径：「战神台词改『唔』」）。
+    /// 注入 <c>relics</c> 表（键见 <see cref="LocalWakuuHellwarLocalization.WarGodLineKey"/>），
+    /// 由 <see cref="LocalWakuuRelicRuntime"/> 按席位分流取用。
+    /// </summary>
+    public static string HellwarWarGodLine => Select("唔", "Mmm.");
 
     /// <summary>「休息处选项滚动条」的开关说明用标题（设置页）。</summary>
     public static string RestSiteOptionScrollTitle => Select(

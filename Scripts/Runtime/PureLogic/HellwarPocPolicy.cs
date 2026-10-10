@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 
 namespace LocalMultiControl.Scripts.Runtime.PureLogic;
 
@@ -37,8 +38,33 @@ internal static class HellwarPocPolicy
     /// <summary>是不是临时席位（POC 哨兵 id 段）。</summary>
     internal static bool IsTemporarySeat(ulong netId) => netId >= TempSeatBase && netId < TempSeatLimit;
 
-    /// <summary>第 <paramref name="index"/> 个临时席位 id（POC 只用 index 0）。</summary>
+    /// <summary>第 <paramref name="index"/> 个临时席位 id（**只有 POC 那个"每场固定一个"的场景**能用它：
+    /// 正式召唤要一次多个 / 会有空洞 ⇒ 必须用 <see cref="ResolveFreeSeatId"/>）。</summary>
     internal static ulong SeatIdAt(int index) => TempSeatBase + (ulong)Math.Max(0, index);
+
+    /// <summary>
+    /// 在临时席位段里取**第一个没被占用的**席位号（<paramref name="occupied"/> = 已占用的确切 id 集合）。
+    ///
+    /// ⚠ 别拿 <see cref="IsTemporarySeat"/> 当"这个号被占了吗"用 —— 它是**范围谓词**
+    /// （整个 `0x1000..0x1FFF` 都返回 true）⇒ 逐个试号时会**全部**判成"已占用"，
+    /// 循环走到底只能兜底返回段起点 ⇒ **每个战神都拿到同一个 id**（r245 实机踩中，
+    /// 表现为"第二个战神不会被打"：一批按 NetId 取数的路径永远解析到第一个）。
+    /// 本方法用**确切集合成员判断**，把这条坑钉成可单测的纯逻辑。
+    /// </summary>
+    internal static ulong ResolveFreeSeatId(IReadOnlyCollection<ulong>? occupied)
+    {
+        for (ulong offset = 0; offset < TempSeatLimit - TempSeatBase; offset++)
+        {
+            ulong candidate = TempSeatBase + offset;
+            if (occupied == null || !occupied.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        // 号段耗尽（16 屏位，现实中只会出现在"没清理干净"的病态场景）⇒ 兜底复用段起点。
+        return TempSeatBase;
+    }
 
     /// <summary>解析环境变量开关（`1` / `true` / `on`，大小写不敏感；其余/空白 = 关）。</summary>
     internal static bool ParseEnvFlag(string? raw)

@@ -149,6 +149,8 @@ internal static class LocalMultiControlRuntime
         Session.Reset("RunManager.CleanUp");
         // 战灵召唤 Phase 0 POC：退局兜底 —— 临时席位与"本场已生成"标记绝不跨局残留。
         HellwarPocRuntime.ResetForRun("RunManager.CleanUp");
+        // 战灵召唤 Phase 2：退局兜底 —— 在册战神 / 临时席位登记 / "本回合已弹过选择"标记 / 战斗内计数预算一并复位。
+        HellwarSummonCombatRuntime.ResetForRun("RunManager.CleanUp");
         _wakuuAutoEndIssued.Clear();
         _allPlayersAutoEndedRounds.Clear();
         WakuuRoundSwitchLedger.Reset();
@@ -423,6 +425,10 @@ internal static class LocalMultiControlRuntime
             return;
         }
 
+        // Phase 3（R11）：战神（临时席位）由托管链出牌 —— 它自己不会 ready，
+        // 手牌再无可出牌时在这里替它收口（否则「结束回合」门的分母永远多一个 ⇒ r244 那类卡死）。
+        HellwarWarGodFactory.TryEndIdleWarGodTurns(combatState, "war-god-idle-tick");
+
         TryAutoSwitchFromWakuuWhenAllWakuuNoPlayableCards(combatState, "wakuu-no-playable-cards-tick");
 
         bool anyWakuuPlayerHasPlayableCards = false;
@@ -435,7 +441,8 @@ internal static class LocalMultiControlRuntime
 
             bool hasPlayableCards = PileType.Hand.GetPile(player).Cards.Any((card) => card.CanPlay());
 
-            if (LocalWakuuRelicRuntime.HasWakuuRelic(player) && hasPlayableCards)
+            // Phase 3：托管候选 = 持有接管遗物 **或临时席位（战神）**（见 LocalWakuuRelicRuntime.IsAutoplayHosted）。
+            if (LocalWakuuRelicRuntime.IsAutoplayHosted(player) && hasPlayableCards)
             {
                 anyWakuuPlayerHasPlayableCards = true;
                 bool scheduled = LocalWakuuRelicRuntime.TryScheduleWatchdog(player, "combat-watchdog", out string reason);

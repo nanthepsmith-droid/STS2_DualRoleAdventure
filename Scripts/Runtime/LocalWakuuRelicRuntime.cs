@@ -32,10 +32,12 @@ namespace LocalMultiControl.Scripts.Runtime;
 
 internal static class LocalWakuuRelicRuntime
 {
-    private const int MaxCardsToPlay = 13;
+    // 出牌上限口径收进纯逻辑 <see cref="WakuuAutoplaySeatPolicy"/>（含"临时席位=战神也算全量出牌"），
+    // 这里只留别名以免改动面扩大。
+    private const int MaxCardsToPlay = WakuuAutoplaySeatPolicy.MaxCardsDefault;
 
-    // 瓦库形态"打光所有手牌"模式的硬护栏上限：正常牌组远达不到，只为防御异常效果导致的死循环。
-    private const int MaxCardsToPlayForm = 60;
+    // 瓦库形态 / 战神"打光所有手牌"模式的硬护栏上限：正常牌组远达不到，只为防御异常效果导致的死循环。
+    private const int MaxCardsToPlayForm = WakuuAutoplaySeatPolicy.MaxCardsFull;
 
     /// <summary>
     /// 「模组自己收口后被放行」的日志去重（r124）：键 = `{回合}:{玩家}`。
@@ -227,6 +229,26 @@ internal static class LocalWakuuRelicRuntime
     }
 
     /// <summary>
+    /// 该席位是否由**托管链**自动出牌（Phase 3 R11 起）：持有接管遗物，**或**是临时席位（战神）。
+    ///
+    /// 为什么不能只判遗物：战神刻意**不持有**瓦库遗物（挂上去会带上"回合开始接管前台 / 加能量"等副作用，
+    /// 见设计文档 §5.2 / R4 的"不推荐"口径），所以判据必须显式认临时席位。
+    /// 与 <see cref="HasWakuuRelic"/> 的区别 = 后者是"瓦库形态"语义（含遗物缺失兜底），
+    /// 本方法只回答"托管出牌链要不要驱动它"。
+    /// </summary>
+    public static bool IsAutoplayHosted(Player? player)
+    {
+        if (player == null)
+        {
+            return false;
+        }
+
+        return WakuuAutoplaySeatPolicy.ShouldAutoplay(
+            TryGetTakeoverRelic(player) != null,
+            LocalSelfCoopContext.IsTemporarySeat(player.NetId));
+    }
+
+    /// <summary>
     /// 托管判据兜底（r83）：托管遗物被第三方效果移除后仍按瓦库名单维持托管，并补发一次遗物。
     ///
     /// 实证案例：TouhouAncients【无底之胃】"吞噬初始遗物与先古遗物以外的全部遗物"
@@ -370,14 +392,18 @@ internal static class LocalWakuuRelicRuntime
     /// 回合开始 hook 不再调用它，原因见 <see cref="HandleTurnStartHookAsync"/>）。
     /// </summary>
     public static async Task ExecuteBeforePlayPhaseStartAsync(
-        RelicModel relic,
+        RelicModel? relic,
         PlayerChoiceContext choiceContext,
         Player player)
     {
-        if (!LocalSelfCoopContext.IsEnabled || player != relic.Owner)
+        if (!LocalSelfCoopContext.IsEnabled || (relic != null && player != relic.Owner))
         {
             return;
         }
+
+        // Phase 3（R11）：战神（临时席位）没有接管遗物 ⇒ 一律以**出牌者本人**为 owner
+        // （遗物在这个方法里只当"入口 / 视觉源"，所有取数都该走玩家自己）。
+        Player owner = relic?.Owner ?? player;
 
         ICombatState? combatState = player.Creature.CombatState;
         if (combatState == null || CombatManager.Instance.IsOverOrEnding)
@@ -394,7 +420,7 @@ internal static class LocalWakuuRelicRuntime
                 relic, player, choiceContext, combatState, WakuuPotionPhase.StartOfTurn);
         }
 
-        CardModel? firstPlayableCard = PileType.Hand.GetPile(relic.Owner).Cards.FirstOrDefault((candidate) => candidate.CanPlay());
+        CardModel? firstPlayableCard = PileType.Hand.GetPile(owner).Cards.FirstOrDefault((candidate) => candidate.CanPlay());
         if (firstPlayableCard == null)
         {
             // 没牌可出：回合结束判定也要做（格挡/免伤等防御类药水的时机）
@@ -408,14 +434,18 @@ internal static class LocalWakuuRelicRuntime
         }
 
         EnsureWakuuPerspective(player, "before-play-phase");
-        relic.Flash();
+        relic?.Flash();
 
-        bool formFullPlay = IsVakuuFormMode(player) && LocalWakuuAutopilotConfig.PlayAllCards;
-        int maxCardsThisTurn = formFullPlay ? MaxCardsToPlayForm : MaxCardsToPlay;
+        // Phase 3：战神（临时席位）也按"全量出牌"（否则先古那把牌打不完 ⇒ 档位强度体现不出来）。
+        bool formFullPlay = WakuuAutoplaySeatPolicy.UsesFullPlayLimit(
+            IsVakuuFormMode(player),
+            LocalSelfCoopContext.IsTemporarySeat(player.NetId),
+            LocalWakuuAutopilotConfig.PlayAllCards);
+        int maxCardsThisTurn = WakuuAutoplaySeatPolicy.ResolveMaxCardsPerTurn(formFullPlay);
         if (formFullPlay)
         {
             LocalMultiControlLogger.Info(
-                $"瓦库形态全量出牌模式: player={player.NetId}, round={combatState.RoundNumber}, cap={maxCardsThisTurn}");
+                $"全量出牌模式（瓦库形态/战神）: player={player.NetId}, round={combatState.RoundNumber}, cap={maxCardsThisTurn}");
         }
 
         bool reachedPlayLimit;
@@ -489,10 +519,10 @@ internal static class LocalWakuuRelicRuntime
                     }
 
                     var ctx = new WakuuDecisionContext(
-                        wakuu: relic.Owner,
+                        wakuu: owner,
                         combat: combatState,
-                        hand: ResolveAutoplayHand(relic.Owner, combatState.RoundNumber),
-                        energy: relic.Owner.PlayerCombatState?.Energy ?? 0,
+                        hand: ResolveAutoplayHand(owner, combatState.RoundNumber),
+                        energy: owner.PlayerCombatState?.Energy ?? 0,
                         turnNumber: combatState.RoundNumber,
                         playedThisTurn: cardsPlayed,
                         isBackground: IsBackgroundHostedWakuu(player));
@@ -610,10 +640,27 @@ internal static class LocalWakuuRelicRuntime
             return;
         }
 
-        LocString line = reachedPlayLimit
+        TalkCmd.Play(ResolveAutoplayLine(player, reachedPlayLimit), owner.Creature, VfxColor.Purple);
+    }
+
+    /// <summary>
+    /// 出牌收尾台词（R11）：战神（临时席位）按席位分流到自定义台词「唔」，其余沿用低语耳环原台词。
+    ///
+    /// ⚠ 台词键必须已注入本地化表（见 <see cref="LocalWakuuHellwarLocalization"/>）：<c>LocString</c> 缺键会抛
+    /// <c>LocException</c>，而这一行**不在任何 try/catch 内**（冒穿会让看门狗记一条"重启失败"噪声）。
+    /// 所以用 <see cref="LocString.Exists"/> 兜底回落到原台词。
+    /// </summary>
+    private static LocString ResolveAutoplayLine(Player player, bool reachedPlayLimit)
+    {
+        if (LocalSelfCoopContext.IsTemporarySeat(player.NetId)
+            && LocString.Exists(LocalWakuuHellwarLocalization.RelicsTable, LocalWakuuHellwarLocalization.WarGodLineKey))
+        {
+            return new LocString(LocalWakuuHellwarLocalization.RelicsTable, LocalWakuuHellwarLocalization.WarGodLineKey);
+        }
+
+        return reachedPlayLimit
             ? new LocString("relics", "WHISPERING_EARRING.warning")
             : new LocString("relics", "WHISPERING_EARRING.approval");
-        TalkCmd.Play(line, relic.Owner.Creature, VfxColor.Purple);
     }
 
     /// <summary>「瓦库手牌里混进了别人的牌」这条 WARN 的限流键（席位 + 回合）。</summary>
@@ -945,8 +992,9 @@ internal static class LocalWakuuRelicRuntime
             return false;
         }
 
+        // Phase 3（R11）：战神（临时席位）**没有**接管遗物，但同样要托管出牌 ⇒ relic 允许为空。
         RelicModel? relic = TryGetTakeoverRelic(player);
-        if (relic == null)
+        if (relic == null && !LocalSelfCoopContext.IsTemporarySeat(player.NetId))
         {
             reason = "no-wakuu-relic";
             return false;
@@ -983,7 +1031,7 @@ internal static class LocalWakuuRelicRuntime
 
     private static async Task RunWatchdogAsync(
         string key,
-        RelicModel relic,
+        RelicModel? relic,
         Player player,
         ICombatState combatState,
         string source)
@@ -1016,7 +1064,7 @@ internal static class LocalWakuuRelicRuntime
                 return;
             }
 
-            if (player.Creature.CombatState != combatState || !HasWakuuRelic(player))
+            if (player.Creature.CombatState != combatState || !IsAutoplayHosted(player))
             {
                 return;
             }
@@ -1057,11 +1105,12 @@ internal static class LocalWakuuRelicRuntime
                     + $"delayMs={Time.GetTicksMsec() - intentAtMs}, source={source}");
             }
 
-            HookPlayerChoiceContext choiceContext = new HookPlayerChoiceContext(
-                relic,
-                player.NetId,
-                combatState,
-                GameActionType.CombatPlayPhaseOnly);
+            // Phase 3：战神没有接管遗物 ⇒ 走"显式 owner"那个重载。若仍传 null source 给原来那个重载，
+            // `GetOwner(null, combatState)` 会把 Owner 静默解析成**战斗里第一个玩家**
+            // （`HookPlayerChoiceContext.cs:97-106`）⇒ `OwnerId != _localPlayerId` ⇒ 选牌动作永不本地入队（挂死）。
+            HookPlayerChoiceContext choiceContext = relic != null
+                ? new HookPlayerChoiceContext(relic, player.NetId, combatState, GameActionType.CombatPlayPhaseOnly)
+                : new HookPlayerChoiceContext(player, player.NetId, GameActionType.CombatPlayPhaseOnly);
             ulong playStartTick = Time.GetTicksMsec();
             Task action = ExecuteBeforePlayPhaseStartAsync(relic, choiceContext, player);
             await choiceContext.AssignTaskAndWaitForPauseOrCompletion(action);
@@ -1248,6 +1297,13 @@ internal static class LocalWakuuRelicRuntime
 
     private static void EnsureWakuuPerspective(Player player, string source)
     {
+        // Phase 3：战神（临时席位）**永远不切前台**（它不在本地席位表里，`SwitchControlledPlayerTo`
+        // 只会白打一条"忽略切换到第三方席位"的日志）。这里显式早退，语义也更准确。
+        if (LocalSelfCoopContext.IsTemporarySeat(player.NetId))
+        {
+            return;
+        }
+
         // 后台托管模式：瓦库形态角色不再切前台，直接以临时 owner 上下文出牌（视角档位=不跟随/仅关键节点时抑制）。
         if (ShouldSuppressForegroundSwitch(player, WakuuViewTrigger.ReactivePlay))
         {

@@ -370,7 +370,7 @@ internal static class LocalWakuuPotionAutoUse
     /// 无牌可出的回合也会跑 EndOfTurn（防御类药水的时机）。
     /// </summary>
     public static async Task UseEligiblePotionsInCombatAsync(
-        RelicModel relic, Player player, PlayerChoiceContext choiceContext, ICombatState combatState, WakuuPotionPhase phase)
+        RelicModel? relic, Player player, PlayerChoiceContext choiceContext, ICombatState combatState, WakuuPotionPhase phase)
     {
         if (!LocalWakuuAutopilotConfig.AutoUsePotions || !LocalWakuuRelicRuntime.IsVakuuFormMode(player))
         {

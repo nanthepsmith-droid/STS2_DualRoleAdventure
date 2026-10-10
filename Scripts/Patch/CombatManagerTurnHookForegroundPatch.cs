@@ -19,8 +19,14 @@ internal static class CombatManagerSetupPlayerTurnForegroundPatch
     [HarmonyPrefix]
     private static void Prefix(Player player)
     {
-        // 战灵召唤 Phase 0 POC：每场战斗在玩家回合开始时（延后一帧）生成一个"哑战神"。
-        // 挂在既有 hook 上 ⇒ **不新增 Harmony 目标**；环境变量没开时本调用立即返回（零影响）。
+        // 战灵召唤 Phase 2（正式召唤）：真人席位回合开始 ⇒ 延后一帧弹"召唤选择"（消耗计数）；
+        // 开关没开时立即返回（零影响）。**不新增 Harmony 目标**（挂在既有 hook 上）。
+        if (HellwarSummonCombatRuntime.OnPlayerTurnStart(player, "turn-start-setup"))
+        {
+            return;
+        }
+
+        // 战灵召唤 Phase 0 POC（调试）：每场战斗在玩家回合开始时（延后一帧）生成一个"哑战神"。
         // 返回值 true = 这一席就是**临时席位（战神）**：它没有手牌 UI、也永远不进前台，
         // 替它结束本回合后**直接返回**，别让下面那段前台/能量/视角逻辑把它当前台切来切去。
         if (HellwarPocRuntime.OnPlayerTurnStart(player, "turn-start-setup"))
