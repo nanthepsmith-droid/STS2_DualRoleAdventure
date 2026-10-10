@@ -125,6 +125,30 @@ internal static class HellwarSummonPolicy
     }
 
     /// <summary>
+    /// **R10（Phase 4）"战神替绑主吃一半"的拦伤判据** —— 三个条件**同时**满足才拦：
+    /// <list type="number">
+    /// <item>这是**攻击伤害**（`props.IsPoweredAttack()`）：中毒 / 灼烧 / 直接掉血等非攻击来源**不拦**
+    ///   （与 `DieForYouPower` / `GuardedPower` / 本仓【我挡】同口径）；</item>
+    /// <item>被打的目标就是**绑主本人**（战神挨打、别人挨打都不算）；</item>
+    /// <item>绑主名下**有活着的战神**可以承接 —— 没有就**一点都不该改**，
+    ///   否则会出现"伤害被减半、却没人承接"= 绑主白赚 50% 减伤（这是最容易写错的一处）。</item>
+    /// </list>
+    /// 抽成纯函数：两个钩子（`ModifyHpLostBeforeOsty` 减半 / `ModifyUnblockedDamageTarget` 改目标）
+    /// **必须用同一个判据**，否则会出现"减半了但没转移"或"转移了但没减半"的半吊子状态。
+    /// </summary>
+    internal static bool ShouldGuardIncomingDamage(bool isPoweredAttack, bool targetIsSummoner, bool hasAliveGuard)
+        => isPoweredAttack && targetIsSummoner && hasAliveGuard;
+
+    /// <summary>
+    /// **R10：绑主本次要掉的 HP 减半**（D4 拍板口径 = **玩家零伤害 + 战神吃一半**）。
+    ///
+    /// 减半点在 `HpLossHookPhase.BeforeOsty` —— 即**绑主自己的格挡已经结算完**之后（所以"绑主的格挡照常生效"）；
+    /// 减半后的量紧接着被 `ModifyUnblockedDamageTarget` 转给战神 ⇒ 绑主最终**掉 0**、战神掉**一半**
+    /// （另一半消失 = 旧【我挡】"你只承受一半"的语义）。
+    /// </summary>
+    internal static decimal ResolveGuardedHpLoss(decimal amount) => amount / 2m;
+
+    /// <summary>
     /// **R9 复活一个战神的花费**（Phase 4）= **该战神原档位的召唤成本**（本场预算，非永久）。
     ///
     /// 口径依据：复活**保留**它原有的卡组 / 预设遗物 / 召唤保命层 ⇒ 相对"再召一个同档新的"

@@ -430,7 +430,24 @@ public partial class Entry
     //     `RemoveFromCombat` 了，不填就是"空手复活"）+ `MarkReadyToEndTurnIfMidPlayerTurn`（复活在回合开始
     //     之后，不补登会让「结束回合」分母多一个 ⇒ r244 那类卡死，坑 AE-3）+ 再给一层【无实体】保命。
     //  ④ 登记表升级：`_warGods` 由裸 `Player` 改存 `Registration`（绑主 NetId + 档位）—— 这两个信息事后反推不出来。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r256)";
+    // r257（2026-10-10，Phase 4 第二批）**R10 挡伤 1/2（D4 = 玩家零伤害 + 战神吃一半）** + 补"战神已死亡"锚点：
+    //  ① **新 Power** `Models/Powers/HellwarWarGodGuardPower`（挂在**绑主**身上，不可见 + 无 VFX，照 `LocalWakuuDaddyShieldPower`
+    //     的日志卫生取舍）：两条钩子**共用同一判据**（`HellwarSummonPolicy.ShouldGuardIncomingDamage`，纯逻辑 + 单测）——
+    //     `ModifyHpLostBeforeOsty` 返回 `amount / 2`（**绑主格挡结算之后**减半 ⇒ 格挡照常生效）
+    //     + `ModifyUnblockedDamageTarget` 返回战神（`LoseHpInternal` 只在战神身上结算 ⇒ 绑主掉 0、战神掉一半）。
+    //     ⚠ **刻意不做**"战神用自己的格挡"（D4/§4 R10 原样口径 —— 重定向后不吃承伤者格挡，与 Osty 同款）；
+    //     要加得再挂一条 `ModifyHpLostAfterOsty` + 一次性标记（抄【我挡】r229 的写法），那是另一套语义。
+    //  ② **判据三条件**：攻击伤害（`IsPoweredAttack`；中毒等不拦）+ 打的就是绑主 + **绑主名下还有活着的战神**
+    //     （没有 ⇒ 一点都不改 —— 否则"减半了却没人承接"= 绑主白赚减伤，这是最容易写错的一处）。
+    //  ③ **挂载点** = `HellwarWarGodFactory.EnsureGuardPowerAsync`（召唤成功后挂，幂等：同场同绑主只挂一次；
+    //     Power **不保存**"是哪个战神"，每个钩子当场 `FindGuardCreature(绑主 NetId)` 查 ⇒ 战神换人 / 死而复生 / 全死光
+    //     都不用重挂或摘除；战斗结束时 Power 自摘 + 我们的去重账在 `CleanupCombat`/`ResetRun` 清空）。
+    //  ④ **已知边界**（别当 bug 修）：`DieForYouPower`（Osty）是另一个重定向源，两源在
+    //     `Hook.ModifyUnblockedDamageTarget` 里链式；谁先跑取决于监听器顺序 —— 若 Osty 先跑，本守卫看到
+    //     `target != Owner` 直接放行（退回原版 Osty 行为，无害）。见 design doc §4 R10 的 ⚠ 与 §8 记录。
+    //  ⑤ **补锚点**：`LogWarGodDeaths`（每帧 tick）打 `战神已死亡（尸体留场…）` —— r256 判读时"被敌人打死"
+    //     原本没有任何锚点（只能从 `已复活战神（R9）` 反推）；复活成功复位标记 ⇒"死→复活→再死"各打一条。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r257)";
 
     private static Harmony? _harmony;
 

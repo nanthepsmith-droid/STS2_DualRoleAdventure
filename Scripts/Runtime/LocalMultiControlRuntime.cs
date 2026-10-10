@@ -417,6 +417,8 @@ internal static class LocalMultiControlRuntime
         // 主人可能死在**敌方回合**，那时也得收（否则死掉那位玩家的战神会变成给队友白嫖的肉盾）。
         // 内部只做"绑主已死且战神还活着"的收口，条数少、每帧一次开销可忽略。
         HellwarWarGodFactory.EnforceSummonerBond(combatState, "war-god-bond-tick");
+        // Phase 4 观测锚点：战神"活着→死了"时各打一条（"被敌人打死"原本没有任何锚点）。
+        HellwarWarGodFactory.LogWarGodDeaths(combatState);
 
         if (combatState.CurrentSide != CombatSide.Player)
         {

@@ -95,6 +95,31 @@ public class HellwarSummonPolicyTests
         });
     }
 
+    // ─────────────── R10（Phase 4）：战灵守卫（D4 = 玩家零伤害 + 战神吃一半）───────────────
+
+    [TestCase(true, true, true, true)]     // 攻击伤害 + 打的是绑主 + 有存活战神 ⇒ 拦
+    [TestCase(true, true, false, false)]   // **没有存活战神 ⇒ 一点都不该改否则绑主白赚 50% 减伤**
+    [TestCase(true, false, true, false)]   // 不是打绑主（战神自己挨打 / 别人挨打）⇒ 不拦
+    [TestCase(false, true, true, false)]   // 非攻击伤害（中毒 / 直接掉血）⇒ 不拦
+    public void 战灵守卫只在攻击打绑主且有存活战神时生效(
+        bool isPoweredAttack, bool targetIsSummoner, bool hasAliveGuard, bool expected)
+    {
+        Assert.That(
+            HellwarSummonPolicy.ShouldGuardIncomingDamage(isPoweredAttack, targetIsSummoner, hasAliveGuard),
+            Is.EqualTo(expected));
+    }
+
+    [TestCase(10d, 5d)]
+    [TestCase(1d, 0.5d)]
+    [TestCase(0d, 0d)]
+    public void 守卫把绑主要掉的血减半(double amount, double expected)
+    {
+        // 减半后的量紧接着被转给战神（另一半消失 = 旧【我挡】"你只承受一半"的语义）。
+        Assert.That(
+            (double)HellwarSummonPolicy.ResolveGuardedHpLoss((decimal)amount),
+            Is.EqualTo(expected));
+    }
+
     [Test]
     public void 计数够且未满员才可召唤()
     {

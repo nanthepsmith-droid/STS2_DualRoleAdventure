@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Godot;
+using LocalMultiControl.Scripts.Models.Powers;
 using LocalMultiControl.Scripts.Runtime.PureLogic;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Commands;
@@ -78,10 +79,16 @@ internal static class HellwarWarGodFactory
 
         /// <summary>R9 已复活过（日志用；不阻止多次复活）。</summary>
         internal int ReviveCount { get; set; }
+
+        /// <summary>"战神已死亡"锚点是否已经打过（复活时复位 ⇒ "死→复活→再死"各打一条）。</summary>
+        internal bool DeathLogged { get; set; }
     }
 
     /// <summary>已生成的战神（清理 / 退 run 卡牌表 / 席位号段分配的唯一持有者；不跨局残留）。</summary>
     private static readonly List<Registration> _warGods = new();
+
+    /// <summary>本场已给哪些绑主挂过 R10「战灵守卫」Power（避免重复 Apply；战斗结束 / 退局清空）。</summary>
+    private static readonly HashSet<ulong> _guardAppliedSummoners = new();
 
     /// <summary>当前在册的战神（供诊断 / 日志）。</summary>
     internal static IReadOnlyList<Player> SpawnedWarGods
@@ -164,6 +171,109 @@ internal static class HellwarWarGodFactory
         }
 
         return dead;
+    }
+
+    /// <summary>
+    /// **R10（Phase 4）**：取某绑主名下**第一个还活着的战神** —— 就是"替它吃那一半伤害"的那个承接者。
+    /// 查不到（没有战神 / 都死了 / 已被清理 / 绑主 NetId 为 0）⇒ 返回 <c>null</c>
+    /// ⇒ <see cref="HellwarWarGodGuardPower"/> 的两个钩子都**原样放行**（等价于没有守卫）。
+    /// </summary>
+    internal static Creature? FindGuardCreature(ulong summonerNetId)
+    {
+        if (summonerNetId == 0UL)
+        {
+            return null;
+        }
+
+        foreach (Registration registration in _warGods)
+        {
+            if (registration.SummonerNetId != summonerNetId)
+            {
+                continue;
+            }
+
+            Creature? creature = registration.Player.Creature;
+            if (creature != null && creature.IsAlive)
+            {
+                return creature;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// **R10（Phase 4）：给绑主挂上「战灵守卫」**（<see cref="HellwarWarGodGuardPower"/>）——
+    /// 效果 = 它受到的**攻击**伤害先减半、再转给战神（D4 拍板：玩家零伤害 + 战神吃一半）。
+    ///
+    /// 幂等：同一场战斗里同一个绑主只挂一次（Power 不保存"是哪个战神"，每个钩子当场按绑主 NetId 查
+    /// ⇒ 战神换人 / 死而复生 都不用重挂）。失败只 WARN，**不影响召唤本身**。
+    /// </summary>
+    private static async Task EnsureGuardPowerAsync(Player summoner, string tag)
+    {
+        try
+        {
+            if (!_guardAppliedSummoners.Add(summoner.NetId))
+            {
+                return;   // 本场已经挂过
+            }
+
+            Creature? creature = summoner.Creature;
+            if (creature == null || !creature.IsAlive)
+            {
+                return;
+            }
+
+            HookPlayerChoiceContext choiceContext = new(summoner, summoner.NetId, GameActionType.CombatPlayPhaseOnly);
+            await PowerCmd.Apply<HellwarWarGodGuardPower>(choiceContext, creature, 1m, creature, null);
+            LocalMultiControlLogger.Info(
+                $"{tag} 已给绑主挂上【战灵守卫】（R10：战神替它吃一半攻击伤害）: 绑主={summoner.NetId}, "
+                + $"当前守卫=seat{FindGuardCreature(summoner.NetId)?.Player?.NetId}");
+        }
+        catch (Exception exception)
+        {
+            _guardAppliedSummoners.Remove(summoner.NetId);   // 允许下次重试
+            LocalMultiControlLogger.Warn(
+                $"{tag} 给绑主挂【战灵守卫】失败（已忽略，不影响召唤）: 绑主={summoner.NetId}, error={exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Phase 4 观测锚点：登记项"活着 → 死了"时打一条。
+    ///
+    /// 为什么需要它：**"战神被敌人打死"原本没有任何日志锚点** —— r256 判读时只能从
+    /// `已复活战神（R9）` 反推"它死过"（明确被绑主连坐那条有 `战神已随绑主死亡`）。
+    /// 复活成功会复位标记 ⇒ "死 → 复活 → 再死"各打一条；每帧调用、只打一次。
+    /// </summary>
+    internal static void LogWarGodDeaths(CombatState? state, string tag = "[地狱战神]")
+    {
+        if (state == null || _warGods.Count == 0)
+        {
+            return;
+        }
+
+        foreach (Registration registration in _warGods)
+        {
+            try
+            {
+                Creature? creature = registration.Player.Creature;
+                if (creature == null || creature.IsAlive || registration.DeathLogged)
+                {
+                    continue;
+                }
+
+                registration.DeathLogged = true;
+                LocalMultiControlLogger.Info(
+                    $"{tag} 战神已死亡（**尸体留场**，绑主可在自己回合开始复活它）: seat={registration.Player.NetId}, "
+                    + $"档位={registration.Tier}, 绑主={registration.SummonerNetId}, "
+                    + $"血量={creature.CurrentHp}/{creature.MaxHp}, 已复活过={registration.ReviveCount} 次");
+            }
+            catch (Exception exception)
+            {
+                LocalMultiControlLogger.Warn(
+                    $"{tag} 战神死亡锚点检查失败（已跳过该席位）: seat={registration.Player.NetId}, error={exception.Message}");
+            }
+        }
     }
 
     /// <summary>
@@ -296,6 +406,7 @@ internal static class HellwarWarGodFactory
             MarkReadyToEndTurnIfMidPlayerTurn(state, warGod, tag);
             await ApplySummonProtectionAsync(creature, tag);
             registration.ReviveCount++;
+            registration.DeathLogged = false;   // 复活 ⇒ 复位死亡锚点（"死→复活→再死"各打一条）
 
             LocalMultiControlLogger.Info(
                 $"{tag} 已复活战神（R9）: seat={warGod.NetId}, 档位={registration.Tier}, "
@@ -442,6 +553,14 @@ internal static class HellwarWarGodFactory
 
             TaskHelper.RunSafely(FinishSpawnAsync(state, player.Creature, seatId, tag, presetRelics));
             _warGods.Add(new Registration(player, summoner?.NetId ?? 0UL, preset.Tier));
+
+            // ★ R10（Phase 4）：给**绑主**挂「战灵守卫」（它受到的攻击伤害减半后转给战神）。
+            // 放在登记**之后**：Power 的钩子要按绑主 NetId 反查"当前守卫"（FindGuardCreature）。
+            if (summoner != null)
+            {
+                TaskHelper.RunSafely(EnsureGuardPowerAsync(summoner, tag));
+            }
+
             warGod = player;
             return true;
         }
@@ -999,6 +1118,10 @@ internal static class HellwarWarGodFactory
             LocalMultiControlLogger.Warn($"{tag} 战后清理异常: error={exception}");
         }
 
+        // R10：本场已挂过守卫 Power 的绑主名单一并清空（Power 自身会在战斗结束那刻摘掉；
+        // 这里只清"我们这边的去重账"）。
+        _guardAppliedSummoners.Clear();
+
         return removed;
     }
 
@@ -1020,6 +1143,7 @@ internal static class HellwarWarGodFactory
             }
 
             _warGods.Clear();
+            _guardAppliedSummoners.Clear();
             RemoveAllTemporarySeatsFromSession(reason, tag);
             LocalMultiControlLogger.Info($"{tag} 已复位: reason={reason}");
         }
