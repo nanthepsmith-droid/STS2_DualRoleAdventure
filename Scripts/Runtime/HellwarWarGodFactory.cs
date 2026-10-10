@@ -1176,8 +1176,27 @@ internal static class HellwarWarGodFactory
                 .ToList();
             foreach (Creature creature in warGods)
             {
-                RemoveWarGodFromCombat(state, creature, tag);
-                removed++;
+                // ⚠ **逐项容错（r260 修）**：`RemoveWarGodFromCombat` 链上会调 `NCombatRoom.RemoveCreatureNode`，
+                // 而**第三方布局补丁**会在那条链上抛 —— 2026-10-10（r259 实机）铁证：
+                //   `[地狱战神] 战后清理异常: error=System.InvalidOperationException: Sequence contains no matching element`
+                //   `at NinjaSlayer.Code.Patches.YamotoKokiAllyLayoutPatch.Reflow(NCombatRoom room)`
+                //   `at NCombatRoom.RemoveCreatureNode_Patch1(...)` ← 第三方（NinjaSlayer）的 `PositionPlayersAndPets` 后置
+                // ⇒ 原来一个 catch 包整圈：**只要炸一次，循环就整体中断**，后面的战神全部没摘掉、
+                //   一直留到发奖时刻（那局就靠 R12 的排除闸门兜住了：`R12 战后奖励遇到临时席位并已排除…player=4097`）。
+                // ⇒ 改成"一个一个来，谁炸谁记，别影响剩下的"。
+                // 注：临时席位登记列表清空不影响判据 —— `IsTemporarySeat` 还认 POC 号段（0x1000..0x1FFF），
+                //     所以"没摘成功、还留在战斗里"的那个依然是临时席位。
+                try
+                {
+                    RemoveWarGodFromCombat(state, creature, tag);
+                    removed++;
+                }
+                catch (Exception exception)
+                {
+                    LocalMultiControlLogger.Warn(
+                        $"{tag} 摘除战神失败（已跳过它、继续摘剩下的 —— 第三方布局补丁常在这一链上抛）: "
+                        + $"seat={creature.Player?.NetId}, error={exception.Message}");
+                }
             }
 
             if (removed > 0)

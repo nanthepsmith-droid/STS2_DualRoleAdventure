@@ -490,7 +490,27 @@ public partial class Entry
     //     手牌 / 能量转移本来就按 `Player` 实例走，不需要改。
     //  ③ 「战神当回合就能打牌」= 用户明确**不强求、难做就不做** ⇒ 本轮不做，登记为"不做"。
     //  ④ 「R10 平衡（战神是否太脆）」= 用户要先**完整测几局**再看 ⇒ 本轮不改阈值，结论挂起。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r259)";
+    // r260（2026-10-10，r259 实机判读 + 用户反馈）**战后清理逐项容错 + 合体「空气牌」自检探针 + 合体日志补混抽可用性**：
+    //  ① 🔴 **战后清理逐项容错**（真因来自 r259 日志）：`CleanupCombat` 原本一个 catch 包整圈，而
+    //     `RemoveWarGodFromCombat` 链上会调 `NCombatRoom.RemoveCreatureNode` —— **第三方 NinjaSlayer 的
+    //     `YamotoKokiAllyLayoutPatch`（`PositionPlayersAndPets` 后置）在那条链上抛
+    //     `InvalidOperationException: Sequence contains no matching element`** ⇒ 循环整体中断 ⇒
+    //     只摘掉 4096、**4097 留在战斗里**（一路留到发奖时刻）。修法 = 逐项 try/catch（谁炸谁记，继续摘剩下的）。
+    //     ⭐ 同场 **R12 的排除闸门立功**：`R12 战后奖励遇到临时席位并已排除（正常不该出现，请查上游清理）:
+    //     入口=combat-still-has-temporary-seat, player=4097` ⇒ 残留战神没拿到奖励、也没被交回原版
+    //     （这正是 r258 加那道闸门的价值：上游一漏，闸门兜住）。
+    //  ② 🔍 **合体「空气牌」自检探针**（用户 2026-10-10 反馈：「与战神合体有时候会出现空气牌，这张牌没有样子
+    //     但确实占了位置，切人刷新才显示出这张牌的样子」）：合体搬完牌**下一帧**核对每张搬运牌的
+    //     `holder / 在容器 / 节点在树 / 可见 / 缩放` + 手牌堆 vs 手牌 UI 张数；缺 holder ⇒ WARN、否则 INFO。
+    //     两种成因必须分开：(a) 手牌 UI 少建了节点（要在合体链路里补）vs (b) holder 与节点都在、只是卡面
+    //     没渲染（补节点毫无作用，得走"重刷视觉 / 第三方美术链"）⇒ **先探针、只观测不自动修**
+    //     （出牌途中整表重建会打断出牌链 = r111 实测教训，见 `LocalMultiControlRuntime` 手牌对账注释）。
+    //     已排除的两条"现成嫌疑"：我们的两条手牌节点守卫本场**一次都没拦**（`手牌视觉守卫` / `选牌守卫` = 0 条）、
+    //     手牌 UI 与数据对账也没报差异 ⇒ 更偏向"节点在、卡面没渲染"那一层（本环境有第三方 `SayaArtApi/SayaApiBridge`
+    //     在介入卡面解析）。等下一局探针落证据。
+    //  ③ 合体日志补 `（混抽可用性：瓦库抽牌堆=N 张, 我方=M 张）`：混抽/混弃的日志只在"真的搬了牌"时才打 ⇒
+    //     没有这一行会把"瓦库抽牌堆本来就空"误读成"混抽没生效"（r259 那局 `合体混抽` / `合体混弃` 各 0 条就是这个坑）。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r260)";
 
     private static Harmony? _harmony;
 

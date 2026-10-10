@@ -1,8 +1,10 @@
 #nullable enable
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Godot;
 using LocalMultiControl.Scripts.Runtime;
 using LocalMultiControl.Scripts.Runtime.PureLogic;
 using MegaCrit.Sts2.Core.Commands;
@@ -11,6 +13,10 @@ using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Cards;
+using MegaCrit.Sts2.Core.Nodes.Cards;
+using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
+using MegaCrit.Sts2.Core.Nodes.Combat;
+using MegaCrit.Sts2.Core.Nodes.Rooms;
 
 namespace LocalMultiControl.Scripts.Models.Cards;
 
@@ -108,9 +114,102 @@ internal sealed class LocalWakuuDaddyMergeCard : CardModel
 
         WakuuDaddyCombatState.RegisterMerge(Owner, wakuu);
         bool targetIsWarGod = LocalSelfCoopContext.IsTemporarySeat(wakuu.NetId);
+        // 顺手把两侧抽牌堆张数打出来：混抽的日志只在"真的搬了 N 张（N>0）"时才有 —— 有了这一行，
+        // 判读时就不会把"瓦库抽牌堆本来就空 ⇒ 混抽没得混"误读成"混抽没生效"。
+        int wakuuDraw = PileType.Draw.GetPile(wakuu)?.Cards.Count ?? -1;
+        int ownDraw = PileType.Draw.GetPile(Owner)?.Cards.Count ?? -1;
         LocalMultiControlLogger.Info(
             $"[瓦库的爹] 合体：收编手牌={cards.Count} 张、能量={energy}，施牌者 {Owner.NetId} ← "
             + $"瓦库 {wakuu.NetId}{(targetIsWarGod ? "(战神)" : string.Empty)}"
+            + $"（混抽可用性：瓦库抽牌堆={wakuuDraw} 张, 我方={ownDraw} 张）"
             + (targetIsWarGod ? "；⚠ 战神是临时席位：本回合混抽/混弃走 TryGetMergedWakuu 的【在册战神】分支" : string.Empty));
+
+        // 「空气牌」自检（见 ProbeMergedCards 注释）：只在真的搬了牌时排一次。
+        if (cards.Count > 0)
+        {
+            List<CardModel> moved = cards;
+            Callable.From(() => ProbeMergedCards(Owner, moved)).CallDeferred();
+        }
+    }
+
+    /// <summary>
+    /// 合体后**下一帧**的手牌节点自检（2026-10-10 用户实机反馈：「与战神合体有时候会出现空气牌，
+    /// 这张牌没有样子但确实占了位置，切人刷新才显示出这张牌的样子」）。
+    ///
+    /// 为什么要先探针而不是直接修：这句现象对应**两种完全不同的成因**，修法完全相反 ——
+    /// <list type="bullet">
+    /// <item><b>(a) 手牌 UI 少建了节点</b>（牌在手牌堆、界面给了空位却没 holder）⇒ 要在合体链路里补建/补挂节点；</item>
+    /// <item><b>(b) holder 与节点都在、只是卡面没渲染出来</b>（美术/异步那一层）⇒ 补建节点毫无作用，
+    ///   得走"重刷该节点的视觉"或第三方美术链（本环境里 `SayaArtApi/SayaApiBridge` 会介入卡面解析）。</item>
+    /// </list>
+    /// 探针把这两种分开：打印每张搬运牌的 `holder 存在 / 在容器里 / 节点在树里 / 可见 / 缩放` +
+    /// 手牌堆张数 vs 手牌 UI holder 张数；判定为 (a) 时打 WARN、否则打 INFO。
+    ///
+    /// ⚠ **只观测、不自动修**：出牌途中整表重建会打断出牌链（r111 实机回归教训，见
+    /// `LocalMultiControlRuntime` 手牌对账那段注释）。拿到证据再决定修法。
+    /// </summary>
+    private static void ProbeMergedCards(Player receiver, IReadOnlyList<CardModel> moved)
+    {
+        try
+        {
+            NPlayerHand? hand = NCombatRoom.Instance?.Ui?.Hand;
+            if (hand?.CardHolderContainer == null)
+            {
+                LocalMultiControlLogger.Info(
+                    $"[瓦库的爹] 合体自检：战斗手牌 UI 当前不可用（hand=null）⇒ 无法核对节点，"
+                    + $"接收方={receiver.NetId}, 搬运={moved.Count} 张");
+                return;
+            }
+
+            int pileCount = PileType.Hand.GetPile(receiver)?.Cards.Count ?? -1;
+            int holderCount = 0;
+            foreach (Node child in hand.CardHolderContainer.GetChildren())
+            {
+                if (child is NCardHolder candidate && GodotObject.IsInstanceValid(candidate)
+                    && candidate.CardNode?.Model != null)
+                {
+                    holderCount++;
+                }
+            }
+
+            List<string> details = new(moved.Count);
+            int missing = 0;
+            foreach (CardModel card in moved)
+            {
+                NCardHolder? holder = hand.GetCardHolder(card);
+                bool holderValid = holder != null && GodotObject.IsInstanceValid(holder);
+                bool inContainer = holderValid && hand.CardHolderContainer.IsAncestorOf(holder!);
+                NCard? node = holderValid ? holder!.CardNode : null;
+                bool nodeValid = node != null && GodotObject.IsInstanceValid(node);
+                if (!inContainer)
+                {
+                    missing++;
+                }
+
+                details.Add(
+                    $"{card.Id.Entry}[holder={( holderValid ? "有" : "无")}, 在容器={(inContainer ? "是" : "否")}, "
+                    + $"节点在树={(nodeValid && node!.IsInsideTree() ? "是" : "否")}, "
+                    + $"可见={(nodeValid ? node!.Visible.ToString() : "-")}, "
+                    + $"缩放={(nodeValid ? node!.Scale.X.ToString("0.###") : "-")}]");
+            }
+
+            string summary =
+                $"[瓦库的爹] 合体自检: 接收方={receiver.NetId}, 手牌堆={pileCount} 张, "
+                + $"手牌UI holder={holderCount} 个, 本次搬运={moved.Count} 张（缺 holder={missing} 张）";
+            if (missing > 0)
+            {
+                LocalMultiControlLogger.Warn(
+                    summary + " ⇒ **疑似空气牌**（占位但没手牌节点）: " + string.Join(" ", details));
+            }
+            else
+            {
+                LocalMultiControlLogger.Info(summary + " ⇒ 节点齐全（若画面上仍空白，则是卡面渲染那一层）: "
+                    + string.Join(" ", details));
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"[瓦库的爹] 合体自检异常（已忽略）: {exception.Message}");
+        }
     }
 }
