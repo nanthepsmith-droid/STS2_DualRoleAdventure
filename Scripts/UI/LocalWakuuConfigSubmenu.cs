@@ -352,6 +352,25 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
                 "**Off by default.** When on, the 【Endless War Gods】 random pool includes the 【Ancient】 tier — by default it only rolls Common / Rare / Epic (Ancient is exclusive to 【Ultimate Nine-Chain】). **Affects 【Endless War Gods】 only**; single-tier summons and 【Nine-Chain】 are unchanged."),
             () => LocalWakuuAutopilotConfig.HellwarEndlessAncient,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("hellwarEndlessAncient", value));
+        AddInfoRow(column,
+            LocalModText.Select("战灵召唤 · 战神的预设卡组（改配置文件）", "War God Summon · War God Preset Decks (edit the config file)"),
+            LocalModText.Select(
+                "**只在配置文件里改**（设置页不做输入框）：`%APPDATA%\\SlayTheSpire2\\vakuu_autopilot.json` 的四个键 —— "
+                + "`hellwarDeckCommon`（普通档：默认**空** = 用你本人角色的初始卡组）/ `hellwarDeckRare`（罕见=静默猎手皮）/ "
+                + "`hellwarDeckEpic`（稀有=铁甲战士皮）/ `hellwarDeckAncient`（先古=摄政王皮，【终极九连环】也是这一档）。"
+                + "**留空 = 用内置默认**（每档 14 张、已按「托管 AI 好驾驭」挑过：罕见=毒+格挡+敏捷 / 稀有=易伤+力量+大格挡 / 先古=攒星+花星）。"
+                + "写法：逗号/分号/换行分隔的卡牌 id（游戏里的 `ModelId.Entry`，如 `BASH`、`DEMON_FORM`），"
+                + "`CARD.` 前缀可省、大小写不敏感；末尾加 `+` = 这一张**单独升级**（贴着写，别加空格）；写几遍就是几张。"
+                + "⚠ 认不出的 id 会被**跳过并在日志里打 WARN**（不崩、不阻塞召唤）；一条都没认出来就回落角色初始卡组。"
+                + "日志里那句 `①a 预设卡组已替换` 会打印**内置默认卡组的完整文本**，复制过来改最省事。",
+                "**Config file only** (no input box in this page): the four keys in `%APPDATA%\\SlayTheSpire2\\vakuu_autopilot.json` — "
+                + "`hellwarDeckCommon` (default **empty** = your own character's starting deck) / `hellwarDeckRare` (Silent skin) / "
+                + "`hellwarDeckEpic` (Ironclad skin) / `hellwarDeckAncient` (Regent skin; 【Ultimate Nine-Chain】uses this tier too). "
+                + "**Empty = built-in default** (14 cards per tier, hand-picked to be AI-friendly). "
+                + "Format: card ids separated by comma / semicolon / newline (the game's `ModelId.Entry`, e.g. `BASH`, `DEMON_FORM`); "
+                + "the `CARD.` prefix is optional and case-insensitive; a trailing `+` marks that single card as upgraded (no space before it); "
+                + "write an id N times for N copies. ⚠ Unknown ids are skipped with a WARN log (never blocks the summon). "
+                + "The log line `①a 预设卡组已替换` prints the built-in deck as ready-to-copy config text."));
         AddToggleRow(column,
             LocalModText.RestSiteOptionScrollTitle,
             LocalModText.Select(
@@ -1171,6 +1190,34 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         _firstToggle ??= tickbox;
         row.AddChild(tickbox);
 
+        column.AddChild(row);
+    }
+
+    /// <summary>
+    /// 「只有说明、右侧不放控件」的信息行（排版抄 <see cref="AddToggleRow"/>）：
+    /// 用于**只能在配置文件里改**的项 —— 当前 = 战灵召唤的预设卡组（`hellwarDeck*` 四个键），
+    /// 设置页负责把"改哪个键 / 什么格式 / 去哪改"讲清楚，不做输入框。
+    /// </summary>
+    private static void AddInfoRow(VBoxContainer column, string title, string description)
+    {
+        HBoxContainer row = new();
+        row.AddThemeConstantOverride("separation", 28);
+
+        VBoxContainer textColumn = new();
+        textColumn.CustomMinimumSize = new Vector2(880f, 0f);
+        textColumn.SizeFlagsHorizontal = (SizeFlags)3; // ExpandFill
+        textColumn.AddThemeConstantOverride("separation", 2);
+
+        Label titleLabel = CreateLabel(title, 26, new Color(1f, 0.85f, 0.35f));
+        titleLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        textColumn.AddChild(titleLabel);
+
+        Label descLabel = CreateLabel(description, 19, new Color(0.8f, 0.78f, 0.72f));
+        descLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        descLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        textColumn.AddChild(descLabel);
+
+        row.AddChild(textColumn);
         column.AddChild(row);
     }
 

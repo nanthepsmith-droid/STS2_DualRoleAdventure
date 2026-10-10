@@ -155,6 +155,25 @@ internal sealed class WakuuConfigData
     public bool hellwarEndlessAncient { get; set; }
 
     /// <summary>
+    /// 战灵召唤 · **普通档预设卡组**（空 = 用内置默认 = 召唤者自身角色的初始卡组；2026-10-10 用户拍板"手工 id 列表 + 开放到配置文件"）。
+    /// 格式：逗号 / 分号 / 空白分隔的卡牌 <c>ModelId.Entry</c>（前缀 <c>CARD.</c> 可有可无、大小写不敏感），
+    /// 末尾加 <c>+</c> = 这张单独升级，写几遍就是几张。
+    /// 例：<c>"STRIKE_IRONCLAD+, DEFEND_IRONCLAD, BASH+"</c>。
+    /// ⚠ 普通档是唯一一档"内置默认不换卡组"的（自动兼容 mod 角色），这一项非空才会换成你写的牌。
+    /// 解析细则见 <see cref="HellwarWarGodDeckPlan"/>；认不出的 entry 会被跳过并打 WARN。
+    /// </summary>
+    public string hellwarDeckCommon { get; set; } = string.Empty;
+
+    /// <summary>战灵召唤 · **罕见档（静默猎手皮）预设卡组**；空 = 用内置默认（见 <c>HellwarWarGodDecks</c>）。格式同上。</summary>
+    public string hellwarDeckRare { get; set; } = string.Empty;
+
+    /// <summary>战灵召唤 · **稀有档（铁甲战士皮）预设卡组**；空 = 用内置默认。格式同 <see cref="hellwarDeckCommon"/>。</summary>
+    public string hellwarDeckEpic { get; set; } = string.Empty;
+
+    /// <summary>战灵召唤 · **先古档（摄政王皮）预设卡组**；空 = 用内置默认（【终极九连环】也是这一档）。格式同 <see cref="hellwarDeckCommon"/>。</summary>
+    public string hellwarDeckAncient { get; set; } = string.Empty;
+
+    /// <summary>
     /// 休息处选项**横向滚动条**（默认**开**，2026-10-09 用户追加）：
     /// 选项变多时（原版 2~3 条 + 我们注入的净化 / 炼化 / 分裂精神 + 其它 mod 的选项）会横向溢出屏幕
     /// （容器只有 799px 宽、每个按钮 247px、间隔 100px ⇒ **5 个以上就开始挤出屏幕**），

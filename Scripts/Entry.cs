@@ -383,7 +383,21 @@ public partial class Entry
     //     （`HellwarWarGodFactory.ApplySummonProtectionAsync`）：它把 HP 损失压到 1（**立即生效**）、
     //     层数在**敌方回合结束**递减 ⇒ 保住"召唤当回合 + 接着那个敌方回合"。
     //     （"当回合就能打牌"要中途补抽起手牌 + 去掉落地立即 ready，会重新引入回合卡住风险 ⇒ 本轮先走保命方案。）
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r253)";
+    // r254（2026-10-10，用户「继续干活」= 第七十八段 ④ 的下一步 ①）**手工预设卡组（配置文件可自定义）**：
+    //  战神卡组不再"原版角色初始卡组 + 全升级"，改成**手工挑的列表**（用户口径："手工 id 列表 + 开放到配置文件"）。
+    //  ① **内置默认**（`HellwarWarGodDecks`）：罕见/稀有/先古各 14 张，用 `ModelDb.Card<T>()` **类型引用**写死
+    //     （编译期可校验；**不用字符串 id** —— 拼错会静默召不出东西，与 D7 首版"零硬编码"取舍一致）；
+    //     挑卡口径 = 只挑**托管 AI 好驾驭的线性牌**（罕见=毒+格挡+敏捷 / 稀有=易伤+力量+大格挡 /
+    //     先古=攒星+花星里"有星就纯赚"的那半）；**普通档不替换**（仍用召唤者自身角色初始卡组 ⇒ 兼容 mod 角色）。
+    //  ② **配置覆盖**（`hellwarDeckCommon/Rare/Epic/Ancient`，默认空 = 内置默认）：逗号/空白分隔的
+    //     `ModelId.Entry`（`CARD.` 前缀可省、大小写不敏感），末尾 `+` = 这一张单独升级，写几遍就是几张；
+    //     认不出的 id 跳过 + WARN、一条都没认出来则回落角色初始卡组。解析层 = 纯逻辑 `HellwarWarGodDeckPlan`。
+    //  ③ **落点** `HellwarWarGodFactory.ApplyPresetDeck`：必须在 `AttachToRun` / `PopulateCombatState` **之前**
+    //     替换卡组（那两步分别补 `Owner`+登记 run 卡牌表、把卡组克隆进抽牌堆）；做法照抄 `PopulateStartingDeck`
+    //     的原语（`ToMutable()` → `Deck.AddInternal(..., silent: true)`），Owner/登记仍交给 `AttachToRun`。
+    //  ④ 锚点：启动自检 `[地狱战神] 预设卡组已就绪: 档位=…, 内容=…`（同时是给玩家的配置模板）+
+    //     召唤时 `①a 预设卡组已替换: … 来源=内置默认/配置文件`。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r254)";
 
     private static Harmony? _harmony;
 

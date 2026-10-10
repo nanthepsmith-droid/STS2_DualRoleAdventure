@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using LocalMultiControl.Scripts.Runtime.PureLogic;
 
 namespace LocalMultiControl.Scripts.Runtime;
 
@@ -115,6 +117,34 @@ internal static class LocalWakuuAutopilotConfig
 
     /// <summary>战灵召唤 · 【无尽战神】允许开出先古档（默认关；2026-10-10 用户追加）。</summary>
     public static bool HellwarEndlessAncient { get; private set; }
+
+    /// <summary>战灵召唤 · 普通档预设卡组文本（空 = 内置默认 = 召唤者自身角色初始卡组；配置里手改）。</summary>
+    public static string HellwarDeckCommon { get; private set; } = string.Empty;
+
+    /// <summary>战灵召唤 · 罕见档（静默猎手皮）预设卡组文本（空 = 内置默认）。</summary>
+    public static string HellwarDeckRare { get; private set; } = string.Empty;
+
+    /// <summary>战灵召唤 · 稀有档（铁甲战士皮）预设卡组文本（空 = 内置默认）。</summary>
+    public static string HellwarDeckEpic { get; private set; } = string.Empty;
+
+    /// <summary>战灵召唤 · 先古档（摄政王皮）预设卡组文本（空 = 内置默认）。</summary>
+    public static string HellwarDeckAncient { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// 取某档位的**预设卡组配置文本**（空 = 用内置默认）。
+    /// 唯一调用点 = <see cref="HellwarWarGodDecks.Resolve"/>（召唤时解析）。
+    /// </summary>
+    public static string HellwarDeckOverride(HellwarWarGodTier tier)
+    {
+        return tier switch
+        {
+            HellwarWarGodTier.Common => HellwarDeckCommon,
+            HellwarWarGodTier.Rare => HellwarDeckRare,
+            HellwarWarGodTier.Epic => HellwarDeckEpic,
+            HellwarWarGodTier.Ancient => HellwarDeckAncient,
+            _ => string.Empty,
+        };
+    }
 
     /// <summary>休息处选项横向滚动条（默认开；与其它 mod 改动重合时可关）。</summary>
     public static bool RestSiteOptionScroll { get; private set; } = true;
@@ -667,6 +697,13 @@ internal static class LocalWakuuAutopilotConfig
         return HellwarSummonPolicy.TryNormalizeActGainAmount(value, out string normalized) ? normalized : null;
     }
 
+    /// <summary>日志用：某档预设卡组是"内置默认"还是"自定义 N 张"（不打印全文，避免配置长时刷屏）。</summary>
+    private static string DescribeDeckOverride(string? text)
+    {
+        IReadOnlyList<HellwarWarGodDeckEntry>? entries = HellwarWarGodDeckPlan.Parse(text);
+        return entries == null ? "内置默认" : $"自定义{entries.Count}张";
+    }
+
     private static void WriteConfigData(WakuuConfigData data)
     {
         string? directory = Path.GetDirectoryName(ConfigFilePath);
@@ -776,6 +813,9 @@ internal static class LocalWakuuAutopilotConfig
                 + $"hellwarActGain={data.hellwarActGain}, "
                 + $"hellwarActGainAmount={HellwarSummonPolicy.NormalizeActGainAmount(data.hellwarActGainAmount)}, "
                 + $"hellwarEndlessAncient={data.hellwarEndlessAncient}, "
+                + $"hellwarDeck(普通/罕见/稀有/先古)={DescribeDeckOverride(data.hellwarDeckCommon)}/"
+                + $"{DescribeDeckOverride(data.hellwarDeckRare)}/{DescribeDeckOverride(data.hellwarDeckEpic)}/"
+                + $"{DescribeDeckOverride(data.hellwarDeckAncient)}, "
                 + $"restSiteOptionScroll={data.restSiteOptionScroll}, "
                 + $"eventChoiceMode={data.eventChoiceMode}, cardPickMode={data.cardPickMode}, "
                 + $"vakuuBrain={data.vakuuBrain}, coopBotsSeats={data.coopBotsSeats}");
@@ -806,6 +846,11 @@ internal static class LocalWakuuAutopilotConfig
         HellwarActGain = data.hellwarActGain;
         HellwarActGainAmount = HellwarSummonPolicy.NormalizeActGainAmount(data.hellwarActGainAmount);
         HellwarEndlessAncient = data.hellwarEndlessAncient;
+        // 预设卡组：原始文本照收（空 = 用内置默认），解析在召唤时做（见 HellwarWarGodDecks.Resolve）。
+        HellwarDeckCommon = data.hellwarDeckCommon;
+        HellwarDeckRare = data.hellwarDeckRare;
+        HellwarDeckEpic = data.hellwarDeckEpic;
+        HellwarDeckAncient = data.hellwarDeckAncient;
         RestSiteOptionScroll = data.restSiteOptionScroll;
         AutoUsePotions = data.autoUsePotions;
         NeowAutoChoose = data.neowAutoChoose;

@@ -150,8 +150,8 @@ internal static class HellwarWarGodFactory
             Player player = Player.CreateForNewRun(character, unlock, seatId);
             rollbackCandidate = player;
 
-            // ★ 预设档（Phase 2b）：必须在 AttachToRun / PopulateCombatState **之前**做（见 preset 注释）。
-            int upgraded = ApplyPresetToInventory(player, preset);
+            // ★ 预设档（Phase 2b / 预设卡组）：必须在 AttachToRun / PopulateCombatState **之前**做（见 preset 注释）。
+            int upgraded = ApplyPresetToInventory(player, preset, tag);
 
             LocalMultiControlLogger.Info(
                 $"{tag} ① 已建临时玩家: seat={seatId}(0x{seatId:X}), character={character.Id}, "
@@ -217,17 +217,21 @@ internal static class HellwarWarGodFactory
     /// <summary>
     /// 把 D7 预设档应用到刚建好的玩家身上（**必须在 <see cref="AttachToRun"/> 之前**调用）：
     /// <list type="number">
+    /// <item><b>预设卡组替换</b>（2026-10-10 用户拍板：手工 id 列表 + 开放到配置文件）：
+    ///   见 <see cref="ApplyPresetDeck"/>。内置默认用**类型引用**写死（编译期可校验），
+    ///   配置里可用字符串 id 覆盖；普通档默认不替换（= 召唤者自身角色初始卡组，自动兼容 mod 角色）。</item>
     /// <item><b>卡组全升级</b>（<paramref name="preset"/>.<c>UpgradeDeck</c>）：逐张 `IsUpgradable` 判定后
     ///   `UpgradeInternal()` + `FinalizeUpgradeInternal()`（顺序不能反，后者收尾预览态）。
-    ///   这是首版**唯一"零硬编码"的强度手段**：不用写死任何卡牌 id，改卡池 / 加 mod 都不会失效。</item>
+    ///   已在配置里单独标了 <c>+</c> 的牌此时已到满级 ⇒ `IsUpgradable` 为假，**不会重复升级**。</item>
     /// <item><b>额外血上限</b>（`BonusHp`）：`SetMaxHpInternal` 之后再 `SetCurrentHpInternal`（把当前血补满到新上限，
     ///   否则会显示成"半血出生"）。</item>
     /// </list>
     /// 返回实际升级的张数（打日志用）。
     /// </summary>
-    private static int ApplyPresetToInventory(Player player, HellwarWarGodPreset preset)
+    private static int ApplyPresetToInventory(Player player, HellwarWarGodPreset preset, string tag)
     {
-        int upgraded = 0;
+        int upgraded = ApplyPresetDeck(player, preset, tag);
+
         if (preset.UpgradeDeck)
         {
             foreach (CardModel card in player.Deck.Cards.ToList())
@@ -257,6 +261,61 @@ internal static class HellwarWarGodFactory
                 "预设档卡组为空（该角色 StartDeck 为空？）⇒ 按「空卡组战神」处理，不阻塞召唤。"
                 + $"seat={player.NetId}, 皮肤={preset.SkinKey}");
         }
+
+        return upgraded;
+    }
+
+    /// <summary>
+    /// **把角色初始卡组换成预设卡组**（2026-10-10 用户拍板的手工预设卡组）。
+    ///
+    /// 落点为什么在这里：`CreateForNewRun` 已经把 `Character.StartingDeck` 灌进 `player.Deck`
+    /// （`Player.PopulateStartingDeck`），而 `AttachToRun` 会给**此刻的**卡组牌补 `Owner` + 登记进 run 卡牌表，
+    /// `PopulateCombatState` 再把**此刻的**卡组克隆进抽牌堆 ⇒ **本方法必须在 AttachToRun 之前**改完卡组，
+    /// 否则新牌不会进抽牌堆 / 老牌留下幽灵登记。
+    ///
+    /// 做法照抄 `PopulateStartingDeck` 的原语：`canonical.ToMutable()` → `Deck.AddInternal(..., silent: true)`
+    /// （**Owner / 登记仍交给 <see cref="AttachToRun"/>**，别在这里自己调 `runState.AddCard`——
+    /// 此刻 `player.RunState` 还是 `NullRunState`）。`Deck.Clear(silent: true)` 是安全的：
+    /// 卡组不是战斗牌堆（不动 `StateTracker`），且此刻还没登记进 run 的卡牌表。
+    ///
+    /// 返回"逐张标记升级"的张数（档位的**全升级**开关在调用方另外跑一遍）。
+    /// </summary>
+    private static int ApplyPresetDeck(Player player, HellwarWarGodPreset preset, string tag)
+    {
+        HellwarWarGodDeckResolution deck = HellwarWarGodDecks.Resolve(
+            preset.Tier,
+            LocalWakuuAutopilotConfig.HellwarDeckOverride(preset.Tier));
+
+        if (deck.Cards is not { Count: > 0 })
+        {
+            // 不替换（普通档内置默认 / 配置全认不出时回落）⇒ 保留角色初始卡组。
+            return 0;
+        }
+
+        player.Deck.Clear(silent: true);
+        int upgraded = 0;
+        foreach (HellwarWarGodDeckCard entry in deck.Cards)
+        {
+            CardModel card = entry.Canonical.ToMutable();
+            card.FloorAddedToDeck = 1;
+            player.Deck.AddInternal(card, -1, silent: true);
+
+            if (entry.Upgraded)
+            {
+                // 顺序照 `CardCmd.Upgrade`：先 UpgradeInternal 再 FinalizeUpgradeInternal（后者收尾预览态）。
+                card.UpgradeInternal();
+                card.FinalizeUpgradeInternal();
+                upgraded++;
+            }
+        }
+
+        string source = deck.FromConfig ? "配置文件" : "内置默认";
+        LocalMultiControlLogger.Info(
+            $"{tag} ①a 预设卡组已替换: seat={player.NetId}, 档位={preset.Tier}, 来源={source}, "
+            + $"张数={player.Deck.Cards.Count}（逐张标记升级={upgraded} 张, 之后全升级开关={preset.UpgradeDeck}）"
+            + (deck.FromConfig
+                ? $", 配置文本={LocalWakuuAutopilotConfig.HellwarDeckOverride(preset.Tier)}"
+                : $", 内置默认={HellwarWarGodDecks.DescribeBuiltinDeck(preset.Tier)}"));
 
         return upgraded;
     }
