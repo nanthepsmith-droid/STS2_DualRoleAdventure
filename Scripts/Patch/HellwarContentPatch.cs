@@ -78,6 +78,18 @@ internal static class HellwarContentPatch
                 LocalMultiControlLogger.Info(
                     $"[地狱战神] 预设卡组已就绪: 档位={tier}, 张数={deck?.Count ?? 0}, "
                     + $"内容={HellwarWarGodDecks.DescribeBuiltinDeck(tier)}");
+
+                // ② 预设遗物（r255）：同样在启动时打一份 + 与"件数阶梯"（成本 − 1）对账。
+                IReadOnlyList<RelicModel> relics = HellwarWarGodRelics.PresetRelicsOf(tier);
+                LocalMultiControlLogger.Info(
+                    $"[地狱战神] 预设遗物已就绪: 档位={tier}, {HellwarWarGodRelics.DescribePresetRelics(tier)}");
+                int expected = HellwarSummonPolicy.ResolvePresetRelicCount(tier);
+                if (relics.Count != expected)
+                {
+                    LocalMultiControlLogger.Warn(
+                        $"[地狱战神] 预设遗物件数与阶梯不符（配置表被改过？）: 档位={tier}, "
+                        + $"实际={relics.Count} 件 / 期望={expected} 件（口径 = 成本 − 1）");
+                }
             }
         }
         catch (System.Exception exception)

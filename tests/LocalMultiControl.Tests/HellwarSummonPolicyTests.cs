@@ -47,6 +47,33 @@ public class HellwarSummonPolicyTests
         });
     }
 
+    // ② 预设遗物（r255）：件数阶梯 = 成本 − 1（单一事实源 = 本函数；内容表在启动自检里与它对账）。
+    [TestCase(0, 0)] // Common：不发预设遗物（只保留它自己角色的初始遗物）
+    [TestCase(1, 1)] // Rare
+    [TestCase(2, 2)] // Epic
+    [TestCase(3, 3)] // Ancient
+    public void 预设遗物件数等于成本减一(int tierValue, int expectedCount)
+    {
+        Assert.That(HellwarSummonPolicy.ResolvePresetRelicCount((HellwarWarGodTier)tierValue), Is.EqualTo(expectedCount));
+    }
+
+    [Test]
+    public void 预设遗物件数随档位递增且普通档为零()
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(HellwarSummonPolicy.ResolvePresetRelicCount(HellwarWarGodTier.Common), Is.EqualTo(0),
+                "普通档不发预设遗物（最便宜那档只拿角色初始遗物 + 角色初始卡组）");
+            for (int i = 1; i < HellwarSummonPolicy.SelectableTiers.Length; i++)
+            {
+                Assert.That(
+                    HellwarSummonPolicy.ResolvePresetRelicCount(HellwarSummonPolicy.SelectableTiers[i]),
+                    Is.GreaterThan(HellwarSummonPolicy.ResolvePresetRelicCount(HellwarSummonPolicy.SelectableTiers[i - 1])),
+                    "遗物件数必须随档位递增（否则档位强度阶梯被抹平）");
+            }
+        });
+    }
+
     [Test]
     public void 计数够且未满员才可召唤()
     {

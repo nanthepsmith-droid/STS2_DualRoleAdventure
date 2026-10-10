@@ -397,7 +397,21 @@ public partial class Entry
     //     的原语（`ToMutable()` → `Deck.AddInternal(..., silent: true)`），Owner/登记仍交给 `AttachToRun`。
     //  ④ 锚点：启动自检 `[地狱战神] 预设卡组已就绪: 档位=…, 内容=…`（同时是给玩家的配置模板）+
     //     召唤时 `①a 预设卡组已替换: … 来源=内置默认/配置文件`。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r254)";
+    // r255（2026-10-10，用户「继续」= 第七十八段 ④ 的下一步 ②）**预设遗物（A 方案）**：
+    //  用户拍板："只挑**不依赖开战时机**的遗物"（战神是战斗中途中加进来的，原版 `BeforeCombatStart` /
+    //  `AfterRoomEntered(CombatRoom)` / `TurnNumber<=1` 那批钩子**早就跑完了** ⇒ 补挂只显示不动，坑 AE-5b）。
+    //  ① 内容表 `HellwarWarGodRelics`（typed `ModelDb.Relic<T>()`）：罕见 1 件（`Orichalcum` 回合末无格挡给 6 格挡）/
+    //     稀有 2 件（`MiniatureCannon` **已升级攻击牌 +3**（与我们"预设卡组全升级"强协同）+ `SelfFormingClay`
+    //     受未格挡伤害⇒下回合 +3 格挡）/ 先古 3 件（`PenNib` 每 10 张攻击下一击翻倍 + `Shuriken` 每回合 3 张攻击 +1 力量
+    //     + `TungstenRod` 每次生命损失 −1）；**普通档 0 件**；刻意排除有副作用的（如 `Brimstone` 同时给敌人 +1 力量）。
+    //  ② 件数阶梯 = **成本 − 1**（`HellwarSummonPolicy.ResolvePresetRelicCount` 是单一事实源，启动自检与内容表对账）。
+    //  ③ 发放口径（照抄 `GrantWakuuRelicsAsync`）：**必须 `player.AddRelicInternal`，绝不用 `RelicCmd.Obtain`**
+    //     （后者会写 `MapPointHistoryEntry.GetEntry(NetId)` ⇒ 不进 `runState.Players` 的战神直接抛）；
+    //     时机 = **`AttachToRun` 之后**（`RunState.TotalFloor` 才可读）；"获得时"钩子 `AfterObtained()`
+    //     由生成收尾阶段 `RunAfterObtainedAsync` 补调（`AddRelicInternal` 不替我们调）。
+    //  ④ 预期现象：**战神的遗物不显示在 UI 上**（遗物槽只画 `LocalContext.IsMe` 那一席）—— 效果不看 UI，属正常。
+    //  ⑤ 锚点：启动自检 `[地狱战神] 预设遗物已就绪: 档位=…, N 件: …` + 召唤时 `①c 预设遗物已发放: … 本次=N 件[…]`。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r255)";
 
     private static Harmony? _harmony;
 

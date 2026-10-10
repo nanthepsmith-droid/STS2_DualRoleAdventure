@@ -162,6 +162,11 @@ internal static class HellwarWarGodFactory
             // ①b ★★ 必做（r237 实测漏了它 = NullReferenceException ⇒ 全场卡死）：见 AttachToRun 注释。
             AttachToRun(player, state, tag);
 
+            // ①c ★ 预设遗物（② 预设遗物，r255）：必须在 AttachToRun **之后**（那时 `player.RunState`
+            // 不再是 `NullRunState`、`TotalFloor` 可读）。只发"不依赖开战时机"的遗物（A 方案，见
+            // `HellwarWarGodRelics` 的类注释与 references 坑 AE-5b）；"获得时"钩子在生成收尾阶段补调。
+            IReadOnlyList<RelicModel> presetRelics = HellwarWarGodRelics.GrantTo(player, preset.Tier, tag);
+
             state.AddPlayer(player);
             LocalMultiControlLogger.Info(
                 $"{tag} ② 已加入战斗（数据层）: seat={seatId}, Players={state.Players.Count}, "
@@ -200,7 +205,7 @@ internal static class HellwarWarGodFactory
             //   这里是 gate ①（`PlayersReadyToEndTurn`，`SetReadyToEndTurn`）—— **两道都要认临时席位**。
             MarkReadyToEndTurnIfMidPlayerTurn(state, player, tag);
 
-            TaskHelper.RunSafely(FinishSpawnAsync(state, player.Creature, seatId, tag));
+            TaskHelper.RunSafely(FinishSpawnAsync(state, player.Creature, seatId, tag, presetRelics));
             _warGods.Add(player);
             warGod = player;
             return true;
@@ -623,12 +628,20 @@ internal static class HellwarWarGodFactory
         return ended;
     }
 
-    private static async Task FinishSpawnAsync(CombatState state, Creature creature, ulong seatId, string tag)
+    private static async Task FinishSpawnAsync(
+        CombatState state,
+        Creature creature,
+        ulong seatId,
+        string tag,
+        IReadOnlyList<RelicModel> presetRelics)
     {
         try
         {
             await CombatManager.Instance!.AfterCreatureAdded(creature);
             await Hook.AfterCreatureAddedToCombat(state, creature);
+
+            // r255（② 预设遗物）：补调"获得时"钩子（`AddRelicInternal` 不会替你调，见 HellwarWarGodRelics 注释）。
+            await HellwarWarGodRelics.RunAfterObtainedAsync(presetRelics, tag);
 
             // r253（2026-10-10 用户要求）：召唤当回合给战神一层【无实体】保命。
             await ApplySummonProtectionAsync(creature, tag);

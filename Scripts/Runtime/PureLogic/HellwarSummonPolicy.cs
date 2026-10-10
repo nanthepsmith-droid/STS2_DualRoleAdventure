@@ -125,6 +125,15 @@ internal static class HellwarSummonPolicy
     }
 
     /// <summary>
+    /// 某档**预设遗物的件数**（② 预设遗物的强度阶梯口径）：= 召唤成本 − 1
+    /// ⇒ 普通 **0** / 罕见 **1** / 稀有 **2** / 先古 **3**（与"1/2/3/4"成本阶梯一一对应）。
+    ///
+    /// 单一事实源：**内容表**在游戏侧 <c>HellwarWarGodRelics</c>（`ModelDb.Relic&lt;T&gt;()` 类型引用），
+    /// 启动自检会拿内容表的实际件数与本函数**对账**（不符打 WARN）—— 所以改内容表时不会悄悄破坏阶梯。
+    /// </summary>
+    internal static int ResolvePresetRelicCount(HellwarWarGodTier tier) => ResolveSummonCost(tier) - 1;
+
+    /// <summary>
     /// 宽松归一【分裂精神】扣血档位（10 / 15 / 20）；空值 / 非法一律兜回默认档
     /// （读入口要"兜底"，与设置页写入口的"拒绝"分开 —— 与 <c>WakuuRefinePolicy.NormalizeHpRatio</c> 同款）。
     /// </summary>
