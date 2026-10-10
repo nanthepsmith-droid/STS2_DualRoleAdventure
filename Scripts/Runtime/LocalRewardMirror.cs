@@ -30,17 +30,25 @@ internal static class LocalRewardMirror
     internal static bool IsMirrorFeatureEnabled
         => LocalSelfCoopContext.IsEnabled && LocalSelfCoopContext.UseSingleAdventureMode;
 
-    /// <summary>来源席位是否可以发起共享镜像（第三方席位如 Co-op Bots 的 Bot 不参与）。</summary>
+    /// <summary>
+    /// 来源席位是否可以发起共享镜像（第三方席位如 Co-op Bots 的 Bot 不参与；
+    /// 战灵召唤的**临时席位（战神）同样不参与** —— R12 三个入口之二）。
+    /// </summary>
     internal static bool IsMirrorableSource(Player source)
-        => MirrorSeatPolicy.IsMirrorableSource(source.NetId, LocalSelfCoopContext.LocalPlayerIds);
+        => !CombatRewardMergePolicy.ShouldExcludeFromRewards(
+                LocalSelfCoopContext.IsTemporarySeat(source.NetId))
+            && MirrorSeatPolicy.IsMirrorableSource(source.NetId, LocalSelfCoopContext.LocalPlayerIds);
 
     /// <summary>
-    /// 本该镜像到的目标席位：**来源与目标都必须是本地席位**，且不是自己镜给自己。
+    /// 本该镜像到的目标席位：**来源与目标都必须是本地席位**，且不是自己镜给自己，
+    /// 且**排除临时席位（战神）**（R12 三个入口之二：不给战神镜像、战神也不当镜像来源）。
     /// 每个补丁原本都写了一遍同样的 LINQ，这里收成一处。
     /// </summary>
     internal static IEnumerable<Player> SelectTargets(Player source)
         => source.RunState.Players.Where((candidate) =>
-            MirrorSeatPolicy.ShouldMirrorTo(source.NetId, candidate.NetId, LocalSelfCoopContext.LocalPlayerIds));
+            !CombatRewardMergePolicy.ShouldExcludeFromRewards(
+                LocalSelfCoopContext.IsTemporarySeat(candidate.NetId))
+            && MirrorSeatPolicy.ShouldMirrorTo(source.NetId, candidate.NetId, LocalSelfCoopContext.LocalPlayerIds));
 
     /// <summary>
     /// 战斗**结束后**的奖励上下文：在战斗房间里、且战斗已结束。

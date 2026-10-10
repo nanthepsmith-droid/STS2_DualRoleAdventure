@@ -34,32 +34,92 @@ public class CombatRewardMergePolicyTests
     [Test]
     public void 本地席位存活_进合并集()
     {
-        Assert.That(CombatRewardMergePolicy.ShouldIncludeInMergedSet(isDead: false, isLocalSessionSeat: true), Is.True);
+        Assert.That(
+            CombatRewardMergePolicy.ShouldIncludeInMergedSet(
+                isDead: false, isLocalSessionSeat: true, isTemporarySeat: false),
+            Is.True);
     }
 
     [Test]
     public void 本地席位已阵亡_不进合并集()
     {
-        Assert.That(CombatRewardMergePolicy.ShouldIncludeInMergedSet(isDead: true, isLocalSessionSeat: true), Is.False);
+        Assert.That(
+            CombatRewardMergePolicy.ShouldIncludeInMergedSet(
+                isDead: true, isLocalSessionSeat: true, isTemporarySeat: false),
+            Is.False);
     }
 
     [Test]
     public void 第三方席位_不进合并集_交回原版()
     {
-        Assert.That(CombatRewardMergePolicy.ShouldIncludeInMergedSet(isDead: false, isLocalSessionSeat: false), Is.False);
-        Assert.That(CombatRewardMergePolicy.ShouldOfferBackToVanilla(isDead: false, isLocalSessionSeat: false), Is.True);
+        Assert.That(
+            CombatRewardMergePolicy.ShouldIncludeInMergedSet(
+                isDead: false, isLocalSessionSeat: false, isTemporarySeat: false),
+            Is.False);
+        Assert.That(
+            CombatRewardMergePolicy.ShouldOfferBackToVanilla(
+                isDead: false, isLocalSessionSeat: false, isTemporarySeat: false),
+            Is.True);
     }
 
     [Test]
     public void 本地席位_不交回原版()
     {
-        Assert.That(CombatRewardMergePolicy.ShouldOfferBackToVanilla(isDead: false, isLocalSessionSeat: true), Is.False);
+        Assert.That(
+            CombatRewardMergePolicy.ShouldOfferBackToVanilla(
+                isDead: false, isLocalSessionSeat: true, isTemporarySeat: false),
+            Is.False);
     }
 
     [Test]
     public void 第三方席位已阵亡_不交回原版()
     {
-        Assert.That(CombatRewardMergePolicy.ShouldOfferBackToVanilla(isDead: true, isLocalSessionSeat: false), Is.False);
+        Assert.That(
+            CombatRewardMergePolicy.ShouldOfferBackToVanilla(
+                isDead: true, isLocalSessionSeat: false, isTemporarySeat: false),
+            Is.False);
+    }
+
+    // ---- 战灵召唤 R12：临时席位（战神）永远不参与战斗奖励 ----
+    // 三种"看起来像"的组合都必须是 false：临时席位的 IsLocalSeat 为 false（它不在本地席位表里）
+    // ⇒ 不显式排除的话它会走进「交回原版流程」分支，在真人奖励界面上变成「[未知角色]」的奖励。
+
+    [Test]
+    public void 临时席位_永不进合并集()
+    {
+        Assert.That(
+            CombatRewardMergePolicy.ShouldIncludeInMergedSet(
+                isDead: false, isLocalSessionSeat: true, isTemporarySeat: true),
+            Is.False);
+        Assert.That(
+            CombatRewardMergePolicy.ShouldIncludeInMergedSet(
+                isDead: false, isLocalSessionSeat: false, isTemporarySeat: true),
+            Is.False);
+    }
+
+    [Test]
+    public void 临时席位_永不交回原版流程()
+    {
+        // ⚠ 这条是 R12 的核心：默认（isLocalSessionSeat=false）它**本来会**被交回原版。
+        Assert.That(
+            CombatRewardMergePolicy.ShouldOfferBackToVanilla(
+                isDead: false, isLocalSessionSeat: false, isTemporarySeat: false),
+            Is.True);
+        Assert.That(
+            CombatRewardMergePolicy.ShouldOfferBackToVanilla(
+                isDead: false, isLocalSessionSeat: false, isTemporarySeat: true),
+            Is.False);
+        Assert.That(
+            CombatRewardMergePolicy.ShouldOfferBackToVanilla(
+                isDead: false, isLocalSessionSeat: true, isTemporarySeat: true),
+            Is.False);
+    }
+
+    [Test]
+    public void 奖励排除闸门_只认临时席位_不动真人()
+    {
+        Assert.That(CombatRewardMergePolicy.ShouldExcludeFromRewards(isTemporarySeat: false), Is.False);
+        Assert.That(CombatRewardMergePolicy.ShouldExcludeFromRewards(isTemporarySeat: true), Is.True);
     }
 
     [Test]

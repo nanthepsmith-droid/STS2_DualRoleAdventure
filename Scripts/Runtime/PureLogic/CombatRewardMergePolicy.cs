@@ -22,19 +22,40 @@ internal static class CombatRewardMergePolicy
     }
 
     /// <summary>
-    /// 该席位是否进我们的**合并展示集**：活着 + 是本地会话席位。
+    /// 🔴 **临时席位（战灵召唤召唤出来的战神）永远不参与战斗奖励** —— 战灵召唤 R12
+    /// （设计文档 §4 R12 / §5.8「奖励排除的三个入口」）。
+    ///
+    /// 判据 = 临时席位 id 段（<c>HellwarPocPolicy.IsTemporarySeat</c>，`0x1000..0x1FFF`）。
+    /// 这条判据喂给下面**每一个**奖励席位判定 + 奖励镜像。
+    ///
+    /// ⚠ **为什么必须显式排除，而不是"靠它不在 `runState.Players` 里"**：
+    /// <list type="number">
+    /// <item>`IsLocalSeat(4096) == false`（它不在本地席位表里）⇒ 一旦它出现在奖励候选集里，
+    ///   会被当成**第三方席位**走进"交回原版流程"那条分支 ⇒ 真人奖励界面上出现「[未知角色]」的奖励
+    ///   （`LocalRewardMirror` 家族 2026-09-25 的实机现象，见 <c>ShouldOfferBackToVanilla</c>）。</item>
+    /// <item>"不在 `runState.Players`" 是**上游清理**（`CleanupBeforeRewards` 把战神摘出战斗）的副作用，
+    ///   不是这条流程自己的保证；清理一旦失败 / 顺序变化 / 将来有人把战神登记进 run 玩家表，
+    ///   这里就会**静默**漏掉 —— 所以做成显式闸门 + 可单测。</item>
+    /// </list>
+    /// 今天的实际行为（**别误以为这里在改行为**）：三条路本来就被上游清理 + "不在 `runState.Players`" 关死，
+    /// 本判据是**兜底与自证**；真正会响的是配套的异常锚点（`战后奖励里仍有临时席位`）。
+    /// </summary>
+    public static bool ShouldExcludeFromRewards(bool isTemporarySeat) => isTemporarySeat;
+
+    /// <summary>
+    /// 该席位是否进我们的**合并展示集**：活着 + 是本地会话席位 + **不是临时席位（战神）**。
     /// 第三方席位（Co-op Bots 的 Bot）不进 —— 交回原版流程由它自己接管
     /// （2026-09-25 实机：并进来会出现「[未知角色]」的奖励且 CB 侧零日志）。
     /// </summary>
-    public static bool ShouldIncludeInMergedSet(bool isDead, bool isLocalSessionSeat)
+    public static bool ShouldIncludeInMergedSet(bool isDead, bool isLocalSessionSeat, bool isTemporarySeat)
     {
-        return !isDead && isLocalSessionSeat;
+        return !ShouldExcludeFromRewards(isTemporarySeat) && !isDead && isLocalSessionSeat;
     }
 
-    /// <summary>该席位是否把奖励**交回原版流程**：活着 + 非本地会话席位。</summary>
-    public static bool ShouldOfferBackToVanilla(bool isDead, bool isLocalSessionSeat)
+    /// <summary>该席位是否把奖励**交回原版流程**：活着 + 非本地会话席位 + **不是临时席位（战神）**。</summary>
+    public static bool ShouldOfferBackToVanilla(bool isDead, bool isLocalSessionSeat, bool isTemporarySeat)
     {
-        return !isDead && !isLocalSessionSeat;
+        return !ShouldExcludeFromRewards(isTemporarySeat) && !isDead && !isLocalSessionSeat;
     }
 
     /// <summary>

@@ -19,7 +19,9 @@ namespace LocalMultiControl.Scripts.Runtime;
 /// 登记两类东西：
 /// <list type="number">
 /// <item><b>集火目标</b>（【你攻】）：本回合所有瓦库席位出牌时优先打它 —— 大脑在
-///   <c>HeuristicWakuuBrain</c> / <c>ScoredWakuuBrain</c> 里问 <see cref="TryGetFocus"/>；</item>
+///   <c>HeuristicWakuuBrain</c> / <c>ScoredWakuuBrain</c> 里问 <see cref="TryGetFocus"/>；
+///   **战灵召唤的临时席位（战神）也在"所有瓦库"里**（它走同一个大脑）⇒ 【你攻】对它自动生效，
+///   由 <see cref="LogFocusConsumedByTemporarySeat"/> 打锚点自证（R13）；</item>
 /// <item><b>合体链接</b>（【合体】）：<c>施牌者 → 瓦库</c>，本回合该施牌者抽/弃牌走双方牌堆 ——
 ///   由 <see cref="Patch.WakuuDaddyMergePilePatch"/> 问 <see cref="TryGetMergedWakuu"/>。</item>
 /// </list>
@@ -39,6 +41,13 @@ internal static class WakuuDaddyCombatState
     private static readonly List<MergeLink> Merges = new();
 
     private static Creature? _focusTarget;
+
+    /// <summary>
+    /// 本回合「已经为哪个**临时席位（战神）**打过『你攻生效』这条日志」。
+    /// R13（战灵召唤 Phase 5）：【你攻】必须对战神同样生效（战神在瓦库名单里 ⇒ 用同一个大脑），
+    /// 而这条锚点就是"真的生效了"的**可验证证据**（大脑每张牌都可能问一次集火 ⇒ 每回合每个席位只打一行）。
+    /// </summary>
+    private static readonly HashSet<ulong> FocusConsumedLog = new();
 
     /// <summary>一条【合体】链接：谁把哪个瓦库合体了（只记 NetId ⇒ 跨会话残留也只会"查不到人"而不会错指）。</summary>
     private readonly struct MergeLink
@@ -64,8 +73,11 @@ internal static class WakuuDaddyCombatState
     /// <summary>
     /// 取本回合的集火目标（给瓦库大脑用）：目标必须**仍然可打**（在候选集里且没死），
     /// 否则返回 null（大脑回落到它自己的目标选择）。
+    ///
+    /// <paramref name="consumer"/> = 正在解析目标的那位瓦库（调用方传）。
+    /// 它是**临时席位（战神）**时打一条 `你攻生效` 锚点（每回合每人一次）—— R13 的验收证据。
     /// </summary>
-    internal static Creature? TryGetFocus(IEnumerable<Creature> candidates)
+    internal static Creature? TryGetFocus(IEnumerable<Creature> candidates, Player? consumer = null)
     {
         Creature? target = _focusTarget;
         if (target == null || target.IsDead)
@@ -77,11 +89,32 @@ internal static class WakuuDaddyCombatState
         {
             if (ReferenceEquals(candidate, target))
             {
+                LogFocusConsumedByTemporarySeat(consumer, target);
                 return target;
             }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// R13 锚点：**临时席位（战神）**真的按【你攻】打出了集火目标。
+    /// 只对临时席位打、每回合每个席位最多一行（大脑每张牌都会问一次集火，不加限制会刷屏）。
+    /// </summary>
+    private static void LogFocusConsumedByTemporarySeat(Player? consumer, Creature target)
+    {
+        if (consumer == null || !LocalSelfCoopContext.IsTemporarySeat(consumer.NetId))
+        {
+            return;
+        }
+
+        if (!FocusConsumedLog.Add(consumer.NetId))
+        {
+            return;
+        }
+
+        LocalMultiControlLogger.Info(
+            $"[瓦库的爹] 你攻生效: player={consumer.NetId}(战神) 本回合按集火打 target={Describe(target)}");
     }
 
     /// <summary>登记一条合体链接（同一施牌者重复使用 ⇒ 覆盖上一条）。</summary>
@@ -283,6 +316,7 @@ internal static class WakuuDaddyCombatState
     {
         _focusTarget = null;
         Merges.Clear();
+        FocusConsumedLog.Clear();
         LocalMultiControlLogger.Info($"[瓦库的爹] 本回合登记已复位: {source}");
     }
 
@@ -297,6 +331,7 @@ internal static class WakuuDaddyCombatState
 
         _focusTarget = null;
         Merges.Clear();
+        FocusConsumedLog.Clear();
     }
 
     private static string Describe(Creature creature)

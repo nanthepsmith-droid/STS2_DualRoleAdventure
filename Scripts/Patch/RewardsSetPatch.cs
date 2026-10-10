@@ -26,6 +26,20 @@ internal static class RewardsSetPatch
             return true;
         }
 
+        // 战灵召唤 R12（Phase 5）：**临时席位（战神）永远没有战斗奖励** —— 它要是走到这里
+        // （说明上游漏了：战神本该在发奖前被 CleanupBeforeRewards 摘出战斗、且它从不进 runState.Players），
+        // 就直接把这一份吞掉 + WARN，绝不并进真人的合并展示集、也不放行给原版（放行会变成
+        // 真人界面上一条「[未知角色]」的奖励 —— 同下面第三方席位那条的理由）。
+        if (CombatRewardMergePolicy.ShouldExcludeFromRewards(
+                LocalSelfCoopContext.IsTemporarySeat(__instance.Player.NetId)))
+        {
+            LocalMultiControlLogger.Warn(
+                $"[地狱战神] R12 拦截到临时席位（战神）的奖励集并丢弃（正常不该出现，请查上游清理）: "
+                + $"player={__instance.Player.NetId}");
+            __result = Task.CompletedTask;
+            return false;
+        }
+
         // 第三方席位（Co-op Bots 合成 Bot）的奖励集一律**放行给原版流程**：CB 自己 patch 了
         // `RewardsSet.Offer`（只认 `BotRegistry.IsBot`）会整批接管并自动领取；被我们拦下来合并或弹屏，
         // 就会变成真人界面上一条「[未知角色]」的奖励（2026-09-25 实机）。

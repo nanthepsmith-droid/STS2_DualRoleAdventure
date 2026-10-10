@@ -74,7 +74,8 @@ internal sealed class HeuristicWakuuBrain : IWakuuCombatBrain
     {
         return card.TargetType switch
         {
-            TargetType.AnyEnemy => WakuuDaddyCombatState.TryGetFocus(combatState.HittableEnemies)
+            // consumer=owner：临时席位（战神）命中集火时由登记处打一条 R13 自证锚点（见 TryGetFocus）。
+            TargetType.AnyEnemy => WakuuDaddyCombatState.TryGetFocus(combatState.HittableEnemies, owner)
                 ?? combatState.HittableEnemies.FirstOrDefault(),
             TargetType.AnyAlly => owner.RunState.Rng.CombatTargets.NextItem(
                 combatState.Allies.Where((creature) => creature != null && creature.IsAlive && creature.IsPlayer && creature != owner.Creature)),

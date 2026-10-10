@@ -59,8 +59,12 @@ internal sealed class LocalWakuuDaddyMergeCard : CardModel
             }
             else
             {
+                // ⚠ 战灵召唤的战神**不在** `IsWakuuEnabled` 名单里（它只是"托管席位"，不是玩家指定的瓦库）
+                // ⇒ 点在战神身上会走到这里、**效果不发动**（只抽 1 张）。R13 只覆盖【我挡】/【你攻】，
+                // 合体要不要也覆盖战神 = 待拍板（见设计文档 §8 Phase 5 / TODO）。
                 LocalMultiControlLogger.Info(
-                    $"[瓦库的爹] 合体目标不是瓦库托管席位，效果未发动（只抽 1 张）: target={wakuu.NetId}, isWakuuSeat={isWakuuSeat}");
+                    $"[瓦库的爹] 合体目标不是瓦库托管席位，效果未发动（只抽 1 张）: target={wakuu.NetId}, "
+                    + $"isWakuuSeat={isWakuuSeat}, 是临时席位(战神)={LocalSelfCoopContext.IsTemporarySeat(wakuu.NetId)}");
             }
         }
 

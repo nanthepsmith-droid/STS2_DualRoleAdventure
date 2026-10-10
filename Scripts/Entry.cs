@@ -447,7 +447,31 @@ public partial class Entry
     //     `target != Owner` 直接放行（退回原版 Osty 行为，无害）。见 design doc §4 R10 的 ⚠ 与 §8 记录。
     //  ⑤ **补锚点**：`LogWarGodDeaths`（每帧 tick）打 `战神已死亡（尸体留场…）` —— r256 判读时"被敌人打死"
     //     原本没有任何锚点（只能从 `已复活战神（R9）` 反推）；复活成功复位标记 ⇒"死→复活→再死"各打一条。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r257)";
+    //  ✅ r257 实机判读（2026-10-10，用户「测了一下；看看日志」）—— **R10 生效**（一组"自然 A/B"）：
+    //   受击分布（第三方 `[Oddmelt] [RichtenDmg] target=`）：绑主 326 = **0 次** / 另一位真人 327
+    //   （**没挂守卫**，天然对照组）= **19 次** / 三个战神合计 = **53 次** ⇒ 玩家零伤害、战神吃伤害，口径成立。
+    //   守卫挂载 ×3（3 场战斗各一次 ⇒ 幂等正确）；战神托管链正常（出牌 62 / 收口 15）；异常族全 0。
+    //   新锚点 `战神已死亡` ×3（都死在最后一场、主人 `可用=0` ⇒ 复活选项"买不起不出现"，不是 bug）。
+    //   ⚠ 同场**首现 3 条表现层 ERROR**（2× 原版 VFX `PlaySequence` 空引用 + 1× 节点池 `back to pool`，
+    //   历史 12 份归档各 0 次）：归属待定性 ⇒ `TODO.md §待查-6`（关掉 R10 打同样一场来分流）。
+    // r258（2026-10-10，Phase 5 收尾）**R12 战神无战斗奖励 + R13 我挡/你攻覆盖战神**：
+    //  ① **R12**：把"战神不参与战斗奖励"从"靠它不在 `runState.Players` 里"（= 上游清理的副作用）改成
+    //     **显式闸门**：纯策略 `CombatRewardMergePolicy.ShouldExcludeFromRewards(isTemporarySeat)` 喂给
+    //     三个入口 —— `ShouldIncludeInMergedSet` / `ShouldOfferBackToVanilla`（`CombatRoomOfferRoomEndRewardsPatch`）
+    //     + `LocalRewardMirror.IsMirrorableSource` / `SelectTargets`；另给两条**兜底路径**加同款闸门
+    //     （`RewardsSetPatch` / `RewardsCmdPatch` 的 Prefix：临时席位的奖励集/奖励请求**直接丢弃** + WARN）。
+    //     ⚠ 为什么必须显式：`IsLocalSeat(4096)==false` ⇒ 它一旦进候选集就会被当成**第三方席位**走
+    //     "交回原版"分支 ⇒ 真人界面上出现「[未知角色]」的奖励（2026-09-25 那次实机的同款现象）。
+    //     正常情况三条路本来就关死 ⇒ 真会响的是配套异常锚点（`R12 战后奖励遇到临时席位并已排除`）。
+    //  ② **R13**【你攻】：战神在瓦库名单里（H2）⇒ 用同一个大脑 ⇒ 集火天然覆盖它；本轮补**自证锚点**
+    //     （`WakuuDaddyCombatState.TryGetFocus` 新增 consumer 参数，临时席位消费集火时打
+    //     `你攻生效: player=409x(战神)`，每回合每人一条，避免刷屏）。
+    //  ③ **R13**【我挡】：`TargetType.AnyAlly` 的池子 = `CombatState.PlayerCreatures`（含临时席位）
+    //     ⇒ 战神天然可选、无需改判定；日志打出席位种类（`(战神)`）+ 链式重定向边界说明。
+    //  ④ ⚠ **边界登记（待用户拍板）**：**【合体】不覆盖战神** —— 战神不在 `IsWakuuEnabled` 名单里
+    //     （它只是托管席位）⇒ 点在战神身上**效果不发动**（只抽 1 张）；本轮只把这条日志写清楚，
+    //     要不要让合体也吃战神 = 用户口径（设计文档 §8 Phase 5 / TODO.md）。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r258)";
 
     private static Harmony? _harmony;
 

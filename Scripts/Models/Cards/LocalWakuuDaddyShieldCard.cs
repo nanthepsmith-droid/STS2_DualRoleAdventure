@@ -49,8 +49,18 @@ internal sealed class LocalWakuuDaddyShieldCard : CardModel
         {
             await PowerCmd.Apply<LocalWakuuDaddyShieldPower>(
                 choiceContext, target, 1m, Owner.Creature, this);
+
+            // R13（战灵召唤 Phase 5）：这张牌的**目标没有席位限制**（`TargetType.AnyAlly` 的池子 =
+            // `CombatState.PlayerCreatures`，战神在里面）⇒ 战神天然可选。日志把席位种类打出来，
+            // 让实机复测能一眼确认"挡的是战神"。
+            // ⚠ 边界（有意为之、非 bug）：若目标正是本人的战神，而本人身上又挂着 R10 的【战灵守卫】，
+            //   两条重定向（本状态 → 打牌者 / 守卫 → 战神）在 `Hook.ModifyUnblockedDamageTarget` 里是
+            //   **链式**结算、谁先跑取决于监听器顺序 ⇒ 最终落在谁身上按原版顺序定，不会死循环。
+            bool targetIsWarGod = target.Player != null && LocalSelfCoopContext.IsTemporarySeat(target.Player.NetId);
             LocalMultiControlLogger.Info(
-                $"[瓦库的爹] 我挡：{target.Player?.NetId.ToString() ?? "?"} 本回合受击伤害转由 {Owner.NetId} 承受（一半）");
+                $"[瓦库的爹] 我挡：{target.Player?.NetId.ToString() ?? "?"}{(targetIsWarGod ? "(战神)" : string.Empty)} "
+                + $"本回合受击伤害转由 {Owner.NetId} 承受（一半）"
+                + (targetIsWarGod ? "；⚠ 它与 R10【战灵守卫】同源，若该战神的主人也有守卫则按原版监听器顺序结算一条" : string.Empty));
         }
 
         await CardPileCmd.Draw(choiceContext, 1m, Owner);

@@ -44,6 +44,11 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
         // 战灵召唤 Phase 2：同样的时机 —— 摘掉正式召唤出来的战神 + 把"本场已花"的计数自动补满（R3）。
         HellwarSummonCombatRuntime.CleanupBeforeRewards(__instance.CombatState);
 
+        // 战灵召唤 R12（Phase 5）异常锚点：清理之后**不该**还有临时席位留在战斗里。
+        // 这里只观测 + 报警（真正的排除闸门在纯策略 CombatRewardMergePolicy.ShouldExcludeFromRewards，
+        // 三个入口都过它）—— 正常情况这条永远不响；响了说明上游清理失败，需要查 CleanupBeforeRewards。
+        WarnIfTemporarySeatSurvivesRewards(__instance);
+
         if (!LocalSelfCoopContext.IsEnabled
             || !LocalSelfCoopContext.UseSingleAdventureMode
             || __instance.CombatState?.RunState == null
@@ -114,8 +119,12 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
         {
             if (!CombatRewardMergePolicy.ShouldOfferBackToVanilla(
                     player.Creature?.IsDead == true,
-                    LocalSeatSource.IsLocalSeat(player.NetId)))
+                    LocalSeatSource.IsLocalSeat(player.NetId),
+                    LocalSelfCoopContext.IsTemporarySeat(player.NetId)))
             {
+                // R12：临时席位（战神）必须在这里被挡住 —— 它会走到上面那条"第三方席位"分支，
+                // 把奖励交给原版 ⇒ 真人奖励界面上出现「[未知角色]」的奖励。
+                LogRewardExclusionIfTemporarySeat("third-party-vanilla", player);
                 continue;
             }
 
@@ -154,8 +163,11 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
             // 第三方席位在上面已经单独交回原版流程（这里再兜一道，防止将来有人只改一处）。
             if (!CombatRewardMergePolicy.ShouldIncludeInMergedSet(
                     player.Creature?.IsDead == true,
-                    LocalSeatSource.IsLocalSeat(player.NetId)))
+                    LocalSeatSource.IsLocalSeat(player.NetId),
+                    LocalSelfCoopContext.IsTemporarySeat(player.NetId)))
             {
+                // R12：同上，临时席位（战神）不参与合并集（§5.8 三个入口的第一个）。
+                LogRewardExclusionIfTemporarySeat("merged-set", player);
                 continue;
             }
 
@@ -282,6 +294,43 @@ internal static class CombatRoomOfferRoomEndRewardsPatch
         }).CallDeferred();
         await rewardScreen.ToSignal(rewardScreen, NRewardsScreen.SignalName.Completed);
         CombatRewardMergeContext.CompleteDisplaySet(displaySet, "merged-rewards-offer-room-end");
+    }
+
+    /// <summary>
+    /// 战灵召唤 R12 异常锚点：清理之后**不该**还有临时席位（战神）留在战斗里。
+    /// 正常情况永远静默；响了 ⇒ 上游 <c>CleanupBeforeRewards</c> 没摘干净（查那里，不是查这里）。
+    /// </summary>
+    private static void WarnIfTemporarySeatSurvivesRewards(CombatRoom combatRoom)
+    {
+        List<Player>? players = combatRoom.CombatState?.Players?.ToList();
+        if (players == null)
+        {
+            return;
+        }
+
+        foreach (Player player in players)
+        {
+            LogRewardExclusionIfTemporarySeat("combat-still-has-temporary-seat", player);
+        }
+    }
+
+    /// <summary>
+    /// 日志：某个**临时席位（战神）**在 <paramref name="entry"/> 这个奖励入口被排除（战灵召唤 R12）。
+    ///
+    /// 只在真的遇到临时席位时打印 —— 正常情况下三个入口一个都不会命中（战神早被
+    /// <c>HellwarSummonCombatRuntime.CleanupBeforeRewards</c> 摘出战斗，且从不进 `runState.Players`）
+    /// ⇒ 这条 WARN 出现 = 上游漏了，按设计文档 §5.8「奖励排除的三个入口」逐条查。
+    /// </summary>
+    private static void LogRewardExclusionIfTemporarySeat(string entry, Player player)
+    {
+        if (!LocalSelfCoopContext.IsTemporarySeat(player.NetId))
+        {
+            return;
+        }
+
+        LocalMultiControlLogger.Warn(
+            $"[地狱战神] R12 战后奖励遇到临时席位并已排除（正常不该出现，请查上游清理）: "
+            + $"入口={entry}, player={player.NetId}");
     }
 
     /// <summary>

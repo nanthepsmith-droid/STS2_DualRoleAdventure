@@ -31,6 +31,17 @@ internal static class RewardsCmdPatch
             return true;
         }
 
+        // 战灵召唤 R12（Phase 5）：临时席位（战神）的奖励请求**直接丢弃**（见 RewardsSetPatch 同款闸门）。
+        if (CombatRewardMergePolicy.ShouldExcludeFromRewards(
+                LocalSelfCoopContext.IsTemporarySeat(player.NetId)))
+        {
+            LocalMultiControlLogger.Warn(
+                $"[地狱战神] R12 拦截到临时席位（战神）的战后奖励请求并丢弃（正常不该出现，请查上游清理）: "
+                + $"player={player.NetId}, room={room.RoomType}");
+            __result = Task.CompletedTask;
+            return false;
+        }
+
         // 第三方席位（Co-op Bots 合成 Bot）的奖励走原版流程，由 CB 自己接管（同 RewardsSetPatch 的理由）。
         if (!LocalSeatSource.IsLocalSeat(player.NetId))
         {
