@@ -266,6 +266,18 @@ internal static class LocalModText
             $"Summon a 【{tierName}】 war god (costs {cost})");
     }
 
+    /// <summary>
+    /// R9（Phase 4）**复活**选项文案（例：复活【罕见】战神（消耗 2 计数））。
+    /// <paramref name="seatId"/> 非 0 时附上席位号 —— **同一席位有多个战神死亡**时才需要（否则点错人）。
+    /// </summary>
+    public static string HellwarReviveOptionLabel(string tierName, int cost, ulong seatId = 0UL)
+    {
+        string suffix = seatId == 0UL ? string.Empty : Select($"［席位 {seatId}］", $" [seat {seatId}]");
+        return Select(
+            $"复活【{tierName}】战神{suffix}（消耗 {cost} 计数）",
+            $"Revive a 【{tierName}】 war god{suffix} (costs {cost})");
+    }
+
     // ---- 战灵召唤 · Phase 2b：两个"大招"（R16【无尽战神】/ R17【终极九连环】）----
 
     /// <summary>

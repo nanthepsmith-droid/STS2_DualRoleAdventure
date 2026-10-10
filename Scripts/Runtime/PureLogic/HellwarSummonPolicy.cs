@@ -125,6 +125,15 @@ internal static class HellwarSummonPolicy
     }
 
     /// <summary>
+    /// **R9 复活一个战神的花费**（Phase 4）= **该战神原档位的召唤成本**（本场预算，非永久）。
+    ///
+    /// 口径依据：复活**保留**它原有的卡组 / 预设遗物 / 召唤保命层 ⇒ 相对"再召一个同档新的"
+    /// （成本相同、也是满血 + 预设内容）不该更贵；但也不该更便宜（否则玩家会故意让战神送死来"刷新"）。
+    /// 抽成纯函数便于单测与日后调参（要改只改这里）。
+    /// </summary>
+    internal static int ResolveReviveCost(HellwarWarGodTier tier) => ResolveSummonCost(tier);
+
+    /// <summary>
     /// 某档**预设遗物的件数**（② 预设遗物的强度阶梯口径）：= 召唤成本 − 1
     /// ⇒ 普通 **0** / 罕见 **1** / 稀有 **2** / 先古 **3**（与"1/2/3/4"成本阶梯一一对应）。
     ///

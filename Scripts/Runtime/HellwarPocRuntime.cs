@@ -184,9 +184,9 @@ internal static class HellwarPocRuntime
                 return;
             }
 
-            // POC 沿用 D7「普通档」预设（不升级卡组、不加血）。
+            // POC 沿用 D7「普通档」预设（不升级卡组、不加血）；**绑主传 null** = POC 哑战神不参与 R8/R9。
             if (!HellwarWarGodFactory.TrySpawn(
-                    state, character, HellwarWarGodPresets.Common, LogTag, out _))
+                    state, character, HellwarWarGodPresets.Common, LogTag, summoner: null, out _))
             {
                 return;
             }

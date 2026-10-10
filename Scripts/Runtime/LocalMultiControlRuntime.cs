@@ -408,7 +408,17 @@ internal static class LocalMultiControlRuntime
         }
 
         CombatState? combatState = TryGetCombatState(combatUi);
-        if (combatState == null || combatState.CurrentSide != CombatSide.Player)
+        if (combatState == null)
+        {
+            return;
+        }
+
+        // Phase 4（R8）：绑主一死就收掉它的战神 —— **刻意放在"当前是玩家侧 / 队列在出牌相位"这两道门之前**：
+        // 主人可能死在**敌方回合**，那时也得收（否则死掉那位玩家的战神会变成给队友白嫖的肉盾）。
+        // 内部只做"绑主已死且战神还活着"的收口，条数少、每帧一次开销可忽略。
+        HellwarWarGodFactory.EnforceSummonerBond(combatState, "war-god-bond-tick");
+
+        if (combatState.CurrentSide != CombatSide.Player)
         {
             return;
         }

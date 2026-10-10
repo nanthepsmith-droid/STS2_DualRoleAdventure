@@ -74,6 +74,27 @@ public class HellwarSummonPolicyTests
         });
     }
 
+    // R9（Phase 4）：复活花费 = 该战神**原档位**的召唤成本（本场预算）。
+    [Test]
+    public void 复活花费等于该档位的召唤成本()
+    {
+        Assert.Multiple(() =>
+        {
+            foreach (HellwarWarGodTier tier in HellwarSummonPolicy.SelectableTiers)
+            {
+                Assert.That(
+                    HellwarSummonPolicy.ResolveReviveCost(tier),
+                    Is.EqualTo(HellwarSummonPolicy.ResolveSummonCost(tier)),
+                    $"档位 {tier} 的复活花费应等于它的召唤成本（复活不该比重新召一个更贵/更便宜）");
+            }
+
+            Assert.That(
+                HellwarSummonPolicy.ResolveReviveCost((HellwarWarGodTier)99),
+                Is.EqualTo(HellwarSummonPolicy.ResolveSummonCost(HellwarWarGodTier.Common)),
+                "非法档位兜普通档");
+        });
+    }
+
     [Test]
     public void 计数够且未满员才可召唤()
     {

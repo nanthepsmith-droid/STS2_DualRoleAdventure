@@ -50,11 +50,42 @@ namespace LocalMultiControl.Scripts.Runtime;
 /// </summary>
 internal static class HellwarWarGodFactory
 {
+    /// <summary>
+    /// 一个**在册战神**的登记项（Phase 4 起 `_warGods` 存它而不是裸 `Player`）：
+    /// 除了 Player 本身，还要记住**绑主**（R8：绑主死 ⇒ 战神立刻死）与**档位**
+    /// （R9：复活按档位成本计费），这两个信息事后无法从 `Player` 反推。
+    /// </summary>
+    private sealed class Registration
+    {
+        internal Registration(Player player, ulong summonerNetId, HellwarWarGodTier tier)
+        {
+            Player = player;
+            SummonerNetId = summonerNetId;
+            Tier = tier;
+        }
+
+        /// <summary>战神本体。</summary>
+        internal Player Player { get; }
+
+        /// <summary>绑主（召唤者）的 NetId。POC 哑战神为 0 = 无绑主（不参与 R8）。</summary>
+        internal ulong SummonerNetId { get; }
+
+        /// <summary>召唤时的档位（R9 复活按它计费）。</summary>
+        internal HellwarWarGodTier Tier { get; }
+
+        /// <summary>R8 已处理过"绑主死亡"（防每帧重复击杀 —— `CreatureCmd.Kill` 是异步的）。</summary>
+        internal bool SummonerBondHandled { get; set; }
+
+        /// <summary>R9 已复活过（日志用；不阻止多次复活）。</summary>
+        internal int ReviveCount { get; set; }
+    }
+
     /// <summary>已生成的战神（清理 / 退 run 卡牌表 / 席位号段分配的唯一持有者；不跨局残留）。</summary>
-    private static readonly List<Player> _warGods = new();
+    private static readonly List<Registration> _warGods = new();
 
     /// <summary>当前在册的战神（供诊断 / 日志）。</summary>
-    internal static IReadOnlyList<Player> SpawnedWarGods => _warGods;
+    internal static IReadOnlyList<Player> SpawnedWarGods
+        => _warGods.Select((registration) => registration.Player).ToList();
 
     /// <summary>
     /// 按 NetId 取**在册战神**。
@@ -64,12 +95,16 @@ internal static class HellwarWarGodFactory
     /// <see cref="Patch.LocalContextTemporarySeatGetMePatch"/>）。
     /// </summary>
     internal static Player? FindSpawnedWarGod(ulong netId)
+        => FindRegistration(netId)?.Player;
+
+    /// <summary>按 NetId 取在册战神的**登记项**（Phase 4：R8/R9 要读绑主与档位）。</summary>
+    private static Registration? FindRegistration(ulong netId)
     {
-        foreach (Player warGod in _warGods)
+        foreach (Registration registration in _warGods)
         {
-            if (warGod.NetId == netId)
+            if (registration.Player.NetId == netId)
             {
-                return warGod;
+                return registration;
             }
         }
 
@@ -93,6 +128,201 @@ internal static class HellwarWarGodFactory
     /// <summary>战斗内临时席位玩家数。</summary>
     internal static int CountWarGods(CombatState? state) => CollectWarGods(state).Count;
 
+    /// <summary>R9：某战神登记项对应的档位（复活计费用；查不到兜普通档）。</summary>
+    internal static HellwarWarGodTier TierOf(Player warGod)
+        => FindRegistration(warGod.NetId)?.Tier ?? HellwarWarGodTier.Common;
+
+    /// <summary>
+    /// R9：某绑主名下**已死但尸体还留在战斗里**的战神（回合开始的召唤选择给它们"复活"选项）。
+    /// 返回的是登记表里的 Player（按绑主过滤 + 仍在 `state.Players` 里 + `IsAlive == false`）。
+    /// </summary>
+    internal static List<Player> CollectDeadWarGods(CombatState? state, ulong summonerNetId)
+    {
+        List<Player> dead = new();
+        if (state == null || summonerNetId == 0UL)
+        {
+            return dead;
+        }
+
+        foreach (Registration registration in _warGods)
+        {
+            if (registration.SummonerNetId != summonerNetId)
+            {
+                continue;
+            }
+
+            if (!state.Players.Contains(registration.Player))
+            {
+                continue;   // 已经不在本场战斗里（清理过）⇒ 不是"留着尸体等复活"
+            }
+
+            Creature? creature = registration.Player.Creature;
+            if (creature != null && !creature.IsAlive)
+            {
+                dead.Add(registration.Player);
+            }
+        }
+
+        return dead;
+    }
+
+    /// <summary>
+    /// **R8（Phase 4）：绑主已死 ⇒ 把它的战神立刻杀掉**（每帧 tick；由
+    /// <c>LocalMultiControlRuntime.TryAutoEndTurnForRelicControlledPlayer</c> 在**玩家侧与敌方回合都**调用）。
+    ///
+    /// ⚠ 设计文档 §4 R8 原本的理由（"战神在 `CombatState.Players` 里 ⇒ 战斗不会判负"）**不成立**：
+    /// 判负看的是 `runState.Players`（`CreatureCmd.cs:476`），而战神刻意不进那张表 ⇒ R8 **不是**"防挂机"的
+    /// 必需保障。真正的价值是**一致性**：绑主都死了，它的战神不该继续替它挨打 / 输出
+    /// （否则死掉那位玩家的战神就成了给队友白嫖的肉盾）。
+    ///
+    /// 做法 = **每帧 tick 检查**，不是挂 `AfterDeath` 钩子：那条链要求 `LocalContext.NetId` 有值、且会走
+    /// `HookPlayerChoiceContext` 的暂停语义（`Hook.cs:462-476`），在"临时席位"语境下不够省心；而本文件
+    /// 已经有一条每帧 tick（`TryEndIdleWarGodTurns` 同款驱动）⇒ 复用即可，延迟 ≤ 1 帧。
+    /// </summary>
+    internal static void EnforceSummonerBond(CombatState? state, string source, string tag = "[地狱战神]")
+    {
+        if (state == null || _warGods.Count == 0)
+        {
+            return;
+        }
+
+        foreach (Registration registration in _warGods.ToList())
+        {
+            try
+            {
+                if (registration.SummonerBondHandled || registration.SummonerNetId == 0UL)
+                {
+                    continue;
+                }
+
+                Creature? warGodCreature = registration.Player.Creature;
+                if (warGodCreature == null || !warGodCreature.IsAlive)
+                {
+                    continue;   // 战神自己已死 / 已不在 ⇒ 没什么可收的
+                }
+
+                if (IsSummonerAlive(state, registration.SummonerNetId))
+                {
+                    continue;
+                }
+
+                // 标记**先置**：`CreatureCmd.Kill` 是异步的，下一次 tick 会再进来（否则会重复走整条死亡链）。
+                registration.SummonerBondHandled = true;
+                LocalMultiControlLogger.Info(
+                    $"{tag} 绑主已死 ⇒ 立刻击杀战神（R8）: seat={registration.Player.NetId}, "
+                    + $"绑主={registration.SummonerNetId}, 档位={registration.Tier}, source={source}");
+                TaskHelper.RunSafely(KillBoundWarGodAsync(registration, tag));
+            }
+            catch (Exception exception)
+            {
+                LocalMultiControlLogger.Warn(
+                    $"{tag} 绑主死亡联动检查失败（已跳过该席位）: seat={registration.Player.NetId}, error={exception.Message}");
+            }
+        }
+    }
+
+    private static async Task KillBoundWarGodAsync(Registration registration, string tag)
+    {
+        try
+        {
+            await CreatureCmd.Kill(registration.Player.Creature, force: true);
+            LocalMultiControlLogger.Info(
+                $"{tag} 战神已随绑主死亡（**尸体留场**，绑主可在自己回合开始复活它）: seat={registration.Player.NetId}");
+        }
+        catch (Exception exception)
+        {
+            registration.SummonerBondHandled = false;   // 允许下一帧重试
+            LocalMultiControlLogger.Warn(
+                $"{tag} 击杀绑主的战神失败（下帧会重试）: seat={registration.Player.NetId}, error={exception.Message}");
+        }
+    }
+
+    /// <summary>绑主是否还活着（读 `runState.Players`；查不到 = 按"已死"处理，把战神收掉更安全）。</summary>
+    private static bool IsSummonerAlive(CombatState state, ulong summonerNetId)
+    {
+        try
+        {
+            Player? summoner = state.RunState.GetPlayer(summonerNetId);
+            return summoner?.Creature is { IsAlive: true };
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// **R9（Phase 4）：复活一个已死的战神**（由绑主在**回合开始的召唤选择**里点"复活"触发；
+    /// 计数由调用方**先扣**、失败由调用方退回 —— 见 `HellwarSummonCombatRuntime.RunReviveAsync`）。
+    ///
+    /// 步骤（源码依据 `OstyCmd.Summon` / `Player.ReviveBeforeCombatEnd`）：
+    /// <list type="number">
+    /// <item>`CreatureCmd.Heal(creature, MaxHp)` —— **"复活"就是把它治到 &gt; 0**：`Creature.IsDead` 是
+    ///   `CurrentHp &lt;= 0` 的派生量，`HealInternal` 在"死→活"那一刻会自动 `ActivateHooks()` + 抛
+    ///   `Creature.Revived`（`Creature.cs:478-487`），顺带播复活动画（`CreatureCmd.cs:772-775`）。
+    ///   ⚠ `CreatureCmd.Heal` 的第三个参数是 **`playAnim`**（不是 `isReviving`）—— 别被别的文档写法误导。</item>
+    /// <item>`ResetCombatState()` + `PopulateCombatState(...)` **必须重填**：绑主死亡时原版
+    ///   `CombatManager.HandlePlayerDeath` 会把它的 5 个牌堆的牌全部 `RemoveFromCombat`
+    ///   ⇒ 不复填就是"空手复活"（与召唤时那条链同款做法）。</item>
+    /// <item>`MarkReadyToEndTurnIfMidPlayerTurn`：复活发生在**本回合开始之后**（`StartTurn` 那一圈早跑完），
+    ///   不补登就会让「结束回合」的分母多一个 ⇒ 真人点不动结束回合（r244 同款，坑 AE-3）。</item>
+    /// <item>再给一层【无实体】保命（与召唤一致，用户 2026-10-10 口径）：刚爬起来别再立刻死。</item>
+    /// </list>
+    /// </summary>
+    /// <returns>是否真的复活成功（false ⇒ 调用方应把已扣的计数退回）。</returns>
+    internal static async Task<bool> ReviveWarGodAsync(Player warGod, CombatState state, string tag)
+    {
+        Registration? registration = FindRegistration(warGod.NetId);
+        if (registration == null)
+        {
+            LocalMultiControlLogger.Warn($"{tag} 复活失败：该席位不在册（可能已被清理）: seat={warGod.NetId}");
+            return false;
+        }
+
+        Creature? creature = warGod.Creature;
+        if (creature == null || creature.IsAlive)
+        {
+            LocalMultiControlLogger.Warn(
+                $"{tag} 复活失败：战神并不处于死亡状态: seat={warGod.NetId}, 存活={creature?.IsAlive}");
+            return false;
+        }
+
+        try
+        {
+            decimal maxHp = creature.MaxHp;
+            await CreatureCmd.Heal(creature, maxHp);
+            warGod.ResetCombatState();
+            warGod.PopulateCombatState(warGod.RunState.Rng.Shuffle, state);
+            MarkReadyToEndTurnIfMidPlayerTurn(state, warGod, tag);
+            await ApplySummonProtectionAsync(creature, tag);
+            registration.ReviveCount++;
+
+            LocalMultiControlLogger.Info(
+                $"{tag} 已复活战神（R9）: seat={warGod.NetId}, 档位={registration.Tier}, "
+                + $"血量={creature.CurrentHp}/{creature.MaxHp}, 第 {registration.ReviveCount} 次复活, "
+                + $"抽牌堆={warGod.PlayerCombatState?.DrawPile.Cards.Count ?? 0} 张, "
+                + $"战斗内玩家={state.Players.Count}");
+            return true;
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"{tag} 复活战神异常（计数由调用方退回）: seat={warGod.NetId}, error={exception}");
+            return false;
+        }
+    }
+
+    /// <summary>按 Player 实例摘掉登记项（多处清理共用）。</summary>
+    private static void RemoveRegistration(Player warGod)
+    {
+        for (int i = _warGods.Count - 1; i >= 0; i--)
+        {
+            if (ReferenceEquals(_warGods[i].Player, warGod))
+            {
+                _warGods.RemoveAt(i);
+            }
+        }
+    }
+
     /// <summary>
     /// 分配下一个空闲的临时席位号（<see cref="HellwarPocPolicy.TempSeatBase"/> 起，跳过**已被确切占用**的号）。
     /// Phase 2b 要一次召唤多个 ⇒ 不能再用"当前个数"当索引（会有空洞）。
@@ -106,9 +336,9 @@ internal static class HellwarWarGodFactory
     internal static ulong NextSeatId(CombatState? state)
     {
         HashSet<ulong> occupied = new(LocalSelfCoopContext.TemporarySeatIds);
-        foreach (Player warGod in _warGods)
+        foreach (Registration registration in _warGods)
         {
-            occupied.Add(warGod.NetId);
+            occupied.Add(registration.Player.NetId);
         }
 
         if (state != null)
@@ -128,16 +358,21 @@ internal static class HellwarWarGodFactory
     /// </summary>
     /// <param name="tag">日志前缀（`[地狱战神POC]` / `[地狱战神]`）—— 判读锚点靠它区分两条入口。</param>
     /// <param name="preset">
-    /// D7 预设档（Phase 2b）：决定"卡组要不要全升级 / 额外血上限"。**角色皮由调用方先解析好**传成
+    /// D7 预设档（Phase 2b）：决定"卡组要不要全升级 / 额外血上限 / 预设遗物"。**角色皮由调用方先解析好**传成
     /// <paramref name="character"/>（普通档 = 召唤者自身角色；其余档 = 预设表里的原版角色）。
     /// ⚠ 预设必须在**接进 run 之前**应用（<see cref="AttachToRun"/> 会登记卡组每张牌的 `Owner` 与 run 卡牌表，
     /// 之后 `PopulateCombatState` 再把它克隆进抽牌堆 ⇒ 改晚了就进不了抽牌堆）。
+    /// </param>
+    /// <param name="summoner">
+    /// **绑主**（Phase 4 / R8：绑主死 ⇒ 战神立刻死；R9：只有绑主能复活它）。
+    /// 传 <c>null</c> = 无绑主（POC 哑战神），此时不参与 R8/R9。
     /// </param>
     internal static bool TrySpawn(
         CombatState state,
         CharacterModel character,
         HellwarWarGodPreset preset,
         string tag,
+        Player? summoner,
         out Player? warGod)
     {
         warGod = null;
@@ -206,7 +441,7 @@ internal static class HellwarWarGodFactory
             MarkReadyToEndTurnIfMidPlayerTurn(state, player, tag);
 
             TaskHelper.RunSafely(FinishSpawnAsync(state, player.Creature, seatId, tag, presetRelics));
-            _warGods.Add(player);
+            _warGods.Add(new Registration(player, summoner?.NetId ?? 0UL, preset.Tier));
             warGod = player;
             return true;
         }
@@ -506,7 +741,7 @@ internal static class HellwarWarGodFactory
             }
 
             DetachFromRun(player, tag);
-            _warGods.Remove(player);
+            RemoveRegistration(player);
             LocalMultiControlLogger.Warn(
                 $"{tag} 已回滚半成品战神: seat={player.NetId}, 剩余 Players={state.Players.Count}");
         }
@@ -713,7 +948,7 @@ internal static class HellwarWarGodFactory
         if (warGod != null)
         {
             DetachFromRun(warGod, tag);
-            _warGods.Remove(warGod);
+            RemoveRegistration(warGod);
             // 战斗态也清掉（房间退出时原版只按 `RunState.Players` 复位，战神不在其中 ⇒ 否则污染下一场）。
             try
             {
@@ -779,9 +1014,9 @@ internal static class HellwarWarGodFactory
         {
             // 战斗结束那条路会清（`CleanupCombat`）；这里兜"中途退局 / 战斗没走完奖励就没了的"漏，
             // 顺手把战神卡组牌从 run 卡牌表除名（`_warGods` 是那批 Player 的唯一持有者）。
-            foreach (Player warGod in _warGods.ToList())
+            foreach (Registration registration in _warGods.ToList())
             {
-                DetachFromRun(warGod, tag);
+                DetachFromRun(registration.Player, tag);
             }
 
             _warGods.Clear();

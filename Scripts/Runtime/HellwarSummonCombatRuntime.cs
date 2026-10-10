@@ -27,7 +27,8 @@ namespace LocalMultiControl.Scripts.Runtime;
 /// <item><b>判据</b>：真人席位 + 有耳环 + 本回合没弹过 + **至少有一个买得起的选项** + 未满 12 人
 ///   ⇒ 延后一帧弹<b>选择 UI</b>（复用 <see cref="LocalWakuuChoiceOverlay"/>，
 ///   并压制瓦库自动作答 + 钉住归属者两道）；</item>
-/// <item><b>选项</b>（见 <see cref="BuildSummonOptions"/>）：四档单点召唤（普通 1 / 罕见 2 / 稀有 3 / 先古 4）
+/// <item><b>选项</b>（见 <see cref="BuildSummonOptions"/>）：**R9 复活**（Phase 4：本席位名下已死的战神，
+///   成本 = 原档位召唤成本）→ 四档单点召唤（普通 1 / 罕见 2 / 稀有 3 / 先古 4）
 ///   +【无尽战神】(整包 8·本场预算·随机补满) +【终极九连环】(门槛 12·**永久扣计数上限**·固定 9 个、按实际数量计费)；</item>
 /// <item><b>生成</b>：<see cref="HellwarWarGodFactory"/>（D7 预设档：普通 = 召唤者角色初始遗物 + 卡组；
 ///   罕见 / 稀有 / 先古 = 预设表里的原版角色皮 + 卡组全升级，见 <see cref="HellwarWarGodPresets"/>）；</item>
@@ -56,6 +57,9 @@ internal static class HellwarSummonCombatRuntime
 
         /// <summary>R17【终极九连环】：整包价（**永久扣上限**）、固定先古、部分成功。</summary>
         NineChain,
+
+        /// <summary>R9（Phase 4）：把本席位名下**已死的战神复活**（消耗该档位成本、恢复满血）。</summary>
+        Revive,
     }
 
     /// <summary>一个可选项（下标与弹层里那一行一一对应）。</summary>
@@ -65,7 +69,8 @@ internal static class HellwarSummonCombatRuntime
         int Cost,
         int Count,
         bool PermanentCost,
-        string Label);
+        string Label,
+        ulong TargetSeatId = 0UL);
 
     /// <summary>判定"本回合已经弹过选择"的键（战斗实例 + 席位 + 该席位的回合号）。</summary>
     private static CombatState? _offerContext;
@@ -184,7 +189,7 @@ internal static class HellwarSummonCombatRuntime
 
     /// <summary>
     /// 组出这次可以点的选项（下标 = 弹层里的行号）。
-    /// 顺序：四档单点（成本从低到高）→【无尽战神】→【终极九连环】。
+    /// 顺序：**R9 复活**（止损优先）→ 四档单点（成本从低到高）→【无尽战神】→【终极九连环】。
     /// </summary>
     private static List<SummonOption> BuildSummonOptions(
         Player owner, CombatState state, LocalWakuuHellwarEarring earring)
@@ -195,6 +200,26 @@ internal static class HellwarSummonCombatRuntime
         int combatPlayers = state.Players.Count;
         int maxPlayers = LocalSelfCoopContext.MaxLocalPlayerCount;
         int freeSlots = HellwarSummonPolicy.ResolveFreeSlots(combatPlayers, maxPlayers);
+
+        // R9（Phase 4）：本席位名下"已死但尸体还留场"的战神 ⇒ 复活选项（放在最上面：它是"止损"动作）。
+        // 成本 = 该战神**原档位**的召唤成本（本场预算）；买不起就不出现（与四档同口径，坑 AE-2）。
+        List<Player> deadWarGods = HellwarWarGodFactory.CollectDeadWarGods(state, owner.NetId);
+        bool multipleDead = deadWarGods.Count > 1;
+        foreach (Player dead in deadWarGods)
+        {
+            HellwarWarGodTier deadTier = HellwarWarGodFactory.TierOf(dead);
+            int reviveCost = HellwarSummonPolicy.ResolveReviveCost(deadTier);
+            if (available < reviveCost)
+            {
+                continue;
+            }
+
+            options.Add(new SummonOption(
+                SummonKind.Revive, deadTier, reviveCost, 1, PermanentCost: false,
+                LocalModText.HellwarReviveOptionLabel(
+                    LocalModText.HellwarTierName(deadTier), reviveCost, multipleDead ? dead.NetId : 0UL),
+                dead.NetId));
+        }
 
         foreach (HellwarWarGodTier tier in HellwarSummonPolicy.SelectableTiers)
         {
@@ -306,6 +331,9 @@ internal static class HellwarSummonCombatRuntime
                 case SummonKind.NineChain:
                     await RunNineChainAsync(owner, state, earring, chosen);
                     break;
+                case SummonKind.Revive:
+                    await RunReviveAsync(owner, state, earring, chosen);
+                    break;
                 default:
                     LocalMultiControlLogger.Warn($"{LogTag} 未适配的召唤种类（已忽略）: {chosen.Kind}");
                     break;
@@ -342,6 +370,45 @@ internal static class HellwarSummonCombatRuntime
         LocalMultiControlLogger.Info(
             $"{LogTag} 已召唤战神: owner={owner.NetId}, 档位={option.Tier}, 花费={option.Cost}, "
             + $"可用={earring.AvailableSpirit}/上限={earring.SpiritCount}, "
+            + $"战斗内玩家={state.Players.Count}/{LocalSelfCoopContext.MaxLocalPlayerCount}");
+    }
+
+    /// <summary>
+    /// **R9（Phase 4）复活**：把绑主名下已死的战神救回来。
+    /// 纪律与召唤同款（坑 AE-2）：**先扣本场预算 → 复活 → 失败退回**（含"找不到席位 / 复活抛异常"）。
+    /// 具体复活动作在 <see cref="HellwarWarGodFactory.ReviveWarGodAsync"/>（治疗到满 + 重填战斗态 + 补登就绪 + 保命）。
+    /// </summary>
+    private static async Task RunReviveAsync(
+        Player owner, CombatState state, LocalWakuuHellwarEarring earring, SummonOption option)
+    {
+        Player? warGod = HellwarWarGodFactory.FindSpawnedWarGod(option.TargetSeatId);
+        if (warGod == null)
+        {
+            LocalMultiControlLogger.Warn(
+                $"{LogTag} 复活中止：找不到该席位（可能已被清理）。player={owner.NetId}, 目标={option.TargetSeatId}");
+            return;
+        }
+
+        if (!earring.TrySpendCombatSpirit(option.Cost, "revive"))
+        {
+            LocalMultiControlLogger.Warn(
+                $"{LogTag} 复活中止：消耗计数失败（可用不足）。player={owner.NetId}, "
+                + $"seat={warGod.NetId}, 花费={option.Cost}, 可用={earring.AvailableSpirit}");
+            return;
+        }
+
+        bool revived = await HellwarWarGodFactory.ReviveWarGodAsync(warGod, state, LogTag);
+        if (!revived)
+        {
+            earring.RefundCombatSpirit(option.Cost, "revive-failed");
+            LocalMultiControlLogger.Warn(
+                $"{LogTag} 复活失败：计数已退回。player={owner.NetId}, seat={warGod.NetId}, 花费={option.Cost}");
+            return;
+        }
+
+        LocalMultiControlLogger.Info(
+            $"{LogTag} 已复活战神: owner={owner.NetId}, seat={warGod.NetId}, 档位={option.Tier}, "
+            + $"花费={option.Cost}, 可用={earring.AvailableSpirit}/上限={earring.SpiritCount}, "
             + $"战斗内玩家={state.Players.Count}/{LocalSelfCoopContext.MaxLocalPlayerCount}");
     }
 
@@ -478,7 +545,7 @@ internal static class HellwarSummonCombatRuntime
                 continue;
             }
 
-            if (HellwarWarGodFactory.TrySpawn(state, skin, preset, LogTag, out Player? warGod))
+            if (HellwarWarGodFactory.TrySpawn(state, skin, preset, LogTag, owner, out Player? warGod))
             {
                 spawned++;
                 LocalMultiControlLogger.Info(

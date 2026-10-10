@@ -411,7 +411,26 @@ public partial class Entry
     //     由生成收尾阶段 `RunAfterObtainedAsync` 补调（`AddRelicInternal` 不替我们调）。
     //  ④ 预期现象：**战神的遗物不显示在 UI 上**（遗物槽只画 `LocalContext.IsMe` 那一席）—— 效果不看 UI，属正常。
     //  ⑤ 锚点：启动自检 `[地狱战神] 预设遗物已就绪: 档位=…, N 件: …` + 召唤时 `①c 预设遗物已发放: … 本次=N 件[…]`。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r255)";
+    // r256（2026-10-10，用户「来」= 设计文档 §8 Phase 4 生存规则）**R8 绑主死亡联动 + R9 死后复活**：
+    //  ① **R8**：绑主一死 ⇒ 立刻收掉它的战神。做法 = **每帧 tick**（`HellwarWarGodFactory.EnforceSummonerBond`，
+    //     由 `LocalMultiControlRuntime.TryAutoEndTurnForRelicControlledPlayer` 调、**刻意放在"玩家侧/出牌相位"
+    //     两道门之前** ⇒ 主人死在敌方回合也收）。`CreatureCmd.Kill(force: true)`；登记项打一次性标记防重入。
+    //     ⚠ **订正文档 §4 R8 的理由**：判负看的是 `runState.Players`（`CreatureCmd.cs:476`）而不是
+    //     `CombatState.Players`，战神刻意不进前者 ⇒ R8 **不是**"防挂机"的必需保障；它的价值是**一致性**：
+    //     绑主都死了，它的战神不该继续替它挨打/输出（否则死掉那位的战神成了队友白嫖的肉盾）。
+    //  ② **R9 死后留场 = 原生行为，不用做**：Player 类型的 creature 死亡时**不会被摘出战斗**
+    //     （`CreatureCmd.cs:556` 的摘除只针对 `IsMonster`），而且 `CombatManager.cs:804` 会**自动替死玩家 ready**
+    //     ⇒ D9「留场 + 自动就绪」白送。
+    //  ③ **R9 复活**：入口 = **回合开始的召唤选择 UI 里多一项**「复活【X档】战神（消耗 N 计数）」；
+    //     成本 = 该战神**原档位**的召唤成本（`HellwarSummonPolicy.ResolveReviveCost`，纯逻辑 + 单测）；
+    //     纪律 = 先扣后做、失败退回（同 AE-2）。复活动作 = `HellwarWarGodFactory.ReviveWarGodAsync`：
+    //     `CreatureCmd.Heal(creature, MaxHp)`（**"复活"就是治到 > 0** —— `IsDead` 是派生量，`HealInternal`
+    //     会自动 `ActivateHooks` + 抛 `Revived`；⚠ 第三参是 `playAnim` 不是 isReviving）
+    //     + `ResetCombatState()/PopulateCombatState()` **必须重填**（主人死亡时原版把该席 5 个牌堆的牌全
+    //     `RemoveFromCombat` 了，不填就是"空手复活"）+ `MarkReadyToEndTurnIfMidPlayerTurn`（复活在回合开始
+    //     之后，不补登会让「结束回合」分母多一个 ⇒ r244 那类卡死，坑 AE-3）+ 再给一层【无实体】保命。
+    //  ④ 登记表升级：`_warGods` 由裸 `Player` 改存 `Registration`（绑主 NetId + 档位）—— 这两个信息事后反推不出来。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r256)";
 
     private static Harmony? _harmony;
 
