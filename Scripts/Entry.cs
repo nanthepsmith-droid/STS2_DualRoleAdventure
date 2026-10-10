@@ -370,7 +370,20 @@ public partial class Entry
     //  的实体要把按 id 查它的公共设施补齐**，与坑 AE-7 同根因家族）。
     //  修法 = `LocalWakuuRelicRuntime.RegisterNetworkCardId`：入队前用官方公开的
     //  `NetCombatCardDb.Instance.IdCardForTesting(card)` 补登记这一张（幂等；失败只记一次 WARN）。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r252)";
+    // r253（2026-10-10，r252 实机反馈）**战神回归 inline（不钉上下文）+ 召唤保命【无实体】**：
+    //  ① r252 实机铁证 `瓦库出牌入队执行异常: player=4096, card=NEUTRALIZE,
+    //     error=Tried to get local action queue for nonexistent player with ID 4096!` ——
+    //     队列档对战神**根本走不通**（动作队列按正式玩家建；上一轮的 `NetCombatCardDb` 未登记是同一层）
+    //     ⇒ 战神只能走 **inline**。而 inline 原本必须钉 `LocalContext`（r250 实机因此锁死真人）。
+    //     合订口径 ⇒ **战神 = inline + 不钉上下文**：`RunWatchdogAsync` 的钉扎条件对临时席位短路
+    //     （选牌那一刻的短钉扎由 `PlayerChoiceSynchronizerPatch` 自己负责，窗口是毫秒级，不锁真人）；
+    //     三处 `DecidePath` 恢复 `IsVakuuFormMode`（战神 ⇒ InlineAutoPlay）。
+    //  ② 用户要求「要么战神一来就能打牌、要么召唤时先给它一层无实体，不然高压环境还没打牌直接死」
+    //     ⇒ 实装 **召唤时给战神 1 层 `IntangiblePower`（无实体）**
+    //     （`HellwarWarGodFactory.ApplySummonProtectionAsync`）：它把 HP 损失压到 1（**立即生效**）、
+    //     层数在**敌方回合结束**递减 ⇒ 保住"召唤当回合 + 接着那个敌方回合"。
+    //     （"当回合就能打牌"要中途补抽起手牌 + 去掉落地立即 ready，会重新引入回合卡住风险 ⇒ 本轮先走保命方案。）
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r253)";
 
     private static Harmony? _harmony;
 

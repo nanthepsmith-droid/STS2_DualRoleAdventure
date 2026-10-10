@@ -249,19 +249,17 @@ internal static class LocalWakuuRelicRuntime
     }
 
     /// <summary>
-    /// 该席位是否按**瓦库托管出牌路径**出牌（队列 / 并发 / 跳过演出）：瓦库形态 **或临时席位（战神）**。
+    /// 该席位出牌时是否**跳过卡牌堆演出**：瓦库形态 **或临时席位（战神）**。
     ///
     /// 为什么与 <see cref="IsVakuuFormMode"/> 分开：后者是"瓦库形态身份"（遗物 + 开关），
-    /// 被选牌 / 奖励 / 事件等一大批自动作答入口复用 —— **不能**为了让战神走托管路径而顺手扩大那些口子。
-    /// 本判据只回答"出牌路径决策"这一个问题（`WakuuPlayQueuePolicy.DecidePath` 的第三个参数、
-    /// `WakuuPlaySpeedPolicy` 的第三个参数）。
+    /// 被选牌 / 奖励 / 事件等一大批自动作答入口复用 —— **不能**为了让战神跳过演出而顺手扩大那些口子。
     ///
-    /// 🔴 为什么战神**必须**走队列/并发档（r251 实机："战神出牌导致我不能出牌"）：
-    /// inline 路径要**抢全局 1 槽 `SelectorScopeGate`**、且 `RunWatchdogAsync` 会
-    /// **把 `LocalContext.NetId` 钉在该席位身上** —— 战神全量出牌一打就是好几秒，这段窗口里原版把
-    /// "本机玩家"当成战神 ⇒ 真人的手牌被当成"别人的牌"、点不出牌。
-    /// 并发档既不钉上下文、也不抢闸门（出牌由游戏**全局动作泵**执行、归属走 `WakuuSelectorRegistry`），
-    /// 真人照常出牌（与瓦库形态 `vakuuPlayOverlap` 转正时验证过的语义一致）。
+    /// ⚠ **不要**拿它去决定"走队列还是 inline"！r251~r252 实机证明了战神**只能走 inline**
+    /// （队列档缺两层开战期登记：`ActionQueueSet` 的动作队列、`NetCombatCardDb` 的卡牌 id）
+    /// ⇒ 三处 `WakuuPlayQueuePolicy.DecidePath` 仍用 `IsVakuuFormMode`；
+    /// "不钉 `LocalContext`"改由 `RunWatchdogAsync` 里对临时席位**单独短路**负责。
+    /// 本判据现在只喂 `WakuuPlaySpeedPolicy`（inline 的 `skipCardPileVisuals` 形参）
+    /// 与 `CardPlayVisualsSkipPatch`（队列路径的强制跳过）。
     /// </summary>
     public static bool UsesHostedPlayPath(Player? player)
     {
@@ -483,7 +481,7 @@ internal static class LocalWakuuRelicRuntime
         WakuuPlayPath playPath = WakuuPlayQueuePolicy.DecidePath(
             LocalWakuuAutopilotConfig.WakuuPlayQueue,
             LocalSelfCoopContext.IsEnabled,
-            UsesHostedPlayPath(player));
+            IsVakuuFormMode(player));
         bool overlapping = WakuuPlayQueuePolicy.IsOverlappingQueuePlay(
             playPath, LocalWakuuAutopilotConfig.WakuuPlayOverlap);
         ulong enterTick = Time.GetTicksMsec();
@@ -1017,7 +1015,7 @@ internal static class LocalWakuuRelicRuntime
             WakuuPlayPath path = WakuuPlayQueuePolicy.DecidePath(
                 LocalWakuuAutopilotConfig.WakuuPlayQueue,
                 LocalSelfCoopContext.IsEnabled,
-                UsesHostedPlayPath(player));
+                IsVakuuFormMode(player));
             if (!WakuuPlayQueuePolicy.IsOverlappingQueuePlay(path, LocalWakuuAutopilotConfig.WakuuPlayOverlap))
             {
                 reason = "selector-scope-busy";
@@ -1151,11 +1149,22 @@ internal static class LocalWakuuRelicRuntime
             WakuuPlayPath watchdogPath = WakuuPlayQueuePolicy.DecidePath(
                 LocalWakuuAutopilotConfig.WakuuPlayQueue,
                 LocalSelfCoopContext.IsEnabled,
-                UsesHostedPlayPath(player));
-            if (WakuuPlayQueuePolicy.IsOverlappingQueuePlay(watchdogPath, LocalWakuuAutopilotConfig.WakuuPlayOverlap))
+                IsVakuuFormMode(player));
+            // Phase 3（r253 合订教训）：**临时席位（战神）一律不钉全局上下文**。
+            //  · 钉了 ⇒ 原版把"本机玩家"当成战神 ⇒ **真人手牌不可交互**（r250 实机"我不能出牌"）；
+            //  · 而队列档对战神**根本走不通**（两层开战期登记都缺）：动作队列按正式玩家建
+            //    （`ActionQueueSet.GetQueue(4096)` ⇒ `Tried to get local action queue for nonexistent player…`，r252 实机）
+            //    + 网络卡牌 id 也没登记（`NetCombatCardDb` ⇒ `could not be found in combat ID database!`，r251 实机）。
+            //  ⇒ 战神只能走 **inline 路径（`IsVakuuFormMode=false` ⇒ InlineAutoPlay）+ 不钉上下文**：
+            //    inline 不需要动作队列，选牌链靠 `WakuuSelectorRegistry` 按归属分发；
+            //    选牌那一刻的**短钉扎**由 `PlayerChoiceSynchronizerPatch` 自己负责（窗口是毫秒级，不锁真人）。
+            bool skipContextPin = WakuuPlayQueuePolicy.IsOverlappingQueuePlay(
+                    watchdogPath, LocalWakuuAutopilotConfig.WakuuPlayOverlap)
+                || LocalSelfCoopContext.IsTemporarySeat(player.NetId);
+            if (skipContextPin)
             {
                 LocalMultiControlLogger.Info(
-                    $"瓦库并发出牌：本次不钉全局上下文（出牌由游戏动作泵执行，归属走选择器注册表）: player={player.NetId}, source={source}");
+                    $"托管出牌：本次不钉全局上下文（归属走选择器注册表）: player={player.NetId}, source={source}");
             }
             else
             {

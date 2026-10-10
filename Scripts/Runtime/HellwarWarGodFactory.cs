@@ -9,10 +9,13 @@ using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Entities.Multiplayer;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Powers;
 using MegaCrit.Sts2.Core.Nodes.Combat;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
 using MegaCrit.Sts2.Core.Runs;
@@ -567,6 +570,10 @@ internal static class HellwarWarGodFactory
         {
             await CombatManager.Instance!.AfterCreatureAdded(creature);
             await Hook.AfterCreatureAddedToCombat(state, creature);
+
+            // r253（2026-10-10 用户要求）：召唤当回合给战神一层【无实体】保命。
+            await ApplySummonProtectionAsync(creature, tag);
+
             LocalMultiControlLogger.Info(
                 $"{tag} ④ 生成收尾完成: seat={seatId}, "
                 + $"是玩家={creature.IsPlayer}, 存活={creature.IsAlive}, "
@@ -575,6 +582,40 @@ internal static class HellwarWarGodFactory
         catch (Exception exception)
         {
             LocalMultiControlLogger.Warn($"{tag} 生成收尾异常: seat={seatId}, error={exception}");
+        }
+    }
+
+    /// <summary>
+    /// 召唤当回合给战神一层【无实体】（原版 <see cref="IntangiblePower"/>）。
+    ///
+    /// **为什么**（r253 用户口径）：战神召唤当回合**不出牌**（它的手牌是空的 —— 中途加入没有起手抽牌），
+    /// 高压环境里它很容易在"还没动手"时就被打死、白费计数。⇒ 召唤时先给一层保命。
+    ///
+    /// 语义核对（`IntangiblePower.cs`）：`ModifyHpLostAfterOsty` 把该 creature 受到的 HP 损失压到 **1**
+    /// （**立即生效**，与回合时机无关）；层数在**敌方回合结束时** `Decrement`
+    /// （`AfterSideTurnEnd(side == Enemy)`）⇒ 1 层刚好覆盖"召唤当回合 + 接下来的那个敌方回合"。
+    ///
+    /// 失败只记 WARN，**不影响召唤本身**（保命是附加收益，不该把召唤拖下水）。
+    /// </summary>
+    private static async Task ApplySummonProtectionAsync(Creature creature, string tag)
+    {
+        try
+        {
+            Player? warGod = creature.Player;
+            if (warGod == null || !creature.IsAlive)
+            {
+                return;
+            }
+
+            HookPlayerChoiceContext choiceContext = new(warGod, warGod.NetId, GameActionType.CombatPlayPhaseOnly);
+            await PowerCmd.Apply<IntangiblePower>(choiceContext, creature, 1m, creature, null);
+            LocalMultiControlLogger.Info(
+                $"{tag} 已给战神一层【无实体】（召唤当回合不死，保到敌方回合结束）: seat={warGod.NetId}");
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn(
+                $"{tag} 给战神加【无实体】失败（已忽略，不影响召唤）: seat={creature.Player?.NetId}, error={exception.Message}");
         }
     }
 

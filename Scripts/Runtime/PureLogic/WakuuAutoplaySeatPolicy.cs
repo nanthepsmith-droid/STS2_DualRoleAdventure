@@ -37,11 +37,11 @@ internal static class WakuuAutoplaySeatPolicy
         => fullPlay ? MaxCardsFull : MaxCardsDefault;
 
     /// <summary>
-    /// 该席位是否按**瓦库托管出牌路径**（队列 / 并发 / 跳过演出）：瓦库形态 **或临时席位（战神）**。
+    /// 该席位出牌时是否**跳过卡牌堆演出**：瓦库形态 **或临时席位（战神）**。
     ///
-    /// ⚠ 这条决定"要不要抢全局 `SelectorScopeGate`、要不要把 `LocalContext.NetId` 钉在这个席位身上"
-    /// （见 `LocalWakuuRelicRuntime.UsesHostedPlayPath` 的注释）—— 临时席位**必须**为 true，
-    /// 否则它出牌的那几秒里原版会把"本机玩家"当成战神 ⇒ **真人点不出牌**（r251 实机）。
+    /// ⚠ **别用它决定"走队列还是 inline"**（r251~r252 实机教训）：战神只能走 inline
+    /// （队列档缺动作队列与网络卡牌 id 两层登记）；"不钉 `LocalContext`"由 `RunWatchdogAsync`
+    /// 对临时席位单独短路负责。本判据只喂"跳过演出"那两处。
     /// </summary>
     internal static bool UsesHostedPlayPath(bool vakuuFormMode, bool isTemporarySeat)
         => vakuuFormMode || isTemporarySeat;
