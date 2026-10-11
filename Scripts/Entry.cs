@@ -590,7 +590,21 @@ public partial class Entry
     //   `ForeignSeatGuardPolicy`，纯逻辑 + 单测）；跳过是安全的（悬停是纯表现层，没有"计数必填项"语义）。
     //   ⚠ `EventCombatSynchronizer.ReadyToEnterCombat` **刻意不加**：它的 `_states[slot]` 是"全员就位才
     //   进战斗"的计数，跳过会让 `_states.All(...)` 永远不满足 ⇒ 反而卡住事件（已登记不可达）。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-11-r265)";
+    // r266（2026-10-11，r265 实机判读露出的下一层）：**给临时席位补一条本地动作队列**
+    //   （`LocalActionQueueSetBridge`；坑见 references AE-24）。
+    //   实机铁证（r265 局 L16701）：战神打「不死之烟」时原版要为它入队 `GenericHookGameAction`
+    //   （日志 `Enqueueing HOOK action with id 0` / `owner 4098`），而 `ActionQueueSet` 的队列是**开局**
+    //   按 `runState.Players` 建的、之后按 `ownerId` 查（`GetQueue`）⇒ 战神不在那张表里 ⇒ 抛
+    //   `Tried to get local action queue for nonexistent player with ID 4098!`（冒穿托管出牌链，靠 r262 的
+    //   黑名单兜住 = 那张牌本局托管不打；**不卡死**但效果被降级）。
+    //   修法 = **改道**（AE-24 口径：改道 > 跳过 > 不管）：用反射在 `_actionQueues` 里给它补一条队列
+    //   （`ActionQueue` 是 private 嵌套类 ⇒ `Activator.CreateInstance(nonPublic: true)` + 反射设 `ownerId`），
+    //   ⚠ **必须照抄现存队列的状态位**（`isPaused` / `isCancellingCombatActions` / …）——
+    //   `isCancellingCombatActions` 的字段初始值是 `true`（取消一切战斗动作），直接 new 出来塞进去会让
+    //   该席位刚入队的 hook 被**静默取消**。摘战神时 best-effort `CancelNonExecutingActionsForPlayer`，
+    //   队列本体交给原版 `ActionQueueSet.Reset()` 清。启动自检 `动作队列反射面已就绪…`（挂在
+    //   `RuntimeCompatibilityCheck`）—— 反射目标改名后会表现为"静默不做"，所以要在启动就能看见。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-11-r266)";
 
     private static Harmony? _harmony;
 

@@ -134,6 +134,8 @@ internal static class LocalSelfCoopContext
         // r264：临时席位没了 ⇒ 它们的 choiceId 独立序列也一起清（与席位生命周期同进同退；
         // 见 TemporarySeatChoiceIds / references AE-24）。
         TemporarySeatChoiceIds.Reset();
+        // r266：动作队列桥的"已补队列"日志去重标记同理（队列本体由原版 ActionQueueSet.Reset() 清）。
+        LocalActionQueueSetBridge.ResetLogMarkers();
         return removed;
     }
 

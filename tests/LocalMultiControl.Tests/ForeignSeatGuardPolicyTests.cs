@@ -53,4 +53,21 @@ public class ForeignSeatGuardPolicyTests
         // 调用方拿不到 runState 时按"在场"传 ⇒ 不拦（宁可少拦也不误拦真人）
         Assert.That(Skip(enabled: true, temporary: false, inRunState: true), Is.False);
     }
+
+    // ---------------------------------------------------------------- 补动作队列判据（r266）
+    // 原版 ActionQueueSet 的队列开局按 runState.Players 建，战神是战斗内才出现的 ⇒
+    // 它入队 hook 会在 GetQueue(ownerId) 处抛 "Tried to get local action queue for nonexistent player"。
+
+    [Test]
+    public void 只给本地多控下的登记临时席位补动作队列()
+    {
+        Assert.That(ForeignSeatGuardPolicy.ShouldProvideActionQueue(true, true, 4096), Is.True);
+        // 非本地多控（原版 / 真联机）不介入
+        Assert.That(ForeignSeatGuardPolicy.ShouldProvideActionQueue(false, true, 4096), Is.False);
+        // 正式席位（开局就有队列）不动
+        Assert.That(ForeignSeatGuardPolicy.ShouldProvideActionQueue(true, false, 76561198422527326), Is.False);
+        // ★ 刻意收窄：**不**用"不在 runState.Players"的通用判据（给任意结构外成员造队列风险更高）
+        Assert.That(ForeignSeatGuardPolicy.ShouldProvideActionQueue(true, false, 4096), Is.False);
+        Assert.That(ForeignSeatGuardPolicy.ShouldProvideActionQueue(true, true, 0), Is.False);
+    }
 }

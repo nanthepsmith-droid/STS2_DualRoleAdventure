@@ -599,6 +599,11 @@ internal static class HellwarWarGodFactory
 
             AddTemporarySeatToSession(seatId, tag);
 
+            // ③a r266：给这条临时席位**补一条本地动作队列**（原版队列开局按 runState.Players 建，
+            //   战神是战斗内才出现的 ⇒ 它入队 hook 会在 `ActionQueueSet.GetQueue` 抛
+            //   "Tried to get local action queue for nonexistent player"；见 references AE-24）。
+            LocalActionQueueSetBridge.EnsureQueueForTemporarySeat(seatId, tag);
+
             CombatManager.Instance!.AddCreature(player.Creature);
             NCombatRoom.Instance?.AddCreature(player.Creature);
             LocalMultiControlLogger.Info(
@@ -1153,6 +1158,10 @@ internal static class HellwarWarGodFactory
             }
 
             RemoveRegistration(warGod);   // 纯内存表，不会抛
+
+            // r266：动作队列收尾（取消它队列里还没执行的动作；队列本体由原版 `ActionQueueSet.Reset()`
+            // 在战斗结束/换局时统一清空）。best-effort，失败只记一条。
+            LocalActionQueueSetBridge.CancelPendingForTemporarySeat(warGod.NetId);
 
             // 战斗态也清掉（房间退出时原版只按 `RunState.Players` 复位，战神不在其中 ⇒ 否则污染下一场）。
             try

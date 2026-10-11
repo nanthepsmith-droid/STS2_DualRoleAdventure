@@ -21,6 +21,12 @@ restarted" ⇒ **整场战斗废掉**：不能出牌 / 不能切人 / 不能结�
 再与脚本内嵌的 `KNOWN` 登记表（"我们已经知道并处理过的位置"）比对，输出 `未登记` 明细。
 `--strict` 时只要有「INDEXED 且未登记」就返回非 0（供门禁使用；默认只报告）。
 
+⚠ **覆盖面（诚实标注，别把它当全量）**：本工具只扫 `GetPlayerSlotIndex` 这**一族**。
+同族还有**另一种形态** —— "按 ownerId / 玩家 id 查每个玩家一份的表"，例如
+`ActionQueueSet.GetQueue`: `_actionQueues.FirstOrDefault(q => q.ownerId == playerId)`（查不到直接抛
+`Tried to get local action queue for nonexistent player with ID …`，2026-10-11 r265 实机撞上过）。
+那条入口**不在本扫描面内**，目前靠人工盘（发现一处就在 references AE-24 里登记一处）。
+
 用法：
     python Scripts/Tools/scan_slot_index_consumers.py --repo .
     python Scripts/Tools/scan_slot_index_consumers.py --repo . --json

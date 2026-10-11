@@ -49,6 +49,11 @@ internal static class RuntimeCompatibilityCheck
         CheckGameAssemblyAbi(fatalFailures);
         CheckReferencedAssemblies(self, fatalFailures);
 
+        // r266：战灵召唤的"给临时席位补本地动作队列"要反射 `ActionQueueSet` 的私有成员
+        // （`_actionQueues` + 嵌套 `ActionQueue`）—— 这类运行期目标改名后只会表现为"静默不做"，
+        // 所以启动就解析一次并打日志（同 §9 的"改了运行期目标要自检"）。
+        LocalActionQueueSetBridge.SelfCheck();
+
         int fatalCount = fatalFailures.Count - fatalBefore;
         if (fatalCount > 0)
         {

@@ -692,6 +692,32 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     （`NOXIOUS_FUMES / AFTERIMAGE / DEADLY_POISON / NEUTRALIZE / POISONED_STAB / PREDATOR`）；
     预设遗物相关的"发放失败 / 跳过 / 异常 / 件数与阶梯不符"**全 0**、异常族全 0、`[ERROR]` 仅 1 条（第三方分支告警）。
     ⚠ **本场只召了罕见 + 普通档** ⇒ 稀有 / 先古档的**效果体感**仍待后续实机（内容表解析已由自检覆盖）。
+- **⏳【待排期·用户 2026-10-11 点名要做】预设战神 v2：同档位多套「角色预设」+ 召唤时选档再选角色**：
+  - **需求原话**：「后面记得要做预设战神，以及同一个档位要有不同的预设战神；其中**普通档要有所有角色**
+    （初始卡组 + 初始遗物），并且**玩家选择哪个档可以选自己想要的角色预设**」。
+  - **与现状的差距**：现状（r254 ① 手工预设卡组 / r255 ② 预设遗物）= **四档各一套固定内容**
+    （普通档 = 召唤者的角色皮 + 强度档 10 张；罕见/稀有/先古 = 预设表里的原版角色皮 + 阶梯遗物 1/2/3 件）。
+    目标是把它变成**「档位 × 角色预设」二维**：每个档位下**多套**可选角色预设，召唤时两步选择。
+  - **待拍板**：① 每档各要有哪几套预设（罕见/稀有/先古 是否有"全角色"还是只挑若干角色）；
+    ② **普通档 = 全部角色各自的「初始卡组 + 初始遗物」**（需读 `CharacterModel` 的初始牌组/初始遗物，
+    而不是现在的"召唤者角色皮 + 手工 10 张"）；③ 是否保留一个「自动/随机」选项；
+    ④ 两步 UI 走 `LocalWakuuChoiceOverlay`（现有选档 UI）还是新造；
+    ⑤ 配置键格式（现有 `hellwarDeck*` 四档键要扩成"档位.角色"多维键）。
+  - **要点**：预设内容表继续走「内置默认用 `ModelDb` 类型引用 + 字符串 id 只留给配置文件」（AE-11 口径），
+    并保留启动自检（件数与阶梯对账）。
+- **⑪ r266（2026-10-11 落地，⭐ 待实机）—— 露出下一层：给临时席位补一条「本地动作队列」（§待查-7 的修法）**：
+  - **症状（r265 局日志 L16701）**：`托管出牌抛异常 … card=CARD.MOKOUMOD-IMMORTAL_SMOKE,
+    error=Tried to get local action queue for nonexistent player with ID 4098!`
+    —— 原版要为**战神**入队 `GenericHookGameAction`（`owner 4098`），而 `ActionQueueSet` 的队列是
+    **开局**按 `runState.Players` 建的、之后按 `ownerId` 查（`GetQueue`）⇒ 战神不在那张表里 ⇒ 抛。
+  - **修法（改道 > 跳过 > 不管，AE-24 口径）**：新 `LocalActionQueueSetBridge` 用反射在 `_actionQueues`
+    里给它补一条队列（`ActionQueue` 是 private 嵌套类）；⚠ **必须照抄现存队列的状态位** ——
+    `isCancellingCombatActions` 的字段初值是 `true`，直接 new 进去会让刚入队的 hook 被**静默取消**。
+    摘战神时 best-effort `CancelNonExecutingActionsForPlayer`，队列本体交给原版 `ActionQueueSet.Reset()`。
+    启动自检 `动作队列反射面已就绪…`（挂 `RuntimeCompatibilityCheck`，反射目标改名后能立刻看见）。
+  - **复测契约**：召唤战神时应见 `临时席位（战神）已补一条本地动作队列…`（每席位一次）；
+    再遇到"会入队 hook 的牌"（如不死之烟）**不再**出现 `Tried to get local action queue for nonexistent
+    player`、**不再**进 `本局不再让托管打这张牌` 黑名单。启动日志应见 `动作队列反射面已就绪（…）`。
 - **⑩ r264 + r265（2026-10-11 落地，✅ **实机关单**）—— 修「战神把 turn loop 打死」：临时席位 choiceId 记账改道 + 远端选择兜底并入临时席位 + 配套扫描工具 + 同族护栏（HoveredModelTracker）**
   - **症状**（用户原话）：「打一半不能出牌不能切人不能结束回合；瓦库和战神也不出牌」。
   - **真凶（我们自己的老坑换入口，不是第三方）**：原版 `PlayerChoiceSynchronizer.ReserveChoiceId` 按
