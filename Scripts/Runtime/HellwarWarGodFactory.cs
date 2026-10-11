@@ -1035,8 +1035,11 @@ internal static class HellwarWarGodFactory
                     continue;
                 }
 
-                // 还有可打牌 ⇒ 交给托管出牌（下一帧 tick 会再判）；没有 ⇒ 这一席当刻没事做，替它 ready。
-                if (PileType.Hand.GetPile(warGod).Cards.Any((card) => card.CanPlay()))
+                // 还有**托管能打**的牌 ⇒ 交给托管出牌（下一帧 tick 会再判）；没有 ⇒ 这一席当刻没事做，替它 ready。
+                // ⚠ r263：判据必须是**托管口径**（`LocalWakuuRelicRuntime.HasHostedPlayableCards`），不能用裸 `CanPlay()` ——
+                // 一张"数据上能打、托管一打就卡"的牌（需要目标却没目标 / 效果内部抛）会让这里永远认为
+                // "还有牌可出" ⇒ 战神永不 ready ⇒ 真人「结束回合」被挡（r262 实机死锁的收口那一跳）。
+                if (LocalWakuuRelicRuntime.HasHostedPlayableCards(warGod, state.RoundNumber))
                 {
                     continue;
                 }

@@ -451,7 +451,9 @@ internal static class LocalMultiControlRuntime
                 continue;
             }
 
-            bool hasPlayableCards = PileType.Hand.GetPile(player).Cards.Any((card) => card.CanPlay());
+            // r263：**托管口径**的可出牌（把"需要目标却没目标"/"托管打它会抛"的牌剔掉）——
+            // 否则一张托管打不了的牌会让这一席被每帧反复调度、每次都空转（r262 实机死锁的一环）。
+            bool hasPlayableCards = LocalWakuuRelicRuntime.HasHostedPlayableCards(player, combatState.RoundNumber);
 
             // Phase 3：托管候选 = 持有接管遗物 **或临时席位（战神）**（见 LocalWakuuRelicRuntime.IsAutoplayHosted）。
             if (LocalWakuuRelicRuntime.IsAutoplayHosted(player) && hasPlayableCards)
@@ -508,7 +510,10 @@ internal static class LocalMultiControlRuntime
                 continue;
             }
 
-            bool hasPlayableCards = PileType.Hand.GetPile(player).Cards.Any((card) => card.CanPlay());
+            // r263：**托管口径**（见 HasHostedPlayableCards）—— 只剩"托管打不了"的牌时必须放行，
+            // 否则真人点「结束回合」会被永远挡住（r262 实机现象，日志 16 条"检测到仍有可出牌角色"）。
+            // 真人真想手动打那张牌，直接打即可（这条只看"要不要触发全员结束"）。
+            bool hasPlayableCards = LocalWakuuRelicRuntime.HasHostedPlayableCards(player, combatState.RoundNumber);
             if (hasPlayableCards)
             {
                 LocalMultiControlLogger.Info($"玩家主动结束回合时检测到仍有可出牌角色，不触发全员结束: round={combatState.RoundNumber}");
@@ -1080,7 +1085,8 @@ internal static class LocalMultiControlRuntime
             }
 
             hasAliveWakuu = true;
-            if (PileType.Hand.GetPile(player).Cards.Any((card) => card.CanPlay()))
+            // r263：托管口径 —— 只剩"托管打不了"的牌 = 当刻无牌可出（否则切人兜底永远不触发）。
+            if (LocalWakuuRelicRuntime.HasHostedPlayableCards(player, combatState.RoundNumber))
             {
                 return false;
             }
@@ -1375,8 +1381,8 @@ internal static class LocalMultiControlRuntime
                 continue;
             }
 
-            bool hasPlayableCards = PileType.Hand.GetPile(targetPlayer).Cards.Any((card) => card.CanPlay());
-            if (!hasPlayableCards)
+            // r263：托管口径 —— 只剩"托管打不了"的牌不算"有牌可出"，不该作为切人目标。
+            if (!LocalWakuuRelicRuntime.HasHostedPlayableCards(targetPlayer, combatState.RoundNumber))
             {
                 continue;
             }
@@ -1481,8 +1487,12 @@ internal static class LocalMultiControlRuntime
     /// <summary>
     /// 控制上下文已切换但战斗UI因进行中的出牌/选牌流程暂时无法重建时，把刷新延后到流程结束后执行，
     /// 不再回滚上下文。延后补刷会顺带重跑 ReevaluateEndTurnButtonState，避免切人后回合结束按钮消失/状态陈旧。
+    ///
+    /// r263：改为 <c>internal</c> —— 托管出牌异常后的**手牌 UI 重建**也走这条（唯一实现，
+    /// 天然满足"不在出牌/选牌中才重建、超次数放弃"的 r111 约束），见
+    /// <c>LocalWakuuRelicRuntime.CleanupStuckPlayAreaNode</c>。
     /// </summary>
-    private static void ScheduleDeferredCombatUiRefresh(ulong targetPlayerId)
+    internal static void ScheduleDeferredCombatUiRefresh(ulong targetPlayerId)
     {
         if (_pendingCombatUiRefreshTarget == targetPlayerId)
         {

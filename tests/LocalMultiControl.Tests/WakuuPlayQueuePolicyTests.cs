@@ -119,6 +119,20 @@ public class WakuuPlayQueuePolicyTests
             Is.EqualTo(expected));
     }
 
+    [TestCase(true, true)]    // 第一次放弃（本席位/回合新记入）⇒ 继续循环（去打别的牌）
+    [TestCase(false, false)]  // 同一张牌又被选中 ⇒ 判"过滤没生效"、收手（循环闸）
+    public void 放弃无目标牌后的循环闸(bool isNewSkipRecord, bool expected)
+    {
+        // 背景（2026-10-11 r262 实机死锁铁证）：r261 的"本回合不再考虑"名单是**单槽**（席位 + round + 一张列表），
+        // 两个战神交替进托管时互相清空 ⇒ 大脑每轮重新选中同一张牌、全场合计 765 次"放弃"、round 一直停在 3、
+        // 战神永不 ready ⇒ 真人「结束回合」被「仍有可出牌角色」挡住。
+        // 修法两层：① 名单按席位分槽（运行时，不在本纯逻辑层）；② 本闸门 = 双保险 —— 宁可少打这一张，
+        // 也不能把整回合卡死（收手后由收口逻辑替这一席 ready）。
+        Assert.That(
+            WakuuPlayQueuePolicy.ShouldContinuePlayLoopAfterMissingTargetAbstain(isNewSkipRecord),
+            Is.EqualTo(expected));
+    }
+
     [Test]
     public void 配置默认开启并发出牌档()
     {

@@ -138,39 +138,11 @@ internal static class NPlayerHandAddOwnerGuardPatch
     }
 
     /// <summary>
-    /// 原版对「不是我的牌」的处理（<c>NCardPlayQueue.TweenCardForCancellation</c>：淡出后回收）。
-    /// 补间挂在 <c>SceneTree</c> 上（不挂卡牌节点自己）：节点被释放时补间仍会跑完回调，
-    /// 否则会出现"淡到一半的节点永远留在场上"。
+    /// 原版对「不是我的牌」的处理（淡出后回收）。实现提到
+    /// <see cref="CardNodeVisualCleanup.FadeOutAndFree"/>（r263 与"托管出牌异常后的出牌区残影回收"共用）。
     /// </summary>
     private static void FadeOutAndFree(NCard card)
     {
-        try
-        {
-            SceneTree? tree = card.GetTree();
-            if (tree == null)
-            {
-                card.QueueFreeSafely();
-                return;
-            }
-
-            Tween tween = tree.CreateTween();
-            tween.TweenProperty(card, "modulate:a", 0f, 0.35f)
-                .SetEase(Tween.EaseType.Out)
-                .SetTrans(Tween.TransitionType.Cubic);
-            tween.TweenCallback(Callable.From(card.QueueFreeSafely));
-            tween.Play();
-        }
-        catch (Exception)
-        {
-            // 纯表现层兜底，绝不能反过来影响出牌流程。
-            try
-            {
-                card.QueueFreeSafely();
-            }
-            catch
-            {
-                // 节点已释放：无事可做。
-            }
-        }
+        CardNodeVisualCleanup.FadeOutAndFree(card);
     }
 }

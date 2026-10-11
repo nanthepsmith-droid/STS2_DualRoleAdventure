@@ -139,4 +139,21 @@ internal static class WakuuPlayQueuePolicy
     {
         return targetIsNull && targetTypeNeedsTarget;
     }
+
+    /// <summary>
+    /// 放弃一张"需要目标却没目标"的牌之后，本轮出牌循环**还能不能继续**（r263 循环闸，双保险）。
+    ///
+    /// <para>第一次放弃（<paramref name="isNewSkipRecord"/> = <c>true</c>）：已把它记入"本回合不再考虑"名单，
+    /// 下一次迭代 <c>ResolveAutoplayHand</c> 会把它从大脑候选集里剔掉 ⇒ 继续循环（去打别的牌，或由大脑判 EndTurn）。</para>
+    ///
+    /// <para><b>同一席位/回合里又被选中（<c>false</c>）⇒ 必须收手</b>：这说明"从候选集剔除"那道过滤**没生效**
+    /// （r262 实机死锁的正形：两个战神的**单槽**名单互相清空 ⇒ 大脑每轮都重新选中同一张牌、
+    /// 全场合计 765 次"放弃"、<c>round</c> 一直停在 3、战神永不 ready ⇒ 真人「结束回合」被
+    /// 「仍有可出牌角色」挡住）。这里宁可**少打这一张**，也不能把整回合卡死：
+    /// 收手后由收口逻辑（<c>HellwarWarGodFactory.TryEndIdleWarGodTurns</c> / 看门狗）替这一席 ready。</para>
+    /// </summary>
+    public static bool ShouldContinuePlayLoopAfterMissingTargetAbstain(bool isNewSkipRecord)
+    {
+        return isNewSkipRecord;
+    }
 }

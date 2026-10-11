@@ -322,6 +322,8 @@ internal static class LocalWakuuRelicRuntime
         _pendingQueuePlays.Clear();
         // r262：出牌抛异常的"别让托管打"名单按**局**清（换局/读档重新试）。
         _unplayableByHostedCardEntries.Clear();
+        // r263：本回合"需要目标却解析不到目标"的分槽名单（按席位）也一起清（战斗内回合号换局后无意义）。
+        _missingTargetSkipSlots.Clear();
     }
 
     /// <summary>
@@ -366,8 +368,8 @@ internal static class LocalWakuuRelicRuntime
                 relic, player, choiceContext, combatState, WakuuPotionPhase.StartOfTurn);
         }
 
-        CardModel? firstPlayableCard = PileType.Hand.GetPile(relic.Owner).Cards.FirstOrDefault((candidate) => candidate.CanPlay());
-        if (firstPlayableCard == null)
+        // r263：托管口径（见 HasHostedPlayableCards）—— 手上只剩"托管打不了"的牌，等同于没牌可出。
+        if (!HasHostedPlayableCards(relic.Owner, combatState.RoundNumber))
         {
             // 没牌可出：回合结束判定也要做（格挡/免伤等防御类药水的时机）。
             // 此时不会有看门狗（它要求"手上有可出牌"），所以这里是这类药水的唯一时机。
@@ -447,8 +449,9 @@ internal static class LocalWakuuRelicRuntime
                 relic, player, choiceContext, combatState, WakuuPotionPhase.StartOfTurn);
         }
 
-        CardModel? firstPlayableCard = PileType.Hand.GetPile(owner).Cards.FirstOrDefault((candidate) => candidate.CanPlay());
-        if (firstPlayableCard == null)
+        // r263：这里的"能不能出"必须用**托管口径** —— 一张"数据上能打、托管一打就卡"的牌
+        // （需要目标却没目标 / 效果内部抛异常）不算可出牌，否则会白进一次作用域、再撞同一个坑。
+        if (!HasHostedPlayableCards(owner, combatState.RoundNumber))
         {
             // 没牌可出：回合结束判定也要做（格挡/免伤等防御类药水的时机）
             if (LocalWakuuAutopilotConfig.AutoUsePotions && IsVakuuFormMode(player))
@@ -477,6 +480,10 @@ internal static class LocalWakuuRelicRuntime
 
         bool reachedPlayLimit;
         int cardsPlayed;
+        // r263：**真打出去**的张数（只用于"要不要播收尾台词"）。`cardsPlayed` 是循环迭代数，
+        // 会把"放弃一张无目标牌"这种没出牌的一轮也算进去 ⇒ 战神会在什么都没打的情况下说台词
+        // （用户现象原话"2 个战神一直「唔」"）。这里让台词只在真有牌落地时播。
+        int playsSucceeded = 0;
         bool gateHeld = false;
         // 改进-2 / 方案 D：路径在整轮里是常量（只由开关/场景决定），所以在进作用域之前就定下来。
         // 第二步（并发出牌档）正是靠它决定「要不要抢全局闸门」，见 WakuuPlayQueuePolicy。
@@ -586,15 +593,25 @@ internal static class LocalWakuuRelicRuntime
                     // 顺手把它记入"本回合不打"名单 ⇒ 不再喂给大脑（否则每轮又选中它、空转出牌配额）。
                     if (WakuuPlayQueuePolicy.ShouldAbstainForMissingTarget(next.Target == null, RequiresTarget(next.Card)))
                     {
-                        if (MarkSkippedForMissingTarget(player.NetId, combatState.RoundNumber, next.Card))
+                        bool newlyMarked = MarkSkippedForMissingTarget(player.NetId, combatState.RoundNumber, next.Card);
+                        if (WakuuPlayQueuePolicy.ShouldContinuePlayLoopAfterMissingTargetAbstain(newlyMarked))
                         {
+                            // 第一次记入 ⇒ 只报一条（名单按席位分槽 + 同键只记一次，r263 顺手把 r262 的 765 条噪声降下来）。
                             LocalMultiControlLogger.Warn(
                                 $"瓦库放弃「需要目标但解析不到目标」的牌（本回合不再考虑它；第三方自定义 TargetType 常见）: "
                                 + $"player={player.NetId}, round={combatState.RoundNumber}, card={next.Card.Id.Entry}, "
                                 + $"targetType={next.Card.TargetType}（真人可自己打这张）");
+                            continue;
                         }
 
-                        continue;
+                        // 循环闸（r263 双保险）：同一张牌在本席位/本回合被**再次**选中 ⇒ 说明
+                        // 「从大脑候选集里剔除」没生效（r262 实机：两个战神的**单槽**名单互相清空 ⇒
+                        // 无限重选 765 次、round 卡在 3、战神永不 ready）。宁可少打这一张也不能把整回合卡死：
+                        // 直接收手，让收口逻辑（TryEndIdleWarGodTurns / 看门狗）替这一席 ready。
+                        LocalMultiControlLogger.Warn(
+                            $"瓦库放弃「需要目标但解析不到目标」的牌**被重复选中** ⇒ 判定这一席本回合无牌可打、收手（循环闸 r263）: "
+                            + $"player={player.NetId}, round={combatState.RoundNumber}, card={next.Card.Id.Entry}, played={cardsPlayed}");
+                        break;
                     }
 
                     // r262：记下"这一张就是本次要打的牌"（出牌抛异常时 catch 会用它记名单）。
@@ -616,6 +633,7 @@ internal static class LocalWakuuRelicRuntime
                             break;
                         }
 
+                        playsSucceeded++;
                         continue;
                     }
 
@@ -631,6 +649,7 @@ internal static class LocalWakuuRelicRuntime
                         choiceContext, next.Card, next.Target, AutoPlayType.Default,
                         skipXCapture: true,
                         skipCardPileVisuals: skipCardPileVisuals);
+                    playsSucceeded++;
                 }
 
                 reachedPlayLimit = cardsPlayed >= maxCardsThisTurn;
@@ -667,6 +686,9 @@ internal static class LocalWakuuRelicRuntime
             if (attemptedCard != null)
             {
                 MarkCardUnplayableByHosted(player.NetId, attemptedCard, exception, attemptedRound);
+                // r263：黑名单只保证"不再重试"，**不会收拾第一次尝试留下的那个卡面**
+                // （r262 实机「不死之烟」黑名单生效了、卷面仍停在屏幕中间）⇒ 顺手回收出牌区残影。
+                CleanupStuckPlayAreaNode(attemptedCard, "hosted-play-exception");
             }
 
             LocalMultiControlLogger.Warn(
@@ -700,7 +722,9 @@ internal static class LocalWakuuRelicRuntime
                 relic, player, choiceContext, combatState, WakuuPotionPhase.EndOfTurn);
         }
 
-        if (cardsPlayed <= 0)
+        // r263：台词只在**真有牌落地**时播（`cardsPlayed` 会把"放弃一张无目标牌"的空转算进去
+        // ⇒ 战神什么都没打也会「唔」一声，即用户看到的"2 个战神一直「唔」"）。
+        if (playsSucceeded <= 0)
         {
             return;
         }
@@ -735,20 +759,32 @@ internal static class LocalWakuuRelicRuntime
     private static int _foreignHandWarnRound = -1;
 
     /// <summary>
-    /// 本回合「**需要目标但大脑解析不到目标**」而放弃的牌（r261）。
-    /// 键 = 席位 + round，牌按引用比；键一变就清空（同 <see cref="_foreignHandWarnPlayerId"/> 的写法）。
+    /// 一个席位在本回合"需要目标但大脑解析不到目标"因此不打的牌（r263：按**席位分槽**，见
+    /// <see cref="_missingTargetSkipSlots"/>）。
+    /// </summary>
+    private sealed class MissingTargetSkipSlot
+    {
+        /// <summary>本槽记录对应的回合号；与当前回合不同 = 这是一份过期记录（懒清理）。</summary>
+        public int Round = -1;
+
+        /// <summary>本席位本回合放弃过的牌（按**引用**比，同一张牌被重打出后是新实例 ⇒ 不误伤）。</summary>
+        public readonly List<CardModel> Cards = new();
+    }
+
+    /// <summary>
+    /// 本回合「**需要目标但大脑解析不到目标**」而放弃的牌，**按席位分槽**（r263）。
     ///
     /// 为什么要记住：这类牌**留在手牌里**，大脑每轮又会把它选中（分数不低）⇒ 不记住就会
     /// 反复触发"放弃"、把这一回合的出牌配额空转掉。记住之后从 <see cref="ResolveAutoplayHand"/>
     /// 的候选集里剔掉，其它牌照常打。
+    ///
+    /// ⚠ **为什么必须分槽（r263 修的是 r262 实机死锁）**：r261 用的是**单槽**（席位 + round + 一张列表），
+    /// 而托管是**按席位逐个进作用域**的 —— 两个战神交替进入时，后一个会把席位键换掉并**清空列表**，
+    /// 前一个的记录就没了 ⇒ 它那张牌重新被选中、再记一次（又清掉对方的）⇒ **互相清空 + 无限循环**
+    /// （实机铁证：765 次"放弃"、`round` 一直停在 3、真人「结束回合」被「仍有可出牌角色」挡住）。
+    /// **名单 / 熔断类状态一律按席位分槽**，不要用"最后一个席位"这种单槽键。
     /// </summary>
-    private static readonly List<CardModel> _missingTargetSkippedCards = new();
-
-    /// <summary>见 <see cref="_missingTargetSkippedCards"/>：这批跳过记录的席位。</summary>
-    private static ulong _missingTargetSkippedSeatId;
-
-    /// <summary>见 <see cref="_missingTargetSkippedCards"/>：这批跳过记录的回合。</summary>
-    private static int _missingTargetSkippedRound = -1;
+    private static readonly Dictionary<ulong, MissingTargetSkipSlot> _missingTargetSkipSlots = new();
 
     /// <summary>
     /// 本局「**托管打这张牌会抛异常**」的名单（键 = `card.Id.ToString()`，跨席位共用）。
@@ -799,15 +835,68 @@ internal static class LocalWakuuRelicRuntime
         _ => true,
     };
 
-    /// <summary>这张牌本回合是否已被记入"没目标所以不打"的名单。</summary>
+    /// <summary>
+    /// 出牌异常之后的**残影收尾**（r263）：把那张牌滞留在**出牌区**（PlayContainer / 出牌队列）的卡面节点收掉，
+    /// 并延后一次手牌 UI 重建 —— 因为"出牌链半途断掉"时那张牌的手牌 holder 已经被摘走、数据却还留在手牌堆，
+    /// 手牌 UI 就会少一个 holder（之后统计/合体按数据搬走它时表现为**没 holder 的"空气牌"**）。
+    ///
+    /// <list type="number">
+    /// <item><b>为什么必须收</b>：r262 已按 `card.Id` 记"本局不让托管打"名单，但名单只保证**不再重试** ——
+    ///   第一次尝试留下的那个卡面**没有任何人收拾**（2026-10-11 实机：黑名单生效了，「不死之烟」仍停在屏幕中间）。</item>
+    /// <item><b>为什么延后重建**手牌 UI**：r111 教训 —— 出牌途中整表重建会打断出牌链。这里统一走已有的
+    ///   <c>LocalMultiControlRuntime.ScheduleDeferredCombatUiRefresh</c>（`CallDeferred` + 等"不在出牌/选牌中"
+    ///   才真重建、超次数放弃）。</item>
+    /// <item><b>只在"残影确实存在"时才做</b>：出牌链正常跑完时 `FindOnTable` 在出牌区找不到节点 ⇒ 本方法直接返回，
+    ///   不会平白重建 UI。</item>
+    /// </list>
+    ///
+    /// 纯表现层：任何异常都只 WARN，绝不上抛（调用点在 catch 里，不能再制造第二个异常）。
+    /// </summary>
+    private static void CleanupStuckPlayAreaNode(CardModel card, string reason)
+    {
+        try
+        {
+            NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+            if (combatUi == null)
+            {
+                return;
+            }
+
+            // 出牌区 = "正在执行"的 PlayContainer + "排队中"的出牌队列；两处都没有 ⇒ 没有残影。
+            NCard? stuck = combatUi.GetCardFromPlayContainer(card) ?? combatUi.PlayQueue.GetCardNode(card);
+            if (stuck == null)
+            {
+                return;
+            }
+
+            LocalMultiControlLogger.Warn(
+                $"出牌异常后回收滞留在出牌区的卡面（数据层不动、手牌 UI 延后重建）: reason={reason}, "
+                + $"card={card.Id.Entry}, owner={card.Owner?.NetId.ToString() ?? "null"}");
+            CardNodeVisualCleanup.FadeOutAndFree(stuck);
+
+            // 手牌 UI 只渲染**受控席位**的手牌 ⇒ 只有它自己的牌才有"少一个 holder"这回事。
+            ulong ownerSeatId = card.Owner?.NetId ?? 0UL;
+            if (ownerSeatId != 0UL && LocalSeatSource.CurrentSeats().IsControlled(ownerSeatId))
+            {
+                LocalMultiControlRuntime.ScheduleDeferredCombatUiRefresh(ownerSeatId);
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn(
+                $"回收滞留卡面失败（纯表现层，已忽略）: card={card.Id.Entry}, error={exception.Message}");
+        }
+    }
+
+    /// <summary>这张牌本回合（**该席位**的）是否已被记入"没目标所以不打"的名单。</summary>
     private static bool WasSkippedForMissingTarget(ulong seatId, int round, CardModel card)
     {
-        if (_missingTargetSkippedSeatId != seatId || _missingTargetSkippedRound != round)
+        if (!_missingTargetSkipSlots.TryGetValue(seatId, out MissingTargetSkipSlot? slot) || slot.Round != round)
         {
-            return false;
+            return false;   // 没有这个席位的记录 / 记录已过期（上一回合的）
         }
 
-        foreach (CardModel skipped in _missingTargetSkippedCards)
+        foreach (CardModel skipped in slot.Cards)
         {
             if (ReferenceEquals(skipped, card))
             {
@@ -818,14 +907,20 @@ internal static class LocalWakuuRelicRuntime
         return false;
     }
 
-    /// <summary>把这张牌记入"没目标所以不打"的名单；返回 <c>true</c> = 本次是新记入（调用方据此打一条 WARN）。</summary>
+    /// <summary>
+    /// 把这张牌记入"没目标所以不打"的名单（**按席位分槽**）；返回 <c>true</c> = 本次是新记入
+    /// （调用方据此打一条 WARN；也是循环闸的输入，见 <see cref="WakuuPlayQueuePolicy.ShouldContinuePlayLoopAfterMissingTargetAbstain"/>）。
+    ///
+    /// 同席位/回合的重复记入返回 <c>false</c>：调用点把它当"过滤没生效"的信号收手（r263）。
+    /// </summary>
     private static bool MarkSkippedForMissingTarget(ulong seatId, int round, CardModel card)
     {
-        if (_missingTargetSkippedSeatId != seatId || _missingTargetSkippedRound != round)
+        if (!_missingTargetSkipSlots.TryGetValue(seatId, out MissingTargetSkipSlot? slot) || slot.Round != round)
         {
-            _missingTargetSkippedSeatId = seatId;
-            _missingTargetSkippedRound = round;
-            _missingTargetSkippedCards.Clear();
+            // 换回合（或第一次）⇒ 只重置**该席位**那一槽；其它席位的记录**必须原样保留**
+            // （r261 的单槽写法就是在这里把别的战神记录清掉的）。
+            slot = new MissingTargetSkipSlot { Round = round };
+            _missingTargetSkipSlots[seatId] = slot;
         }
 
         if (WasSkippedForMissingTarget(seatId, round, card))
@@ -833,8 +928,55 @@ internal static class LocalWakuuRelicRuntime
             return false;
         }
 
-        _missingTargetSkippedCards.Add(card);
+        slot.Cards.Add(card);
         return true;
+    }
+
+    /// <summary>
+    /// 托管口径：**这张牌现在是不是"托管打不了"**（r263 收敛的唯一判据）。
+    ///
+    /// 两类来源：
+    /// <list type="number">
+    /// <item><b>本局不让托管打</b>（<see cref="_unplayableByHostedCardEntries"/>）：托管打它会抛异常（第三方卡效果内部），
+    ///   例如沙耶 mod「色素细胞」；按**局**清（真人不受影响，可自己打）；</item>
+    /// <item><b>本回合不打</b>（<see cref="WasSkippedForMissingTarget"/>）：需要目标、但大脑解析不到目标
+    ///   （第三方自定义 `TargetType`，例如猪猪 mod「抱猪」）；按**席位 + 回合**清。</item>
+    /// </list>
+    ///
+    /// ⚠ 它同时被"喂给大脑的候选集"（<see cref="ResolveAutoplayHand"/>）与"还要不要驱动这条席位"
+    /// （<see cref="HasHostedPlayableCards"/> → 看门狗调度 / 战神收口 / 真人结束回合门）消费：
+    /// **两处必须同一口径**，否则就会出现 r262 那种"托管明知打不了、收口逻辑却认为它还有牌可出"的死锁。
+    /// </summary>
+    internal static bool IsExcludedFromHostedPlay(ulong seatId, int round, CardModel card)
+    {
+        return _unplayableByHostedCardEntries.Contains(card.Id.ToString())
+            || WasSkippedForMissingTarget(seatId, round, card);
+    }
+
+    /// <summary>
+    /// 该席位**托管还能打出**的牌吗？（r263：把"托管打不了"的牌从"可出牌"口径里剔掉）
+    ///
+    /// 原来的三处判定都用裸 `card.CanPlay()`（看门狗调度 / 战神空闲收口 / 真人「结束回合」门），
+    /// 于是一张"数据上能打、托管一打就卡"的牌会让整条链互相等死：托管不再出牌、收口又说"还有牌"。
+    /// 统一问这里，行为才自洽。
+    /// </summary>
+    internal static bool HasHostedPlayableCards(Player player, int round)
+    {
+        CardPile? handPile = PileType.Hand.GetPile(player);
+        if (handPile == null)
+        {
+            return false;
+        }
+
+        foreach (CardModel card in handPile.Cards)
+        {
+            if (card.CanPlay() && !IsExcludedFromHostedPlay(player.NetId, round, card))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -859,21 +1001,13 @@ internal static class LocalWakuuRelicRuntime
 
         IReadOnlyList<CardModel> cards = handPile.Cards;
 
-        // r262：本局"托管打它会抛异常"的牌（第三方卡）不再喂给大脑 —— 真人可自己打。
-        if (_unplayableByHostedCardEntries.Count > 0)
+        // r262（本局"托管打它会抛异常"）+ r261（本回合"需要目标但解析不到目标"）：
+        // 两类"托管打不了"的牌都不再喂给大脑 —— 真人可自己打。口径收敛在 IsExcludedFromHostedPlay（r263）。
+        if (_unplayableByHostedCardEntries.Count > 0 || _missingTargetSkipSlots.ContainsKey(wakuu.NetId))
         {
             cards = cards
-                .Where((candidate) => !_unplayableByHostedCardEntries.Contains(candidate.Id.ToString()))
+                .Where((candidate) => !IsExcludedFromHostedPlay(wakuu.NetId, round, candidate))
                 .ToList();
-        }
-
-        // r261：本回合"需要目标但解析不到目标"而放弃的牌，**不再喂给大脑**
-        // （键 = 席位 + round；牌按引用比。否则大脑每轮又选中它 ⇒ 空转出牌配额）。
-        if (_missingTargetSkippedCards.Count > 0
-            && _missingTargetSkippedSeatId == wakuu.NetId
-            && _missingTargetSkippedRound == round)
-        {
-            cards = cards.Where((candidate) => !WasSkippedForMissingTarget(wakuu.NetId, round, candidate)).ToList();
         }
 
         foreach (CardModel card in cards)
@@ -1228,8 +1362,9 @@ internal static class LocalWakuuRelicRuntime
             return false;
         }
 
-        bool hasPlayableCards = PileType.Hand.GetPile(player).Cards.Any((card) => card.CanPlay());
-        if (!hasPlayableCards)
+        // r263：托管口径 —— "需要目标却没目标"或"效果会抛"的牌不算可出牌（见 HasHostedPlayableCards），
+        // 否则这一席会被每帧反复调度、每次都撞同一个坑（r262 实机的空转/selector-scope-busy 挤压）。
+        if (!HasHostedPlayableCards(player, combatState.RoundNumber))
         {
             reason = "no-playable-cards";
             return false;
@@ -1296,7 +1431,8 @@ internal static class LocalWakuuRelicRuntime
             {
                 return;
             }
-            if (!PileType.Hand.GetPile(player).Cards.Any((card) => card.CanPlay()))
+            // r263：托管口径（见 HasHostedPlayableCards）—— 只剩"托管打不了"的牌时不进作用域。
+            if (!HasHostedPlayableCards(player, combatState.RoundNumber))
             {
                 return;
             }
