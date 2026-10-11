@@ -1124,13 +1124,15 @@ internal static class HellwarWarGodFactory
     /// </summary>
     private static void RemoveWarGodFromCombat(CombatState state, Creature creature, string tag)
     {
-        NCreature? node = NCombatRoom.Instance?.GetCreatureNode(creature);
-        if (node != null)
-        {
-            NCombatRoom.Instance!.RemoveCreatureNode(node);
-            node.ToggleIsInteractable(on: false);
-            node.Visible = false;
-        }
+        // ⚠ **顺序铁律（r261 修）**：先把**数据层**摘干净，再收**视觉节点**（节点引用要**提前抓**）。
+        //
+        // 原来顺序相反（先 `NCombatRoom.RemoveCreatureNode`），而**第三方布局补丁挂在那条链上** ——
+        // r259 / r261 实机铁证：NinjaSlayer 的 `YamotoKokiAllyLayoutPatch`（`PositionPlayersAndPets` 后置）
+        // 在 `RemoveCreatureNode` 链上抛 `Sequence contains no matching element`
+        // ⇒ 异常一出，后面的**数据摘除全部没执行** ⇒ 战神留在 `CombatState.Players` 里、一路留到发奖时刻
+        // （r260 的"逐项容错"只保证"不中断别的战神"，这一个自己仍然没摘干净；实战靠 R12 闸门兜住）。
+        // 现在：① 数据（必须成功、不包 try）② 会话/登记/战斗态（各自 try）③ 视觉节点（best-effort）。
+        NCreature? node = NCombatRoom.Instance?.GetCreatureNode(creature);   // ★ 数据还在时先抓住节点
 
         CombatManager.Instance.RemoveCreature(creature);   // StateTracker 退订 + 广播 CreaturesChanged
         state.RemoveCreature(creature);                    // 从 `_allies` 摘掉 ⇒ `state.Players` 收缩
@@ -1138,8 +1140,17 @@ internal static class HellwarWarGodFactory
         Player? warGod = creature.Player;
         if (warGod != null)
         {
-            DetachFromRun(warGod, tag);
-            RemoveRegistration(warGod);
+            try
+            {
+                DetachFromRun(warGod, tag);
+            }
+            catch (Exception exception)
+            {
+                LocalMultiControlLogger.Warn($"{tag} 战神从 run 卡牌表除名失败（已忽略）: seat={warGod.NetId}, {exception.Message}");
+            }
+
+            RemoveRegistration(warGod);   // 纯内存表，不会抛
+
             // 战斗态也清掉（房间退出时原版只按 `RunState.Players` 复位，战神不在其中 ⇒ 否则污染下一场）。
             try
             {
@@ -1148,6 +1159,24 @@ internal static class HellwarWarGodFactory
             catch (Exception exception)
             {
                 LocalMultiControlLogger.Warn($"{tag} 战神战斗态复位失败（已忽略）: seat={warGod.NetId}, {exception.Message}");
+            }
+        }
+
+        // ③ 视觉节点：**best-effort**（数据层已经干净 ⇒ 这里失败最多留一个画面残留，
+        // 不会再污染 `CombatState.Players` / 发奖）。
+        if (node != null)
+        {
+            try
+            {
+                NCombatRoom.Instance!.RemoveCreatureNode(node);
+                node.ToggleIsInteractable(on: false);
+                node.Visible = false;
+            }
+            catch (Exception exception)
+            {
+                LocalMultiControlLogger.Warn(
+                    $"{tag} 战神视觉节点摘除失败（数据层已摘干净，画面可能残留一个空位）："
+                    + $"第三方布局补丁常在这一链上抛: seat={warGod?.NetId}, error={exception.Message}");
             }
         }
 

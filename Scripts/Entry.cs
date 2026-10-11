@@ -510,7 +510,28 @@ public partial class Entry
     //     在介入卡面解析）。等下一局探针落证据。
     //  ③ 合体日志补 `（混抽可用性：瓦库抽牌堆=N 张, 我方=M 张）`：混抽/混弃的日志只在"真的搬了牌"时才打 ⇒
     //     没有这一行会把"瓦库抽牌堆本来就空"误读成"混抽没生效"（r259 那局 `合体混抽` / `合体混弃` 各 0 条就是这个坑）。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-10-r260)";
+    // r261（2026-10-11，用户实机）**两个坑：① 托管打了"需要目标却没目标"的牌 ⇒ 卡面卡屏幕中间（根因 = 第三方自定义 TargetType）
+    //   ② 战后摘战神改成"数据先摘、视觉节点后收"**：
+    //  ① 🔴 **根因（日志铁证）**：猪猪 mod 的「抱猪」`YUWANCARD-PIG_HUG` 用的是 **第三方自定义 `TargetType`**
+    //     （日志里 BaseLib 给该枚举生成 KeyGenerator：`starting value 10`），而大脑目标解析 `ResolveTarget`
+    //     的 `_ => null` 覆盖不到它 ⇒ `瓦库评分出牌: player=4096, card=…PIG_HUG, target=无`
+    //     ⇒ 原实现把 `target=null` 直接交给 `CardCmd.AutoPlay`（战神走 inline 路径）⇒
+    //     **出牌流程卡住、卡面停在屏幕中间**（用户实机："这张牌卡在屏幕中间…需要选择一个目标盟友"）。
+    //     后续【合体】把这牌的数据搬进真人手牌时，它的节点还留在 Play 区 ⇒ 手牌里**没 holder**
+    //     （合体自检实测：`PIG_HUG[holder=无, 在容器=否, 节点在树=否]`，另 4 张齐全）= 用户说的"空气牌"
+    //     ⇒ **两个现象同一个根因**。
+    //     修法 = 纯函数 `WakuuPlayQueuePolicy.ShouldAbstainForMissingTarget(目标为空, 目标类型需要目标)`
+    //     + 运行时白名单 `RequiresTarget`（`Self/None/AllEnemies/AllAllies` 之外**一律**按"需要目标"，
+    //     关键在"之外都算" ⇒ **第三方自定义 TargetType 也落进来**）：需要目标却没目标 ⇒
+    //     **放弃这一张**（牌留在手牌、真人可自己打）+ 去重 WARN，并记入"本回合不再考虑"名单
+    //     （否则大脑每轮又选中它 ⇒ 空转出牌配额）。
+    //  ② **战后摘战神：数据先摘、视觉节点后收**（r259/r261 实机根因见 r260 那条：第三方 NinjaSlayer 布局补丁
+    //     在 `NCombatRoom.RemoveCreatureNode` 链上抛 `Sequence contains no matching element`）。
+    //     原来"先摘节点"的写法会让**数据摘除一起中断** ⇒ 战神留在 `CombatState.Players` 直到发奖时刻
+    //     （r260 的逐项容错只保证"不中断别的战神"，这一个自己还是没摘干净；实战靠 R12 闸门兜住）。
+    //     现在：① 数据（必须成功、不包 try；节点引用**提前抓**）② 会话/登记/战斗态（各自 try）
+    //     ③ 视觉节点（best-effort，失败只 WARN —— 数据已干净，最多画面残留）。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-11-r261)";
 
     private static Harmony? _harmony;
 

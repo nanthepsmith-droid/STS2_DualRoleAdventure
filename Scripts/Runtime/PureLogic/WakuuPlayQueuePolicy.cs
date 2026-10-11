@@ -120,4 +120,23 @@ internal static class WakuuPlayQueuePolicy
     {
         return isAnyTargetCard;
     }
+
+    /// <summary>
+    /// **要不要为"这张牌需要目标、但大脑没解析出目标"而放弃本次出牌**（r261 修）。
+    ///
+    /// 为什么必须放弃而不是"照原样打出去"：目标类型要求目标时，把 <c>null</c> 目标交给原版出牌链
+    /// ⇒ **出牌流程卡住**、卡面**停在屏幕中间**（2026-10-11 用户实机：猪猪 mod 的「抱猪」`YUWANCARD-PIG_HUG`
+    /// 被战神托管打出、`target=无` ⇒ 卡面卡在屏幕中央；随后统计/合体还会把它当"手牌里的一张牌"搬走，
+    /// 表现为"没样子但占位"的空气牌）。
+    ///
+    /// ⚠ 判据第二项由调用方给（本层不引用游戏类型）：调用方把
+    /// `card.TargetType` 归成"**明确不需要目标**的白名单之外都算需要目标"
+    /// （白名单 = `Self` / `None` / `AllEnemies` / `AllAllies`）——
+    /// 关键在"之外**都算**"：**第三方 mod 自定义的 TargetType** 也会落进"需要目标"，
+    /// 这正是本条的由来（自定义目标类型我们无从解析，宁可放弃这一张、让真人自己打）。
+    /// </summary>
+    public static bool ShouldAbstainForMissingTarget(bool targetIsNull, bool targetTypeNeedsTarget)
+    {
+        return targetIsNull && targetTypeNeedsTarget;
+    }
 }

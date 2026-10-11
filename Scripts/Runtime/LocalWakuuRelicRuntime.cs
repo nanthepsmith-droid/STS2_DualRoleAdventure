@@ -572,6 +572,23 @@ internal static class LocalWakuuRelicRuntime
                             $"瓦库评分出牌: player={player.NetId}, round={combatState.RoundNumber}, card={next.Card.Id}, target={targetText}, {next.Reason}");
                     }
 
+                    // 🛡 r261：**需要目标却解析不到目标 ⇒ 这张牌本回合不打**。
+                    // 不这么做的话，`target=null` 会被交给原版出牌链 ⇒ 出牌流程卡住、卡面**停在屏幕中间**
+                    // （2026-10-11 用户实机：猪猪 mod「抱猪」的自定义 TargetType 走 `_ => null` 分支）。
+                    // 顺手把它记入"本回合不打"名单 ⇒ 不再喂给大脑（否则每轮又选中它、空转出牌配额）。
+                    if (WakuuPlayQueuePolicy.ShouldAbstainForMissingTarget(next.Target == null, RequiresTarget(next.Card)))
+                    {
+                        if (MarkSkippedForMissingTarget(player.NetId, combatState.RoundNumber, next.Card))
+                        {
+                            LocalMultiControlLogger.Warn(
+                                $"瓦库放弃「需要目标但解析不到目标」的牌（本回合不再考虑它；第三方自定义 TargetType 常见）: "
+                                + $"player={player.NetId}, round={combatState.RoundNumber}, card={next.Card.Id.Entry}, "
+                                + $"targetType={next.Card.TargetType}（真人可自己打这张）");
+                        }
+
+                        continue;
+                    }
+
                     // 扣费归属：只有 inline AutoPlay 需要"外层先花"（它随后跳过 X 捕获）；
                     // 队列路径由 PlayCardAction 自己扣 —— 外层再花一次就是双重扣能量（方案 §12.2 ③）。
                     if (WakuuPlayQueuePolicy.NeedsExternalSpendResources(playPath))
@@ -695,6 +712,79 @@ internal static class LocalWakuuRelicRuntime
     private static int _foreignHandWarnRound = -1;
 
     /// <summary>
+    /// 本回合「**需要目标但大脑解析不到目标**」而放弃的牌（r261）。
+    /// 键 = 席位 + round，牌按引用比；键一变就清空（同 <see cref="_foreignHandWarnPlayerId"/> 的写法）。
+    ///
+    /// 为什么要记住：这类牌**留在手牌里**，大脑每轮又会把它选中（分数不低）⇒ 不记住就会
+    /// 反复触发"放弃"、把这一回合的出牌配额空转掉。记住之后从 <see cref="ResolveAutoplayHand"/>
+    /// 的候选集里剔掉，其它牌照常打。
+    /// </summary>
+    private static readonly List<CardModel> _missingTargetSkippedCards = new();
+
+    /// <summary>见 <see cref="_missingTargetSkippedCards"/>：这批跳过记录的席位。</summary>
+    private static ulong _missingTargetSkippedSeatId;
+
+    /// <summary>见 <see cref="_missingTargetSkippedCards"/>：这批跳过记录的回合。</summary>
+    private static int _missingTargetSkippedRound = -1;
+
+    /// <summary>
+    /// 这张牌**必须**有目标才能打吗？（r261）
+    ///
+    /// 白名单=**明确不需要目标**的目标类型（`Self` / `None` / `AllEnemies` / `AllAllies`），
+    /// **白名单之外一律按"需要目标"处理** —— 包括 **第三方 mod 自定义的 `TargetType`**：
+    /// 本环境实测（2026-10-11）猪猪 mod 的「抱猪」`YUWANCARD-PIG_HUG` 就是自定义目标类型，
+    /// 大脑的 `_ => null` 解析不到目标，而原实现把 `target=null` 直接交给原版出牌链
+    /// ⇒ **出牌流程卡住、卡面停在屏幕中间**（用户实机现象）。
+    /// 宁可**放弃这一张**（牌留在手牌、真人可自己打），也不要把"无目标的出牌"交出去。
+    /// </summary>
+    private static bool RequiresTarget(CardModel card) => card.TargetType switch
+    {
+        TargetType.Self => false,
+        TargetType.None => false,
+        TargetType.AllEnemies => false,
+        TargetType.AllAllies => false,
+        _ => true,
+    };
+
+    /// <summary>这张牌本回合是否已被记入"没目标所以不打"的名单。</summary>
+    private static bool WasSkippedForMissingTarget(ulong seatId, int round, CardModel card)
+    {
+        if (_missingTargetSkippedSeatId != seatId || _missingTargetSkippedRound != round)
+        {
+            return false;
+        }
+
+        foreach (CardModel skipped in _missingTargetSkippedCards)
+        {
+            if (ReferenceEquals(skipped, card))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>把这张牌记入"没目标所以不打"的名单；返回 <c>true</c> = 本次是新记入（调用方据此打一条 WARN）。</summary>
+    private static bool MarkSkippedForMissingTarget(ulong seatId, int round, CardModel card)
+    {
+        if (_missingTargetSkippedSeatId != seatId || _missingTargetSkippedRound != round)
+        {
+            _missingTargetSkippedSeatId = seatId;
+            _missingTargetSkippedRound = round;
+            _missingTargetSkippedCards.Clear();
+        }
+
+        if (WasSkippedForMissingTarget(seatId, round, card))
+        {
+            return false;
+        }
+
+        _missingTargetSkippedCards.Add(card);
+        return true;
+    }
+
+    /// <summary>
     /// 瓦库自动出牌的「手牌」读数（r230 兜底）：**只认属于该瓦库自己的牌**。
     ///
     /// 为什么需要这道过滤（2026-10-07 实机事故）：【合体】把牌**改归属**后若牌仍留在瓦库手里，
@@ -715,6 +805,16 @@ internal static class LocalWakuuRelicRuntime
         }
 
         IReadOnlyList<CardModel> cards = handPile.Cards;
+
+        // r261：本回合"需要目标但解析不到目标"而放弃的牌，**不再喂给大脑**
+        // （键 = 席位 + round；牌按引用比。否则大脑每轮又选中它 ⇒ 空转出牌配额）。
+        if (_missingTargetSkippedCards.Count > 0
+            && _missingTargetSkippedSeatId == wakuu.NetId
+            && _missingTargetSkippedRound == round)
+        {
+            cards = cards.Where((candidate) => !WasSkippedForMissingTarget(wakuu.NetId, round, candidate)).ToList();
+        }
+
         foreach (CardModel card in cards)
         {
             if (card.Owner == wakuu)

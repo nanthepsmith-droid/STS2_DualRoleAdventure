@@ -104,6 +104,21 @@ public class WakuuPlayQueuePolicyTests
         });
     }
 
+    [TestCase(true, true, true)]     // 需要目标 + 没解析到目标 ⇒ **放弃本次出牌**（r261）
+    [TestCase(true, false, false)]   // 不需要目标的牌（Self / None / AllEnemies / AllAllies）⇒ 照打
+    [TestCase(false, true, false)]   // 需要目标且解析到了 ⇒ 照打
+    [TestCase(false, false, false)]
+    public void 需要目标却没目标时放弃出牌(bool targetIsNull, bool targetTypeNeedsTarget, bool expected)
+    {
+        // 背景（2026-10-11 用户实机）：猪猪 mod「抱猪」用**第三方自定义 TargetType** ⇒ 大脑的
+        // `_ => null` 解析不到目标 ⇒ 原实现把 target=null 交给原版出牌链 ⇒ **出牌流程卡住、卡面停在屏幕中间**
+        // （后续统计/合体还会把它当"手牌里的牌"搬走 ⇒ 表现为"没样子但占位"的空气牌）。
+        // 判据第二项由调用方给（本层不引用游戏类型）：白名单之外**一律算"需要目标"**，第三方自定义值也落进来。
+        Assert.That(
+            WakuuPlayQueuePolicy.ShouldAbstainForMissingTarget(targetIsNull, targetTypeNeedsTarget),
+            Is.EqualTo(expected));
+    }
+
     [Test]
     public void 配置默认开启并发出牌档()
     {
