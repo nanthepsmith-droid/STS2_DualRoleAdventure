@@ -352,7 +352,16 @@ internal static class HellwarSummonCombatRuntime
             switch (chosen.Kind)
             {
                 case SummonKind.SingleTier:
-                    await RunSingleSummonAsync(owner, state, earring, chosen);
+                    // 预设战神 v2（Phase B，r273）：单点召唤在选完**档位**之后，再弹**第二层「选角色预设」**。
+                    HellwarWarGodPreset? pickedPreset = await PickTierPresetAsync(owner, state, chosen.Tier);
+                    if (pickedPreset == null)
+                    {
+                        LocalMultiControlLogger.Info(
+                            $"{LogTag} 预设选择已取消：本次召唤不执行（计数未扣）。player={owner.NetId}, 档位={chosen.Tier}");
+                        break;
+                    }
+
+                    await RunSingleSummonAsync(owner, state, earring, chosen, pickedPreset);
                     break;
                 case SummonKind.Endless:
                     await RunEndlessWarGodAsync(owner, state, earring, chosen);
@@ -374,9 +383,81 @@ internal static class HellwarSummonCombatRuntime
         }
     }
 
+    /// <summary>
+    /// 预设战神 v2（Phase B，r273）：单点召唤选定**档位**之后，弹**第二层「选角色预设」**，
+    /// 返回玩家点名的那套预设。取消 / 拿不到 ⇒ <c>null</c>（调用方**不扣计数**、整次召唤不执行）。
+    ///
+    /// <para>口径（用户拍板 ①②③④）：</para>
+    /// <list type="bullet">
+    /// <item>候选 = 「自动」+（候选 &gt; 1 时）「随机」+ 具体预设（普通档 = **全部角色**；其余档 = 内置默认 + 文件预设）；</item>
+    /// <item>具体候选 ≤ 1 条 ⇒ **不弹**（直接返回该档默认预设，避免"每次都要多点一下"）；</item>
+    /// <item>随机 = 从该档**全部具体候选**里取（含文件预设）。</item>
+    /// </list>
+    /// </summary>
+    private static async Task<HellwarWarGodPreset?> PickTierPresetAsync(
+        Player owner, CombatState state, HellwarWarGodTier tier)
+    {
+        HellwarWarGodPreset fallback = LocalHellwarPresetStore.ResolveDefault(tier);
+        IReadOnlyList<HellwarWarGodPreset> concrete = HellwarPresetCatalog.ConcreteFor(tier);
+        if (!HellwarPresetChoices.ShouldOfferPicker(concrete))
+        {
+            return fallback;
+        }
+
+        IReadOnlyList<HellwarPresetPickOption> options = HellwarPresetChoices.BuildPickOptions(fallback, concrete);
+        List<string> labels = options
+            .Select((option) => HellwarPresetCatalog.DescribePickOption(option))
+            .ToList();
+        LocalMultiControlLogger.Info(
+            $"{LogTag} 弹出角色预设选择（第 2 步）: player={owner.NetId}, 档位={tier}, "
+            + $"候选={concrete.Count} 套, 默认={HellwarPresetCatalog.DescribePresetShort(fallback)}");
+
+        int? index;
+        // 两道防护与第一层同款（归属者钉成召唤者、压制瓦库作用域外自动作答）。
+        using (CardSelectForegroundSwitchPatch.PushChoiceOwner(owner.NetId))
+        using (CardSelectWakuuTurnStartAutoAnswerPatch.SuppressForHumanChoice())
+        {
+            index = await LocalWakuuChoiceOverlay.PickIndexAsync(LocalModText.HellwarPresetPickTitle, labels);
+        }
+
+        if (index == null || index.Value < 0 || index.Value >= options.Count)
+        {
+            return null;
+        }
+
+        HellwarPresetPickOption chosen = options[index.Value];
+        HellwarWarGodPreset preset = chosen.Kind switch
+        {
+            HellwarPresetPickKind.Random => RollRandomPreset(state, concrete, fallback),
+            _ => chosen.Preset,
+        };
+
+        LocalMultiControlLogger.Info(
+            $"{LogTag} 角色预设已选定: player={owner.NetId}, 档位={tier}, 种类={chosen.Kind}, "
+            + $"{HellwarWarGodPresets.Describe(preset)}");
+        return preset;
+    }
+
+    /// <summary>从本档全部候选里随机取一个（池为空 ⇒ 回落该档默认预设）。</summary>
+    private static HellwarWarGodPreset RollRandomPreset(
+        CombatState state, IReadOnlyList<HellwarWarGodPreset> concrete, HellwarWarGodPreset fallback)
+    {
+        try
+        {
+            int roll = state.RunState.Rng.CombatTargets.NextInt(Math.Max(concrete.Count, 1));
+            return HellwarPresetChoices.PickRandom(concrete, roll) ?? fallback;
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"{LogTag} 随机预设取值异常（回落默认预设）: {exception.Message}");
+            return fallback;
+        }
+    }
+
     /// <summary>四档单点召唤：**先扣本场预算 → 生成 1 个 → 生成失败退回**。</summary>
     private static async Task RunSingleSummonAsync(
-        Player owner, CombatState state, LocalWakuuHellwarEarring earring, SummonOption option)
+        Player owner, CombatState state, LocalWakuuHellwarEarring earring, SummonOption option,
+        HellwarWarGodPreset preset)
     {
         if (!earring.TrySpendCombatSpirit(option.Cost, "summon"))
         {
@@ -386,8 +467,7 @@ internal static class HellwarSummonCombatRuntime
             return;
         }
 
-        // 预设战神 v2（r269）：该档的**默认预设**（hellwar_presets.json 里有就用它，否则内置默认）。
-        HellwarWarGodPreset preset = LocalHellwarPresetStore.ResolveDefault(option.Tier);
+        // 预设战神 v2（r269 起地基、r273 起由第二层「选预设」传入）：这一档要用哪套预设。
         int spawned = await SpawnWarGodsAsync(state, owner, new[] { preset }, option.Tier.ToString());
         if (spawned == 0)
         {
@@ -459,14 +539,17 @@ internal static class HellwarSummonCombatRuntime
         _endlessUsedThisCombat = true;
 
         // D17：每个补位各掷一次（"随机取档"而不是"整批同一档"）。
-        // 随机池按开关取：默认 普通/罕见/稀有（先古是【九连环】专属）；开「无尽战神允许开出先古」则四档全进（2026-10-10）。
+        // 随机池：默认 普通/罕见/稀有（先古是【九连环】专属）；开「无尽战神允许开出先古」则四档全进（2026-10-10）。
+        // 预设战神 v2（r273）：池 = 内置档位表 ∪ hellwar_presets.json 挂到这几档的预设 —— 没文件时与旧行为逐条一致。
         bool includeAncient = LocalWakuuAutopilotConfig.HellwarEndlessAncient;
-        HellwarWarGodPreset[] pool = HellwarWarGodPresets.ResolveRandomPool(includeAncient);
+        IReadOnlyList<HellwarWarGodPreset> pool = HellwarPresetCatalog.EndlessPool(includeAncient);
         List<HellwarWarGodPreset> presets = new();
         for (int i = 0; i < option.Count; i++)
         {
-            int roll = state.RunState.Rng.CombatTargets.NextInt(pool.Length);
-            presets.Add(HellwarWarGodPresets.PickRandom(roll, includeAncient));
+            int roll = state.RunState.Rng.CombatTargets.NextInt(Math.Max(pool.Count, 1));
+            presets.Add(
+                HellwarPresetChoices.PickRandom(pool, roll)
+                ?? HellwarWarGodPresets.PickRandom(roll, includeAncient));
         }
 
         int spawned = await SpawnWarGodsAsync(state, owner, presets, "endless-war-god");
@@ -482,7 +565,7 @@ internal static class HellwarSummonCombatRuntime
         LocalMultiControlLogger.Info(
             $"{LogTag} 已开【无尽战神】: owner={owner.NetId}, 花费={option.Cost}（本场预算）, "
             + $"预计={option.Count} 实际={spawned} 个, 档位=[{string.Join(",", presets.Select((preset) => preset.Tier))}], "
-            + $"随机池={(includeAncient ? "含先古" : "不含先古")}, "
+            + $"随机池={(includeAncient ? "含先古" : "不含先古")}({pool.Count} 套), "
             + $"可用={earring.AvailableSpirit}/上限={earring.SpiritCount}, "
             + $"战斗内玩家={state.Players.Count}/{LocalSelfCoopContext.MaxLocalPlayerCount}");
     }
@@ -506,7 +589,16 @@ internal static class HellwarSummonCombatRuntime
 
         _nineChainUsedThisCombat = true;
 
-        List<HellwarWarGodPreset> presets = Enumerable.Repeat(HellwarWarGodPresets.Ancient, option.Count).ToList();
+        // 预设战神 v2（r273）：池 = 先古档内置默认 ∪ hellwar_presets.json 的先古预设
+        // （没文件时池里就一条内置先古 ⇒ 9 个全同，与旧行为一致）。
+        IReadOnlyList<HellwarWarGodPreset> pool = HellwarPresetCatalog.NineChainPool();
+        List<HellwarWarGodPreset> presets = new(option.Count);
+        for (int i = 0; i < option.Count; i++)
+        {
+            int roll = state.RunState.Rng.CombatTargets.NextInt(Math.Max(pool.Count, 1));
+            presets.Add(HellwarPresetChoices.PickRandom(pool, roll) ?? HellwarWarGodPresets.Ancient);
+        }
+
         int spawned = await SpawnWarGodsAsync(state, owner, presets, "nine-chain");
         if (spawned == 0)
         {
@@ -535,7 +627,7 @@ internal static class HellwarSummonCombatRuntime
         LocalMultiControlLogger.Info(
             $"{LogTag} 已开【终极九连环】: owner={owner.NetId}, "
             + $"永久花费={option.Cost}, 上限={capBefore}→{earring.SpiritCount}, "
-            + $"预计={option.Count} 实际={spawned} 个先古, 本场已花={earring.CombatSpentSpirit}, "
+            + $"预计={option.Count} 实际={spawned} 个先古, 池={pool.Count} 套, 本场已花={earring.CombatSpentSpirit}, "
             + $"战斗内玩家={state.Players.Count}/{LocalSelfCoopContext.MaxLocalPlayerCount}");
     }
 

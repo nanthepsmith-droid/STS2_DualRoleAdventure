@@ -661,7 +661,22 @@ public partial class Entry
     //   （VfxSpawnPosition / PowerAppliedVfxSpawnPosition）挂 finalizer 吞 NRE、落 `(0,0)` ——
     //   **刻意不兜引用类型返回**（Body 等），否则炸点转移到调用方。根因 = ArknightsBoss 资源缺失
     //   （建议用户更新/重装该 mod），护栏是逐点兜底。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-11-r272)";
+    // r273（2026-10-11，预设战神 v2 **Phase B**，⭐ 待实机）：**召唤时「选档 → 选预设」两层 UI + 随机池接文件池**。
+    //   ① 新纯逻辑 `PureLogic/HellwarPresetChoices.cs`（第二层行结构 [自动]/(候选>1)[随机]/各具体预设 + 随机池去重）+ 单测；
+    //      新运行时目录 `HellwarPresetCatalog`：普通档候选 = **所有原版角色**（皮肤=角色、卡组=不替换⇒初始卡组、
+    //      不加额外遗物⇒初始遗物），其余档 = 内置默认 + `hellwar_presets.json` 挂该档的预设；随机池 = 内置 ∪ 文件预设。
+    //   ② `HellwarSummonCombatRuntime.PromptSummonAsync` 单点召唤选定档位后弹**第二层「选角色预设」**
+    //      （候选 ≤1 条不弹；取消 ⇒ 不扣计数、整次不执行）；【无尽战神】/【九连环】随机池改接文件池
+    //      （**没文件时与旧行为逐条一致** ⇒ 零回归）。
+    //   ③ 订正 `HellwarWarGodFactory.ApplyPresetDeck`：预设 deck **显式空串 = 不替换**（原先会一路落到该档内置卡组，
+    //      对"角色预设"就是错的 —— 会把别的角色的内置卡组套到所选角色身上）。
+    // r274（2026-10-11，r273 实机判读修的两处 + 一处日志文案，⭐ 待实机）：
+    //   ① `HellwarContentPatch` 的 ③ 预设表自检**不能 return** —— 没写预设文件（最常见）时它会提前返回，
+    //      把下面 ④ 的「预设候选已就绪」自检整个跳过（r273 局该锚点 0 命中 ⇒ 判读时误以为链路没走到）。
+    //   ② `HellwarPresetCatalog.CharacterPresets` 只收 **`IsPlayable` 的角色** —— 角色表里混着
+    //      `Deprived` / `RandomCharacter` / `DeprecatedCharacter`（初始卡组是"各角色各一张"的拼凑牌）⇒ 剔除。
+    //   ③ `③ 已建战斗内节点` 那条日志原文写死"普通档用召唤者的角色皮"，现在普通档可选任意角色 ⇒ 文案改成"取该预设的 skin"。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-11-r274)";
 
     private static Harmony? _harmony;
 

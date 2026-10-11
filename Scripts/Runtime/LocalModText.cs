@@ -300,6 +300,30 @@ internal static class LocalModText
             $"【Ultimate Nine-Chain】 summons {count} ancient war gods (**permanently** spends {cost} charges from your cap · once per combat)");
     }
 
+    // ---- 战灵召唤 · 预设战神 v2（Phase B）：第二层「选角色预设」----
+
+    /// <summary>第二层「选角色预设」弹层的标题。</summary>
+    public static string HellwarPresetPickTitle =>
+        Select("选择战神角色预设（第 2 步）", "Choose a war god preset (step 2)");
+
+    /// <summary>第二层里「自动」行的文案（后面跟该档默认预设的简称）。</summary>
+    public static string HellwarPresetAutoLabel(string defaultName)
+    {
+        return Select(
+            $"自动（默认：{defaultName}）",
+            $"Auto (default: {defaultName})");
+    }
+
+    /// <summary>第二层里「随机」行的文案（从本档全部候选人里随机取一个）。</summary>
+    public static string HellwarPresetRandomLabel =>
+        Select("随机（从本档全部预设里随机）", "Random (pick any preset of this tier)");
+
+    /// <summary>内置默认预设的简称（没有显示名时用它）。</summary>
+    public static string HellwarPresetBuiltinLabel(string tierName)
+    {
+        return Select($"{tierName} · 内置默认", $"{tierName} · built-in");
+    }
+
     // ---- 战灵召唤 · Phase 3：战神托管出牌（R11）----
 
     /// <summary>

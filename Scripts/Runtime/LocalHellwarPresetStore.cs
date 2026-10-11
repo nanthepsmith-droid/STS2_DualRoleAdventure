@@ -19,9 +19,10 @@ namespace LocalMultiControl.Scripts.Runtime;
 /// ① entry-init（<c>Entry.Init</c>）；② run-launched（每局开始，玩家中途改文件下一局生效）；
 /// ③ <c>ModelDb.Preload</c> 后（<see cref="HellwarContentPatch"/> 的自检锚点，那时卡/遗物 id 才可校验）。</para>
 ///
-/// <para><b>Phase A 边界（2026-10-11 拍板顺序的另一半）</b>：本阶段预设表只接**单点召唤**
-/// （选了档位 ⇒ 用该档默认预设）；【无尽战神】/【九连环】的批量随机池仍走内置档位表
-/// （<see cref="HellwarWarGodPresets.PickRandom"/>），接文件池与「召唤时选预设」UI 一起放在下一 phase。</para>
+/// <para><b>消费面</b>（r273 起 = 预设战神 v2 的 Phase B 已接完）：单点召唤走「选档 → **选角色预设**」两层
+/// （第二层候选见 <see cref="HellwarPresetCatalog"/>）；【无尽战神】/【九连环】的随机池也已并上文件池
+/// （<see cref="HellwarPresetCatalog.EndlessPool"/> / <see cref="HellwarPresetCatalog.NineChainPool"/>，
+/// 没有文件预设时与内置档位表逐条一致）。</para>
 /// </summary>
 internal static class LocalHellwarPresetStore
 {

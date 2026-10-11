@@ -110,35 +110,60 @@ internal static class HellwarContentPatch
             HellwarPresetTable table = LocalHellwarPresetStore.Table;
             if (table.All.Count == 0)
             {
+                // ⚠ 这里**不能 return**（r273 实机踩过）：下面的 ④ 预设候选自检与预设表无关，
+                //    一旦提前返回，"没写预设文件"这个最常见的情况下 ④ 永远打不出来（锚点全缺 ⇒ 判读时误以为链路没走到）。
                 LocalMultiControlLogger.Info(
                     "[地狱战神] 预设表: 未配置（文件不存在或为空），四档用内置默认。"
                     + $"想自定义（或给编辑器用）就写 {LocalHellwarPresetStore.FilePath}");
-                return;
             }
-
-            foreach (HellwarWarGodTier tier in Enum.GetValues<HellwarWarGodTier>())
+            else
             {
-                HellwarPresetDefinition? definition = table.DefaultForTier(tier);
-                if (definition == null)
+                foreach (HellwarWarGodTier tier in Enum.GetValues<HellwarWarGodTier>())
                 {
-                    LocalMultiControlLogger.Info($"[地狱战神] 预设表: 档位={tier} 未配置预设，用内置默认");
-                    continue;
-                }
+                    HellwarPresetDefinition? definition = table.DefaultForTier(tier);
+                    if (definition == null)
+                    {
+                        LocalMultiControlLogger.Info($"[地狱战神] 预设表: 档位={tier} 未配置预设，用内置默认");
+                        continue;
+                    }
 
-                HellwarWarGodPreset runtime = HellwarPresetRuntimeMapping.ToRuntimePreset(
-                    definition, tier, HellwarWarGodPresets.Resolve(tier));
-                int deckCount = HellwarWarGodDeckPlan.Parse(runtime.DeckText)?.Count ?? 0;
-                LocalMultiControlLogger.Info(
-                    $"[地狱战神] 预设表: 档位={tier} 默认预设=\"{runtime.DisplayName}\"(id={runtime.PresetId}, "
-                    + $"皮肤={runtime.SkinKey}, 卡组={deckCount} 张, 遗物="
-                    + $"{runtime.RelicEntries?.Count.ToString() ?? "继承内置"} 件, 全升级={runtime.UpgradeDeck}, "
-                    + $"额外血={runtime.BonusHp})");
-                VerifyPresetIds(tier, runtime);
+                    HellwarWarGodPreset runtime = HellwarPresetRuntimeMapping.ToRuntimePreset(
+                        definition, tier, HellwarWarGodPresets.Resolve(tier));
+                    int deckCount = HellwarWarGodDeckPlan.Parse(runtime.DeckText)?.Count ?? 0;
+                    LocalMultiControlLogger.Info(
+                        $"[地狱战神] 预设表: 档位={tier} 默认预设=\"{runtime.DisplayName}\"(id={runtime.PresetId}, "
+                        + $"皮肤={runtime.SkinKey}, 卡组={deckCount} 张, 遗物="
+                        + $"{runtime.RelicEntries?.Count.ToString() ?? "继承内置"} 件, 全升级={runtime.UpgradeDeck}, "
+                        + $"额外血={runtime.BonusHp})");
+                    VerifyPresetIds(tier, runtime);
+                }
             }
         }
         catch (System.Exception exception)
         {
             LocalMultiControlLogger.Warn($"[地狱战神] 预设表自检失败（召唤时会重新解析并打 WARN）: {exception.Message}");
+        }
+
+        // ④ 预设候选（预设战神 v2 · Phase B，r273）：把每档"第二层选预设"的候选打一行。
+        //    关键契约 = **普通档必须是全部可玩角色**（皮肤能在角色表里解析到；卡组/遗物随角色自带），
+        //    其余档 = 内置默认 + `hellwar_presets.json` 挂到该档的预设。只打日志不抛。
+        try
+        {
+            foreach (HellwarWarGodTier tier in HellwarSummonPolicy.SelectableTiers)
+            {
+                IReadOnlyList<HellwarWarGodPreset> concrete = HellwarPresetCatalog.ConcreteFor(tier);
+                bool offersPicker = HellwarPresetChoices.ShouldOfferPicker(concrete);
+                string names = concrete.Count == 0
+                    ? ""
+                    : string.Join(", ", concrete.Select((preset) => HellwarPresetCatalog.DescribePresetShort(preset)));
+                LocalMultiControlLogger.Info(
+                    $"[地狱战神] 预设候选已就绪: 档位={tier}, {concrete.Count} 套[{names}]"
+                    + (offersPicker ? "（召唤时弹第二层「选角色预设」）" : "（只有一套 ⇒ 直接用它，不弹第二层）"));
+            }
+        }
+        catch (System.Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"[地狱战神] 预设候选自检失败（召唤时会重新构建）: {exception.Message}");
         }
     }
 

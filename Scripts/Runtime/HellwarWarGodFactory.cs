@@ -613,8 +613,9 @@ internal static class HellwarWarGodFactory
             NCombatRoom.Instance?.AddCreature(player.Creature);
             LocalMultiControlLogger.Info(
                 $"{tag} ③ 已建战斗内节点（**立绘/血条应已出现**）: seat={seatId}, "
-                + $"房间可用={NCombatRoom.Instance != null} —— ⚠ 普通档用**召唤者的角色皮**（画面上会看到与真人相同的角色，"
-                + "这是预期、不是重复席位的 bug）；罕见/稀有/先古用预设表里的原版角色皮；"
+                + $"房间可用={NCombatRoom.Instance != null} —— 角色皮取该预设的 skin（{preset.SkinKey}）："
+                + "普通档默认 = 召唤者自身角色（画面上与真人相同，这是预期、不是重复席位的 bug），"
+                + "在第二层「选预设」里选了别的角色时就用那套的皮；"
                 + "它的回合由本功能自动收口（日志见 `战神已自动结束回合`）");
 
             // ③b ★★ 必做（r244 实机"召唤战神后**不能结束回合**"的真因）：
@@ -723,9 +724,19 @@ internal static class HellwarWarGodFactory
     /// </summary>
     private static int ApplyPresetDeck(Player player, HellwarWarGodPreset preset, string tag)
     {
-        // 预设战神 v2（r269）：预设**自带卡组文本**（hellwar_presets.json，格式与 hellwarDeck* 一致）优先；
+        // 预设战神 v2（r269 起地基；r273 订正语义）：预设**自带卡组文本**（hellwar_presets.json，格式与 hellwarDeck* 一致）优先；
         // 预设没写（null = 继承）⇒ 走旧链：hellwarDeck* 配置键 → 内置默认。
-        // ⚠ 预设显式写空串 = 「不替换」（DeckPlan.Parse("") = null ⇒ Cards = null ⇒ 保留角色初始卡组）。
+        // ⚠ 预设**显式写空串 = 「不替换」**（保留该角色初始卡组）—— 这一条必须在这里拦住：
+        //   `DeckPlan.Parse("")` 返回 null，会一路落到"该档内置默认卡组"（罕见=静默猎手 / 稀有=铁甲战士 / 先古=摄政王），
+        //   对"角色预设"（普通档的**所有角色**）就是错的 —— 会把别的角色的内置卡组套到所选角色身上。
+        if (preset.DeckText != null && preset.DeckText.Trim().Length == 0)
+        {
+            LocalMultiControlLogger.Info(
+                $"{tag} ①a 预设卡组不替换（预设显式留空 ⇒ 沿用该角色初始卡组）: seat={player.NetId}, "
+                + $"档位={preset.Tier}, 来源=预设({preset.DisplayName}({preset.PresetId}))");
+            return 0;
+        }
+
         string deckOverride = preset.DeckText ?? LocalWakuuAutopilotConfig.HellwarDeckOverride(preset.Tier);
         HellwarWarGodDeckResolution deck = HellwarWarGodDecks.Resolve(preset.Tier, deckOverride);
 
