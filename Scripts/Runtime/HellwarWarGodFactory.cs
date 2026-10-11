@@ -1164,18 +1164,20 @@ internal static class HellwarWarGodFactory
 
         // ③ 视觉节点：**best-effort**（数据层已经干净 ⇒ 这里失败最多留一个画面残留，
         // 不会再污染 `CombatState.Players` / 发奖）。
+        // ⚠ **先藏再摘**（r262）：第三方布局补丁会在 `RemoveCreatureNode` 里抛（本环境 19 次/局），
+        // 一抛后面两行就不执行 ⇒ 画面上会留一个"还站着的空位"。所以把"不可交互 + 隐藏"放到调用**之前**。
         if (node != null)
         {
             try
             {
-                NCombatRoom.Instance!.RemoveCreatureNode(node);
                 node.ToggleIsInteractable(on: false);
                 node.Visible = false;
+                NCombatRoom.Instance!.RemoveCreatureNode(node);
             }
             catch (Exception exception)
             {
                 LocalMultiControlLogger.Warn(
-                    $"{tag} 战神视觉节点摘除失败（数据层已摘干净，画面可能残留一个空位）："
+                    $"{tag} 战神视觉节点摘除失败（节点已隐藏；数据层已摘干净）："
                     + $"第三方布局补丁常在这一链上抛: seat={warGod?.NetId}, error={exception.Message}");
             }
         }

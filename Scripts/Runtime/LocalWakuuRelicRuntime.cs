@@ -320,6 +320,8 @@ internal static class LocalWakuuRelicRuntime
         _turnStartIntentAtMs.Clear();
         // 并发出牌档的在飞动作登记表：跨局不留残（正常路径每个动作的 finally 都会摘掉自己）。
         _pendingQueuePlays.Clear();
+        // r262：出牌抛异常的"别让托管打"名单按**局**清（换局/读档重新试）。
+        _unplayableByHostedCardEntries.Clear();
     }
 
     /// <summary>
@@ -509,6 +511,12 @@ internal static class LocalWakuuRelicRuntime
                 ? "瓦库出牌作用域已进入（并发档，未占全局闸门）: "
                 : "瓦库选择器闸门已进入: ")
             + $"player={player.NetId}, round={combatState.RoundNumber}, waitMs={gateWaitMs}, inFlight={inFlight}, selectorStackCount={gateEnterSnapshot.Count}, selectorStackTop={gateEnterSnapshot.TopType}");
+
+        // r262：本次**正在尝试打出**的牌 —— 出牌抛异常时由 catch 把它记入"本局别让托管打"名单
+        // （第三方卡的效果代码会抛，例如沙耶 mod「色素细胞」`Index was out of range`；见 MarkCardUnplayableByHosted）。
+        CardModel? attemptedCard = null;
+        int attemptedRound = 0;
+
         try
         {
             using (WakuuSelectorRegistry.Open(player.NetId, new LocalWakuuStrategySelector()))
@@ -589,6 +597,10 @@ internal static class LocalWakuuRelicRuntime
                         continue;
                     }
 
+                    // r262：记下"这一张就是本次要打的牌"（出牌抛异常时 catch 会用它记名单）。
+                    attemptedCard = next.Card;
+                    attemptedRound = combatState.RoundNumber;
+
                     // 扣费归属：只有 inline AutoPlay 需要"外层先花"（它随后跳过 X 捕获）；
                     // 队列路径由 PlayCardAction 自己扣 —— 外层再花一次就是双重扣能量（方案 §12.2 ③）。
                     if (WakuuPlayQueuePolicy.NeedsExternalSpendResources(playPath))
@@ -644,6 +656,17 @@ internal static class LocalWakuuRelicRuntime
                     $"瓦库自动出牌在运行清理期正常中止（预期）: player={player.NetId}, "
                     + $"round={combatState.RoundNumber}, error={exception.Message}");
                 return;
+            }
+
+            // r262：出牌过程中抛异常（第三方卡效果内部最常见；2026-10-11 实机 = 沙耶 mod「色素细胞」
+            // 抛 `Index was out of range`）⇒ 把这张牌记入"本局别让托管打"名单：
+            // ① 不再重试（否则每次托管都空转，且每次都在出牌区留下一个卡住的卡面）；
+            // ② **"卡面残留在出牌区"正是"空气牌"的来源**（牌数据还留在手牌、节点却停在 Play 区
+            //    ⇒ 之后统计/合体按数据搬走它时手牌里就出现没 holder 的空位）⇒ 不再重试就不会再产生。
+            // 真人不受影响（牌留在手牌，可自己打）。
+            if (attemptedCard != null)
+            {
+                MarkCardUnplayableByHosted(player.NetId, attemptedCard, exception, attemptedRound);
             }
 
             LocalMultiControlLogger.Warn(
@@ -728,6 +751,36 @@ internal static class LocalWakuuRelicRuntime
     private static int _missingTargetSkippedRound = -1;
 
     /// <summary>
+    /// 本局「**托管打这张牌会抛异常**」的名单（键 = `card.Id.ToString()`，跨席位共用）。
+    /// 见 <see cref="MarkCardUnplayableByHosted"/>。
+    /// </summary>
+    private static readonly HashSet<string> _unplayableByHostedCardEntries = new();
+
+    /// <summary>
+    /// 把一张"托管打它会抛异常"的牌记入名单（r262）。
+    ///
+    /// 实战触发（2026-10-11 实机）：沙耶 mod 的「色素细胞」`FIGURE_SAYA-PIGMENT_CELL_CARD` 被托管打出时抛
+    /// `Index was out of range`（第三方卡效果内部）⇒ 出牌链在半途断掉 ⇒ **卡面残留在出牌区正中央**
+    /// （用户现象），牌的数据还留在手牌 ⇒ 之后统计/合体按数据搬走它时，手牌里就出现**没 holder 的"空气牌"**。
+    ///
+    /// 处置：记入名单 ⇒ ① 从大脑候选集里剔除（不再重试，否则每回合空转 + 每次都新增一个残留卡面）；
+    /// ② 真人完全不受影响（牌留在手牌，**可自己打**）。名单按**局**清（换局/读档重新试，见
+    /// <see cref="ResetTakeoverFallbackState"/>）。
+    /// </summary>
+    private static void MarkCardUnplayableByHosted(ulong seatId, CardModel card, Exception exception, int round)
+    {
+        string key = card.Id.ToString();
+        if (!_unplayableByHostedCardEntries.Add(key))
+        {
+            return;   // 已经记过（同局内只报一次）
+        }
+
+        LocalMultiControlLogger.Warn(
+            $"托管出牌抛异常 ⇒ 本局不再让托管打这张牌（真人可自己打）: player={seatId}, round={round}, "
+            + $"card={key}, error={exception.Message}（名单共 {_unplayableByHostedCardEntries.Count} 张）");
+    }
+
+    /// <summary>
     /// 这张牌**必须**有目标才能打吗？（r261）
     ///
     /// 白名单=**明确不需要目标**的目标类型（`Self` / `None` / `AllEnemies` / `AllAllies`），
@@ -805,6 +858,14 @@ internal static class LocalWakuuRelicRuntime
         }
 
         IReadOnlyList<CardModel> cards = handPile.Cards;
+
+        // r262：本局"托管打它会抛异常"的牌（第三方卡）不再喂给大脑 —— 真人可自己打。
+        if (_unplayableByHostedCardEntries.Count > 0)
+        {
+            cards = cards
+                .Where((candidate) => !_unplayableByHostedCardEntries.Contains(candidate.Id.ToString()))
+                .ToList();
+        }
 
         // r261：本回合"需要目标但解析不到目标"而放弃的牌，**不再喂给大脑**
         // （键 = 席位 + round；牌按引用比。否则大脑每轮又选中它 ⇒ 空转出牌配额）。

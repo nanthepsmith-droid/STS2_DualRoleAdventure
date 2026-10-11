@@ -506,14 +506,16 @@ public class HellwarSummonPolicyTests
             Assert.That(HellwarSummonPolicy.NineChainMinSpirit, Is.EqualTo(12),
                 "2026-10-09 三轮修订：门槛 = 整包价（\"计数至少能召唤 9 个\"）");
             Assert.That(HellwarSummonPolicy.NineChainMaxAncients, Is.EqualTo(9));
-            Assert.That(HellwarSummonPolicy.EndlessWarGodBundleCost, Is.EqualTo(8), "整包价 8（D16 乙）");
+            Assert.That(HellwarSummonPolicy.EndlessWarGodBundleCost, Is.EqualTo(12),
+                "整包价 12（2026-10-11 用户口径：8 → 12；原话「无尽战神强完了，需要上调消耗的计数」）");
         });
     }
 
-    [TestCase(8, 10, false, true)]    // 正好够、有空位、没用过 ⇒ 可开
-    [TestCase(8, 10, true, false)]    // 本场已用过（D15）
-    [TestCase(7, 10, false, false)]   // 差一点
-    [TestCase(8, 0, false, false)]    // 没空位
+    [TestCase(12, 10, false, true)]   // 正好够、有空位、没用过 ⇒ 可开
+    [TestCase(12, 10, true, false)]   // 本场已用过（D15）
+    [TestCase(11, 10, false, false)]  // 差一点（2026-10-11 上调后的新门槛）
+    [TestCase(8, 10, false, false)]   // 旧价格 8 已经不够了
+    [TestCase(12, 0, false, false)]   // 没空位
     [TestCase(99, 1, false, true)]
     public void 无尽战神的开启判据(int available, int freeSlots, bool used, bool expected)
     {
@@ -536,10 +538,10 @@ public class HellwarSummonPolicyTests
     {
         Assert.Multiple(() =>
         {
-            Assert.That(HellwarSummonPolicy.DescribeUltimateBlockReason(false, 8, 3, false), Is.EqualTo("ok"));
-            Assert.That(HellwarSummonPolicy.DescribeUltimateBlockReason(false, 8, 3, true), Does.Contain("already-used"));
-            Assert.That(HellwarSummonPolicy.DescribeUltimateBlockReason(false, 8, 0, false), Does.Contain("party-full"));
-            Assert.That(HellwarSummonPolicy.DescribeUltimateBlockReason(false, 7, 3, false), Does.Contain("not-enough-spirit(7<8)"));
+            Assert.That(HellwarSummonPolicy.DescribeUltimateBlockReason(false, 12, 3, false), Is.EqualTo("ok"));
+            Assert.That(HellwarSummonPolicy.DescribeUltimateBlockReason(false, 12, 3, true), Does.Contain("already-used"));
+            Assert.That(HellwarSummonPolicy.DescribeUltimateBlockReason(false, 12, 0, false), Does.Contain("party-full"));
+            Assert.That(HellwarSummonPolicy.DescribeUltimateBlockReason(false, 11, 3, false), Does.Contain("not-enough-spirit(11<12)"));
             Assert.That(HellwarSummonPolicy.DescribeUltimateBlockReason(true, 11, 3, false), Does.Contain("not-enough-spirit(11<12)"));
         });
     }
