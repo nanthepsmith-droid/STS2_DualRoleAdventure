@@ -53,7 +53,10 @@ internal static class LocalWakuuEnchantPicker
             }
 
             List<WakuuEnchantCardInfo> infos = candidates.Select(ToInfo).ToList();
-            List<int> ranked = WakuuEnchantPicking.RankIndices(infos, rule, ownedRelics, deckCardIds);
+            // 同档随机（用户 2026-10-11 口径：漩涡的「能力牌 ｜ 打击/防御」优先级相当 ⇒ 从中随机挑）：
+            // 纯逻辑侧用确定性打乱（同种子同结果、可单测），运行时每次传真随机种子。
+            int shuffleSeed = Random.Shared.Next();
+            List<int> ranked = WakuuEnchantPicking.RankIndices(infos, rule, ownedRelics, deckCardIds, shuffleSeed);
             int take = Math.Max(maxSelect, Math.Max(minSelect, 1));
             List<CardModel> picked = ranked
                 .Take(take)

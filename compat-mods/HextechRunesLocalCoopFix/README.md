@@ -58,6 +58,7 @@ LocalContext.IsMe(player) || player.NetId == runManager.NetService.NetId
 | ⑤ | ③ 的归属绑定 + `RelicsSelected` 前缀里的自动作答（v1.1.0） | ③ 记下的「这一屏属于哪一席」在 `RelicsSelected` 被等待时绑到界面实例；只有该席位是**后台托管中的瓦库**时，才延迟 1.2s 走游戏自己的点击路径（候选按钮的 `Pressed` 信号）替它选一个符文。真人席位的符文界面**一律不碰** |
 | ⑥ | `CreateEnemyHexAdjustmentOptionsForSelection` **后缀**（v1.2.0 / 判定 v1.2.1 修正） | 「敌人 hex 调整面板」的归属收口：这一屏的席位 ≠ **可调席位**时，把刚建好的那份 options 改成**只读**（`ControlsEnabled=false` + `RerollFunc`/`Changed`/`ScreenCreated` 清空）⇒ 面板照旧出现但没有 reroll/移除按钮，也不往同步里发任何东西。**「可调席位」= 权威席位若是真人就是它，否则给第一个真人本地席位**（v1.2.1：权威席位常常正是一个被 ⑤ 自动作答的托管瓦库席位 ⇒ 若把可调权给它，真人那屏就只能看不能动） |
 | ⑦ | `CompleteLocalEnemyHexAdjustmentSync` **前缀**（v1.2.0） | 只读那一屏**不发 final**（判据 = 界面自己的私有字段 `_enemyHexControlsEnabled`，**实例准确**）——否则它会用创建时的初始值把可调席位刚调好的结果覆盖掉 |
+| ⑧ | `HextechForgeSelectionCoordinator.SelectLocalForge` 前缀（⑧a）+ `CreateForgeSelectionScreenAsync` 前缀（⑧b）（**v1.2.3**） | **锻造器路径**（商店买的【随机属性锻造器】/ 锻造奖励 / 随机锻造发放）走的是**另一个协调器**，它自带标题、自己建屏，**不经 ③a/③b** ⇒ 原来归属永远是 0、⑤ 无从代答（瓦库那一屏只能真人手点）。⑧a 挂在**唯一建屏前的那一步**记下归属席位，⑧b 在建屏时登记 `_seatForNextScreen`（同 ③a/③b 的两步法；自带标题不动标题） |
 
 - 不引用海克斯 dll（类型按全名反射），海克斯缺席/更新改名 ⇒ 本补丁整体退化为「不干预」；
 - 不改游戏本体行为、不动海克斯的数值与发牌逻辑；
@@ -80,10 +81,13 @@ LocalContext.IsMe(player) || player.NetId == runManager.NetService.NetId
 | 3 | 按「候选按钮的 `Pressed` 信号」 | 走游戏自己的点击路径（海克斯把 `Pressed` 连到 `OnHolderSelected`），不碰任何私有方法 |
 | 4 | 按完 0.5s 核对界面是否关闭 | 关了 = 完成；还开着按它自己的收尾按钮：**自选池**屏再按「确认」、海克斯设置里开了**「确认符文选择」**时再按符文确认；仍未关 ⇒ 重按一次，再不行 WARN 交回真人 |
 
-**选哪一个符文**：`稀有度优先（棱彩 > 金 > 银）+ 同档取最左`；读不到稀有度（第三方符文 / 海克斯改名）就取最左。
-稀有度正是海克斯自己分档用的轴（每幕权重 + 银/金/棱彩卡框），查询走它自己的
-`HextechCatalog.TryGetPlayerRuneRarity`（反射）。每次作答把候选连同稀有度打进日志
-（`options=[银:…, 金:…], picked=…[金]`）⇒ 想换规则只要改 `WakuuRuneAutoAnswer.PickIndex`。
+**选哪一个符文**：**取最左**（v1.2.2 用户实测口径：海克斯每次给的 3 个选项**稀有度一致**
+⇒ 原「稀有度优先（棱彩 > 金 > 银）+ 同档取最左」没有区分度，整节已删）。
+每次作答仍把候选打进日志（`options=[…, …], picked=…`）⇒ 想换规则只要改
+`WakuuRuneAutoAnswer.TryAnswer` 里那一处 `index`。
+
+📌 后续排期（用户 2026-10-11 点名）：给本补丁加**抓率统计**（仿主 mod 的 `personal_stats.json`）+
+按抓率选符文 + **选项很烂时自主 roll**（⚠ 判据不能用稀有度 —— 3 个选项稀有度一致）。见 `TODO.md`。
 
 ## 日志锚点
 
@@ -94,21 +98,29 @@ LocalContext.IsMe(player) || player.NetId == runManager.NetService.NetId
     HextechRuneSelectionCoordinator.CreateRuneSelectionScreenAsync,
     HextechRuneSelectionScreen.DismissAfterSelectionComplete,
     HextechRuneSelectionCoordinator.CreateEnemyHexAdjustmentOptionsForSelection,
-    HextechRuneSelectionCoordinator.CompleteLocalEnemyHexAdjustmentSync], missing=[], source=init
+    HextechRuneSelectionCoordinator.CompleteLocalEnemyHexAdjustmentSync,
+    HextechForgeSelectionCoordinator.SelectLocalForge,          ← v1.2.3 起：⑧a
+    HextechForgeSelectionCoordinator.CreateForgeSelectionScreenAsync], ← v1.2.3 起：⑧b
+    missing=[], source=init
 [HextechRunesLocalCoopFix] 敌人 hex 调整面板：已按「只有权威席位可调」收口（非权威席位的面板变只读、不发 final；**不做**远端镜像）。syncContext 实参下标=7, selection 实参下标=8
 [HextechRunesLocalCoopFix] 瓦库席位符文界面自动作答: 已就绪（后台托管瓦库席位由我们代选，真人席位照旧自己点）。
 [HextechRunesLocalCoopFix] 本地席位已按「本机玩家」放行（…）: player=76561198422527327
 [HextechRunesLocalCoopFix] 将为该席位创建符文界面（…）: player=76561198422527327
 [HextechRunesLocalCoopFix] 符文界面已标注归属（…）: player=76561198422527327, title=<默认标题> · 角色2
 [HextechRunesLocalCoopFix] 瓦库席位符文界面已登记自动作答（延迟 1.2s 避开界面自带的 1s 点击保护窗）: seat=角色2(…327), screen=HextechRuneSelectionScreen
-[HextechRunesLocalCoopFix] 瓦库符文界面自动作答: seat=角色2(…327), mode=符文选择, options=[银:RUNE_A, 金:RUNE_B, 银:RUNE_C], picked=RUNE_B[金], rule=稀有度优先+同档取最左, screen=HextechRuneSelectionScreen
+[HextechRunesLocalCoopFix] 瓦库符文界面自动作答: seat=角色2(…327), mode=符文选择, options=[RUNE_A, RUNE_B, RUNE_C], picked=RUNE_A, rule=取最左（3 个选项稀有度一致）, screen=HextechRuneSelectionScreen
 [HextechRunesLocalCoopFix] 瓦库符文界面自动作答完成（界面已关闭）: seat=角色2(…327), screen=HextechRuneSelectionScreen
 [HextechRunesLocalCoopFix] 符文界面选完即关闭（…）: screen=HextechRuneSelectionScreen, 最近创建席位=76561198422527327
+# ↓ 锻造器路径（v1.2.3，商店买【随机属性锻造器】/ 锻造奖励）走的是另一组锚点：
+[HextechRunesLocalCoopFix] 将为该席位创建锻造选择界面（商店的【随机属性锻造器】/ 锻造奖励走的是另一个协调器）: player=76561198422527327
+[HextechRunesLocalCoopFix] 符文界面已登记归属（锻造选择屏：自带标题、不改标题，但要能自动作答）: player=76561198422527327
+（之后与上面同型：`已登记自动作答` → `自动作答: … picked=…` → `自动作答完成（界面已关闭）`）
 ```
 
 | 观察 | 含义 |
 |---|---|
-| `INIT_OK` + `patched=[…7 项…]`, `missing=[]` | 补丁全挂上（v1.1.0 是 5 项；v1.2.0 起 +2 项 = 敌人 hex 面板归属） |
+| `INIT_OK` + `patched=[…9 项…]`, `missing=[]` | 补丁全挂上（v1.1.0 是 5 项；v1.2.0 起 +2 项 = 敌人 hex 面板归属；**v1.2.3 起再 +2 项 = 锻造器路径**） |
+| `将为该席位创建锻造选择界面` → `符文界面已登记归属（锻造选择屏…）` | **v1.2.3 的关键锚点**：商店买的【随机属性锻造器】的屏已登记归属（旧版这两条不会出现 ⇒ 瓦库那屏只能真人手点） |
 | `INIT_DEGRADED` / `missing=[…]` | 海克斯更新改名了，需要按新名字适配（日志点名是哪一项） |
 | `瓦库席位符文界面自动作答: 已就绪` | ⑤ 的私有字段解析成功（`未就绪` = 字段改名，自动作答退化为「真人手点」） |
 | 一个席位一条 `已按「本机玩家」放行` | 该席位不再走远端等待（复现修复的关键锚点） |
@@ -190,6 +202,50 @@ FAIL:    你那一屏还是没有 reroll 按钮 ⇒ 把 `非可调席位改为�
          `可调席位` 若不是你 → `IsAutomatedWakuuSeat` 对托管席位的判定没命中（看有没有
          `自动作答: 已登记`/`交真人作答` 那几行，它们的判据同源）；若整行缺失 ⇒ ⑥ 没跑（看 `后缀已生效`）。
 期望 0： 我方 [ERROR] / ### Exception ### / 幽灵弹层 / waitForRemoteHextechChoice 仍等待 / 卡死在这一屏
+```
+
+### ⑧ 锻造器路径（v1.2.3，2026-10-11）—— 商店的【随机属性锻造器】
+
+用户原话：**「商店瓦库买海克斯符文属性锻造器还是不会自动选」**（此前 v1.2.2 已"修"过一次，复测仍不行）。
+
+**真因**（反编译 `lib/0.111.0/HextechRunes.dll` 核对，`HextechRunes.decompiled.cs` 行号）：
+
+| 环节 | 事实 |
+|---|---|
+| 购买入口 | `MerchantRelicEntry.OnTryPurchase` 被海克斯前缀拦下 → `PurchaseRandomForge`（行 25646）→ `HextechForgeSelectionCoordinator.SelectForge(player, options, "shop", syncMultiplayerChoice: false)`（行 25665） |
+| 建屏 | `SelectForge` → `SelectLocalForge`（行 64570）→ **`CreateForgeSelectionScreenAsync(options)`（行 64607）** 自建屏（`HEXTECH_FORGE_SELECTION_TITLE` + `metadataMode: Forge`） |
+| 与 ③ 的关系 | 这个建屏方法**不是** ③a/③b 挂的那两个 `Create*RuneSelectionScreenAsync` ⇒ 归属字段永远是 0 |
+| 结果 | ⑤ 从来没有为这一屏排程 ⇒ 瓦库那一屏**只能真人手点**（v1.2.2 的 ③b 解耦修的是"自带标题"，但这一屏压根不经过 ③b） |
+
+⚠ **教训**：v1.2.2 的根因判断是**猜的**（"自带标题的屏被 ③b 提前 return"），没有先去反编译看这条链的调用点。
+复测日志（`logs-archive/godot__20261011-145339__r267.log`）里 ③/⑤ 的锚点**一条都没有**
+（`将为该席位创建符文界面` / `符文界面已标注归属` / `选完即关闭` 全缺）正是这个的实证 ——
+**"没有我们自己的锚点"本身就是定位线索**（对比 `godot__20261011-132615__r265.log`：普通符文屏三条齐全）。
+另注：海克斯自己的 `HextechLog` 默认**不输出**（`HEXTECH_VERBOSE_LOG=1` 才打，源码 `HextechLog.Verbose`），
+所以"日志里没有海克斯的 ForgeChoice 行"**不能**当证据。
+
+**修法**：⑧a `SelectLocalForge` 前缀（唯一建屏前的那一步）记下归属席位 → ⑧b `CreateForgeSelectionScreenAsync`
+前缀消费并登记 `_seatForNextScreen`（自带标题 ⇒ 只登记、不改标题）⇒ ⑤ 照旧代答。
+覆盖面顺带包含 `obtain-random-forges` / `{source}` / `reward` 三个调用点（同一个 `SelectLocalForge`）。
+
+**⚠ 未覆盖 / 已知限制**：`HextechRelicOptionSelectionCoordinator.SelectRelicOption`（遗物三选一）
+用的是**原版** `NChooseARelicSelection.ShowScreen(options)`（不是海克斯自己的屏）⇒ ⑤ 代答不适用；
+海克斯内部目前**没有**调用它（只有一行对外暴露的包装 `SelectRelicOption`），暂不处理。
+
+验证契约（用户侧，留档）：
+
+```
+SETUP:   本地多控 2 席（1 席真人 + 1 席【后台托管瓦库】）+ 海克斯大乱斗；部署位 = 主 mod marker r268 +
+         补丁 mod v1.2.3（槽位 json 的 version 应为 1.2.3）
+ACTION:  进商店 → 让瓦库买到【随机属性锻造器】（250 金；日志 `瓦库商店自动买遗物成功: … relic=RANDOM_FORGE_SHOP_RELIC`）
+PASS:    ① 启动日志 `INIT_OK: patched=[…9 项…]`（含 SelectLocalForge / CreateForgeSelectionScreenAsync）；
+         ② 买下后紧跟 `将为该席位创建锻造选择界面…` + `符文界面已登记归属（锻造选择屏：自带标题…）`；
+         ③ 再跟 `瓦库席位符文界面已登记自动作答` → `瓦库符文界面自动作答: … picked=…` →
+            `自动作答完成（界面已关闭）` ⇒ **界面一闪而过、不用你点**，且瓦库确实拿到了那件锻造遗物；
+         ④ 真人自己买同款时**照旧等你自己点**（有 `符文界面归属席位不是「后台托管瓦库」，交真人作答`）。
+FAIL:    买完界面停住要手点 ⇒ 看有没有 ② 那两条：只有 ① 没有 ② ⇒ ⑧a/⑧b 没命中（贴日志）；
+         有 ② 没有 ③ ⇒ 看 `自动作答: 未就绪`（字段改名）或 `…没有可选项…` / `…单击后仍未关闭…`（贴日志）。
+期望 0： 我方 [ERROR] / ### Exception ### / 幽灵弹层 / 卡在锻造界面
 ```
 
 ## 复现 / 验证步骤（用户侧）

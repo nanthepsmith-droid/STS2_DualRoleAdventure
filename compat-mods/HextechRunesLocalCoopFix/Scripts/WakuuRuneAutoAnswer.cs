@@ -31,9 +31,13 @@ namespace HextechRunesLocalCoopFix.Scripts;
 ///   符文确认；仍未关 ⇒ WARN 点名并交回真人（下一轮适配的实证锚点）。</item>
 /// </list>
 ///
-/// <para><b>选哪个符文</b>：<c>稀有度优先（棱彩 &gt; 金 &gt; 银）+ 同档取最左</c>。稀有度正是海克斯自己
-/// 用来分档的轴（每幕权重、银/金/棱彩卡框）；读不到稀有度（第三方符文 / 海克斯改名）就取最左，
-/// 绝不会因此不作答。每次作答都把候选连同稀有度打进日志，换规则只要改 <see cref="PickIndex"/>。</para>
+/// <para><b>选哪个符文</b>：**取最左**（用户 2026-10-11 实测口径：海克斯每次给的 3 个选项**稀有度一致**
+/// ⇒ 原"稀有度优先（棱彩 &gt; 金 &gt; 银）+ 同档取最左"的挑选逻辑没有区分度，已删除）。
+/// 每次作答仍把候选打进日志，换规则只要改 <see cref="TryAnswer"/> 里那一处 <c>index</c>。</para>
+///
+/// <para>📌 后续排期（用户 2026-10-11 点名）：给本补丁加**抓率统计**（仿主 mod 的
+/// <c>personal_stats.json</c>），瓦库按抓率选符文，并在**选项很烂**时自主 roll（见
+/// <c>TODO.md</c> §海克斯符文兼容补丁）。</para>
 /// </summary>
 internal static class WakuuRuneAutoAnswer
 {
@@ -73,13 +77,7 @@ internal static class WakuuRuneAutoAnswer
     private static FieldInfo? _choiceLockedField;     // bool
     private static FieldInfo? _closedField;           // bool
 
-    private static bool _rarityResolved;
-    private static MethodInfo? _tryGetRarity;         // HextechCatalog.TryGetPlayerRuneRarity(RelicModel?, out HextechRarityTier)
-    private static Type? _rarityEnumType;
-
     private static bool _warned;
-    private static bool _rarityWarned;
-    private static bool _rarityFallbackLogged;
 
     /// <summary>挂补丁时调用一次：解析界面私有字段（缺项只 WARN，不抛）。返回是否已就绪。</summary>
     internal static bool Install(Type screenType)
@@ -212,7 +210,8 @@ internal static class WakuuRuneAutoAnswer
                 return;
             }
 
-            int index = PickIndex(options, buttons.Count);
+            // 取最左（用户 2026-10-11：海克斯每次 3 个选项稀有度一致 ⇒ 不再按稀有度挑）。
+            int index = 0;
             Button target = buttons[index];
             if (!GodotObject.IsInstanceValid(target))
             {
@@ -224,8 +223,8 @@ internal static class WakuuRuneAutoAnswer
             {
                 Log.Info($"{Entry.LogPrefix} 瓦库符文界面自动作答: seat={MainModBridge.SeatLabelById(seat)}({seat}), "
                     + $"mode={(selfPickMode ? "自选池" : "符文选择")}, options=[{DescribeOptions(options)}], "
-                    + $"picked={RelicEntry(options, index)}[{RarityName(RarityRank(RelicAt(options, index)))}], "
-                    + "rule=稀有度优先+同档取最左, screen=HextechRuneSelectionScreen");
+                    + $"picked={RelicEntry(options, index)}, "
+                    + "rule=取最左（3 个选项稀有度一致）, screen=HextechRuneSelectionScreen");
             }
 
             // 走游戏自己的点击路径（海克斯把 Button.Pressed 连到自己的 OnHolderSelected / SelectSelfPick）：
@@ -434,24 +433,8 @@ internal static class WakuuRuneAutoAnswer
     }
 
     // ---- 选哪一个 ---------------------------------------------------------------------------------
-
-    /// <summary>稀有度优先（棱彩 &gt; 金 &gt; 银）+ 同档取最左；读不到稀有度则取最左。</summary>
-    private static int PickIndex(IReadOnlyList<RelicModel> options, int buttonCount)
-    {
-        int bestIndex = 0;
-        int bestRank = RarityRank(RelicAt(options, 0));
-        for (int i = 1; i < options.Count; i++)
-        {
-            int rank = RarityRank(RelicAt(options, i));
-            if (rank > bestRank)
-            {
-                bestIndex = i;
-                bestRank = rank;
-            }
-        }
-
-        return buttonCount <= 0 ? 0 : Math.Clamp(bestIndex, 0, buttonCount - 1);
-    }
+    // 规则 = **取最左**（用户 2026-10-11：海克斯每次 3 个选项稀有度一致 ⇒ 按稀有度挑没有区分度）。
+    // 后续排期：加抓率统计 + 按抓率挑 + 选项很烂时自主 roll（见 TODO.md §海克斯符文兼容补丁）。
 
     private static RelicModel? RelicAt(IReadOnlyList<RelicModel> options, int index)
     {
@@ -476,85 +459,10 @@ internal static class WakuuRuneAutoAnswer
         List<string> parts = new();
         for (int i = 0; i < options.Count; i++)
         {
-            parts.Add($"{RarityName(RarityRank(RelicAt(options, i)))}:{RelicEntry(options, i)}");
+            parts.Add(RelicEntry(options, i));
         }
 
         return string.Join(", ", parts);
-    }
-
-    /// <summary>0 = 读不到；1/2/3 = 银/金/棱彩（海克斯自己的 <c>HextechRarityTier</c> 顺序）。</summary>
-    private static int RarityRank(RelicModel? relic)
-    {
-        if (relic == null)
-        {
-            return 0;
-        }
-
-        EnsureRarityResolver();
-        if (_tryGetRarity == null || _rarityEnumType == null)
-        {
-            return 0;
-        }
-
-        try
-        {
-            object?[] args = { relic, Activator.CreateInstance(_rarityEnumType) };
-            if (_tryGetRarity.Invoke(null, args) is true && args[1] != null)
-            {
-                return Convert.ToInt32(args[1]) + 1;
-            }
-        }
-        catch (Exception exception)
-        {
-            WarnRarityOnce(exception);
-        }
-
-        return 0;
-    }
-
-    private static string RarityName(int rank)
-    {
-        return rank switch
-        {
-            1 => "银",
-            2 => "金",
-            3 => "棱彩",
-            _ => "未知",
-        };
-    }
-
-    /// <summary>解析海克斯自己的符文稀有度查询（<c>internal</c> 类型 + 公开静态方法 ⇒ 反射可达）。</summary>
-    private static void EnsureRarityResolver()
-    {
-        if (_rarityResolved)
-        {
-            return;
-        }
-
-        _rarityResolved = true;
-        try
-        {
-            Type? catalogType = Entry.FindType("HextechRunes.HextechCatalog");
-            MethodInfo? method = catalogType?.GetMethod(
-                "TryGetPlayerRuneRarity", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-            ParameterInfo[]? parameters = method?.GetParameters();
-            if (method != null && parameters != null && parameters.Length == 2)
-            {
-                _tryGetRarity = method;
-                _rarityEnumType = parameters[1].ParameterType.GetElementType();
-            }
-        }
-        catch (Exception exception)
-        {
-            WarnRarityOnce(exception);
-        }
-
-        if (_tryGetRarity == null && !_rarityFallbackLogged)
-        {
-            _rarityFallbackLogged = true;
-            Log.Info($"{Entry.LogPrefix} 读不到海克斯符文稀有度（TryGetPlayerRuneRarity），选符文规则退化为「取最左」"
-                + "（不影响自动作答本身）。");
-        }
     }
 
     // ---- 小工具 -----------------------------------------------------------------------------------
@@ -591,17 +499,5 @@ internal static class WakuuRuneAutoAnswer
 
         _warned = true;
         Log.Warn($"{Entry.LogPrefix} {message}");
-    }
-
-    private static void WarnRarityOnce(Exception exception)
-    {
-        if (_rarityWarned)
-        {
-            return;
-        }
-
-        _rarityWarned = true;
-        Log.Warn($"{Entry.LogPrefix} 读符文稀有度失败（选符文退化为「取最左」）: "
-            + $"{exception.GetType().Name}: {exception.Message}");
     }
 }

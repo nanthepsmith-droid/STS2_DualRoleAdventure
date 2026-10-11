@@ -32,9 +32,10 @@ public class WakuuEnchantPickingTests
         List<WakuuEnchantCardInfo> cards,
         IReadOnlyList<WakuuEnchantRuleEntry>? rule,
         List<string>? relics = null,
-        List<string>? deck = null)
+        List<string>? deck = null,
+        int? seed = null)
     {
-        return WakuuEnchantPicking.RankIndices(cards, rule, relics, deck);
+        return WakuuEnchantPicking.RankIndices(cards, rule, relics, deck, seed);
     }
 
     // ---------------------------------------------------------------
@@ -347,7 +348,7 @@ public class WakuuEnchantPickingTests
     {
         string[] withRule = { "Adroit", "Corrupted", "Glam", "Imbued", "Inky", "Instinct", "Momentum",
             "Nimble", "PerfectFit", "RoyallyApproved", "Sharp", "Slither", "SlumberingEssence",
-            "SoulsPower", "Sown", "Steady", "Swift", "Vigorous" };
+            "SoulsPower", "Sown", "Spiral", "Steady", "Swift", "TezcatarasEmber", "Vigorous" };
         foreach (string name in withRule)
         {
             Assert.That(WakuuEnchantRules.ForEnchantment(name), Is.Not.Null, $"附魔 {name} 应有规则");
@@ -358,9 +359,100 @@ public class WakuuEnchantPickingTests
     public void 维持现状的附魔返回null()
     {
         Assert.That(WakuuEnchantRules.ForEnchantment("Goopy"), Is.Null);
-        Assert.That(WakuuEnchantRules.ForEnchantment("Spiral"), Is.Null);
-        Assert.That(WakuuEnchantRules.ForEnchantment("TezcatarasEmber"), Is.Null);
         Assert.That(WakuuEnchantRules.ForEnchantment("UnknownEnchant"), Is.Null);
+    }
+
+    // ---------------------------------------------------------------
+    // 涡旋 Spiral（用户 2026-10-11 改口径：费用最高且 ≥2 > 能力牌 > 打击/防御，
+    // 其中**打击与防御优先级相当** ⇒ 同档随机）
+    // ---------------------------------------------------------------
+
+    [Test]
+    public void 涡旋_优先费用最高的不小于2的牌()
+    {
+        List<WakuuEnchantCardInfo> cards = new()
+        {
+            C("STRIKE_IRONCLAD", cardType: WakuuEnchantPicking.CardTypeAttack, cost: 1),
+            C("DEFEND_IRONCLAD", cardType: WakuuEnchantPicking.CardTypeSkill, cost: 1),
+            C("BASH", cardType: WakuuEnchantPicking.CardTypeAttack, cost: 2),
+            C("HEAVY_BLADE", cardType: WakuuEnchantPicking.CardTypeAttack, cost: 3),
+            C("DEMON_FORM", cardType: WakuuEnchantPicking.CardTypePower, cost: 3),
+        };
+
+        List<int> ranked = Rank(cards, WakuuEnchantRules.ForEnchantment("Spiral"));
+
+        // 档1 = 费用最高且 ≥2：3 费两张并列 ⇒ 稳定排序保持原序 ⇒ HEAVY_BLADE 在前
+        Assert.That(cards[ranked[0]].Cost, Is.EqualTo(3));
+        Assert.That(cards[ranked[0]].Id, Is.EqualTo("HEAVY_BLADE"));
+    }
+
+    [Test]
+    public void 涡旋_能力牌优先于打击防御()
+    {
+        List<WakuuEnchantCardInfo> cards = new()
+        {
+            C("STRIKE_IRONCLAD", cardType: WakuuEnchantPicking.CardTypeAttack, cost: 1),
+            C("DEFEND_IRONCLAD", cardType: WakuuEnchantPicking.CardTypeSkill, cost: 1),
+            C("DEMON_FORM", cardType: WakuuEnchantPicking.CardTypePower, cost: 1),
+        };
+
+        List<int> ranked = Rank(cards, WakuuEnchantRules.ForEnchantment("Spiral"));
+
+        // 没有 ≥2 费的牌 ⇒ 能力牌单独一档，**优先于**打击/防御
+        Assert.That(cards[ranked[0]].Id, Is.EqualTo("DEMON_FORM"));
+    }
+
+    [Test]
+    public void 涡旋_打击与防御同档且会随机()
+    {
+        List<WakuuEnchantCardInfo> cards = new()
+        {
+            C("STRIKE_IRONCLAD", cardType: WakuuEnchantPicking.CardTypeAttack, cost: 1),
+            C("DEFEND_IRONCLAD", cardType: WakuuEnchantPicking.CardTypeSkill, cost: 1),
+        };
+        IReadOnlyList<WakuuEnchantRuleEntry> rule = WakuuEnchantRules.ForEnchantment("Spiral")!;
+
+        HashSet<string> firstPicked = new();
+        for (int seed = 0; seed < 64; seed++)
+        {
+            List<int> ranked = Rank(cards, rule, seed: seed);
+            firstPicked.Add(cards[ranked[0]].Id);
+        }
+
+        // 用户口径："后两者（打击与防御）优先级相当" ⇒ 二者都要**有机会**被选中（不是永远挑打击）
+        Assert.That(firstPicked, Does.Contain("STRIKE_IRONCLAD"));
+        Assert.That(firstPicked, Does.Contain("DEFEND_IRONCLAD"));
+    }
+
+    [Test]
+    public void 涡旋_没有高费牌也没有能力牌时落到打击防御档()
+    {
+        List<WakuuEnchantCardInfo> cards = new()
+        {
+            C("STRIKE_IRONCLAD", cardType: WakuuEnchantPicking.CardTypeAttack, cost: 1),
+            C("DEFEND_IRONCLAD", cardType: WakuuEnchantPicking.CardTypeSkill, cost: 1),
+        };
+
+        List<int> ranked = Rank(cards, WakuuEnchantRules.ForEnchantment("Spiral"));
+
+        // 没有 ≥2 费、也没有能力牌 ⇒ 落到"打击 ｜ 防御"档 = 两张都是候选
+        Assert.That(ranked.Count, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void 余烬_优先费用最高的牌()
+    {
+        List<WakuuEnchantCardInfo> cards = new()
+        {
+            C("STRIKE_IRONCLAD", cardType: WakuuEnchantPicking.CardTypeAttack, cost: 0),
+            C("DEFEND_IRONCLAD", cardType: WakuuEnchantPicking.CardTypeSkill, cost: 1),
+            C("BASH", cardType: WakuuEnchantPicking.CardTypeAttack, cost: 2),
+        };
+
+        List<int> ranked = Rank(cards, WakuuEnchantRules.ForEnchantment("TezcatarasEmber"));
+
+        // 原版只能选打击；改口径后 = 费用最高的牌（不限类型）
+        Assert.That(cards[ranked[0]].Id, Is.EqualTo("BASH"));
     }
 
     [Test]

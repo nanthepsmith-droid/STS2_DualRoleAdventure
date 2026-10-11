@@ -20,6 +20,10 @@ public static class Entry
     internal const string LogPrefix = "[HextechRunesLocalCoopFix]";
 
     private const string CoordinatorTypeName = "HextechRunes.HextechRuneSelectionCoordinator";
+
+    /// <summary>锻造器路径的协调器（商店的【随机属性锻造器】/ 锻造奖励 / 随机锻造发放 走它，v1.2.3 起）。</summary>
+    private const string ForgeCoordinatorTypeName = "HextechRunes.HextechForgeSelectionCoordinator";
+
     private const string ScreenTypeName = "HextechRunes.HextechRuneSelectionScreen";
 
     private static Harmony? _harmony;
@@ -96,7 +100,10 @@ public static class Entry
             return;
         }
 
-        HextechRuneSelectionCompatPatch.Install(_harmony, coordinatorType, screenType, Patched, Missing);
+        // ⑧ 要的**另一个**协调器（锻造器路径）：它是独立类型，缺了只让 ⑧ 退化（Append 到 Missing）。
+        Type? forgeCoordinatorType = FindType(ForgeCoordinatorTypeName);
+
+        HextechRuneSelectionCompatPatch.Install(_harmony, coordinatorType, forgeCoordinatorType, screenType, Patched, Missing);
 
         // ⑥⑦ 敌人 hex 调整面板的归属：把原版「只有权威席位可调」在单进程回环里还原出来
         //（补丁 ① 把每个本地席位都判成「本机玩家」，会让两屏都可调 ⇒「先作答那屏说了算」）。

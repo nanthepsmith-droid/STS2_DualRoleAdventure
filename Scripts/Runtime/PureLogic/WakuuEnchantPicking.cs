@@ -26,6 +26,31 @@ internal enum WakuuEnchantSort
 
     /// <summary>稀有度最高。</summary>
     RarityDesc,
+
+    /// <summary>
+    /// **同档随机**（用户 2026-10-11 口径：两个条件"优先级相当"时不要总挑同一个）。
+    /// 纯逻辑里用调用方传入的 <c>shuffleSeed</c> 做**确定性**打乱（同种子同结果 ⇒ 可单测），
+    /// 运行时传真随机种子 ⇒ 表现为"每次随机挑一个"。
+    /// </summary>
+    Random,
+}
+
+/// <summary>
+/// 卡牌 id 关键词（原版只按"打击/防御"这类基础牌附魔，但 mod 卡池命名不统一 ⇒ 用 id 关键词兜）。
+/// </summary>
+internal enum WakuuEnchantKeyword
+{
+    /// <summary>不限。</summary>
+    None = 0,
+
+    /// <summary>打击类（id 含 STRIKE）。</summary>
+    Strike = 1,
+
+    /// <summary>防御类（id 含 DEFEND）。</summary>
+    Defend = 2,
+
+    /// <summary>打击或防御（两者之一）。</summary>
+    StrikeOrDefend = 3,
 }
 
 /// <summary>
@@ -136,8 +161,20 @@ internal readonly struct WakuuEnchantPredicate
     /// <summary>必须已升级。</summary>
     public bool RequireUpgraded { get; init; }
 
+    /// <summary>
+    /// 卡牌 id 关键词（打击/防御）：原版"漩涡 / 特兹卡塔拉的余烬"只允许选基础打击/防御牌，
+    /// 但 **mod 卡池**里可能挂着同名附魔却能选别的牌 ⇒ 用户 2026-10-11 口径改成
+    /// "先按费用挑，再用打击/防御关键词兜底"。
+    /// </summary>
+    public WakuuEnchantKeyword Keyword { get; init; }
+
     public bool Matches(in WakuuEnchantCardInfo card)
     {
+        if (!KeywordMatches(Keyword, card.Id))
+        {
+            return false;
+        }
+
         if (CardTypeMask != 0 && (CardTypeMask & (1 << (card.CardType - 1))) == 0)
         {
             return false;
@@ -195,6 +232,18 @@ internal readonly struct WakuuEnchantPredicate
 
         return true;
     }
+
+    /// <summary>id 关键词匹配（复用 <see cref="WakuuCardId"/>，与主 mod 其它地方的"打击/防御"口径一致）。</summary>
+    private static bool KeywordMatches(WakuuEnchantKeyword keyword, string id)
+    {
+        return keyword switch
+        {
+            WakuuEnchantKeyword.Strike => WakuuCardId.IsStrikeId(id),
+            WakuuEnchantKeyword.Defend => WakuuCardId.IsDefendId(id),
+            WakuuEnchantKeyword.StrikeOrDefend => WakuuCardId.IsBasicStrikeOrDefendId(id),
+            _ => true,
+        };
+    }
 }
 
 /// <summary>
@@ -218,6 +267,16 @@ internal sealed class WakuuEnchantRuleEntry
 
     /// <summary>命中该条目后的排序方式，默认保持原序。</summary>
     public WakuuEnchantSort Sort { get; init; } = WakuuEnchantSort.Index;
+
+    /// <summary>
+    /// 「同档」分组：**默认 <c>-1</c> = 该条目独占一档**（与旧行为逐字一致）。
+    ///
+    /// <para>≥0 时，相同值的条目算**同一个优先级档**（用户 2026-10-11 口径：漩涡的"能力牌"与
+    /// "打击/防御"**优先级相当** ⇒ 应从中随机挑，而不是固定先看能力牌）。
+    /// 档内候选取各条目命中的**并集**（按候选原序去重），再按该档**第一个条目**的
+    /// <see cref="Sort"/> 排序；档与档之间仍按"条目首次出现顺序"。</para>
+    /// </summary>
+    public int RankGroup { get; init; } = -1;
 }
 
 /// <summary>
@@ -243,12 +302,19 @@ internal static class WakuuEnchantPicking
 
     /// <summary>
     /// 按规则对候选排序，返回下标列表（稳定：同排序键保持原序）。
+    ///
+    /// <para>逐**档**处理：默认每条目一档（旧行为）；<see cref="WakuuEnchantRuleEntry.RankGroup"/> ≥0
+    /// 的条目合并成同一档（档内并集）。第一个筛出非空候选的档胜出，按其 <c>Sort</c> 排序后返回。</para>
+    ///
+    /// <para><paramref name="shuffleSeed"/>：<see cref="WakuuEnchantSort.Random"/> 档的确定性打乱种子
+    /// （纯逻辑不给真随机 ⇒ 同种子同结果、可单测；运行时传 <c>Random.Shared.Next()</c> 就是真随机）。</para>
     /// </summary>
     public static List<int> RankIndices(
         IReadOnlyList<WakuuEnchantCardInfo> cards,
         IReadOnlyList<WakuuEnchantRuleEntry>? rule,
         IReadOnlyList<string>? ownedRelics,
-        IReadOnlyList<string>? deckCardIds)
+        IReadOnlyList<string>? deckCardIds,
+        int? shuffleSeed = null)
     {
         int count = cards?.Count ?? 0;
         List<int> indices = new(count);
@@ -262,6 +328,45 @@ internal static class WakuuEnchantPicking
             return indices; // 无规则 = 维持既有 cardPickMode 策略
         }
 
+        foreach (List<WakuuEnchantRuleEntry> rank in BuildRanks(rule, ownedRelics, deckCardIds))
+        {
+            List<int> matched = new();
+            foreach (int i in indices)
+            {
+                foreach (WakuuEnchantRuleEntry entry in rank)
+                {
+                    if (MatchesEntry(entry, cards![i]))
+                    {
+                        matched.Add(i);
+                        break;
+                    }
+                }
+            }
+
+            if (matched.Count == 0)
+            {
+                continue;
+            }
+
+            // 档内排序方式以该档**第一个条目**为准（同档多条目约定写一致的 Sort）。
+            return SortIndices(matched, cards!, rank[0].Sort, shuffleSeed);
+        }
+
+        return indices;
+    }
+
+    /// <summary>
+    /// 把规则条目按档分组：<c>RankGroup &lt; 0</c> 的条目独占一档；<c>≥ 0</c> 的同值条目合并，
+    /// 档序 = 该 group 首次出现的条目顺序（条件不满足的条目在这里就被过滤掉）。
+    /// </summary>
+    private static List<List<WakuuEnchantRuleEntry>> BuildRanks(
+        IReadOnlyList<WakuuEnchantRuleEntry> rule,
+        IReadOnlyList<string>? ownedRelics,
+        IReadOnlyList<string>? deckCardIds)
+    {
+        List<List<WakuuEnchantRuleEntry>> ranks = new();
+        Dictionary<int, List<WakuuEnchantRuleEntry>> byGroup = new();
+
         foreach (WakuuEnchantRuleEntry entry in rule)
         {
             if (entry == null || !ConditionsMet(entry, ownedRelics, deckCardIds))
@@ -269,16 +374,23 @@ internal static class WakuuEnchantPicking
                 continue;
             }
 
-            List<int> matched = indices.Where((i) => MatchesEntry(entry, cards![i])).ToList();
-            if (matched.Count == 0)
+            if (entry.RankGroup < 0)
             {
+                ranks.Add(new List<WakuuEnchantRuleEntry> { entry });
                 continue;
             }
 
-            return SortIndices(matched, cards!, entry.Sort);
+            if (!byGroup.TryGetValue(entry.RankGroup, out List<WakuuEnchantRuleEntry>? group))
+            {
+                group = new List<WakuuEnchantRuleEntry>();
+                byGroup[entry.RankGroup] = group;
+                ranks.Add(group);
+            }
+
+            group.Add(entry);
         }
 
-        return indices;
+        return ranks;
     }
 
     private static bool MatchesEntry(WakuuEnchantRuleEntry entry, in WakuuEnchantCardInfo card)
@@ -337,7 +449,11 @@ internal static class WakuuEnchantPicking
         return false;
     }
 
-    private static List<int> SortIndices(List<int> indices, IReadOnlyList<WakuuEnchantCardInfo> cards, WakuuEnchantSort sort)
+    private static List<int> SortIndices(
+        List<int> indices,
+        IReadOnlyList<WakuuEnchantCardInfo> cards,
+        WakuuEnchantSort sort,
+        int? shuffleSeed)
     {
         switch (sort)
         {
@@ -351,9 +467,29 @@ internal static class WakuuEnchantPicking
                 return indices.OrderByDescending((i) => cards[i].Block).ToList();
             case WakuuEnchantSort.RarityDesc:
                 return indices.OrderByDescending((i) => cards[i].Rarity).ToList();
+            case WakuuEnchantSort.Random:
+                return Shuffle(indices, shuffleSeed ?? 0);
             default:
                 return indices; // 稳定：原序
         }
+    }
+
+    /// <summary>
+    /// 确定性打乱（Fisher–Yates，自写 LCG ⇒ **可单测**：同种子同结果）。
+    /// 目的只是"同档随机挑一张"，不需要密码学强度。
+    /// </summary>
+    private static List<int> Shuffle(List<int> indices, int seed)
+    {
+        List<int> result = new(indices);
+        uint state = unchecked((uint)seed);
+        for (int i = result.Count - 1; i > 0; i--)
+        {
+            state = unchecked(state * 1664525u + 1013904223u);
+            int j = (int)(state % (uint)(i + 1));
+            (result[i], result[j]) = (result[j], result[i]);
+        }
+
+        return result;
     }
 
     /// <summary>X 费牌按费用 3 参与费用比较。</summary>

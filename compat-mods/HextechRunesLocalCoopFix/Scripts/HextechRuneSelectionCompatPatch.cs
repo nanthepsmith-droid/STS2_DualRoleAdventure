@@ -37,8 +37,13 @@ namespace HextechRunesLocalCoopFix.Scripts;
 /// <item><b>⑤ 瓦库席位自动作答</b>（v1.1.0，2026-10-05 用户实测「瓦库会弹自己的符文界面、需要真人手点」后加）：
 ///   ③ 记下的归属席位在 <c>RelicsSelected</c> 被等待时绑定到界面实例；只有它确实是
 ///   **后台托管中的瓦库席位**时，才延迟 1.2s 走游戏自己的点击路径（候选按钮的 <c>Pressed</c> 信号）
-///   替它选一个符文（稀有度优先 + 同档取最左），详见 <see cref="WakuuRuneAutoAnswer"/>。
+///   替它选一个符文（取最左），详见 <see cref="WakuuRuneAutoAnswer"/>。
 ///   真人席位的符文界面**一律不碰**。</item>
+/// <item><b>⑧ 锻造器路径也登记归属</b>（v1.2.3，2026-10-11 用户实测「商店买完【随机属性锻造器】还是
+///   不会自动选」后加）：商店买的随机属性锻造器 / 锻造奖励 / 随机锻造发放走的是**另一个协调器**
+///   <c>HextechForgeSelectionCoordinator</c>（`SelectForge → SelectLocalForge → CreateForgeSelectionScreenAsync`），
+///   它自己的建屏方法，既不经过 ③a/③b，也不改标题 ⇒ 归属一直没登记、⑤ 无从代答（真人只能手点）。
+///   这里给同一条链补上同型的「建屏前记席位 → 建屏时登记」两步（见 ⑧a/⑧b）。</item>
 /// </list>
 ///
 /// <para><b>刻意不做</b>：不动海克斯的数值/发牌/敌人 hex 同步逻辑；不改游戏本体行为
@@ -64,13 +69,21 @@ internal static class HextechRuneSelectionCompatPatch
     /// <summary>
     /// 「下一块界面属于哪一席」（③b 消费 <see cref="_pendingScreenOwner"/> 后落到这里，
     /// 由该界面自己的 <c>RelicsSelected</c> 消费 ⇒ ⑤ 自动作答用它判断这一屏要不要代答）。
-    /// 0 = 没有待绑定的席位（非逐席位创建，例如锻造 / 敌人 hex 预览 / 「无可选符文」提示屏）。
+    /// 0 = 没有待绑定的席位（非逐席位创建，例如敌人 hex 预览 / 「无可选符文」提示屏）。
+    ///
+    /// ⚠ r267 起**自带标题的屏也会被登记**（③b 里"登记归属"与"改标题"已解耦）。
+    /// 残留风险由"每次新创建窗口开头清零"兜住（见 <see cref="CreateLocalRuneSelectionScreenPrefix"/>）。
+    ///
+    /// <para>⚠ v1.2.3（r268）起**锻造器路径由 ⑧a/⑧b 单独登记**：商店买的【随机属性锻造器】/ 锻造奖励
+    /// 走的是 <c>HextechForgeSelectionCoordinator</c>，它有自己的建屏方法，**根本不经过** ③a/③b
+    /// ⇒ 原来这一格永远是 0、⑤ 无从代答（用户 2026-10-11 实测「买完还是不会自动选」）。</para>
     /// </summary>
     private static ulong _seatForNextScreen;
 
     internal static void Install(
         Harmony harmony,
         Type coordinatorType,
+        Type? forgeCoordinatorType,
         Type screenType,
         List<string> patched,
         List<string> missing)
@@ -98,6 +111,68 @@ internal static class HextechRuneSelectionCompatPatch
         //    功能无影响，但那是**我们引入的日志噪声**（会污染第三方 WARN 计数），这里直接跳过无事可做的收尾。
         Patch(harmony, screenType, "DismissAfterSelectionComplete", 0, patched, missing,
             prefix: nameof(DismissAfterSelectionCompletePrefix));
+
+        // ⑧ 锻造器路径（v1.2.3）：商店买的【随机属性锻造器】、锻造奖励、「随机锻造发放」走的是
+        //    **另一个协调器** HextechForgeSelectionCoordinator，它自己建屏（且自带标题、不经 ③a/③b）
+        //    ⇒ 归属一直没登记、⑤ 无从代答。用户 2026-10-11 实测「商店买完还是不会自动选」。
+
+        //    它那条链是：SelectForge → SelectLocalForge → CreateForgeSelectionScreenAsync，
+        //    所以 ⑧a 挂在**唯一建屏前的那一步**（SelectLocalForge）记席位，⑧b 在建屏方法里消费。
+        if (forgeCoordinatorType == null)
+        {
+            missing.Add("HextechForgeSelectionCoordinator(锻造选择屏：商店锻造器/锻造奖励)");
+            Log.Warn($"{Entry.LogPrefix} 未找到锻造选择协调器（海克斯可能已更新）："
+                + "商店买的【随机属性锻造器】弹出的界面仍不会被自动作答（真人点一下即可）。");
+        }
+        else
+        {
+            Patch(harmony, forgeCoordinatorType, "SelectLocalForge", 3, patched, missing,
+                prefix: nameof(SelectLocalForgePrefix));
+            Patch(harmony, forgeCoordinatorType, "CreateForgeSelectionScreenAsync", 1, patched, missing,
+                prefix: nameof(CreateForgeSelectionScreenPrefix));
+        }
+    }
+
+    /// <summary>
+    /// ⑧a 锻造器路径的「创建窗口开始」：记下这屏是给哪一席建的。
+    ///
+    /// <para>锻造选择屏**不走** ③a（那是符文协调器的入口），它自己那条链是
+    /// <c>SelectForge → SelectLocalForge → CreateForgeSelectionScreenAsync</c>；
+    /// <see cref="SelectLocalForgePrefix"/> 挂在**唯一**建屏前的那一步，由紧随其后的
+    /// <see cref="CreateForgeSelectionScreenPrefix"/> 消费（与 ③a/③b 同一套两步法）。</para>
+    /// </summary>
+    private static void SelectLocalForgePrefix(Player? player)
+    {
+        if (player == null || !MainModBridge.IsLocalCoopRun())
+        {
+            return;
+        }
+
+        _pendingScreenOwner = player;
+        LogOnce(
+            $"forge-create#{player.NetId}",
+            $"将为该席位创建锻造选择界面（商店的【随机属性锻造器】/ 锻造奖励走的是另一个协调器）: "
+            + $"player={player.NetId}");
+    }
+
+    /// <summary>
+    /// ⑧b 消费 ⑧a 记下的席位：锻造选择屏**自带标题**（`HEXTECH_FORGE_SELECTION_TITLE`）⇒ 不动标题，
+    /// 只登记归属，交给 ⑤ 在 <c>RelicsSelected</c> 被等待时绑到界面实例上自动作答。
+    /// </summary>
+    private static void CreateForgeSelectionScreenPrefix()
+    {
+        Player? owner = _pendingScreenOwner;
+        _pendingScreenOwner = null; // 消费掉：窗口在这里关闭，避免残留绑定串到下一屏
+
+        if (owner == null || !MainModBridge.IsLocalCoopRun() || !MainModBridge.IsLocalSeat(owner.NetId))
+        {
+            return;
+        }
+
+        _seatForNextScreen = owner.NetId;
+        LogOnce(
+            $"forge-seat#{owner.NetId}",
+            $"符文界面已登记归属（锻造选择屏：自带标题、不改标题，但要能自动作答）: player={owner.NetId}");
     }
 
     /// <summary>
@@ -215,17 +290,26 @@ internal static class HextechRuneSelectionCompatPatch
     }
 
     /// <summary>
-    /// ③b 给逐席位符文界面标题补上「· 角色N」（符文逐席位，不标注就分不清在给谁选），
-    /// 并把「这一屏属于哪一席」交给 ⑤（<c>RelicsSelected</c> 时绑定到界面实例上）。
-    /// 只在 <c>titleOverride == null</c> 且刚才是逐席位创建时改口：
-    /// 锻造选择 / 敌人 hex 预览 / 「无可选符文」提示都自带标题，不能动。
+    /// ③b 记下「这一屏属于哪一席」（交给 ⑤ 在 <c>RelicsSelected</c> 时绑定到界面实例上），
+    /// 并给**普通符文界面**标题补上「· 角色N」（符文逐席位，不标注就分不清在给谁选）。
+    ///
+    /// <para>⚠ **r267 修：登记归属与"改不改标题"必须解耦**。原来这一处的守卫是
+    /// <c>if (owner == null || titleOverride != null || !IsLocalCoopRun()) return;</c> ——
+    /// 「自带标题」的屏（**锻造选择** / 敌人 hex 预览 / 「无可选符文」提示）会被提前 return，
+    /// 连**席位都没登记** ⇒ ⑤ 不代答 ⇒ 用户 2026-10-11 实测现象：
+    /// 「瓦库在商店买了海克斯符文的**随机属性锻造器**后，弹出的符文界面不会自动选」。
+    /// 现在：判"该不该管"只看 owner / 会话 / 本地席位；**归属一律登记**；
+    /// 只有 <c>titleOverride == null</c> 时才动标题（原意图：不覆盖第三方自带标题）。</para>
+    ///
+    /// <para>误代答风险很小：登记后若那屏其实没有候选（敌人 hex 预览 / 提示屏），
+    /// <c>WakuuRuneAutoAnswer</c> 会"读不到候选 ⇒ 交回真人"（已有保护），真人席位也一律不代答。</para>
     /// </summary>
     private static void CreateRuneSelectionScreenPrefix(ref string? titleOverride)
     {
         Player? owner = _pendingScreenOwner;
         _pendingScreenOwner = null; // 消费掉：只有紧随其后的这块屏算这个席位的
 
-        if (owner == null || titleOverride != null || !MainModBridge.IsLocalCoopRun())
+        if (owner == null || !MainModBridge.IsLocalCoopRun())
         {
             return;
         }
@@ -235,7 +319,18 @@ internal static class HextechRuneSelectionCompatPatch
             return;
         }
 
+        // ★ 先登记归属（与标题无关）：自带标题的屏（如锻造选择）也要能被 ⑤ 代答。
         _seatForNextScreen = owner.NetId;
+
+        if (titleOverride != null)
+        {
+            // 自带标题：不动它的标题，但归属已登记 ⇒ 瓦库席位仍会被自动作答。
+            LogOnce(
+                $"seat-without-title#{owner.NetId}",
+                $"符文界面已登记归属（自带标题的屏，如锻造选择：不改标题但要能自动作答）: player={owner.NetId}");
+            return;
+        }
+
         titleOverride = $"{DefaultSelectionTitle()} · {MainModBridge.SeatLabel(owner)}";
         LogOnce(
             $"title#{owner.NetId}",

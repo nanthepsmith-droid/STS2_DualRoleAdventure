@@ -604,7 +604,33 @@ public partial class Entry
     //   该席位刚入队的 hook 被**静默取消**。摘战神时 best-effort `CancelNonExecutingActionsForPlayer`，
     //   队列本体交给原版 `ActionQueueSet.Reset()` 清。启动自检 `动作队列反射面已就绪…`（挂在
     //   `RuntimeCompatibilityCheck`）—— 反射目标改名后会表现为"静默不做"，所以要在启动就能看见。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-11-r266)";
+    // r267（2026-10-11，用户实机报的一批）**三件**：
+    //  ①【海克斯符文兼容补丁 v1.2.2】"修「瓦库买了随机属性锻造器后不自动选符文」"：
+    //     当时判根因 = 补丁 ③b 里"登记归属（`_seatForNextScreen`）"与"改标题"耦合 —— 守卫写成
+    //     `if (owner == null || titleOverride != null || !IsLocalCoopRun()) return;`，
+    //     于是**自带标题**的屏被提前 return ⇒ 连席位都没登记 ⇒ ⑤ 不代答。
+    //     解耦本身保留（判"该不该管"只看 owner/会话/本地席位，归属一律登记，只在
+    //     `titleOverride == null` 时才改标题），⚠ **但它修不到这个 bug** ——
+    //     商店买的【随机属性锻造器】走的是**另一个协调器** `HextechForgeSelectionCoordinator`
+    //     （自带标题 + 自己的建屏方法，**根本不经 ③a/③b**）⇒ 归属始终是 0、⑤ 无从代答。
+    //     用户 2026-10-11 复测「还是不会自动选」后按反编译定位，r268 用 ⑧ 补上（见下）。
+    //  ②【同上】**删掉"按稀有度挑符文"**（用户实测：海克斯每次给的 3 个选项**稀有度一致** ⇒ 没有区分度）：
+    //     `WakuuRuneAutoAnswer.PickIndex/RarityRank/RarityName/EnsureRarityResolver` 一节整体删除，
+    //     改为**取最左**。
+    //  ③【附魔选牌规则表】**两条附魔改"考虑 mod 卡池"的口径**（原版只考虑原版卡池）：
+    //     涡旋 Spiral = **费用最高且 ≥2 的牌 > 能力牌 > 打击/防御**（其中**打击与防御优先级相当**
+    //     —— 用户当场澄清"后两者"指打击与防御 —— ⇒ 同档随机）；
+    //     特兹卡塔拉的余烬 TezcatarasEmber = **费用最高的牌 > 打击**。
+    //     引擎侧为此扩了两处：`WakuuEnchantPredicate.Keyword`（id 含 STRIKE/DEFEND 的关键词谓词，
+    //     复用 `WakuuCardId`）+ `WakuuEnchantRuleEntry.RankGroup`（**同档分组**，默认 -1 = 独占一档，
+    //     与旧行为逐字一致）+ `WakuuEnchantSort.Random`（纯逻辑确定性打乱、运行时传 `Random.Shared.Next()`
+    //     ⇒ 可单测的真随机）。
+    // r268（2026-10-11，用户复测①后定位）：**主 mod 没有改任何行为代码，只升 marker**（唯一目的 =
+    //   让这一轮的实机日志 / 部署位可区分）；真改动在**海克斯符文兼容补丁 mod v1.2.3**：
+    //   ⑧ 把【锻造器路径】纳入 ⑤ 自动作答 —— ⑧a `HextechForgeSelectionCoordinator.SelectLocalForge`
+    //   前缀记下归属席位，⑧b `CreateForgeSelectionScreenAsync` 前缀登记 `_seatForNextScreen`
+    //   ⇒ 商店【随机属性锻造器】/ 锻造奖励 / 随机锻造发放的屏，瓦库席位也会被代选。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-11-r268)";
 
     private static Harmony? _harmony;
 

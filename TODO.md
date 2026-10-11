@@ -698,14 +698,144 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
   - **与现状的差距**：现状（r254 ① 手工预设卡组 / r255 ② 预设遗物）= **四档各一套固定内容**
     （普通档 = 召唤者的角色皮 + 强度档 10 张；罕见/稀有/先古 = 预设表里的原版角色皮 + 阶梯遗物 1/2/3 件）。
     目标是把它变成**「档位 × 角色预设」二维**：每个档位下**多套**可选角色预设，召唤时两步选择。
-  - **待拍板**：① 每档各要有哪几套预设（罕见/稀有/先古 是否有"全角色"还是只挑若干角色）；
-    ② **普通档 = 全部角色各自的「初始卡组 + 初始遗物」**（需读 `CharacterModel` 的初始牌组/初始遗物，
-    而不是现在的"召唤者角色皮 + 手工 10 张"）；③ 是否保留一个「自动/随机」选项；
-    ④ 两步 UI 走 `LocalWakuuChoiceOverlay`（现有选档 UI）还是新造；
-    ⑤ 配置键格式（现有 `hellwarDeck*` 四档键要扩成"档位.角色"多维键）。
+  - **✅ 5 条已拍板（用户 2026-10-11）**：① 罕见/稀有/先古每档各要哪几套预设 = **等用户手搓给表**（本项**等输入**）；
+    ② **可** —— 普通档 = 读 `CharacterModel` 的初始牌组 + 初始遗物（不再用"召唤者角色皮 + 手工 10 张"）；
+    ③ **可** —— 保留一个「自动 / 随机」档；④ **UI 由我定**（选：在现有 `LocalWakuuChoiceOverlay` 选档弹层之后
+    追加第二层"选角色预设"，不新造）;⑤ **可** —— 配置键从 `hellwarDeck*`（四档）扩成"档位.角色"多维键。
   - **要点**：预设内容表继续走「内置默认用 `ModelDb` 类型引用 + 字符串 id 只留给配置文件」（AE-11 口径），
     并保留启动自检（件数与阶梯对账）。
-- **⑪ r266（2026-10-11 落地，⭐ 待实机）—— 露出下一层：给临时席位补一条「本地动作队列」（§待查-7 的修法）**：
+- **⏳【待排期·用户 2026-10-11 提出】「预设构筑器」：可视化造战神的程序（选卡/遗物/角色/血量/档位 → 导出给 mod）**：
+  - **需求原话**：「可能以后需要写一个程序，自动读取杀戮尖塔2反编译的代码或我们自己把所有原版卡牌和遗物记录进去，
+    我在这个程序（最好能直接显示卡牌、遗物的图片）里面自己构筑卡牌、遗物、角色、血量、战神档位，然后导入到 mod 里面。
+    发布的时候需要有一些预设的战神，并且全靠我念给你你再搓有点慢，写好程序也方便玩家自己搓战神（如果可以，再兼容 mod）。
+    当然也可以不是独立程序而是集成到 mod 里面」。
+  - **✅ 可行性侦察（2026-10-11，code-explorer 两路）—— 结论：数据/图片/本地化本机已齐，不用手工抄表**：
+    - **反编译源码** `d:\Download\pain\sts2src\src\Core\Models\`：卡牌 `Cards\` 约 598 个 `*.cs`（一卡一文件，
+      `base(费用, CardType, CardRarity, TargetType)`，id 由类名派生）、遗物 `Relics\` 约 300 个、角色 `Characters\` 8 个；
+      离线全量枚举入口 `ModelDb.AllCards`/`AllRelics`（`ModelDb.cs` L114/L261）+ 436KB 的 `AbstractModelSubtypes.cs` 全类型清单。
+    - **图片已解包**（不是 pck）：`sts2src\images\`。卡图 = 图集两段式
+      （`atlases/card_atlas.sprites/<pool>/<id>.tres` 给 `region`，像素在 `card_atlas_0/1.png`，需按 Rect 裁剪；
+      另有 `packed/card_portraits/<pool>/<id>.png` 整图，**覆盖率待量**）；遗物图 = `images\relics\<name>.png` 整图（直接显示）；
+      角色图标 `ui/top_panel/character_icon_<id>.png`。判"有没有立绘"的现成判据 = `CardModel.HasPortrait` / `Portrait != null`。
+    - **本地化** `sts2src\localization\<lang>\*.json`（16 语言；`zhs/cards.json` 99.6KB、`relics.json`…），
+      键 = `<类名大写>.title/.description` ⇒ 中文卡名/描述直接读表，不用我们抄。
+    - **pck 备用工具**：`d:\Download\pain\tools\pck_tool.py`（info/list/extract，V1~V3）；实体基线
+      `maintenance-docs\game-entities.md`（卡 596 / 遗物 299 / 药水 65…）。
+    - **更省事的路（推荐为主）**：mod 里已有现成的运行期枚举先例 `Scripts\Runtime\WakuuDaddyContentProbe.cs`
+      （`ModelDb.CardPool<EventCardPool>().AllCardIds` / `RelicPool.AllRelicIds` / `GetId<T>()` / `LocString.Exists` /
+      `Portrait != null`，挂在 `ModelDb.Preload` 后）⇒ 照它写一个**「导出内容目录」**的开关，跑一次 dump
+      `content_catalog.json`（id / 名称 / 描述 / 稀有度 / 类型 / 费用 / 图片路径 / 是否有立绘 / 来源 mod）——
+      **天然含第三方 mod 卡**，正好满足"再兼容 mod"；`sts2src` 离线解析留作兜底（拿不到 mod 卡、解析 C# 也脆）。
+    - **编辑器形态候选**：① 独立程序（可复用 `d:\Download\pain\Sts2ModManager` 的 WPF/.NET 8 工程骨架 —— 它现在
+      **只**管 mod 清单/开关，没有任何卡牌/图片代码可抄，但工程约定是现成的）；② 集成进 mod 的 Godot UI（改配置要重载、
+      复杂 UI 成本高）；③ 本地 HTML/JSON 版（零安装、显示图片最容易、我改起来最快，但"写文件"受浏览器限制）。
+    - **⚠ 依赖顺序（关键）**：编辑器能输出什么，取决于 mod **能读什么** —— 现状**只有卡组可配置**
+      （`hellwarDeckCommon/Rare/Epic/Ancient`，`WakuuConfigData.cs` L165-174，落盘 `%APPDATA%\SlayTheSpire2\vakuu_autopilot.json`）；
+      **遗物 / 皮肤 / 血量 / 升级全是硬编码**（`HellwarWarGodPresets.cs` 的 `record HellwarWarGodPreset(Tier, SkinKey, UpgradeDeck, BonusHp)`
+      + `HellwarWarGodRelics.cs` / `HellwarWarGodDecks.cs`；件数阶梯 `HellwarSummonPolicy.ResolvePresetRelicCount = 成本 − 1`），
+      且**没有"档位 × 角色预设"的二维表达能力** ⇒ **必须先做"预设可配置化"（= 预设战神 v2 的地基），再造编辑器**，否则输出格式返工。
+    - **外部文件读写先例**（编辑器产物如何被 mod 吃）：`personal_stats.json`（`LocalPersonalRecorder.cs`：
+      读 `Reload` L46 / 原子写 L445-456，纯逻辑解析在 `WakuuPersonalData.cs`）与 `vakuu_autopilot.json`（`LocalWakuuAutopilotConfig`）
+      —— 两套范式都是「纯逻辑 `*Data/*Json` + 运行时 `Local*Config` + `*Policy` 校验」。
+  - **✅ 已拍板（2026-10-11 用户三连选）**：① 形态 = **独立程序**（复用 `d:\Download\pain\Sts2ModManager`（ModKit）的
+    WPF/.NET 8 工程骨架新建工具）；② 数据源 = **游戏内导出为准**（mod 加"导出内容目录"开关 dump `content_catalog.json`，
+    **含第三方 mod 卡**；`sts2src` 离线解析只做兜底/校验）；③ 顺序 = **先做 mod 侧地基**（预设从硬编码改成配置可读、
+    档位 × 角色预设二维），再造编辑器 —— 编辑器输出格式一次到位，不返工。
+  - **✅ 玩家侧文件口径（用户问"玩家是否要额外下载"，2026-10-11 定）**：
+    - **只玩预设战神的玩家 = 零额外下载**（官方预设内置在主 mod：内置默认表编译进 dll + 预设包随 mod 走工坊）；
+    - **自搓的玩家 = 只下编辑器本体**（GitHub Release 一个 zip，几 MB）。**目录与图片都不随编辑器分发**：
+      ⚠ 已查证（2026-10-11）玩家侧游戏目录**没有散装资源**，全部在 `SlayTheSpire2.pck`（1.99GB）里
+      ⇒ 编辑器内置一个**只读 pck 提取器**（格式知识已有：`tools/pck_tool.py`，V1~V3），首次运行指向游戏目录、
+      按需提取图片缓存到 `%APPDATA%`（卡图还要按 `atlases/card_atlas.sprites/<pool>/<id>.tres` 的 `region` 从
+      `card_atlas_0/1.png` 裁剪；遗物图 `images/relics/*.png` 整图直读）；不发布官方美术（版权 + 体积都干净）。
+      目录侧 = 玩家先在 mod 设置页点一次"导出内容目录"生成他自己机器的 `content_catalog.json`（含他装的 mod 卡），
+      编辑器读它；没导出则提示先导出（不显示列表）。
+    - **用别人分享的预设 = 零**（预设 = 小 json，编辑器支持导入/导出）。
+  - **✅ 剩余两项已拍板（2026-10-11 用户）**：④ 首批可编辑维度 = **一步到位全要**（卡组/遗物/角色皮/血量/升级，
+    用户原话「大不了我慢慢测」）；⑤ 件数阶梯 = **允许破坏平衡**（用户原话「玩家想怎么样就怎么样我们无权干涉」
+    ⇒ 编辑器不锁件数；mod 侧对超出阶梯的预设只打一条提示日志、**不阻断**）；产物 = **独立 `hellwar_presets.json`**（默许）。
+  - **❓→✅ 「mod 角色的战神」可行性（用户 2026-10-11 问，答 = **高**，且有 3 个实机验证点）**：
+    - **依据**：① 皮肤解析 `HellwarSummonCombatRuntime.ResolveSkin` 的普通档已经在用 `owner.Character`
+      （= 传 `CharacterModel` 实例这条路**已通**，自动兼容 mod 角色）；② 卡组/遗物的解析链基于 `ModelDb.AllCards`
+      的**字符串 id**（`HellwarWarGodDecks.LookupByEntry`），而编辑器产物恰恰是字符串 id ⇒ **mod 卡/遗物天然可用**
+      （内置默认表因编译期 `ModelDb.Card<T>()` 类型引用而永远只能原版 —— 这正是 AE-11 口径的分工，不算缺口）；
+      ③ 实机先例：瓦库商店已在买/打第三方卡（`YUWANCARD-…` / `YUI_…`），按 id 发遗物（`AddRelicInternal`）同链路。
+    - **待实机验证 3 点**：① mod 角色 id 能否从 `ModelDb` 枚举到、并按 id 取实例（导出 + `SkinKey` 改字符串 id 后）；
+      ② mod 角色的初始卡组/遗物在导出时机是否已构建完成；③ mod 资源图在 **mod 自己的 pck** 里（如 `HextechRunes.pck`）
+      ⇒ 编辑器的资源提取要**叠加 `mods\*\*.pck`**（不止主 pck）。
+    - **设计预留**：`SkinKey` 从 4 值枚举改**字符串 id**（可指向任意 `CharacterModel`，含 mod 角色）；
+      缺失降级沿用既有口径（`预设卡组配置里有认不出的卡牌（已跳过…）` + 回落召唤者角色）⇒ 没装那个 mod 的玩家
+      用到含 mod 内容的预设**不崩**，只跳过缺失项并 WARN。
+- **⏳【待排期·用户 2026-10-11 点名】海克斯符文兼容补丁（`compat-mods\HextechRunesLocalCoopFix`）：加**抓率统计** + 按抓率选符文 + 选项很烂时自主 roll**：
+  - **需求原话**：「为海克斯符文兼容补丁 mod 加上我们的本体 mod 相似的**抓率统计**，瓦库根据抓率选择，
+    并且在**选项很烂的情况下自主 roll 符文**」。
+  - **载体建议**（`code-explorer` 已侦察）：该补丁 mod **当前没有任何统计/配置文件**，照抄主 mod 的
+    `Scripts\Runtime\LocalPersonalRecorder.cs`（`%APPDATA%\SlayTheSpire2\personal_stats.json`，原子写；
+    `Reload :46` / 入账 `:124/:181/:219/:260/:313` / 落盘 `:442`）与其开关
+    `LocalWakuuAutopilotConfig.PersonalRecorder`（`vakuu_autopilot.json`）。
+  - **入账挂点**：`WakuuRuneAutoAnswer.TryAnswer` 作答处（`WakuuRuneAutoAnswer.cs` 里
+    `picked=` 日志那一段，约 :223-233）—— 落盘 `{席位, 幕, 候选 options, 选中项, 是否 roll}`。
+  - **"自主 roll"前置**：必须先确认海克斯允许掷骰/重掷的入口（`HextechRuneSelectionScreen` 的
+    reroll 按钮 / `EnemyHexAuthorityCompatPatch` 那套"只有可调席位能改"的归属判据是本轮可复用先例）；
+    并且要定义"选项很烂"的判据（抓率全低？稀有度全银？ —— ⚠ 注意：**用户已实测"每次 3 个选项稀有度一致"**，
+    所以稀有度不能当判据，得靠抓率或效果质量）。
+- **⑬ r268（2026-10-11 落地，✅ **实机关单**）—— 用户复测「锻造器还是不会自动选」⇒ 真因 = 锻造屏走的是**另一个协调器**：
+  补丁 mod `HextechRunesLocalCoopFix` **v1.2.3**（⑧a/⑧b），主 mod 本轮**只升 marker（r268）不改行为代码**：
+  - **症状/判读**：用户「商店瓦库买海克斯符文属性锻造器还是不会自动选」。
+    日志 `logs-archive/godot__20261011-145339__r267.log`：确实买到（L10475 `relic=RANDOM_FORGE_SHOP_RELIC, gold=250`），
+    但**我方 ③/⑤ 锚点一条都没有**（`将为该席位创建符文界面` / `符文界面已标注归属` / `符文界面选完即关闭` 全缺；
+    对比 `godot__20261011-132615__r265.log` 三条齐全）⇒ **那屏根本没走我们挂的那条链**。
+  - **真因（反编译实现变体 `lib/0.111.0/HextechRunes.dll`；根目录的 `HextechRunes.dll` 只是加载器）**：
+    屏幕类只有一个（`HextechRuneSelectionScreen`），但**两个协调器各建各的屏** ——
+    `HextechRuneSelectionCoordinator`（③a/③b 挂的就是它，逐席位符文选择）与
+    **`HextechForgeSelectionCoordinator.CreateForgeSelectionScreenAsync`**（自带标题 `HEXTECH_FORGE_SELECTION_TITLE`，
+    商店【随机属性锻造器】/ 锻造奖励 / 随机锻造发放）。锻造链 = `SelectForge → SelectLocalForge → CreateForgeSelectionScreenAsync`，
+    **绕过 ③a/③b** ⇒ `_seatForNextScreen` 永远是 0 ⇒ ⑤ 不代答。⇒ ⑫ ① 的根因是**猜**的（已在其下加订正注）。
+  - **修法（⑧a/⑧b）**：⑧a `SelectLocalForge` 前缀记席位；⑧b `CreateForgeSelectionScreenAsync` 前缀登记
+    `_seatForNextScreen`（自带标题 ⇒ 只登记、不改标题）。协调器缺席只让 ⑧ 退化（`Missing` + WARN）。
+    覆盖面顺带含 `obtain-random-forges` / `reward` 调用点。
+  - **复测契约**：marker `2026-10-11-r268` + `INIT_OK: patched=[…9 项…]`；买锻造器 ⇒
+    `将为该席位创建锻造选择界面…` → `符文界面已登记归属（锻造选择屏：自带标题…）` → `已登记自动作答` →
+    `自动作答: … picked=…` → `自动作答完成（界面已关闭）`（界面一闪而过、不用手点）；真人买同款照旧自己点。
+  - **已知未覆盖**：`HextechRelicOptionSelectionCoordinator.SelectRelicOption` 用**原版** `NChooseARelicSelection`
+    （不是海克斯自己的屏）⇒ 不适用 ⑤；海克斯内部目前没有调用它（只有一行对外包装）。
+  - **运维备注**：`build_all_mods.ps1` 部署补丁 mod **只拷 dll、不拷槽位 json** ⇒ 槽位清单里的 version 会一直
+    停在装它时的旧值（本次 1.2.1 → 已手工同步成 1.2.3）。以后改补丁 mod 的 json 记得一起手工同步。
+  - **✅ 实机判读（2026-10-11，`logs-archive/godot__20261011-152946__r268.log`，76945 行；用户原话「海克斯符文商店瓦库关单，亲测没问题」）⇒ 契约四条全中，关单**：
+    `BUILD_ID … marker=2026-10-11-r268`、mod 列表 `(1.2.3)`（槽位 json 同步生效）、
+    `INIT_OK: patched=[…9 项…], missing=[]`（⑧a/⑧b 在列）；锻造链 L14673 `将为该席位创建锻造选择界面…` →
+    L14674 `符文界面已登记归属（锻造选择屏：自带标题、不改标题，但要能自动作答）` → L14676 `已登记自动作答` →
+    L14677 `自动作答: options=[POCKET_FORGE, SCISSORS_FORGE, SILVER_PROTECTION_FORGE], picked=POCKET_FORGE, rule=取最左` →
+    L14697 `自动作答完成（界面已关闭）`；L14678-14681 `GoldLost`+`RewardObtained`（归属=瓦库）→
+    `瓦库商店自动买遗物成功: relic=RANDOM_FORGE_SHOP_RELIC, gold=250`（选择回流 `PurchaseRandomForge` 并 `ObtainSelectedForge` 成功）。
+    我方异常族全 0（`turn loop died` / `托管出牌抛异常` / `本局不再让托管打` / `WaitForRemoteHextechChoice` / `交回真人` / `单击后仍未关闭`）；
+    顺带回归：20 条 `临时席位（战神）已补一条本地动作队列`（10 席 × 2 场，r266 正常；那句
+    `Tried to get local action queue` 只出现在**我们自己的 INFO 文案**里，不是异常）、火堆 `option=SMITH`（BUG-27 正常）、
+    `[ERROR]` 128 条 = 第三方 newsanguo 资源缺失 127 + Manosaba 分支告警 1、4 条 NRE = `§待查-6` 已知 ⇒ **无我方新增**。
+    ⚠ 这一局没出现普通符文屏（③/⑤ 每幕符文链本轮未被复测，r265 已验过）；**上一轮 ④ 附魔两条规则仍未实机验**。
+- **⑫ r267（2026-10-11 落地，⭐ 待实机）—— 用户实机报的一批三件**：
+  - ⚠ **订正（r268）**：下面 ① 的根因**是猜的、且修不到这个 bug**（用户复测"还是不会自动选"）——
+    真因见上一段 ⑬（那屏走的是**另一个协调器**，压根不经 ③b）。③b 的解耦本身保留。
+  - **① 海克斯符文兼容补丁 v1.2.2：修「瓦库买了**随机属性锻造器**后不自动选符文」**：
+    根因 = ③b 里"登记席位归属"与"改标题"**耦合** —— 守卫 `if (owner == null || titleOverride != null || !IsLocalCoopRun()) return;`
+    让**自带标题**的屏（锻造选择 / 敌人 hex 预览）被提前 return ⇒ 连 `_seatForNextScreen` 都没登记 ⇒ ⑤ 不代答。
+    修法 = 解耦（归属一律登记；只在 `titleOverride == null` 时才改标题），并加一条
+    `符文界面已登记归属（自带标题的屏…）` 日志便于实机确认。
+  - **② 删「按稀有度挑符文」**（用户实测：海克斯每次 3 个选项**稀有度一致** ⇒ 按稀有度挑没有区分度）：
+    `WakuuRuneAutoAnswer` 的 `PickIndex`/`RarityRank`/`RarityName`/`EnsureRarityResolver` 整节删除，
+    改为**取最左**（日志 `rule=取最左（3 个选项稀有度一致）`）。
+  - **③ 附魔选牌规则表两条改「考虑 mod 卡池」**：涡旋 Spiral = **费用最高且 ≥2 > 能力牌 > 打击/防御**
+    （其中**打击与防御优先级相当 ⇒ 同档随机**；用户 2026-10-11 当场澄清"后两者"指打击与防御）；
+    特兹卡塔拉的余烬 TezcatarasEmber = **费用最高的牌 > 打击**。
+    引擎侧扩了：`WakuuEnchantPredicate.Keyword`（id 含 STRIKE/DEFEND，复用 `WakuuCardId`）、
+    `WakuuEnchantRuleEntry.RankGroup`（同档分组，默认 -1 = 独占一档 ⇒ 旧行为不变）、
+    `WakuuEnchantSort.Random`（纯逻辑确定性打乱 + 运行时 `Random.Shared.Next()` ⇒ 可单测的真随机）。
+  - **复测契约**：① 瓦库在商店买锻造器 ⇒ 界面弹出后**自动选**（日志见
+    `符文界面已登记归属（自带标题的屏…）` + `瓦库符文界面自动作答: … rule=取最左…`）
+    —— ⚠ **① 这条已被 r268 ⑬ 取代**（真正的锚点是 ⑬ 那组；③b 的这条锚点在锻造链上根本不会出现）；
+    ③ 打一场带这两张附魔的牌 ⇒ 涡旋选**费用最高且 ≥2** 的牌（没有则从"能力牌/打击防御"里随机）；
+    余烬选**费用最高**的牌。启动 marker = `2026-10-11-r267`（已被 **r268** 取代，见 ⑬）。
+- **⑪ r266（2026-10-11 落地，✅ 实机关单）—— 露出下一层：给临时席位补一条「本地动作队列」（§待查-7 的修法）**：
   - **症状（r265 局日志 L16701）**：`托管出牌抛异常 … card=CARD.MOKOUMOD-IMMORTAL_SMOKE,
     error=Tried to get local action queue for nonexistent player with ID 4098!`
     —— 原版要为**战神**入队 `GenericHookGameAction`（`owner 4098`），而 `ActionQueueSet` 的队列是

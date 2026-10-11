@@ -77,6 +77,24 @@ internal static class WakuuEnchantRules
         };
     }
 
+    /// <summary>
+    /// **同档**条目（用户 2026-10-11 口径）：<paramref name="rankGroup"/> 相同的条目算**同一优先级**，
+    /// 档内候选取并集后按该档第一个条目的 <see cref="WakuuEnchantSort"/> 排序
+    /// ⇒ 配 <see cref="WakuuEnchantSort.Random"/> 就是"两个条件优先级相当、从里面随机挑一个"。
+    /// </summary>
+    private static WakuuEnchantRuleEntry AnyInRank(
+        int rankGroup,
+        WakuuEnchantSort sort = WakuuEnchantSort.Random,
+        WakuuEnchantPredicate? predicate = null)
+    {
+        return new WakuuEnchantRuleEntry
+        {
+            Predicate = predicate ?? default,
+            Sort = sort,
+            RankGroup = rankGroup,
+        };
+    }
+
     private static WakuuEnchantPredicate MultiHit(int minHits, bool exhaust)
     {
         return new WakuuEnchantPredicate
@@ -274,8 +292,30 @@ internal static class WakuuEnchantRules
         Any(WakuuEnchantSort.CostDesc),
     };
 
-    /// <summary>涡旋 Spiral：维持现状。</summary>
-    private static readonly List<WakuuEnchantRuleEntry>? Spiral = null;
+    /// <summary>
+    /// 涡旋 Spiral（用户 2026-10-11 改口径：**原版只考虑到原版卡池**（"只能选打击/防御"是游戏侧的候选过滤），
+    /// 而 mod 卡池里这张附魔可能能选别的牌 ⇒ 改成我们自己按优先级挑）：
+    /// <list type="number">
+    /// <item>**费用最高且 ≥2 的牌**（<c>MinCost=2</c> + 费用降序 ⇒ 取第一个）；</item>
+    /// <item>**能力牌**；</item>
+    /// <item>**打击 / 防御** —— 这两者**优先级相当**（用户 2026-10-11 明确："后两者"指打击与防御）
+    ///   ⇒ 同档 + 档内<span>随机</span>（<see cref="WakuuEnchantSort.Random"/>，运行时传随机种子）；</item>
+    /// <item>兜底：原序（维持既有 cardPickMode 策略）。</item>
+    /// </list>
+    /// </summary>
+    private static readonly List<WakuuEnchantRuleEntry> Spiral = new()
+    {
+        Any(WakuuEnchantSort.CostDesc, new WakuuEnchantPredicate { MinCost = 2 }),
+        Any(WakuuEnchantSort.Index, new WakuuEnchantPredicate { CardTypeMask = WakuuEnchantPicking.MaskPower }),
+        AnyInRank(SpiralBasicCardRank, WakuuEnchantSort.Random,
+            new WakuuEnchantPredicate { Keyword = WakuuEnchantKeyword.Strike }),
+        AnyInRank(SpiralBasicCardRank, WakuuEnchantSort.Random,
+            new WakuuEnchantPredicate { Keyword = WakuuEnchantKeyword.Defend }),
+        Any(WakuuEnchantSort.Index),
+    };
+
+    /// <summary>涡旋"打击 ｜ 防御"这一档的组号（这两者优先级相当，见 <see cref="AnyInRank"/>）。</summary>
+    private const int SpiralBasicCardRank = 0;
 
     /// <summary>稳定 Steady：费用最高的牌。</summary>
     private static readonly List<WakuuEnchantRuleEntry> Steady = new()
@@ -293,8 +333,19 @@ internal static class WakuuEnchantRules
         Any(WakuuEnchantSort.Index, new WakuuEnchantPredicate { Exhaust = true, MinDrawCount = 1 }),
     };
 
-    /// <summary>特兹卡塔拉的余烬 TezcatarasEmber：维持现状。</summary>
-    private static readonly List<WakuuEnchantRuleEntry>? TezcatarasEmber = null;
+    /// <summary>
+    /// 特兹卡塔拉的余烬 TezcatarasEmber（用户 2026-10-11 改口径：原版只能选打击，mod 卡池可能给别的牌）：
+    /// **费用最高的牌 &gt; 打击**。
+    ///
+    /// ⚠ 第 1 条是无条件"费用降序"，只要候选非空就会命中 ⇒ 实际效果 = **选费用最高的牌**；
+    /// 第 2 条"打击"保留作兜底（若哪天要给第 1 条加限制条件，它就会生效）。
+    /// 若想要"只在打击牌里挑费用最高的"，把两条**对调**即可。
+    /// </summary>
+    private static readonly List<WakuuEnchantRuleEntry> TezcatarasEmber = new()
+    {
+        Any(WakuuEnchantSort.CostDesc),
+        Any(WakuuEnchantSort.Index, new WakuuEnchantPredicate { Keyword = WakuuEnchantKeyword.Strike }),
+    };
 
     /// <summary>活力 Vigorous：同锋利（多段优先）。</summary>
     private static readonly List<WakuuEnchantRuleEntry> Vigorous = new()
