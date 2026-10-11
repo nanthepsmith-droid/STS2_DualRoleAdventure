@@ -39,9 +39,17 @@ namespace LocalMultiControl.Scripts.Patch;
 /// <list type="bullet">
 /// <item>只在本地多控 + 单人冒险 + **本地回环**（我们自己的会话）里生效；</item>
 /// <item>只对我们的**本地席位**生效（第三方合成 Bot / 真联机玩家 ⇒ 原样等待）；</item>
-/// <item>只对**后台托管的瓦库形态**席位生效（真人席位不动 —— 真人该走的是本地 UI 分支）；</item>
+/// <item>只对**后台托管的瓦库形态**席位生效（真人席位不动 —— 真人该走的是本地 UI 分支）；
+///   **r264 起：临时席位（战神）同等兜底** —— 它也不是"任何人操作的席位"，没人会回答它的选择，
+///   而不兜底时 `WaitForRemoteChoice` 会死等 / 抛（2026-10-11 实机在战神回合把 turn loop 打死，
+///   见 references AE-24；它前面那一步 `ReserveChoiceId` 的 `-1` 越界由
+///   `PlayerChoiceSynchronizerTemporarySeatChoiceIdPatch` 修）；</item>
 /// <item>火堆"选一个队友"类等待交给既有补丁精确作答（`IsAwaitingOptionExecution`），这里让路。</item>
 /// </list>
+///
+/// ⚠ 空结果类型对"index 系"调用方一律安全：`PlayerChoiceResult.FromIndex(null)` 与
+/// `FromIndexes(...)` **同为 `PlayerChoiceType.Index`**（共用 `_indexes` 字段）⇒
+/// `AsIndex()` 得 -1、`AsIndexes()` 得空列表，两种调用方都能安全继续（不需要额外分类）。
 ///
 /// 代价（用户 2026-09-28 拍板接受）：该次选择被**跳过**（例：色素细胞 = 不拿那张牌），
 /// 功能完整版（我们驱动它的界面、按瓦库策略作答）单独一批做，见 `TODO.md` §BUG-23 方案 B。
@@ -62,13 +70,23 @@ internal static class PlayerChoiceSynchronizerRemoteChoiceFallbackPatch
             return true;
         }
 
-        if (player == null || !LocalSeatSource.IsLocalSeat(player.NetId))
+        if (player == null)
         {
             return true;
         }
 
-        // 只兜底「后台托管的瓦库」：真人席位要走的是本地 UI 分支，不能替他做决定。
-        if (!LocalWakuuRelicRuntime.IsVakuuFormMode(player))
+        // r264：**临时席位（战神）同等兜底** —— 它不在本地席位表里（AE-1/AE-3），也不是瓦库形态，
+        // 但同样"没有任何人会回答它的选择"。不兜底的话：单机/回环下 `WaitForRemoteChoice` 会
+        // 死等（或按 NetService 类型抛 "Cannot wait for remote choice in singleplayer!"），
+        // 在战神回合的第三方钩子里同样能把 turn loop 打死（2026-10-11 实机，见 AE-24）。
+        bool temporarySeat = LocalSelfCoopContext.IsTemporarySeat(player.NetId);
+        if (!temporarySeat && !LocalSeatSource.IsLocalSeat(player.NetId))
+        {
+            return true;
+        }
+
+        // 只兜底「后台托管的瓦库」与「临时席位（战神）」：真人席位要走的是本地 UI 分支，不能替他做决定。
+        if (!temporarySeat && !LocalWakuuRelicRuntime.IsVakuuFormMode(player))
         {
             return true;
         }
@@ -81,8 +99,9 @@ internal static class PlayerChoiceSynchronizerRemoteChoiceFallbackPatch
 
         PlayerChoiceResult empty = BuildEmptyResult(out string kind, out string caller);
         __result = Task.FromResult(empty);
+        string seatKind = temporarySeat ? "临时席位（战神）" : "瓦库";
         LocalMultiControlLogger.Warn(
-            $"瓦库远端选择无人作答，已按空结果放行（防软锁兜底，本次选择被跳过）: "
+            $"{seatKind}远端选择无人作答，已按空结果放行（防软锁兜底，本次选择被跳过）: "
             + $"player={player.NetId}, choiceId={choiceId}, 结果类型={kind}, 调用方={caller} —— "
             + "若这是第三方 mod 自绘的选牌，属已知限制（TODO.md §BUG-23）；"
             + "若调用方是本 mod 适配过的入口，请把本行报给维护者（可能需要补映射表）。");

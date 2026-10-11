@@ -87,6 +87,14 @@ dotnet test tests/LocalMultiControl.Tests/LocalMultiControl.Tests.csproj   # 纯
 用于 Co-op Bots 这类版本锁定依赖的回归与更新对账（用法与逐条判据见
 `maintenance-docs/decision-records/Co-op_Bots联机队友兼容可行性分析.md` §R2）。
 
+`Scripts/Tools/scan_slot_index_consumers.py`（r264）扫 `sts2src` 里**所有**按
+`IPlayerCollection.GetPlayerSlotIndex` 消费的调用点（它对我们**不在 `runState.Players`** 的临时席位恒返回
+`-1` ⇒ 凡是不判 -1 就直接索引的原版代码都会越界；2026-10-11 就是这么把 `turn loop` 打死的，见
+references AE-24）。分类 `INDEXED/GUARDED/REVIEW` + 可达性（战斗内/战斗外）+ 与仓库内基线
+`Scripts/Tools/baselines/slot_index_consumers.baseline.txt` 比对 ⇒ 也是**按需/半自动**工具（要读
+`sts2src`，缺则 SKIP），但已挂进 `preflight` 的 **G2b**（基线外新增"当索引用 + 战神可能在场"⇒ FAIL）。
+基线刷新：`python Scripts/Tools/scan_slot_index_consumers.py --repo . --update-baseline`（先人审新增明细）。
+
 `Scripts/Tools/build_all_mods.ps1` runs build → tests → clr_compat_check → deploy → SHA256 in one shot.
 **One command for the whole gate chain**: `.\Scripts\Tools\preflight.ps1 [-Build] [-Deploy] [-WithLogs] [-Lint]`
 （静态层默认秒级；`-Deploy` 才碰游戏槽位）。

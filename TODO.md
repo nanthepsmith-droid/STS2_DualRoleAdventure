@@ -692,22 +692,76 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     （`NOXIOUS_FUMES / AFTERIMAGE / DEADLY_POISON / NEUTRALIZE / POISONED_STAB / PREDATOR`）；
     预设遗物相关的"发放失败 / 跳过 / 异常 / 件数与阶梯不符"**全 0**、异常族全 0、`[ERROR]` 仅 1 条（第三方分支告警）。
     ⚠ **本场只召了罕见 + 普通档** ⇒ 稀有 / 先古档的**效果体感**仍待后续实机（内容表解析已由自检覆盖）。
-- **⑨ 🔴 r262 实机（2026-10-11）待修两件（r263，**本轮只判读、未改代码**）—— 详见 `开发进度记录.md` 顶部第九十三段**：
-  - **① 回合死锁 = r261「放弃名单」的设计缺陷（**我们自己的 bug**）**：日志铁证（`logs-archive/godot__20261011-115325__r262.log`
+- **⑩ r264 + r265（2026-10-11 落地，✅ **实机关单**）—— 修「战神把 turn loop 打死」：临时席位 choiceId 记账改道 + 远端选择兜底并入临时席位 + 配套扫描工具 + 同族护栏（HoveredModelTracker）**
+  - **症状**（用户原话）：「打一半不能出牌不能切人不能结束回合；瓦库和战神也不出牌」。
+  - **真凶（我们自己的老坑换入口，不是第三方）**：原版 `PlayerChoiceSynchronizer.ReserveChoiceId` 按
+    **玩家槽位索引**记账（`_choiceIds[runState.GetPlayerSlotIndex(player)]`），而战神**刻意不进**
+    `runState.Players`（AE-1/AE-3）⇒ `GetPlayerSlotIndex` 返回 **-1**（接口注释原文 "or -1 if the player
+    is not in Players"）⇒ `_choiceIds[-1]` 抛 `ArgumentOutOfRangeException`。实机爆点：第三方 GensokyoSpire
+    的抽牌前钩子（Watcher「先见之明」→ BaseLib `ScryCmd` → `CardSelectCmd.FromSimpleGrid`）在**战神回合**
+    调它 ⇒ 异常冒穿 `CombatManager.StartTurn` ⇒ 原版打 `turn loop died … the combat is stuck until the
+    room is restarted` ⇒ **整场战斗冻结**（日志 `logs-archive/godot__20261011-121808__r263.log` L18279）。
+  - **修法（两层，缺一不可）**：① 新补丁 `PlayerChoiceSynchronizerTemporarySeatChoiceIdPatch` ——
+    `ReserveChoiceId` **与** `GetChoiceId` 两处同进同退，临时席位改走 `TemporarySeatChoiceIds` 独立序列；
+    ② `PlayerChoiceSynchronizerRemoteChoiceFallbackPatch` 闸门并入临时席位（否则修完 -1 只是把"抛"换成
+    `WaitForRemoteChoice` **死等**：战神不是 `IsMe` ⇒ `ShouldSelectLocalCard` 为 false）。
+  - **配套交付**：`Scripts/Tools/scan_slot_index_consumers.py`（+ 基线 `Scripts/Tools/baselines/…`）扫
+    `sts2src` 全部 `GetPlayerSlotIndex` 消费点（分类 + 战斗内/外可达性 + 基线比对），已挂 `preflight` **G2b**；
+    首跑：35 个消费点 / 「当索引用」27 个 / **战斗内只有 2 处**（`PlayerChoiceSynchronizer` 已补、
+    `HoveredModelTracker` 实机未触发、**r265 已加护栏**），其余 23 处都在房间/地图/奖励流程（战神不在场）。
+  - **r265（用户拍板"先加防护我再测"）**：`HoveredModelTrackerForeignSeatGuardPatch` —— 三个方法
+    （`OnPlayerStateChanged` / `OnPlayerStateRemoved` / `GetHoveredModel`）对结构外成员直接跳过/返回 null
+    （判据 `ForeignSeatGuardPolicy`，有单测；跳过安全：悬停是纯表现层，没有"计数必填项"语义）。
+    ⚠ `EventCombatSynchronizer.ReadyToEnterCombat` **刻意不加**：它的 `_states[slot]` 后面有
+    `_states.All(s => s != null)`（全员就位才进战斗），跳过会永远不满足 ⇒ **反而卡住事件**。
+  - **复测契约**：战神回合遇到"占卜/选牌"类第三方效果 ⇒ 出现
+    `临时席位（战神）的 choiceId 已改道到独立序列…`（每个席位一次）+ 可能一条
+    `临时席位（战神）远端选择无人作答，已按空结果放行…`；**不再**出现 `turn loop died`、
+    不再卡死、真人「结束回合」/切人正常。若那条 `远端选择…按空结果放行` 频繁出现说明第三方在战神回合
+    频繁要选择（功能上被跳过，属已知限制，可后续按 §BUG-23 的"功能完整版"做）。
+  - **✅ 实机判读（2026-10-11，r265 局，用户自测「应该没问题」；日志 `logs-archive/godot__20261011-132615__r265.log`）**：
+    `turn loop died` **0 次**（上一局 1 次 ⇒ 整场废掉）；`choiceId 已改道到独立序列` **2 次**
+    （seat=4098 / 4105，其中 4105 那次正对应上一局 L18278「战神回合开始 ⇒ turn loop died」的同一场景）
+    ⇒ **修复直接命中**；`跳过悬停模型追踪` 0 次（与预判一致：战神不进 PeerInput 状态表）；
+    `远端选择无人作答` 0 次（兜底那层本局没被用到，备用）；`被重复选中` 0；`瓦库放弃` 3 条（每席位/回合一条）；
+    `回收滞留在出牌区`/`托管出牌抛异常` 各 1（r263 契约正常）；`[ERROR]` 仅 3 条（Manosaba 分支不兼容 + 2 条
+    `NHeavyBluntVfx.PlaySequence` = §待查-6 已知）；回合号一路推进到 5、退局 `会话/退局复位自检: 无残留`。
+  - **🔎 同轮新发现（登记 §待查-7，已由 r262 黑名单兜住、**不卡死**）**：L16701 出现
+    `托管出牌抛异常 … card=CARD.MOKOUMOD-IMMORTAL_SMOKE, error=Tried to get local action queue for
+    nonexistent player with ID 4098!` —— 原版 `ActionQueueSynchronizer` 要为**战神**入队一个
+    `GenericHookGameAction`（`owner 4098`），而战神没有自己的**本地动作队列** ⇒ 抛。
+    这是 r264 修掉 `ReserveChoiceId` 之后**露出来的下一层"结构外成员"缺口**（同一个族：
+    原版按玩家取"每玩家一份"的东西）；当前表现 = **这张牌本局托管不再打（真人可自己打）+ 残影被回收**，
+    不影响回合推进。修法待下一轮：要么给临时席位补一条本地动作队列，要么在 `ActionQueueSynchronizer`
+    取队列失败处对结构外成员兜底（"跳过这条 hook"）—— 需先读清 `GetReadyAction`/队列账本再动。
+  - **坑已沉淀**：references **AE-24**。
+- **⑨ r263（2026-10-11 落地，⭐ 待实机）—— 修 r262 判读出的两件：① 回合死锁（放弃名单单槽键）+ ②「不死之烟」残影（黑名单生效但不收残骸）**：
+  - **① 回合死锁 = r261「放弃名单」的设计缺陷（**我们自己的 bug**）**。r262 日志铁证（`logs-archive/godot__20261011-115325__r262.log`
     L70000~L80901）：4103 反复选 `CARD.LEX_NINJA2_CARD_ITALY_SILVER_SLASH`（**382 次**）、
     4104 反复选 `CARD.SLUGCAT_THE_SPIRE_II_CARD_RAINWORLD_RIVER_FISH`（**381 次**），每轮都打
     `瓦库放弃「需要目标但解析不到目标」的牌…`（全场 **765 条**）、`round` 永远停在 3、单轮 `ms=8`（紧循环）；
     同场 `玩家主动结束回合时检测到仍有可出牌角色，不触发全员结束` **16 次** ⇒ **真人点「结束回合」被挡**。
-    **真因**：`_missingTargetSkippedCards` 是**单槽键** `(席位, round)` —— 两个战神交替进托管 ⇒
-    4103 记完、4104 进来把键换掉并**清空列表**（4103 的记录被清）⇒ 轮流**互相清空** ⇒ 无限重选
-    ⇒ `TryEndIdleWarGodTurns` 认为"还有可出牌"⇒ 战神永不 ready ⇒ 死锁。
-    **修法**：① 名单**按席位分槽**（`Dictionary<ulong,(int Round, List<CardModel>)>` 或等价）② 同 `(席位, 回合, 牌)`
-    的 WARN **去重**（现在 765 条）③ 加**循环闸**（同一 `(席位, 回合)` 连续放弃且手牌无变化 ⇒ 本回合收手交收口）。
+    **两个独立缺陷叠加**：(a) 名单是**单槽键** `(席位, round)` —— 两个战神交替进托管 ⇒ 互相**清空**对方的记录 ⇒ 无限重选；
+    (b) "可出牌"有**两套口径** —— 喂给大脑的候选集已过滤，而看门狗调度 / 战神空闲收口 / 真人结束回合门
+    用的是裸 `card.CanPlay()` ⇒ 永远认为"这一席还有牌可出" ⇒ 战神永不 ready。
+    **修法（三件一起）**：① 名单**按席位分槽**（`Dictionary<ulong, MissingTargetSkipSlot{Round, Cards}>`），换 round 只重置**该席位**那一槽；
+    ② 抽出**唯一的托管口径** `LocalWakuuRelicRuntime.HasHostedPlayableCards(player, round)`
+    （= `CanPlay()` **且**不在"本局不让托管打"名单、**且**不在该席位本回合"不打"名单），
+    **6 处消费点全部改用它**：回合开始 hook / 看门狗调度 / 看门狗进作用域 / 战神空闲收口
+    （`TryEndIdleWarGodTurns`）/ 真人「结束回合」门 / 瓦库无牌可出时的自动切人；顺手把 WARN 去重（765 → 每席位/回合一条）；
+    ③ **循环闸（双保险）**：同一席位/回合里**又被选中**那张已放弃的牌 = "从候选集剔除"没生效 ⇒ 直接收手
+    （`WakuuPlayQueuePolicy.ShouldContinuePlayLoopAfterMissingTargetAbstain`，有单测），宁可少打一张也不卡死整回合。
   - **② 「不死之烟」残影**：r262 的异常黑名单**生效**（`托管出牌抛异常 ⇒ 本局不再让托管打这张牌: card=CARD.MOKOUMOD-IMMORTAL_SMOKE,
     error=Index was out of range`）但**首次尝试留下的卡面节点仍在出牌区**（黑名单只防重试、不收拾残骸）
-    ⇒ 用户仍看到"停留屏幕中间"。**修法**：出牌异常/放弃后把这些牌的节点从出牌区收掉
-    （`NCard.FindOnTable(card)` ⇒ 隐藏/回收）+ 视情况**延迟**重建手牌 UI（⚠ r111：别在出牌途中整表重建）。
-  - 同轮已确认 OK：`战神视觉节点摘除失败（节点已隐藏…）`（r262 生效）/ `R12 战后奖励遇到临时席位` = 0 /
+    ⇒ 用户仍看到"停留屏幕中间"。**修法**：出牌异常后 `CleanupStuckPlayAreaNode` —— 从
+    `NCombatUi.GetCardFromPlayContainer` / `PlayQueue.GetCardNode` 找残影 ⇒ 淡出回收（共用
+    `CardNodeVisualCleanup.FadeOutAndFree`）+ 只在"那张牌属于**受控席位**"时延后一次手牌 UI 重建
+    （复用 `LocalMultiControlRuntime.ScheduleDeferredCombatUiRefresh`，天然满足 r111"别在出牌途中整表重建"）。
+  - **复测契约**：遇到这类牌 ⇒ `瓦库放弃…` **每个席位/回合各一条**（不再 765 条）、`round` 能正常推进、
+    **不再**出现 `玩家主动结束回合时检测到仍有可出牌角色`、战神照常 `战神已自动结束回合`、真人「结束回合」随时可用；
+    `托管出牌抛异常…` 之后**出牌区不再留那张卡面**、手牌里那张牌仍可**真人手动打出**、合体自检 `缺 holder=0 张`。
+  - **坑已沉淀**：references **AE-23**（名单/熔断类状态必须按席位分槽 + "谁有牌可打"全链同一口径）。
+  - r262 同轮已确认 OK：`战神视觉节点摘除失败（节点已隐藏…）`（r262 生效）/ `R12 战后奖励遇到临时席位` = 0 /
     `摘除战神失败` = 0 / **无尽战神 12 点已生效**（5 场各开一次 `花费=12`；⚠ 上限已到 12~14 ⇒ 每场都开得起，涨价是否够待下次体感）。
 - **⑧ r262（2026-10-11，r261 实机判读 + 用户口径）—— ① 【无尽战神】整包价 8 → 12 ② 托管出牌抛异常的牌记入「本局别让托管打」名单 ③ 战神视觉节点「先藏再摘」**：
   - **① 【无尽战神】整包价 8 → 12**（用户拍板；原话「**无尽战神强完了，需要上调消耗的计数**」）：

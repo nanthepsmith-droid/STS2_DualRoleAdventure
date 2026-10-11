@@ -91,7 +91,15 @@ internal static class PatchDomainMap
             ["HookPlayerChoiceContextLocalPatch"] = PatchDomain.Core,
             ["PlayerChoiceSynchronizerWaitForRemoteChoicePatch"] = PatchDomain.Core,
             // BUG-23 方案 A：瓦库席位的「远端选择」防软锁兜底（第三方自绘选牌不再卡死；该次选择被跳过）
+            // r264：闸门并入「临时席位（战神）」—— 它也没人会回答它的选择
             ["PlayerChoiceSynchronizerRemoteChoiceFallbackPatch"] = PatchDomain.Core,
+            // r264：战神（临时席位）的 choiceId 改道到独立序列（原版按槽位索引记账 ⇒ 不在
+            // runState.Players 里的战神 slotIndex=-1 ⇒ `_choiceIds[-1]` 越界打死 turn loop；见 AE-24）
+            ["PlayerChoiceSynchronizerTemporarySeatReserveChoiceIdPatch"] = PatchDomain.Core,
+            ["PlayerChoiceSynchronizerTemporarySeatGetChoiceIdPatch"] = PatchDomain.Core,
+            // r265：悬停模型追踪的结构外成员护栏（`_hoveredModels[GetPlayerSlotIndex(p)]`，战神 = -1；
+            // 实机从未触发，属"防万一"，见 AE-24）
+            ["HoveredModelTrackerForeignSeatGuardPatch"] = PatchDomain.Core,
             ["HookEnqueueForegroundPatch"] = PatchDomain.Core,
             ["ActionQueueSynchronizerRequestEnqueueFailSafePatch"] = PatchDomain.Core,
             ["MoveToMapCoordRestSiteCompletionPatch"] = PatchDomain.Core, // 火堆后出发黑屏（同步补完）

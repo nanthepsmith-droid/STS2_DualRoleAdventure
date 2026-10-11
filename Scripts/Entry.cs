@@ -551,7 +551,46 @@ public partial class Entry
     //  ③ **战神视觉节点「先藏再摘」**：`RemoveCreatureNode` 在第三方布局补丁那链上抛（r261 实机 19 次/局）
     //     ⇒ 原来紧随其后的 `Visible=false` 永远执行不到 ⇒ 画面留一个"还站着的空位"。
     //     改成先把节点设为不可交互 + 隐藏，再调 `RemoveCreatureNode`（失败只 WARN；数据层早已摘干净）。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-11-r262)";
+    // r263（2026-10-11，r262 实机判读）**① 回合死锁（r261 放弃名单的单槽键）+ ②「不死之烟」残影（黑名单不收残骸）**：
+    //  ① 🔴 **名单 / 熔断类状态必须按席位分槽 + "谁有牌可打"全链一个口径**（用户现象："回合不能结束，2 个战神一直「唔」"）：
+    //     r262 日志铁证：两个战神交替进托管，`瓦库放弃「需要目标但解析不到目标」…` **765 次**、`round` 卡在 3、
+    //     `玩家主动结束回合时检测到仍有可出牌角色` **16 次**（真人「结束回合」被挡）。两个缺陷叠加：
+    //     (a) 名字单是**单槽键** `(席位, round)` ⇒ 后一个战神进来**清空**前一个的记录 ⇒ 互相清空 + 无限重选；
+    //     (b) "可出牌"**两套口径** —— 喂给大脑的候选集已过滤，而看门狗调度/战神空闲收口/真人结束回合门用裸 `CanPlay()`。
+    //     修法 = ① `Dictionary<ulong, MissingTargetSkipSlot>` 按席位分槽；② 唯一判据
+    //     `LocalWakuuRelicRuntime.HasHostedPlayableCards(player, round)`（可打 **且** 不在"本局不让托管打"名单
+    //     **且** 不在该席位本回合"不打"名单）被 6 处消费点共用（回合开始 hook / 看门狗调度 / 看门狗进作用域 /
+    //     `TryEndIdleWarGodTurns` / 真人结束回合门 / 自动切人）；③ 循环闸
+    //     `WakuuPlayQueuePolicy.ShouldContinuePlayLoopAfterMissingTargetAbstain`（同一张牌被重复选中 ⇒ 收手）。
+    //  ② **出牌异常后的出牌区残影收尾**：r262 的黑名单只保证"不再重试"、**不收拾第一次留下的那个卡面**
+    //     （用户仍看到「不死之烟」停在屏幕中间）。修法 = `CleanupStuckPlayAreaNode`（PlayContainer / PlayQueue
+    //     找残影 ⇒ 淡出回收，共用 `CardNodeVisualCleanup.FadeOutAndFree`）+ 仅当牌属于**受控席位**时延后一次
+    //     手牌 UI 重建（复用 `ScheduleDeferredCombatUiRefresh`，满足 r111"别在出牌途中整表重建"）。
+    //  ③ 收尾台词闸门改 `playsSucceeded`（真打出去的张数）—— 原来用 `cardsPlayed`（循环迭代数），
+    //     会把"放弃一张无目标牌"的空转算进去 ⇒ 战神什么都没打也会「唔」（用户现象的另一半）。
+    // r264（2026-10-11 实机判读：「打一半不能出牌不能切人不能结束回合 + 瓦库和战神也不出牌」）
+    //   **战神（临时席位）的 choiceId 记账改道 + 远端选择兜底并入临时席位**（坑见 references AE-24）：
+    //   真凶 = 原版 `PlayerChoiceSynchronizer.ReserveChoiceId` 按**玩家槽位索引**记账
+    //   （`_choiceIds[runState.GetPlayerSlotIndex(player)]`），而战神刻意不进 `runState.Players`（AE-1/AE-3）
+    //   ⇒ `GetPlayerSlotIndex` 返回 **-1**（接口注释原文 "or -1 if the player is not in Players"）
+    //   ⇒ `_choiceIds[-1]` 抛 `ArgumentOutOfRangeException`。实机爆点：第三方 GensokyoSpire 的抽牌前钩子
+    //   （Watcher「先见之明」→ BaseLib `ScryCmd` → `CardSelectCmd.FromSimpleGrid`）在**战神回合**调它
+    //   ⇒ 异常冒穿 `CombatManager.StartTurn` ⇒ 原版打 `turn loop died … the combat is stuck until the
+    //   room is restarted` ⇒ **整场战斗冻结**（不能出牌/切人/结束回合，瓦库与战神全停）。
+    //   修法 = ① 新补丁 `PlayerChoiceSynchronizerTemporarySeatChoiceIdPatch`（`ReserveChoiceId` + `GetChoiceId`
+    //   两处同进同退，改走 `TemporarySeatChoiceIds` 独立序列）② `PlayerChoiceSynchronizerRemoteChoiceFallbackPatch`
+    //   的闸门并入临时席位（否则修完 -1 只是把"抛异常"换成 `WaitForRemoteChoice` 死等）③ 交付配套扫描工具
+    //   `Scripts/Tools/scan_slot_index_consumers.py`（+ 基线，挂 preflight G2b）—— 扫所有按 `GetPlayerSlotIndex`
+    //   消费的原版调用点，基线外新增"当索引用 + 战神可能在场"直接 FAIL（同族坑的一次性预防）。
+    // r265（2026-10-11，用户拍板"先加防护我再测，以防万一"）：**同一族的下一个雷点补护栏** ——
+    //   `HoveredModelTracker`（`OnPlayerStateChanged` / `OnPlayerStateRemoved` / `GetHoveredModel`）也用
+    //   `_hoveredModels[runState.GetPlayerSlotIndex(player)]` 记账 ⇒ 结构外成员 -1 越界（前两个直接抛、
+    //   第一个先 NRE）。实机**从未触发**（`InputSynchronizer.StateChanged` 只对有输入通道的 peer 触发），
+    //   属"防万一"：新补丁 `HoveredModelTrackerForeignSeatGuardPatch` 直接跳过（判据
+    //   `ForeignSeatGuardPolicy`，纯逻辑 + 单测）；跳过是安全的（悬停是纯表现层，没有"计数必填项"语义）。
+    //   ⚠ `EventCombatSynchronizer.ReadyToEnterCombat` **刻意不加**：它的 `_states[slot]` 是"全员就位才
+    //   进战斗"的计数，跳过会让 `_states.All(...)` 永远不满足 ⇒ 反而卡住事件（已登记不可达）。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-11-r265)";
 
     private static Harmony? _harmony;
 

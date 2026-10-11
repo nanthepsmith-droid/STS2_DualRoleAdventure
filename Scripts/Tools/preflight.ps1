@@ -7,6 +7,9 @@
 #     G1 离线静态自检      static_checks.py          产物入库 / ps1 BOM / 版本一致 / 补丁类级 / 源码隔离 /
 #                                                     marker / 运行期目标基线 / 源码编码（S1~S8）
 #     G2 字符串/反射目标核对 check_string_targets.py  需反编译源码（..\sts2src\src）；缺则 SKIP，明细写临时文件
+#     G2b 槽位索引消费点基线 scan_slot_index_consumers.py 同上需要反编译源码；缺则 SKIP
+#         （r264：扫「按 GetPlayerSlotIndex 消费」的原版调用点 —— 战神不在 runState.Players，
+#          对它恒 -1，凡不当 -1 判就直接越界；基线外**新增**的"当索引用 + 战神可能在场"会 FAIL）
 #     G3 diff 预审(可选)    ..\tools\diff_lint.py     需 -Lint；只标疑似（其自身文档写明"不进 CI"）
 #
 #   -Build（会重建仓库根 DLL）
@@ -141,6 +144,18 @@ Invoke-Native "G2" "字符串/反射目标核对（游戏更新断档检测）" 
       else { "" })
 if (@($script:Results | Where-Object { $_.Id -eq "G2" -and $_.Status -eq "FAIL" }).Count -gt 0) {
     Write-Host ("      明细: {0}" -f $stringTargetsOut) -ForegroundColor Yellow
+}
+
+# ---------------------------------------------------------------- G2b 槽位索引消费点（战神 -1 风险）
+$slotScan = Join-Path $RepoDir "Scripts\Tools\scan_slot_index_consumers.py"
+$slotScanOut = Join-Path $env:TEMP "preflight-slot-index-consumers.md"
+Invoke-Native "G2b" "槽位索引消费点基线（战神 -1 风险）" "python" `
+    @($slotScan, "--repo", ".", "--strict", "--out", $slotScanOut) `
+    $(if (-not (Test-Path -LiteralPath $slotScan)) { "缺少 $slotScan" }
+      elseif (-not (Test-Path -LiteralPath $srcDir)) { "缺反编译源码 $srcDir（先跑 regenerate_src.ps1）" }
+      else { "" })
+if (@($script:Results | Where-Object { $_.Id -eq "G2b" -and $_.Status -eq "FAIL" }).Count -gt 0) {
+    Write-Host ("      明细: {0}" -f $slotScanOut) -ForegroundColor Yellow
 }
 
 # ---------------------------------------------------------------- G3 diff 预审（可选）

@@ -131,6 +131,9 @@ internal static class LocalSelfCoopContext
     {
         int removed = _temporarySeatIds.Count;
         _temporarySeatIds.Clear();
+        // r264：临时席位没了 ⇒ 它们的 choiceId 独立序列也一起清（与席位生命周期同进同退；
+        // 见 TemporarySeatChoiceIds / references AE-24）。
+        TemporarySeatChoiceIds.Reset();
         return removed;
     }
 
