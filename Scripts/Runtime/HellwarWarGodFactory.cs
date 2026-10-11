@@ -579,7 +579,12 @@ internal static class HellwarWarGodFactory
             // ①c ★ 预设遗物（② 预设遗物，r255）：必须在 AttachToRun **之后**（那时 `player.RunState`
             // 不再是 `NullRunState`、`TotalFloor` 可读）。只发"不依赖开战时机"的遗物（A 方案，见
             // `HellwarWarGodRelics` 的类注释与 references 坑 AE-5b）；"获得时"钩子在生成收尾阶段补调。
-            IReadOnlyList<RelicModel> presetRelics = HellwarWarGodRelics.GrantTo(player, preset.Tier, tag);
+            IReadOnlyList<RelicModel> presetRelics = HellwarWarGodRelics.GrantTo(
+                player,
+                preset.Tier,
+                tag,
+                preset.RelicEntries,
+                preset.IsBuiltin ? "内置默认" : $"{preset.DisplayName}({preset.PresetId})");
 
             state.AddPlayer(player);
             LocalMultiControlLogger.Info(
@@ -718,9 +723,11 @@ internal static class HellwarWarGodFactory
     /// </summary>
     private static int ApplyPresetDeck(Player player, HellwarWarGodPreset preset, string tag)
     {
-        HellwarWarGodDeckResolution deck = HellwarWarGodDecks.Resolve(
-            preset.Tier,
-            LocalWakuuAutopilotConfig.HellwarDeckOverride(preset.Tier));
+        // 预设战神 v2（r269）：预设**自带卡组文本**（hellwar_presets.json，格式与 hellwarDeck* 一致）优先；
+        // 预设没写（null = 继承）⇒ 走旧链：hellwarDeck* 配置键 → 内置默认。
+        // ⚠ 预设显式写空串 = 「不替换」（DeckPlan.Parse("") = null ⇒ Cards = null ⇒ 保留角色初始卡组）。
+        string deckOverride = preset.DeckText ?? LocalWakuuAutopilotConfig.HellwarDeckOverride(preset.Tier);
+        HellwarWarGodDeckResolution deck = HellwarWarGodDecks.Resolve(preset.Tier, deckOverride);
 
         if (deck.Cards is not { Count: > 0 })
         {
@@ -745,12 +752,14 @@ internal static class HellwarWarGodFactory
             }
         }
 
-        string source = deck.FromConfig ? "配置文件" : "内置默认";
+        string source = preset.DeckText != null
+            ? $"预设({preset.DisplayName}({preset.PresetId}))"
+            : deck.FromConfig ? "配置文件" : "内置默认";
         LocalMultiControlLogger.Info(
             $"{tag} ①a 预设卡组已替换: seat={player.NetId}, 档位={preset.Tier}, 来源={source}, "
             + $"张数={player.Deck.Cards.Count}（逐张标记升级={upgraded} 张, 之后全升级开关={preset.UpgradeDeck}）"
             + (deck.FromConfig
-                ? $", 配置文本={LocalWakuuAutopilotConfig.HellwarDeckOverride(preset.Tier)}"
+                ? $", 配置文本={deckOverride}"
                 : $", 内置默认={HellwarWarGodDecks.DescribeBuiltinDeck(preset.Tier)}"));
 
         return upgraded;

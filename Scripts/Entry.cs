@@ -630,7 +630,38 @@ public partial class Entry
     //   ⑧ 把【锻造器路径】纳入 ⑤ 自动作答 —— ⑧a `HextechForgeSelectionCoordinator.SelectLocalForge`
     //   前缀记下归属席位，⑧b `CreateForgeSelectionScreenAsync` 前缀登记 `_seatForNextScreen`
     //   ⇒ 商店【随机属性锻造器】/ 锻造奖励 / 随机锻造发放的屏，瓦库席位也会被代选。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-11-r268)";
+    // r269（2026-10-11 开工，⭐ 待实机）：**预设战神 v2 的 mod 侧地基（Phase A）**——「档位 × 角色预设」二维：
+    //  ① 新 `hellwar_presets.json`（%APPDATA%\SlayTheSpire2\）：每条 = id/显示名/挂载档位(一套可复用多档)/
+    //     皮肤/卡组文本(与 hellwarDeck* 同格式)/遗物 id 列表/全升级/额外血/默认标记；
+    //     **字段缺省(null) = 继承该档内置默认**，deck 显式空串 = 不替换，relics 空列表 = 一件不加；
+    //  ② 纯逻辑 `HellwarPresetData`（DTO+归一+继承映射，15 条新单测）+ 运行时 `LocalHellwarPresetStore`
+    //     （entry-init / run-launched / ModelDb.Preload 后三处幂等重读）；文件不存在 ⇒ 四档全内置默认（纯加法）；
+    //  ③ 消费点：单点召唤改用「该档默认预设」（随机池 Phase B 再接）；`ResolveSkin` 支持**任意角色 id**
+    //     （AllCharacters 按 Entry 大小写不敏感匹配，查不到回落召唤者+WARN；mod 角色注册机制待摸）；
+    //     卡组预设文本优先于 hellwarDeck*；遗物按 id 查（AllRelics+EventRelicPool）+ **超阶梯只 INFO 不阻断**
+    //     （用户拍板：允许破坏平衡）；启动自检把每档默认预设打一行 + 当场校验卡/遗物 id。
+    // r270（2026-10-11 实机判读 + 修复，⭐ 待实机）：**满员（12/12）时复活选项不弹** ——
+    //   R9 的尸体**留场**（仍在 `state.Players` 占名额）⇒ 无尽战神召满 12 后战神死一堆，
+    //   `combatPlayers >= MaxLocalPlayerCount` 把整个召唤弹层（含复活选项）挡死（用户「有计数但没弹复活选项」）。
+    //   修法 = 复活是把尸体回填、**不新增席位** ⇒ 满员时把弹层过滤成只剩复活项（四档/无尽/九连环会新增席位，
+    //   满员时照旧挡）；`skipReason` 细分（party-full / party-full-but-revive / already-offered-this-turn）；
+    //   延迟一帧弹层前重算满员并再过滤一次（同一口径）。
+    // r271（2026-10-11 实机判读 + 修复，⭐ 待实机）：**进战斗没怪 / 不抽牌 / 不能换人 / 不能结束回合** ——
+    //   turn loop died @ `VfxCmd.PlayOnCreatureCenter`：这局的怪是 ArknightsBoss mod 的怪、其场景 .tscn
+    //   **加载失败**（敌列表留下 null 条目），海克斯【残暴】敌 hex 开战给怪 `GainBlock` → 播特效
+    //   `PlayOnCreatureCenter(null…)` ⇒ NRE 冒穿 `Hook.BeforeCombatStart` ⇒ 回合循环被原版打死 ⇒ 卡 NotPlayPhase。
+    //   修法 = 主 mod 通用护栏 `VfxCmdNullTargetGuardPatch`（Combat 域）：给 `VfxCmd` 四个特效播放入口挂
+    //   finalizer **只吞 NRE**（特效是纯表现层，格挡/伤害等数值照常；其它异常照抛），命中去重 WARN。
+    //   ⚠ 不修 ArknightsBoss 资源缺失本身（第三方自身问题），只保证"它坏时不拖死整场战斗"。
+    // r272（2026-10-11 实机判读 + 修复，⭐ 待实机）：r271 护栏命中后开战链活了，但**同一只坏怪**
+    //   （ArknightsBoss 场景加载失败 ⇒ 数据层在、`NCreature.Visuals` 为 null 的"隐形怪"）在**伤害数字**上
+    //   又把 turn loop 打死：猪猪遗物「猪冲前进」扣它上限 → `CreatureCmd.Damage → NDamageNumVfx.Create →
+    //   NCreature.VfxSpawnPosition` ⇒ `Visuals.VfxSpawnPosition.GlobalPosition` 对 null 链抛 NRE。
+    //   修法 = `NCreatureVisualsGuardPatch`（Combat 域）：给 `NCreature` 的 **Vector2 getter**
+    //   （VfxSpawnPosition / PowerAppliedVfxSpawnPosition）挂 finalizer 吞 NRE、落 `(0,0)` ——
+    //   **刻意不兜引用类型返回**（Body 等），否则炸点转移到调用方。根因 = ArknightsBoss 资源缺失
+    //   （建议用户更新/重装该 mod），护栏是逐点兜底。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-11-r272)";
 
     private static Harmony? _harmony;
 
@@ -779,6 +810,9 @@ public partial class Entry
         {
             SafeAction(fatalFailures, FatalCode.Config, "配置重载", () => LocalWakuuAutopilotConfig.Reload("entry-init"));
             SafeAction(fatalFailures, FatalCode.Config, "个人记录器重载", () => LocalPersonalRecorder.Reload("entry-init"));
+            // 预设战神 v2（r269）：hellwar_presets.json（档位 × 角色预设）。此时 ModelDb 还没建好，
+            // 只做"加载 + 归一"；卡 / 遗物 id 校验在 HellwarContentPatch 的 ModelDb.Preload 后自检里做。
+            SafeAction(fatalFailures, FatalCode.Config, "战神预设表重载", () => LocalHellwarPresetStore.Reload("entry-init"));
         });
 
         // 阶段 3：模型注册（遗物入池 / 本地化 / 可选第三方探测）

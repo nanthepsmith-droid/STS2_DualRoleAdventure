@@ -100,6 +100,12 @@ internal static class PatchDomainMap
             // r265：悬停模型追踪的结构外成员护栏（`_hoveredModels[GetPlayerSlotIndex(p)]`，战神 = -1；
             // 实机从未触发，属"防万一"，见 AE-24）
             ["HoveredModelTrackerForeignSeatGuardPatch"] = PatchDomain.Core,
+            // r271：特效播放入口的 null 目标护栏（第三方坏怪 + 第三方开战特效 ⇒ NRE 冒穿 turn loop；
+            // 吞 NRE 只损失特效，战斗流程照常 —— 见 VfxCmdNullTargetGuardPatch 类注释）
+            ["VfxCmdNullTargetGuardPatch"] = PatchDomain.Combat,
+            // r272：坏怪视觉坐标护栏（无视觉怪的 Vector2 getter 兜 (0,0)，引用类型返回刻意不兜 ——
+            // 见 NCreatureVisualsGuardPatch 类注释）
+            ["NCreatureVisualsGuardPatch"] = PatchDomain.Combat,
             ["HookEnqueueForegroundPatch"] = PatchDomain.Core,
             ["ActionQueueSynchronizerRequestEnqueueFailSafePatch"] = PatchDomain.Core,
             ["MoveToMapCoordRestSiteCompletionPatch"] = PatchDomain.Core, // 火堆后出发黑屏（同步补完）

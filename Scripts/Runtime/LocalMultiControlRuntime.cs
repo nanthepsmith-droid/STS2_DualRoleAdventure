@@ -85,6 +85,16 @@ internal static class LocalMultiControlRuntime
             LocalMultiControlLogger.Warn($"瓦库托管配置加载异常(已忽略): {exception.Message}");
         }
 
+        // 预设战神 v2（r269）：每局重读 hellwar_presets.json —— 玩家中途改文件，下一局生效。
+        try
+        {
+            LocalHellwarPresetStore.Reload("run-launched");
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"战神预设表加载异常(已忽略): {exception.Message}");
+        }
+
         // 联机机器人（Co-op Bots）席位：重读配置 → 三态互斥收敛 → 对本局真实席位逐席接管。
         // 必须在 GrantWakuuRelicsAsync 之前：冲突席位的瓦库登记要先摘掉，免得又发一次瓦库形态遗物。
         CoopBotsSeatRuntime.ApplyOnRunLaunch(runState);

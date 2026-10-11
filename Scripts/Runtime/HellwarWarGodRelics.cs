@@ -54,6 +54,36 @@ internal static class HellwarWarGodRelics
         };
     }
 
+    /// <summary>entry → canonical 遗物模板的懒查表（口径与 <see cref="HellwarWarGodDecks.LookupByEntry"/> 同款）。</summary>
+    private static Dictionary<string, RelicModel>? _relicByEntry;
+
+    /// <summary>
+    /// 按 entry（<c>ModelId.Entry</c>，大小写不敏感）查 canonical 遗物模板；查不到返回 null。
+    /// 来源 = <c>ModelDb.AllRelics</c> **再并上 <c>EventRelicPool</c>**（mod 自定遗物的登记池，AA 口径 ——
+    /// 若它已被 AllRelics 覆盖则 Distinct 无副作用；保险起见显式并上，防止"mod 遗物不在 AllRelics"漏查）。
+    /// </summary>
+    internal static RelicModel? LookupByEntry(string entry)
+    {
+        _relicByEntry ??= BuildRelicEntryMap();
+        return _relicByEntry.TryGetValue(entry, out RelicModel? relic) ? relic : null;
+    }
+
+    private static Dictionary<string, RelicModel> BuildRelicEntryMap()
+    {
+        Dictionary<string, RelicModel> map = new(StringComparer.OrdinalIgnoreCase);
+        foreach (RelicModel relic in ModelDb.AllRelics)
+        {
+            map[relic.Id.Entry] = relic;
+        }
+
+        foreach (RelicModel relic in ModelDb.RelicPool<MegaCrit.Sts2.Core.Models.RelicPools.EventRelicPool>().AllRelics)
+        {
+            map[relic.Id.Entry] = relic;
+        }
+
+        return map;
+    }
+
     /// <summary>日志 / 自检用一行摘要（`件数 + entry`）。</summary>
     internal static string DescribePresetRelics(HellwarWarGodTier tier)
     {
@@ -74,12 +104,56 @@ internal static class HellwarWarGodRelics
     /// 返回**实际发放**的遗物（已持有同 id 的会被跳过：战神身上本来就带角色初始遗物，撞了就不重复给）。
     /// 单件失败只记 WARN、不影响其余，也不回滚召唤（遗物是加值，不该因为一件遗物把整个召唤判失败）。
     /// </summary>
-    internal static IReadOnlyList<RelicModel> GrantTo(Player player, HellwarWarGodTier tier, string tag)
+    internal static IReadOnlyList<RelicModel> GrantTo(
+        Player player,
+        HellwarWarGodTier tier,
+        string tag,
+        IReadOnlyList<string>? presetRelicEntries = null,
+        string presetLabel = "")
     {
         List<RelicModel> granted = new();
         try
         {
-            IReadOnlyList<RelicModel> canonicals = PresetRelicsOf(tier);
+            // 预设战神 v2（r269）：预设**自带遗物 id**（hellwar_presets.json）优先；
+            // null = 继承内置该档遗物表；空列表 = 一件不加。查不到的 id 只 WARN 跳过（不阻塞召唤）。
+            List<RelicModel> canonicals = new();
+            List<string> missing = new();
+            if (presetRelicEntries != null)
+            {
+                foreach (string entry in presetRelicEntries)
+                {
+                    RelicModel? canonical = LookupByEntry(entry);
+                    if (canonical == null)
+                    {
+                        missing.Add(entry);
+                        continue;
+                    }
+
+                    canonicals.Add(canonical);
+                }
+
+                if (missing.Count > 0)
+                {
+                    LocalMultiControlLogger.Warn(
+                        $"{tag} 预设遗物里有认不出的 id（已跳过，不阻塞召唤）: 档位={tier}, "
+                        + $"预设={presetLabel}, 认不出={missing.Count} 条[{string.Join(", ", missing)}], "
+                        + $"采用={canonicals.Count} 件。");
+                }
+
+                // 件数阶梯（成本 − 1）**只提示、不阻断**（2026-10-11 用户拍板：允许破坏平衡）。
+                int ladder = HellwarSummonPolicy.ResolvePresetRelicCount(tier);
+                if (canonicals.Count > ladder)
+                {
+                    LocalMultiControlLogger.Info(
+                        $"{tag} 预设遗物件数超出阶梯（允许，玩家自由）: 档位={tier}, 预设={presetLabel}, "
+                        + $"件数={canonicals.Count} / 阶梯={ladder}（口径 = 成本 − 1）");
+                }
+            }
+            else
+            {
+                canonicals.AddRange(PresetRelicsOf(tier));
+            }
+
             if (canonicals.Count == 0)
             {
                 return granted;

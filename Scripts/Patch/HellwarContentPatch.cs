@@ -1,8 +1,11 @@
 #nullable enable
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Models.Relics;
 using LocalMultiControl.Scripts.Runtime;
+using LocalMultiControl.Scripts.Runtime.PureLogic;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Models;
 
@@ -95,6 +98,84 @@ internal static class HellwarContentPatch
         catch (System.Exception exception)
         {
             LocalMultiControlLogger.Warn($"[地狱战神] 预设卡组就绪自检失败（召唤时会重新解析并打 WARN）: {exception.Message}");
+        }
+
+        // ③ 预设表（预设战神 v2 地基，r269）：加载 `hellwar_presets.json`（编辑器 / 玩家手写的产物）
+        //    并把每档的**默认预设**打一行 —— 双重作用：① 启动就能看见"这一档会用哪套内容"；
+        //    ② 趁 ModelDb 已就绪把预设里的卡 / 遗物 id **当场校验**（认不出的当场点名，不用等召唤）。
+        //    只打日志不抛（与上面两块同款）。
+        try
+        {
+            LocalHellwarPresetStore.Reload("modeldb-preload");
+            HellwarPresetTable table = LocalHellwarPresetStore.Table;
+            if (table.All.Count == 0)
+            {
+                LocalMultiControlLogger.Info(
+                    "[地狱战神] 预设表: 未配置（文件不存在或为空），四档用内置默认。"
+                    + $"想自定义（或给编辑器用）就写 {LocalHellwarPresetStore.FilePath}");
+                return;
+            }
+
+            foreach (HellwarWarGodTier tier in Enum.GetValues<HellwarWarGodTier>())
+            {
+                HellwarPresetDefinition? definition = table.DefaultForTier(tier);
+                if (definition == null)
+                {
+                    LocalMultiControlLogger.Info($"[地狱战神] 预设表: 档位={tier} 未配置预设，用内置默认");
+                    continue;
+                }
+
+                HellwarWarGodPreset runtime = HellwarPresetRuntimeMapping.ToRuntimePreset(
+                    definition, tier, HellwarWarGodPresets.Resolve(tier));
+                int deckCount = HellwarWarGodDeckPlan.Parse(runtime.DeckText)?.Count ?? 0;
+                LocalMultiControlLogger.Info(
+                    $"[地狱战神] 预设表: 档位={tier} 默认预设=\"{runtime.DisplayName}\"(id={runtime.PresetId}, "
+                    + $"皮肤={runtime.SkinKey}, 卡组={deckCount} 张, 遗物="
+                    + $"{runtime.RelicEntries?.Count.ToString() ?? "继承内置"} 件, 全升级={runtime.UpgradeDeck}, "
+                    + $"额外血={runtime.BonusHp})");
+                VerifyPresetIds(tier, runtime);
+            }
+        }
+        catch (System.Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"[地狱战神] 预设表自检失败（召唤时会重新解析并打 WARN）: {exception.Message}");
+        }
+    }
+
+    /// <summary>趁 ModelDb 已就绪，把预设里的卡 / 遗物 id 当场查一遍（认不出的 WARN 点名，不抛）。</summary>
+    private static void VerifyPresetIds(HellwarWarGodTier tier, HellwarWarGodPreset preset)
+    {
+        if (preset.DeckText != null)
+        {
+            IReadOnlyList<HellwarWarGodDeckEntry>? entries = HellwarWarGodDeckPlan.Parse(preset.DeckText);
+            if (entries != null)
+            {
+                List<string> missingCards = entries
+                    .Select((entry) => entry.Entry)
+                    .Where((entry) => HellwarWarGodDecks.LookupByEntry(entry) == null)
+                    .Distinct()
+                    .ToList();
+                if (missingCards.Count > 0)
+                {
+                    LocalMultiControlLogger.Warn(
+                        $"[地狱战神] 预设卡组里有认不出的卡牌（召唤时会跳过）: 档位={tier}, 预设=\"{preset.DisplayName}\", "
+                        + $"认不出=[{string.Join(", ", missingCards)}]");
+                }
+            }
+        }
+
+        if (preset.RelicEntries != null)
+        {
+            List<string> missingRelics = preset.RelicEntries
+                .Where((entry) => HellwarWarGodRelics.LookupByEntry(entry) == null)
+                .Distinct()
+                .ToList();
+            if (missingRelics.Count > 0)
+            {
+                LocalMultiControlLogger.Warn(
+                    $"[地狱战神] 预设遗物里有认不出的 id（召唤时会跳过）: 档位={tier}, 预设=\"{preset.DisplayName}\", "
+                    + $"认不出=[{string.Join(", ", missingRelics)}]");
+            }
         }
     }
 }

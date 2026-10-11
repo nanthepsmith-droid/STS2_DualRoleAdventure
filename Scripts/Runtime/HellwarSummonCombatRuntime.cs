@@ -156,20 +156,32 @@ internal static class HellwarSummonCombatRuntime
         List<SummonOption> options = earring != null && alive
             ? BuildSummonOptions(player, state, earring)
             : new List<SummonOption>();
+        // 预设战神 r270 修（实机 2026-10-11）：**满员（12/12）时只保留「复活」项**。
+        // 病灶：R9 的尸体**留场**（仍在 `state.Players` 里占名额）⇒ 无尽战神召满 12 后战神死一堆，
+        // `combatPlayers >= MaxLocalPlayerCount` 把**整个弹层**（含复活选项）挡死 ⇒「有计数但复活选项不弹」。
+        // 复活是把尸体回填、**不新增席位** ⇒ 不该受满员限制；四档/无尽/九连环会新增席位 ⇒ 满员时照旧挡。
+        bool partyFull = combatPlayers >= LocalSelfCoopContext.MaxLocalPlayerCount;
+        List<SummonOption> offerable = FilterOfferable(options, partyFull);
+
         string skipReason = !alive
             ? "creature-dead"
-            : options.Count == 0
-                ? HellwarSummonPolicy.DescribeOfferSkipReason(
-                    Enabled, true, earring != null, offered, available, minCost,
-                    combatPlayers, LocalSelfCoopContext.MaxLocalPlayerCount)
-                : "offer";
+            : offerable.Count == 0
+                ? options.Count > 0 && partyFull
+                    ? $"party-full({combatPlayers}>={LocalSelfCoopContext.MaxLocalPlayerCount}, 无可复活尸体)"
+                    : HellwarSummonPolicy.DescribeOfferSkipReason(
+                        Enabled, true, earring != null, offered, available, minCost,
+                        combatPlayers, LocalSelfCoopContext.MaxLocalPlayerCount)
+                : offered
+                    ? "already-offered-this-turn"
+                    : partyFull
+                        ? "party-full-but-revive"
+                        : "offer";
 
         if (!alive
             || !Enabled
             || earring == null
             || offered
-            || options.Count == 0
-            || combatPlayers >= LocalSelfCoopContext.MaxLocalPlayerCount)
+            || offerable.Count == 0)
         {
             if (earring != null)
             {
@@ -183,8 +195,22 @@ internal static class HellwarSummonCombatRuntime
         }
 
         MarkOfferedThisTurn(state, player);
-        Callable.From(() => PromptSummonDeferred(player, state, source)).CallDeferred();
+        Callable.From(() => PromptSummonDeferred(player, state, source, partyFull)).CallDeferred();
         return false;
+    }
+
+    /// <summary>
+    /// 满员（<c>Players.Count ≥ MaxLocalPlayerCount</c>）时，把会**新增席位**的选项（四档单点 / 【无尽战神】/
+    /// 【九连环】）过滤掉，只留 **R9 复活**（尸体回填，不新增名额）。不满员时原样返回。
+    /// </summary>
+    private static List<SummonOption> FilterOfferable(List<SummonOption> options, bool partyFull)
+    {
+        if (!partyFull)
+        {
+            return options;
+        }
+
+        return options.Where((option) => option.Kind == SummonKind.Revive).ToList();
     }
 
     /// <summary>
@@ -263,12 +289,12 @@ internal static class HellwarSummonCombatRuntime
     }
 
     /// <summary>延后一帧弹层（等本回合建立完成；期间玩家可能已经切前台 / 出牌）。</summary>
-    private static void PromptSummonDeferred(Player owner, CombatState state, string source)
+    private static void PromptSummonDeferred(Player owner, CombatState state, string source, bool partyFull)
     {
-        TaskHelper.RunSafely(PromptSummonAsync(owner, state, source));
+        TaskHelper.RunSafely(PromptSummonAsync(owner, state, source, partyFull));
     }
 
-    private static async Task PromptSummonAsync(Player owner, CombatState state, string source)
+    private static async Task PromptSummonAsync(Player owner, CombatState state, string source, bool partyFull)
     {
         try
         {
@@ -283,12 +309,14 @@ internal static class HellwarSummonCombatRuntime
                 return;
             }
 
-            List<SummonOption> options = BuildSummonOptions(owner, state, earring);
+            // 延迟一帧后重算满员（期间战神可能死 / 复活），并再次过滤 —— 与回合开始判据同一口径。
+            partyFull = state.Players.Count >= LocalSelfCoopContext.MaxLocalPlayerCount;
+            List<SummonOption> options = FilterOfferable(BuildSummonOptions(owner, state, earring), partyFull);
             if (options.Count == 0)
             {
                 LocalMultiControlLogger.Info(
                     $"{LogTag} 召唤选择未弹出：没有可选项。player={owner.NetId}, "
-                    + $"可用={earring.AvailableSpirit}/上限={earring.SpiritCount}");
+                    + $"可用={earring.AvailableSpirit}/上限={earring.SpiritCount}, 满员={partyFull}");
                 return;
             }
 
@@ -298,7 +326,8 @@ internal static class HellwarSummonCombatRuntime
                 $"{LogTag} 回合开始可召唤，弹出选择: player={owner.NetId}, source={source}, "
                 + $"选项={options.Count} 个, 可用={before}/上限={earring.SpiritCount}, "
                 + $"战斗内玩家={state.Players.Count}/{LocalSelfCoopContext.MaxLocalPlayerCount}, "
-                + $"无尽已用={_endlessUsedThisCombat}, 九连环已用={_nineChainUsedThisCombat}");
+                + $"无尽已用={_endlessUsedThisCombat}, 九连环已用={_nineChainUsedThisCombat}"
+                + (partyFull ? "（满员：只提供复活选项）" : ""));
 
             int? index;
             // 两道防护（与炼化 / 净化同款，坑 V/K）：归属者钉成召唤者、压制瓦库作用域外自动作答。
@@ -357,7 +386,8 @@ internal static class HellwarSummonCombatRuntime
             return;
         }
 
-        HellwarWarGodPreset preset = HellwarWarGodPresets.Resolve(option.Tier);
+        // 预设战神 v2（r269）：该档的**默认预设**（hellwar_presets.json 里有就用它，否则内置默认）。
+        HellwarWarGodPreset preset = LocalHellwarPresetStore.ResolveDefault(option.Tier);
         int spawned = await SpawnWarGodsAsync(state, owner, new[] { preset }, option.Tier.ToString());
         if (spawned == 0)
         {
@@ -563,8 +593,15 @@ internal static class HellwarSummonCombatRuntime
     }
 
     /// <summary>
-    /// 预设档的"角色皮" → 运行时 <see cref="CharacterModel"/>（普通档 = 召唤者自身角色 ⇒ 自动兼容 mod 角色；
-    /// 其余档 = 预设表里指定的原版角色）。查不到一律**回退到召唤者角色**并打 WARN（不崩、不中断召唤）。
+    /// 预设档的"角色皮" → 运行时 <see cref="CharacterModel"/>：
+    /// <list type="bullet">
+    /// <item><c>summoner</c> = 召唤者自身角色（普通档默认 ⇒ **自动兼容 mod 角色**）；</item>
+    /// <item>三个历史别名（silent / ironclad / regent）= 内置预设表的原版角色（向后兼容旧配置）；</item>
+    /// <item>**其余任意键 = 按 <c>CharacterModel.Id.Entry</c> 在 <see cref="ModelDb.AllCharacters"/> 里查**
+    ///   （大小写不敏感；预设战神 v2 的"档位 × 角色预设"就靠这条吃任意角色）。
+    ///   ⚠ 原版 <c>AllCharacters</c> 是硬编码数组，**mod 角色**要等摸清它们的注册机制后接入（TODO，
+    ///   见 TODO.md §预设构筑器）；查不到 ⇒ 回退召唤者角色并 WARN（不崩、不中断召唤）。</item>
+    /// </list>
     /// </summary>
     private static CharacterModel? ResolveSkin(HellwarWarGodPreset preset, Player owner)
     {
@@ -575,13 +612,30 @@ internal static class HellwarSummonCombatRuntime
 
         try
         {
-            return preset.SkinKey switch
+            switch (preset.SkinKey)
             {
-                HellwarWarGodPresets.SkinSilent => ModelDb.Character<MegaCrit.Sts2.Core.Models.Characters.Silent>(),
-                HellwarWarGodPresets.SkinIronclad => ModelDb.Character<MegaCrit.Sts2.Core.Models.Characters.Ironclad>(),
-                HellwarWarGodPresets.SkinRegent => ModelDb.Character<MegaCrit.Sts2.Core.Models.Characters.Regent>(),
-                _ => owner.Character,
-            };
+                case HellwarWarGodPresets.SkinSilent:
+                    return ModelDb.Character<MegaCrit.Sts2.Core.Models.Characters.Silent>();
+                case HellwarWarGodPresets.SkinIronclad:
+                    return ModelDb.Character<MegaCrit.Sts2.Core.Models.Characters.Ironclad>();
+                case HellwarWarGodPresets.SkinRegent:
+                    return ModelDb.Character<MegaCrit.Sts2.Core.Models.Characters.Regent>();
+            }
+
+            // 任意角色 id（大小写不敏感；预设表里写 NECROBINDER / DEFECT 这类原版角色）。
+            CharacterModel? matched = ModelDb.AllCharacters.FirstOrDefault(
+                (CharacterModel character) => string.Equals(
+                    character.Id.Entry, preset.SkinKey, StringComparison.OrdinalIgnoreCase));
+            if (matched != null)
+            {
+                return matched;
+            }
+
+            LocalMultiControlLogger.Warn(
+                $"{LogTag} 预设皮肤「{preset.SkinKey}」在角色表里查不到（mod 角色暂未接入），回退到召唤者角色: "
+                + $"preset={preset.DisplayName}({preset.PresetId}), 可选原版="
+                + $"{string.Join("/", ModelDb.AllCharacters.Select((CharacterModel character) => character.Id.Entry))}");
+            return owner.Character;
         }
         catch (Exception exception)
         {

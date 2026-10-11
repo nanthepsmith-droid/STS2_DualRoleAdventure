@@ -7,19 +7,37 @@ namespace LocalMultiControl.Scripts.Runtime.PureLogic;
 /// <summary>
 /// 一个档位的「预设战神」内容（**纯数据**；角色模型由运行时按 <see cref="SkinKey"/> 解析成
 /// <c>CharacterModel</c> —— 纯逻辑层不碰任何游戏类型，便于单测）。
+///
+/// <para>⚠ 预设战神 v2（r269 起，2026-10-11 用户拍板「档位 × 角色预设」二维）：后四个可选参数承载
+/// **<c>hellwar_presets.json</c> 里的自定义预设** —— 内置四档全部走默认值（零行为变化）：
+/// <see cref="PresetId"/>/<see cref="DisplayName"/> 空 = 内置默认；
+/// <see cref="DeckText"/> = 预设自带卡组文本（格式同 <c>hellwarDeck*</c>；null = 走旧链：配置键 → 内置默认）；
+/// <see cref="RelicEntries"/> = 预设自带遗物 id（null = 内置遗物表）。</para>
 /// </summary>
 /// <param name="Tier">档位（普通 / 罕见 / 稀有 / 先古）。</param>
-/// <param name="SkinKey">角色皮键：<see cref="HellwarWarGodPresets.SkinOfSummoner"/> = 召唤者自身角色；其余见预设表。</param>
+/// <param name="SkinKey">角色皮键：<see cref="HellwarWarGodPresets.SkinOfSummoner"/> = 召唤者自身角色；
+/// 其余 = 预设表键或 <c>CharacterModel.Id.Entry</c>（大小写不敏感）。</param>
 /// <param name="UpgradeDeck">是否把初始卡组**全升级**（最强的"零硬编码"强化手段，见 D7 首版口径）。</param>
 /// <param name="BonusHp">额外血上限（0 = 用角色初始血量）。</param>
+/// <param name="PresetId">预设 id（内置默认 = 空串）。</param>
+/// <param name="DisplayName">预设显示名（内置默认 = 空串）。</param>
+/// <param name="DeckText">预设自带卡组文本（null = 走旧链）。</param>
+/// <param name="RelicEntries">预设自带遗物 id 列表（null = 内置遗物表；空列表 = 一件不加）。</param>
 internal sealed record HellwarWarGodPreset(
     HellwarWarGodTier Tier,
     string SkinKey,
     bool UpgradeDeck,
-    int BonusHp)
+    int BonusHp,
+    string PresetId = "",
+    string DisplayName = "",
+    string? DeckText = null,
+    IReadOnlyList<string>? RelicEntries = null)
 {
     /// <summary>单点召唤这一档的成本（D7 成本表）。</summary>
     internal int Cost => HellwarSummonPolicy.ResolveSummonCost(Tier);
+
+    /// <summary>这是不是内置默认（无自定义预设内容）。</summary>
+    internal bool IsBuiltin => PresetId.Length == 0;
 }
 
 /// <summary>
@@ -133,7 +151,11 @@ internal static class HellwarWarGodPresets
 
     /// <summary>诊断用一行（日志里能直接看出"这一档是什么内容"）。</summary>
     internal static string Describe(HellwarWarGodPreset preset)
-        => $"{preset.Tier}(皮肤={preset.SkinKey}, 全升级={preset.UpgradeDeck}, 额外血={preset.BonusHp}, 成本={preset.Cost})";
+    {
+        string source = preset.IsBuiltin ? "内置默认" : $"预设={preset.DisplayName}({preset.PresetId})";
+        return $"{preset.Tier}({source}, 皮肤={preset.SkinKey}, 全升级={preset.UpgradeDeck}, "
+            + $"额外血={preset.BonusHp}, 成本={preset.Cost})";
+    }
 
     /// <summary>全部档位的一行摘要（启动自检 / 日志用）。</summary>
     internal static string DescribeAll()

@@ -766,6 +766,22 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     - **设计预留**：`SkinKey` 从 4 值枚举改**字符串 id**（可指向任意 `CharacterModel`，含 mod 角色）；
       缺失降级沿用既有口径（`预设卡组配置里有认不出的卡牌（已跳过…）` + 回落召唤者角色）⇒ 没装那个 mod 的玩家
       用到含 mod 内容的预设**不崩**，只跳过缺失项并 WARN。
+  - **🆕 Phase A 已落地（2026-10-11，r269，⭐ 待实机）= mod 侧地基**：`hellwar_presets.json`（档位 × 角色预设二维）全链路：
+    - **格式**：每条 = `id / name / tiers(一套可复用多档) / skin / deck(与 hellwarDeck* 同文本格式) / relics(id 列表) /
+      upgradeDeck / bonusHp / default`；**字段缺省(null) = 继承该档内置默认**；deck 显式空串 = 不替换；relics 空列表 = 一件不加；
+      **件数阶梯只 INFO 不阻断**（拍板⑤）；档位名收中文别名（⚠「罕见」=Rare、「稀有」=Epic，测试钉死）。
+    - **代码**：纯逻辑 `PureLogic/HellwarPresetData.cs`（DTO + `HellwarPresetPolicy` 归一 + 继承映射，**15 条新单测**，全绿 1172）+
+      运行时 `LocalHellwarPresetStore`（entry-init / run-launched / ModelDb.Preload 后三处幂等重读）；
+      record `HellwarWarGodPreset` 加 4 个可选参数（内置四档零改动）。
+    - **消费点**：单点召唤 = 该档**默认预设**（`LocalHellwarPresetStore.ResolveDefault`）；`ResolveSkin` 支持任意角色 id
+      （`ModelDb.AllCharacters` 按 Entry 匹配，查不到回落召唤者 + WARN；**mod 角色待摸注册机制**）；
+      卡组预设文本优先于 `hellwarDeck*`；遗物按 id 查（`AllRelics`+`EventRelicPool`）。
+    - **Phase A 边界（刻意不做）**：【无尽战神】/【九连环】的**随机池仍走内置档位表**（接文件池与「召唤时选预设」UI 一起 = Phase B）；
+      **游戏内导出 `content_catalog.json`** = Phase B（跟编辑器一起）。
+    - **复测契约（r269）**：① 不写文件 ⇒ 启动 `[地狱战神] 预设表: 未配置…`，召唤行为与 r268 逐字一致（回归）；
+      ② 手写一份（Rare 一套 skin=IRONCLAD + deck + relics=[MINIATURE_CANNON] + default）⇒ 启动 `预设表已加载: 套数=1` +
+      `档位=Rare 默认预设="…"(…)`，召唤罕见档 `①a 预设卡组已替换 … 来源=预设(…)` + `①c 预设遗物已发放 … MINIATURE_CANNON`；
+      ③ 故意写不存在的卡/遗物 id ⇒ 启动 WARN 点名、召唤跳过不崩；④ relics 写 5 件 ⇒ `超出阶梯（允许，玩家自由）` INFO。
 - **⏳【待排期·用户 2026-10-11 点名】海克斯符文兼容补丁（`compat-mods\HextechRunesLocalCoopFix`）：加**抓率统计** + 按抓率选符文 + 选项很烂时自主 roll**：
   - **需求原话**：「为海克斯符文兼容补丁 mod 加上我们的本体 mod 相似的**抓率统计**，瓦库根据抓率选择，
     并且在**选项很烂的情况下自主 roll 符文**」。
@@ -779,6 +795,66 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     reroll 按钮 / `EnemyHexAuthorityCompatPatch` 那套"只有可调席位能改"的归属判据是本轮可复用先例）；
     并且要定义"选项很烂"的判据（抓率全低？稀有度全银？ —— ⚠ 注意：**用户已实测"每次 3 个选项稀有度一致"**，
     所以稀有度不能当判据，得靠抓率或效果质量）。
+- **⑮ r271（2026-10-11 判读 + 修复，⭐ 待实机）—— 「进战斗没怪 / 不抽牌 / 不能换人 / 不能结束回合」= 第三方坏怪 + 第三方开战特效把 turn loop 打死**：
+  - **判读**（`logs-archive/godot__20261011-191308__r270.log`，1.3MB 小局，用户进战斗就卡）：
+    `turn loop died: NullReferenceException at VfxCmd.PlayOnCreatureCenter_Patch2 ← CreatureCmd.GainBlock ←
+    HextechRunes.BrutalForceEnemyHex.ApplyCombatStartToEnemy ← HextechEnemyHexDispatcher.ForEachActive ←
+    HextechMayhemModifier.ApplyMonsterCombatStartHexesToEnemy`，且同局
+    `[ERROR] Failed to load resource: arknights_boss_monster_eblana.tscn / …_dublinn_flamechaser_soldier.tscn`
+    —— **这局的怪是 ArknightsBoss mod 的怪、它的场景 .tscn 加载失败** ⇒ 敌列表留下 null 条目；
+    海克斯【残暴】敌 hex 开战给怪上格挡 → 播特效 `PlayOnCreatureCenter(null…)` ⇒
+    `target.IsDead` 对 null 抛 NRE ⇒ 冒穿 `Hook.BeforeCombatStart` ⇒ 回合循环被原版打死 ⇒ 卡 `NotPlayPhase`
+    （没怪/不抽牌/不能换人/不能结束回合全吻合；`忽略切人请求：战斗同步阶段=NotPlayPhase`）。
+    原版实现里 `GetCreatureNode()==null` 本有判空，**只漏了 `target==null`**（游戏健壮性缺口）。
+  - **修法 = 主 mod 通用护栏**（新 `Scripts/Patch/VfxCmdNullTargetGuardPatch.cs`，**Combat 域**，targets 基线已更新）：
+    给 `VfxCmd` 四个特效播放入口（PlayOnCreatureCenter / PlayOnCreature / 两个复数版）挂 **finalizer，只吞 NRE** ——
+    特效是纯表现层（吞掉只损失那一下特效，`GainBlock` 的数值逻辑照常），其它异常照抛；命中去重 WARN
+    （`[特效护栏] … 仅损失该次特效，战斗流程照常`）。**不修 ArknightsBoss 资源缺失本身**（第三方自身问题，
+    用户的 ArknightsBoss 可能需要更新/重装），只保证"它坏时不拖死整场战斗"。取向同 AE-24 的表现层护栏。
+  - **复测契约（r271）**：同一张图再进战斗 ⇒ ① 不再出现 `turn loop died`、怪与回合正常（若 ArknightsBoss 场景
+    仍加载失败，那条 ERROR 还会在、怪可能显示异常，但**战斗能打**）；② 若再命中护栏 ⇒ 一条
+    `[特效护栏] 对坏目标播特效的 NRE 已拦截…`（同族只一条）；③ 顺带回归：r270 的满员复活、r269 的预设表锚点。
+    marker = `2026-10-11-r271`。
+  - **⭐ r272 局（`godot__20261011-200415__r272.log`）复测情况**：本局**没踩到坏怪**（`Failed to load resource` 0、
+    护栏 0 命中）⇒ ⑮/⑯ 的护栏仍待实机复测（r271 局护栏命中 1 次算部分验证；r272 的 `NCreature` getter 护栏待踩到再验）。
+    ⑭ 满员复活与 Phase A 预设表锚点已在 r272 局验证 ✓（见 ⑭ 判读）。
+- **⑯ r272（2026-10-11 判读 + 修复，⭐ 待实机）—— r271 护栏命中后，同一只坏怪在「伤害数字」上又把 turn loop 打死**：
+  - **实机**（`logs-archive/godot__20261011-193429__r271.log`）：r271 护栏**命中 1 次**（`[特效护栏] … name=深池逐火战士`
+    ⇒ 开战链活了、`StartTurn` 进入、还弹了召唤选择）⇒ 但回合 1 里猪猪 mod 遗物「猪冲前进」对这只怪扣上限
+    → `CreatureCmd.Damage → NDamageNumVfx.Create → NCreature.get_VfxSpawnPosition()` ⇒
+    `Visuals.VfxSpawnPosition.GlobalPosition` 对 null 链抛 NRE ⇒ turn loop died（症状 = 能进战斗但不能出牌/结束回合/切人）。
+  - **根因不变**：ArknightsBoss 场景加载失败 ⇒ 怪**数据层在、`NCreature.Visuals` 为 null**（隐形怪）——
+    对它的**任何视觉访问**都会炸；r271 只兜了特效入口，这次从伤害数字炸。
+  - **修法（刻意收窄）**：新 `NCreatureVisualsGuardPatch`（Combat 域）给 `NCreature` 的两个 **Vector2 getter**
+    （`VfxSpawnPosition` / `PowerAppliedVfxSpawnPosition`）挂 finalizer 吞 NRE、落 `(0,0)`（伤害数字画在原点，无害）。
+    **刻意不兜引用类型返回**（`Body` = `Visuals.GetCurrentBody()` 等）——吞掉后调用方拿 null 再 `.PlayAnim()`
+    只会把炸点转移到下游。**打地鼠策略**：后续冒出新炸点（死亡动画/意图/血条）按同模式补。
+  - **真正解法在用户侧**：更新/重装 ArknightsBoss mod（它的场景资源与游戏 0.111 不匹配）。
+  - **复测契约（r272）**：同一张图 ⇒ ① 不再 `turn loop died`、能正常出牌/结束回合/切人；② 命中护栏 ⇒ 一条
+    `[特效护栏] 无视觉怪…兜底为原点…`（伤害数字可能画在屏幕 (0,0)，无害）；③ 若**死亡动画**再炸出新的
+    turn loop died ⇒ 把新栈发我，按同模式补（或干脆先禁用 ArknightsBoss 测一局对照）。
+    marker = `2026-10-11-r272`。
+- **⑭ r270（2026-10-11 判读 + 修复，✅ **实机关单**）—— 战神死一堆后「有计数但复活选项不弹」= 满员挡板把弹层整层挡死**：
+  - **✅ 实机判读（2026-10-11，`logs-archive/godot__20261011-200415__r272.log`，47881 行，用户「测了一下，应该没问题」）⇒ 契约全中，关单**：
+    无尽战神召满 12 → 战神死亡 ⇒ **满员弹层出现 4 次**（L27217/32466/38824/42346：
+    `回合开始可召唤，弹出选择: 选项=4→3→2→1 个 …（满员：只提供复活选项）`——选项数随尸体被逐个复活递减）；
+    **`已复活战神` ×8**（复活计费/退回链路照常）；满员且无尸体时 `party-full(12>=12, 无可复活尸体)` 不弹（新细分 reason 生效）；
+    **`turn loop died` 0 / `忽略切人` 0**，5 场战斗全程正常；预设表 Phase A 回归锚点正常（`预设表: 未配置…`）；
+    `[ERROR]` 仅 3 条 NRE 全第三方（GensokyoSpire 血条 ×2、§待查-6 已知）+ 2 条 mod 分支告警 ⇒ **无我方新增**。
+  - **症状**（用户原话）：「打到后面战神死了一堆，我还有计数但是没有弹出复活战神的选项」。
+  - **判读**（`logs-archive/godot__20261011-164350__r269.log`）：无尽战神花 12 召 10 个（L10158，计数 20→8）⇒
+    战斗内玩家 2→**12（满员）**；之后 9 条 `战神已死亡（**尸体留场**，绑主可在自己回合开始复活它）`（R9 数据层全对，
+    `已复活过=0`）；但每回合 `本回合不弹召唤选择: reason=offer, 战斗内玩家=12` ⇒ 弹层被挡。
+  - **真因**：R9 设计 = **尸体留场**（仍在 `state.Players` 占名额），而弹层判据
+    `combatPlayers >= MaxLocalPlayerCount`（12≥12）**一票否决整个弹层** —— 复活选项明明已组进 options
+    （可用 8 ≥ 复活成本 1/2），被满员挡板殃及。⇒ 复活是把尸体**回填**、**不新增席位**，不该受满员限制。
+  - **修法**：满员时把弹层**过滤成只剩复活项**（`FilterOfferable`，两处同口径：回合开始判据 + 延迟一帧弹层前
+    重算满员再过滤）；四档/无尽/九连环会新增席位 ⇒ 满员时照旧挡（D18 补满口径不变）；顺带把 `skipReason` 细分
+    （`party-full(…)` / `party-full-but-revive` / `already-offered-this-turn`）—— 原 `reason=offer` 是兜底文案，
+    **掩盖了真实原因是满员**（诊断坑）。
+  - **复测契约**：再现场景（无尽召满 12 → 让战神死几个）⇒ 回合开始应弹
+    `回合开始可召唤，弹出选择 …（满员：只提供复活选项）`，选复活 ⇒ `已复活战神: …`；满员但无可复活尸体（或买不起）⇒
+    `party-full(…, 无可复活尸体)` 不弹；不满员时一切照旧。marker = `2026-10-11-r270`。
 - **⑬ r268（2026-10-11 落地，✅ **实机关单**）—— 用户复测「锻造器还是不会自动选」⇒ 真因 = 锻造屏走的是**另一个协调器**：
   补丁 mod `HextechRunesLocalCoopFix` **v1.2.3**（⑧a/⑧b），主 mod 本轮**只升 marker（r268）不改行为代码**：
   - **症状/判读**：用户「商店瓦库买海克斯符文属性锻造器还是不会自动选」。
@@ -835,6 +911,9 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     —— ⚠ **① 这条已被 r268 ⑬ 取代**（真正的锚点是 ⑬ 那组；③b 的这条锚点在锻造链上根本不会出现）；
     ③ 打一场带这两张附魔的牌 ⇒ 涡旋选**费用最高且 ≥2** 的牌（没有则从"能力牌/打击防御"里随机）；
     余烬选**费用最高**的牌。启动 marker = `2026-10-11-r267`（已被 **r268** 取代，见 ⑬）。
+  - **⏳ ③ 附魔两条规则的验证口径（用户 2026-10-11 拍板：改**被动验证**）**：这两条附魔在局里**很难主动凑到**，
+    用户玩到了再把日志发来判读（选牌时的日志锚点在 `LocalWakuuEnchantPicker`，实机命中会有选牌记录）——
+    不再列主动测试项；后续每轮收工时保留一条"附魔两规则仍待被动验证"的尾巴。
 - **⑪ r266（2026-10-11 落地，✅ 实机关单）—— 露出下一层：给临时席位补一条「本地动作队列」（§待查-7 的修法）**：
   - **症状（r265 局日志 L16701）**：`托管出牌抛异常 … card=CARD.MOKOUMOD-IMMORTAL_SMOKE,
     error=Tried to get local action queue for nonexistent player with ID 4098!`
