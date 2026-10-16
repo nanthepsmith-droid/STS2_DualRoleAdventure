@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -738,7 +738,7 @@ public partial class Entry
     //   （Watcher mod）⇒ 没装那个 mod 的玩家会被 r278 的可用性判据整条跳过（其余照常）。
     //   ⚠ 本机（玩家那份与内置**同 id**）合并后仍是 18 套 ⇒ **本地行为零变化**；要验内置通道得先把
     //   `%APPDATA%\SlayTheSpire2\hellwar_presets.json` 临时改名，再启动看 `内置预设已读取: 条数=18`。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-15-r279)";
+    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-16-r280)";
 
     private static Harmony? _harmony;
 

@@ -16,7 +16,8 @@ namespace LocalMultiControl.Scripts.Models.Relics;
 /// <list type="bullet">
 /// <item><b>R2 / Phase 1</b>：休息处的自定义选项【分裂精神】每次使用给它 **+1 计数**
 ///   （<see cref="SpiritCount"/>，含存档往返与遗物格子上的数字显示）；</item>
-/// <item><b>R3 / Phase 2（未实装）</b>：战斗中每回合消耗计数召唤临时玩家「战神」。</item>
+/// <item><b>R3 / Phase 2（**已实装**）</b>：战斗中每回合开始消耗计数召唤临时玩家「战神」——
+///   四档单点 +【无尽战神】/【终极九连环】两个大招 + 托管出牌（见 <c>HellwarSummonCombatRuntime</c>）。</item>
 /// </list>
 ///
 /// 计数**原生支持**（照抄原版 <c>HappyFlower</c> 的三件套）：

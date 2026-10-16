@@ -190,10 +190,14 @@ internal static class LocalModText
     /// <summary>遗物【地狱耳环】的名称。</summary>
     public static string HellwarEarringTitle => Select("地狱耳环", "Hell Earring");
 
-    /// <summary>遗物【地狱耳环】的描述（Phase 2 起召唤已实装；罕见 / 稀有 / 先古档仍是后续阶段）。</summary>
+    /// <summary>遗物【地狱耳环】的描述（2026-10-16：四档单点 + 两个大招 + 托管出牌全部已实装）。</summary>
     public static string HellwarEarringDescription => Select(
-        "休息处的【分裂精神】可以为它增加计数；战斗中每个回合开始可消耗计数召唤一个【普通】战神（更强档位在后续阶段实装）。消耗的计数在战斗结束后自动补满。",
-        "The 【Split Spirit】 option at rest sites charges it; at the start of each combat turn you may spend charges to summon a 【Common】 war god (stronger tiers come in later phases). Spent charges refill after combat.");
+        "休息处的【分裂精神】可以为它增加计数；战斗中**每个回合开始**可花计数召唤一个战神"
+        + "（普通 1 / 罕见 2 / 稀有 3 / 先古 4 计数；攒够 12 还能开【无尽战神】/【终极九连环】）。"
+        + "消耗的计数在战斗结束后自动补满（【终极九连环】扣的是**计数上限**，不会补回）。",
+        "The 【Split Spirit】 option at rest sites charges it; at the start of every combat turn you may spend charges to summon a war god "
+        + "(Common 1 / Rare 2 / Epic 3 / Ancient 4; with 12 you can also open 【Endless War Gods】 / 【Ultimate Nine-Chain】). "
+        + "Spent charges refill after combat (【Ultimate Nine-Chain】 lowers the **cap** itself and is never refunded).");
 
     /// <summary>
     /// 遗物【地狱耳环】的风味文本（2026-10-09 用户指定，逐字取自《海虎》的旁白段）。

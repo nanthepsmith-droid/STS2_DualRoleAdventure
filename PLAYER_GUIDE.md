@@ -216,6 +216,34 @@ When the third-party **Co-op Bots** mod (online AI teammates) is installed, this
   - All three draw 1 card; the toggle takes effect at the **start of the next run**; Vakuu seats never get
     this relic.
 
+### New in v1.46: War God Summon (formerly "Hell God", inside "Vakuu autopilot", **off by default**)
+
+Turn on **"War God Summon"** (`hellwarGod`; takes effect at the **start of the next run**):
+
+- **Relic Hell Earring**: granted to **human seats only** (Vakuu seats don't get it). The number on the relic = your current **charges** (the summon budget).
+- **Rest site option "Split Spirit"**: spends a share of your **current HP** (No cost / 10% / 15% (default) / 20%, never below 1 HP) for **+1 charge**;
+  by default it **doesn't use up the whole rest** (you can still rest / smith afterwards).
+- **"Gain charges each new act" (off by default)**: +1~3 charges (default 2) per act; granted once per act, never re-granted on reload.
+- **Summoning in combat**: at the **start of every combat turn**, if you can afford it, the summon panel appears:
+  - **four single tiers**: **Common 1 / Rare 2 / Epic 3 / Ancient 4** charges — each brings its own **preset deck + preset relics**
+    (Ancient also gets +25 max HP); you then **pick a "character preset"** ("Auto / Random / a specific preset";
+    for Common the candidates are **every playable character on your machine**, mod characters included);
+  - **【Endless War Gods】** (12 charges, once per combat): fills every free seat, rolling a tier per seat
+    (Common / Rare / Epic by default; there's an "may roll Ancient" toggle);
+  - **【Ultimate Nine-Chain】** (requires a charge **cap** of 12, once per combat): summons **9 Ancients** and **permanently** lowers the cap;
+  - **Revive**: a war god that died stays on the field; its owner can revive it at the start of their turn for the same tier's cost.
+- **A war god is a "temporary player"**: it **plays its own cards** (autopilot), has its own portrait and HP bar, **takes no party slot and gets no combat rewards**;
+  it **shares damage** with its owner (intangible on the turn it appears; from the next turn it can tank half and pass it on) and dies with its owner.
+- **Preset war gods (v2)**: preset table = `%APPDATA%\SlayTheSpire2\hellwar_presets.json` (our "War God Forge" editor can build it visually);
+  the mod **ships 18 presets** (Rare 5 / Epic 5 / Ancient 8) so you don't need to place the file yourself — your own file **overrides same-`id` entries**.
+  A preset referencing content **missing on your machine** (character / card / relic) is **skipped as a whole** (named in the log); the rest still work.
+  Decks support per-card upgrades `+` and **enchantments** `[enchant]` / `[enchant:count]` (an unknown enchant is skipped, the card is still given).
+- **Export content catalog** (for the external editor): the settings page has a one-shot button that writes
+  `%APPDATA%\SlayTheSpire2\content_catalog.json` (includes third-party mod content, tagged by source); click it again after installing/removing mods.
+
+⚠ Two things to know: ① "Auto" per tier = **the first usable preset of that tier** (mark one as its "default" in the editor to pin it);
+② war gods **never** receive combat rewards — only human seats do.
+
 ### Fixes in v1.44 / v1.45 (since v1.43)
 
 - **After a save/load, Vakuu no longer sits idle for the rest of the run** (no plays / no automatic event
@@ -233,6 +261,22 @@ When the third-party **Co-op Bots** mod (online AI teammates) is installed, this
   itself) — BUG-27.
 - Plus a batch of internal refactors (**zero behavior change**) and session-state reset self-checks on
   run entry/exit.
+
+### Fixes in v1.46 (since v1.45)
+
+- **"End turn doesn't start the enemy turn" = a war god killing the turn loop** (r264/r265): a war god is an "off-structure seat", and vanilla bookkeeping keyed by
+  **player slot index** returns **-1** for it ⇒ an exception blows through `CombatManager`'s turn loop (`turn loop died … the combat is stuck` in the log).
+  That bookkeeping now uses a **separate sequence**, and consumers such as the hovered-model tracker are guarded (log anchor `临时席位`).
+  War gods also get **their own local action queue** (some cards enqueue actions for them — otherwise "local action queue for nonexistent player").
+- **Autopilot "dead cards" and leftovers** (r260~r263): with third-party custom card targets, or when a card's effect throws internally, the autopilot could hold
+  a card with no valid target or break mid-play ⇒ the card art stuck in the play area / "air cards" when merging hands. Such cards are now **given up so you can play them**,
+  leftovers are **cleaned up**, and the "don't let the autopilot play this card this run" list is **per seat** (two war gods used to wipe each other's entries ⇒
+  the same card was re-picked forever and the turn deadlocked).
+- **Reviving a war god is offered even at a full party** (r270): with all 12 seats taken and a war god corpse on the field, the panel now includes the revive option.
+- **Third-party "broken monster" no longer kills the turn loop** (r271/r272): generic guards were added around damage-number visuals and creature-node coordinates.
+- **Two Vakuu auto-enchant rules re-tuned** (r267): vanilla only considered the vanilla card pool and only strike/defend cards; ours now **counts mod card pools** —
+  【Spiral】 = highest cost ≥2 > Power > Strike/Defend (**Strike and Defend rank equally ⇒ random within the tier**); 【Tezcataras Ember】 = highest cost, falling back to Strike.
+- Also: new startup self-check anchors (`预设表已加载` / `内置预设已读取` / per-tier "actually in use" / `[内容目录]`) — check those first when troubleshooting.
 
 ## During a run
 
