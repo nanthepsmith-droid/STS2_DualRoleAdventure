@@ -41,8 +41,6 @@ See the **[Player Guide](PLAYER_GUIDE.md)** ([简体中文](PLAYER_GUIDE.zh-CN.m
 
 - That fork describes itself as "**based on liwenhao0427's (磁石战士Ω) Local Multi-Control and GuyGinat's community-maintained version — with authorization**". **The authorization is theirs** (granted by the original author and the previous maintainer) — which is exactly why we are glad to recommend it.
   ⚠ To be clear about the boundary: **this repository itself has no such authorization** — it is simply a community continuation line kept alive after the original author stopped at v1.30; the two continuations are independent of each other.
-  (As far as we know, the only "local multi-control" items on the Workshop today are the original author's, GuyGinat's, and the one recommended above — peers in this space deserve each other's thanks.
-  GuyGinat's continuation updates slowly: this repository only started because it took a long time to adapt to game v0.110.)
 - Its focus differs from ours: it adds a good deal of enhancement around **Vakuu (AI auto-play)**. This repository's maintainer has played it and found it noticeably better in that area — worth a try.
 - ⚠ It is published **on the Steam Workshop only (no GitHub repository)**. This fork's builds are still distributed **only via this repository's Releases**. The two are independent — pick either one, or try both (note: installing two "local multi-control" mods at once will conflict; disable one first).
 
