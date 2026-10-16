@@ -676,7 +676,69 @@ public partial class Entry
     //   ② `HellwarPresetCatalog.CharacterPresets` 只收 **`IsPlayable` 的角色** —— 角色表里混着
     //      `Deprived` / `RandomCharacter` / `DeprecatedCharacter`（初始卡组是"各角色各一张"的拼凑牌）⇒ 剔除。
     //   ③ `③ 已建战斗内节点` 那条日志原文写死"普通档用召唤者的角色皮"，现在普通档可选任意角色 ⇒ 文案改成"取该预设的 skin"。
-    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-11-r274)";
+    // r275（2026-10-12，预设构筑器 **Phase B-3**，⭐ 待实机）：**游戏内导出 `content_catalog.json`**（编辑器的数据源）。
+    //   ① 新纯逻辑 `PureLogic/ContentCatalogData.cs`：DTO（卡 / 遗物 / 角色，逐条带 **source** = 提供它的程序集简单名，
+    //      `base` = 游戏本体 ⇒ 第三方 mod 内容能被编辑器分组）+ JSON 层（System.Text.Json / 缩进 / 大小写不敏感解析）
+    //      + `ContentCatalogPolicy`（来源分类 / 条数汇总 / 卡图与遗物大图的**推定路径**）—— 全部纯函数，带单测。
+    //   ② 新运行时 `LocalContentCatalogExporter`：枚举 `ModelDb.AllCards/AllRelics/AllCharacters`
+    //      （并上 `Event*Pool` 防漏收 mod 内容、按 `ModelId` 去重、排序便于 diff），原子写
+    //      `%APPDATA%\SlayTheSpire2\content_catalog.json`（与 `hellwar_presets.json` 同目录）。
+    //      逐项容错（第三方卡缺本地化键 / 属性抛 ⇒ 该条回落或跳过，绝不让整次导出失败）。
+    //   ③ **就绪时序**：`ModelDb.Preload()` 在 `OneTimeInitialization.ExecuteDeferred`（主菜单之后）里跑，
+    //      在那之前读卡池会抛 ⇒ 导出器自持"就绪位"，由 `HellwarContentPatch` 的 `ModelDb.Preload` 后置补丁点亮；
+    //      设置页提前点了 ⇒ 只**排队**，就绪那一刻自动补做（不新增补丁目标，复用既有挂点）。
+    //   ④ 设置页（战灵召唤段）新增一行「导出内容目录（给预设构筑器用）」：本页唯一**一次性动作按钮**
+    //      （不持久化状态），点一下导出、按钮文案显示 已导出/已排队/失败，锚点 `[内容目录]` 打条数与路径。
+    // r276（2026-10-12，**首次实机导出后的判读修复**，⭐ 待实机复测）：用户跑了一局、点了导出 ⇒ 拿到
+    //   第一份真数据（`卡=2964(其中 mod 2368) / 遗物=1555(其中 mod 1256) / 角色=23(其中 mod 18)`、
+    //   `缺名或描述=0`、26 个来源 ⇒ 枚举与文本层全对），但判读暴露三处口径错：
+    //   ① **卡图整图路径整批错**：我原先按 `Pool.Id.Entry`（`SILENT_CARD_POOL`）拼目录，而游戏用的是
+    //      `CardPoolModel.Title.ToLowerInvariant()`（`silent`）⇒ 改成**从游戏自己给的 `PortraitPath` 上做
+    //      路径换算**（含 `beta/` 子目录），并用 `ResourceLoader.Exists` 复核，不成立就留空（不给猜想）。
+    //   ② **`gameVersion` 等于没用** = `Assembly.GetName().Version` 是 `0.1.0.0` ⇒ 改读游戏自己的
+    //      `ReleaseInfoManager`（可执行文件旁的 `release_info.json`，实机值 `v0.111.0`），读不到才回落程序集版本。
+    //   ③ **实机发现图片路径有三态**：`.tres`（图集条目，≈695）/ `.png`（mod 覆写，≈2064）/ `.jpg`（≈205）⇒
+    //      `Portrait` 原样给（规范成 `/`），`PortraitPng` **只在能确定时给**；另外 **322 张 mod 卡的
+    //      `Portrait` 可直读却 `HasPortrait=false`**（游戏那句判据只查它自己的规则路径）⇒ 字段注释写明
+    //      "编辑器判有没有图要以 `Portrait` 为准"。遗物侧同理：`BigIcon` 只在文件存在时才给（1555 件仅命中 306）。
+    //   ④ 卡新增 `PoolTitle`（= `CardPoolModel.Title`，显示名；`Pool` 仍是 `Id.Entry` 标识）。
+    // r277（2026-10-12，用户问"预设能不能支持附魔"⇒ 拍板"随便你"）：**预设卡组支持逐张附魔**。
+    //   ① 词法（纯逻辑 `HellwarWarGodDeckPlan`）：条目末尾加 `[附魔]` / `[附魔:数量]`（不写数量 = 1；
+    //      `ENCHANTMENT.` / `ENCHANT.` 前缀可选）——`+`（升级）与 `[附魔]` 都从末尾剥、剥到剥不动为止
+    //      ⇒ **两种顺序都能写**（`BASH+[SHARP]` ≡ `BASH[SHARP]+`）；括号不配对（`BASH[`）不按附魔切，
+    //      整串当卡名留给运行时 WARN（不静默吃掉）。`Format` 同步输出附魔 ⇒ 日志模板可复制粘贴。
+    //   ② 施加（`HellwarWarGodFactory.ApplyPresetEnchantment`，在 `Deck.AddInternal` **之前**）：
+    //      此刻 `Pile == null` ⇒ `CardCmd.Enchant` 会跳过"往 `CurrentMapPointHistoryEntry` 记一笔"那段
+    //      （战神此刻 `Owner` 还是 null，否则 NRE）——**这是临时席位线上最容易炸的地方，刻意绕开**。
+    //      校验走游戏自己的 `EnchantmentModel.CanEnchant`；认不出 / 不能带 / 抛异常 ⇒ **只跳过那个附魔，卡照给**。
+    //   ③ 附魔来源 = `ModelDb.DebugEnchantments`（全游戏唯一全量入口，注释 "including mock ones" ⇒ 按 `IsMock` 过滤；
+    //      基于 `AllAbstractModelSubtypes` ⇒ mod 附魔也在内）；`HellwarWarGodDecks.LookupEnchantmentByEntry` 查表。
+    //   ④ 内容目录加第四段 `Enchantments`（id / entry / 名 / 述 / 图标 / `ShowAmount` / `AllowedCardTypes`
+    //      （逐个 CardType 问 `CanEnchantCardType`；全允许 = 空 = 无限制）/ 来源）—— 编辑器要能列附魔。
+    //   ⑤ 新增日志锚点：启动 `附魔可选项: N 个[...]`；召唤时 `①d 预设附魔: 施加=N 跳过=M 明细=[...]`；
+    //      预设表自检那行加 `带附魔=N 张`；预设里写错附魔 id ⇒ 启动就 WARN 点名。
+    // r278（2026-10-12，用户问"预设里是 mod 角色/mod 卡时能不能跳过它去召别的"⇒ 拍板"随便你"）：
+    //   **① 预设可以随 mod 分发；② 引用了本机没有内容的预设直接被跳过**（不再召出残缺战神）。
+    //   ① 内置预设 = **嵌入资源** `Scripts/Data/hellwar_presets.json`（csproj `EmbeddedResource` + 固定 LogicalName）——
+    //      为什么不用"文件放 dll 旁边"：部署/工坊上传脚本只拷 dll，外部文件必然有"忘了拷 ⇒ 静默失效"的坑；
+    //      改这份 json 要重新构建。加载 = 玩家文件 ∪ 内置（同 id 玩家胜出、玩家在前 ⇒ 玩家的同档默认先生效），
+    //      纯逻辑 `HellwarPresetMerge`；哪一份坏就只用另一份。
+    //   ② 可用性（纯逻辑 `HellwarPresetAvailability` + 运行时 `HellwarPresetCompat`）：角色皮 / 卡组每张 / 遗物每件
+    //      **任一在本机没有** ⇒ 该预设从「选角色预设」候选、【无尽战神】/【九连环】随机池、以及"自动默认"里剔除，
+    //      打一条 `[地狱战神] 预设已跳过（引用了本机没有的内容，其余预设照常）…`（同条只报一次）。
+    //      **附魔缺失不算**（只跳那一个附魔、卡照给）；**退化文本（全是分隔符）也不算**（交归一的 WARN 管）。
+    //      ⚠ 探测器失败**按"全部可用"处理**（退回旧行为）——绝不能因为探测坏了把玩家预设全隐藏。
+    //      启动自检那行改口径：`实际使用="…"(id=…)`（与召唤同一入口 ResolveDefault）+ 被跳过的会附一句 ⚠。
+    // r279（2026-10-15，用户「预设我搓好了」）：**内置预设从空模板 → 18 套定稿**（罕见 5 / 稀有 5 / 先古 8）。
+    //   **代码零改动** —— 只填嵌入资源 `Scripts/Data/hellwar_presets.json`（原文照搬玩家文件，逐字节一致）+
+    //   补一条单测「内置预设数据归一后没有问题」（防后续手改坏：id 重复 / 档位名认不出 / 一条都没挂档位 /
+    //   deck 全是分隔符，归一都会记 Problems ⇒ 直接 FAIL）。
+    //   ⚠ 两处口径写进 `Scripts/Data/README.md`：① **没有任何一套写 default** ⇒ 各档「自动」回落成该档
+    //   第一条文件预设（罕见 ironclad1 / 稀有 ironclad2 / 先古 watchera15）；② 其中 2 套用 `WATCHER-*`
+    //   （Watcher mod）⇒ 没装那个 mod 的玩家会被 r278 的可用性判据整条跳过（其余照常）。
+    //   ⚠ 本机（玩家那份与内置**同 id**）合并后仍是 18 套 ⇒ **本地行为零变化**；要验内置通道得先把
+    //   `%APPDATA%\SlayTheSpire2\hellwar_presets.json` 临时改名，再启动看 `内置预设已读取: 条数=18`。
+    private const string BuildMarker = "Revival v1.45.0 (game v0.111.0, marker=2026-10-15-r279)";
 
     private static Harmony? _harmony;
 

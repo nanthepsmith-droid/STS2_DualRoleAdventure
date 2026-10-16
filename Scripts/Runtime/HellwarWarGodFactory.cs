@@ -748,15 +748,35 @@ internal static class HellwarWarGodFactory
 
         player.Deck.Clear(silent: true);
         int upgraded = 0;
+        int enchanted = 0;
+        int enchantSkipped = 0;
+        List<string> enchantDetail = new();
         foreach (HellwarWarGodDeckCard entry in deck.Cards)
         {
             CardModel card = entry.Canonical.ToMutable();
             card.FloorAddedToDeck = 1;
+
+            // 附魔必须在 `Deck.AddInternal` **之前**施加（r277，见 ApplyPresetEnchantment 的注释：
+            // 此刻 Pile == null ⇒ 绕开"按 Owner 记账"的那段，而战神此刻 Owner 还是 null）。
+            if (!string.IsNullOrEmpty(entry.EnchantEntry))
+            {
+                if (ApplyPresetEnchantment(card, entry, tag, enchantDetail))
+                {
+                    enchanted++;
+                }
+                else
+                {
+                    enchantSkipped++;
+                }
+            }
+
             player.Deck.AddInternal(card, -1, silent: true);
 
             if (entry.Upgraded)
             {
                 // 顺序照 `CardCmd.Upgrade`：先 UpgradeInternal 再 FinalizeUpgradeInternal（后者收尾预览态）。
+                // ⚠ 升级在后也没关系：`CardModel.UpgradeInternal` 自己会回调 `Enchantment?.ModifyCard()`
+                //   （游戏源码注释：降级 / 反序列化后要"重放"附魔的修改逻辑），所以附魔的改值不会被升级冲掉。
                 card.UpgradeInternal();
                 card.FinalizeUpgradeInternal();
                 upgraded++;
@@ -773,7 +793,70 @@ internal static class HellwarWarGodFactory
                 ? $", 配置文本={deckOverride}"
                 : $", 内置默认={HellwarWarGodDecks.DescribeBuiltinDeck(preset.Tier)}"));
 
+        if (enchanted > 0 || enchantSkipped > 0)
+        {
+            // 只在"真的写了附魔"时打这一行（老配置 / 老预设 ⇒ 这条锚点不出现 = 零噪声）。
+            LocalMultiControlLogger.Info(
+                $"{tag} ①d 预设附魔: seat={player.NetId}, 档位={preset.Tier}, 施加={enchanted} 张, "
+                + $"跳过={enchantSkipped} 张, 明细=[{string.Join(", ", enchantDetail)}]");
+        }
+
         return upgraded;
+    }
+
+    /// <summary>
+    /// 给战神卡组里的一张牌**静默施加预设附魔**（r277）。返回是否施加成功。
+    ///
+    /// <para><b>为什么必须在 <c>Deck.AddInternal</c> 之前调</b>：<c>CardCmd.Enchant</c> 结尾有一段
+    /// "牌在牌堆里且是 Deck ⇒ 往 <c>CurrentMapPointHistoryEntry.GetEntry(card.Owner.NetId)</c> 记一笔"；
+    /// 而战神的 <c>Owner</c> 要到 <see cref="AttachToRun"/> 才设，此刻是 null ⇒ 会 NRE。
+    /// 不打牌堆时（<c>Pile == null</c>）那段整段跳过 ⇒ 天然规避，且不必碰任何"按玩家 / 席位记账"的东西
+    /// （这正是临时席位那条线最容易炸的地方）。</para>
+    ///
+    /// <para>校验用游戏自己的 <c>EnchantmentModel.CanEnchant</c>（默认排除 状态 / 诅咒 / 任务牌，
+    /// 个别附魔更严，如 Sharp 只给攻击牌）；认不出 / 不能带 ⇒ **只跳过那个附魔**，卡照给（不阻断召唤）。</para>
+    /// </summary>
+    private static bool ApplyPresetEnchantment(
+        CardModel card,
+        HellwarWarGodDeckCard entry,
+        string tag,
+        List<string> detail)
+    {
+        string enchantEntry = entry.EnchantEntry!;
+        try
+        {
+            EnchantmentModel? canonical = HellwarWarGodDecks.LookupEnchantmentByEntry(enchantEntry);
+            if (canonical == null)
+            {
+                LocalMultiControlLogger.Warn(
+                    $"{tag} 预设附魔认不出（只跳过这个附魔，卡照给）: 卡={entry.Canonical.Id.Entry}, "
+                    + $"附魔={enchantEntry}（要写 ModelId.Entry，如 SHARP / TEZCATARAS_EMBER）");
+                detail.Add($"{entry.Canonical.Id.Entry}←{enchantEntry}(认不出)");
+                return false;
+            }
+
+            if (!canonical.CanEnchant(card))
+            {
+                LocalMultiControlLogger.Warn(
+                    $"{tag} 这张牌不能带该附魔（游戏判据 CanEnchant=false，只跳过附魔）: "
+                    + $"卡={entry.Canonical.Id.Entry}, 附魔={canonical.Id.Entry}");
+                detail.Add($"{entry.Canonical.Id.Entry}←{canonical.Id.Entry}(不适用)");
+                return false;
+            }
+
+            EnchantmentModel mutable = canonical.ToMutable();
+            CardCmd.Enchant(mutable, card, entry.EnchantAmount);
+            detail.Add($"{entry.Canonical.Id.Entry}←{canonical.Id.Entry}:{entry.EnchantAmount}");
+            return true;
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn(
+                $"{tag} 施加预设附魔失败（跳过这个附魔，卡照给）: 卡={entry.Canonical.Id.Entry}, "
+                + $"附魔={enchantEntry}, error={exception.GetType().Name}: {exception.Message}");
+            detail.Add($"{entry.Canonical.Id.Entry}←{enchantEntry}(异常)");
+            return false;
+        }
     }
 
     /// <summary>

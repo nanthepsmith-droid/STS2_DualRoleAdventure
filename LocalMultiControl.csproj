@@ -54,6 +54,15 @@
   </Target>
 
   <ItemGroup>
+    <!-- 内置预设（随 dll 分发，见 Scripts/Data/README.md）：
+         用 **EmbeddedResource** 而不是"文件放 dll 旁边"—— 本地部署与工坊上传脚本都只拷 dll，
+         放外部文件必然有"忘了拷 ⇒ 静默没有内置预设"的坑。改这份 json 后要重新构建才生效。
+         LogicalName 固定，代码里按这个名字取：LocalHellwarPresetStore.BuiltinResourceName。 -->
+    <EmbeddedResource Include="Scripts/Data/hellwar_presets.json"
+                      LogicalName="LocalMultiControl.Scripts.Data.hellwar_presets.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="sts2">
       <HintPath>$(Sts2DataDir)/sts2.dll</HintPath>
       <Private>false</Private>

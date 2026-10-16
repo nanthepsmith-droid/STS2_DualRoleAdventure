@@ -1,0 +1,313 @@
+{
+  "version": 1,
+  "presets": [
+    {
+      "id": "watchera15",
+      "name": "观者（红蓝有莲花）",
+      "tiers": [
+        "Ancient"
+      ],
+      "skin": "WATCHER-WATCHER",
+      "deck": "WATCHER-VAULT+, WATCHER-INNER_PEACE+, WATCHER-STRIKE_WATCHER, WATCHER-WISH_WATCHER+, WATCHER-EMPTY_MIND+, WATCHER-ERUPTION+, WATCHER-FEAR_NO_EVIL+, WATCHER-TANTRUM+, WATCHER-VIGILANCE+, WATCHER-FOREIGN_INFLUENCE+, WATCHER-MENTAL_FORTRESS+, WATCHER-MENTAL_FORTRESS+, ASCENDERS_BANE, WATCHER-TALK_TO_THE_HAND+, WATCHER-TALK_TO_THE_HAND+, WATCHER-RUSHDOWN+",
+      "relics": [
+        "WATCHER-PURE_WATER",
+        "STRAWBERRY",
+        "REGAL_PILLOW",
+        "JUZU_BRACELET",
+        "PEN_NIB",
+        "ETERNAL_FEATHER",
+        "FROZEN_EGG",
+        "STRIKE_DUMMY",
+        "THE_COURIER",
+        "PRAYER_WHEEL",
+        "WATCHER-VIOLET_LOTUS",
+        "HORN_CLEAT",
+        "LIZARD_TAIL",
+        "GREMLIN_HORN",
+        "NUNCHAKU"
+      ],
+      "upgradeDeck": false,
+      "default": false
+    },
+    {
+      "id": "common-watcher-watcher",
+      "name": "观者（红蓝无莲花）",
+      "tiers": [
+        "Ancient"
+      ],
+      "skin": "WATCHER-WATCHER",
+      "deck": "WATCHER-LESSON_LEARNED+, WATCHER-WHEEL_KICK+, WATCHER-CRESCENDO+, WATCHER-SCRAWL_WATCHER+, WATCHER-MENTAL_FORTRESS+, WATCHER-MENTAL_FORTRESS+, WATCHER-FLURRY_OF_BLOWS+, WATCHER-FEAR_NO_EVIL+, WATCHER-FASTING+, WATCHER-CRUSH_JOINTS+, WATCHER-INDIGNATION+, WATCHER-RUSHDOWN+, WATCHER-RUSHDOWN+, WATCHER-ERUPTION+, WATCHER-EMPTY_MIND+, WATCHER-TRANQUILITY+, WATCHER-VIGILANCE, WATCHER-TANTRUM+, WATCHER-CUT_THROUGH_FATE+, ASCENDERS_BANE",
+      "relics": [
+        "WATCHER-PURE_WATER",
+        "FROZEN_EGG",
+        "BLOOD_VIAL",
+        "LUCKY_FYSH",
+        "ORICHALCUM",
+        "NUNCHAKU",
+        "TOOLBOX",
+        "HAPPY_FLOWER",
+        "WATCHER-DAMARU",
+        "DREAM_CATCHER",
+        "ODDLY_SMOOTH_STONE",
+        "MAW_BANK",
+        "THE_BOOT"
+      ],
+      "default": false
+    },
+    {
+      "id": "silenta11",
+      "name": "静默猎手（无敌王八）",
+      "tiers": [
+        "Ancient"
+      ],
+      "skin": "SILENT",
+      "deck": "BULLET_TIME+, WELL_LAID_PLANS+, DEADLY_POISON+, BURST+, BURST+, BURST+, BLADE_DANCE, NEUTRALIZE, BUBBLE_BUBBLE+, BUBBLE_BUBBLE+, BACKFLIP+, SURVIVOR+, LEG_SWEEP+, PIERCING_WAIL+, DEFEND_SILENT, DEFEND_SILENT, REFLEX+, POISONED_STAB+, DEFEND_SILENT+, NOXIOUS_FUMES+, PREPARED+, PREPARED+, APPARITION+, APPARITION+, APPARITION+, APPARITION+, APPARITION+, FOOTWORK+, ACROBATICS+, ASCENDERS_BANE, HAZE+, HAZE+",
+      "relics": [
+        "RING_OF_THE_SNAKE",
+        "BAG_OF_MARBLES",
+        "TUNGSTEN_ROD",
+        "TOXIC_EGG",
+        "TINGSHA",
+        "POTION_BELT",
+        "BAG_OF_PREPARATION",
+        "JUZU_BRACELET",
+        "PEN_NIB"
+      ],
+      "bonusHp": 31,
+      "default": false
+    },
+    {
+      "id": "ironclad1",
+      "name": "铁甲战士（力量旋风过渡）",
+      "tiers": [
+        "Rare"
+      ],
+      "skin": "IRONCLAD",
+      "deck": "STRIKE_IRONCLAD, STRIKE_IRONCLAD, STRIKE_IRONCLAD, DEFEND_IRONCLAD, DEFEND_IRONCLAD, DEFEND_IRONCLAD, DEFEND_IRONCLAD, BASH+, WHIRLWIND+, TWIN_STRIKE, POMMEL_STRIKE+, POMMEL_STRIKE+, SHRUG_IT_OFF, SHRUG_IT_OFF, SHRUG_IT_OFF, FORGOTTEN_RITUAL+, ARMAMENTS+, BURNING_PACT+, BURNING_PACT, INFLAME+, INFLAME+, PYRE+, STONE_ARMOR, STONE_ARMOR",
+      "relics": [
+        "BURNING_BLOOD",
+        "SELF_FORMING_CLAY",
+        "PAPER_PHROG",
+        "GREMLIN_HORN"
+      ],
+      "default": false
+    },
+    {
+      "id": "ironclad2",
+      "name": "铁甲战士（腐化烧牌爆发）",
+      "tiers": [
+        "Epic"
+      ],
+      "skin": "IRONCLAD",
+      "deck": "DEFEND_IRONCLAD, DEFEND_IRONCLAD, DEFEND_IRONCLAD, PACTS_END+, FEED+, POMMEL_STRIKE+, POMMEL_STRIKE+, BREAKTHROUGH, CORRUPTION+, SHRUG_IT_OFF, SHRUG_IT_OFF, SHRUG_IT_OFF, BURNING_PACT+, BURNING_PACT+, FORGOTTEN_RITUAL+, ENTRENCH+, DARK_EMBRACE+, DARK_EMBRACE+, DEMON_FORM+, FEEL_NO_PAIN+",
+      "relics": [
+        "BURNING_BLOOD",
+        "SHURIKEN",
+        "GORGET",
+        "ICE_CREAM"
+      ],
+      "default": false
+    },
+    {
+      "id": "ironclad3",
+      "name": "铁甲战士（极限壁垒神圣防杀）",
+      "tiers": [
+        "Ancient"
+      ],
+      "skin": "IRONCLAD",
+      "deck": "BREAK+, BODY_SLAM+, BODY_SLAM+, POMMEL_STRIKE+, CORRUPTION+, ENTRENCH+, ENTRENCH+, SHRUG_IT_OFF+, SHRUG_IT_OFF+, FORGOTTEN_RITUAL+, NOT_YET+, BARRICADE+, DARK_EMBRACE+, FEEL_NO_PAIN+, DARK_EMBRACE+",
+      "relics": [
+        "BLACK_BLOOD",
+        "RUNIC_PYRAMID",
+        "DIAMOND_DIADEM"
+      ],
+      "default": false
+    },
+    {
+      "id": "silent1",
+      "name": "静默猎手（精准飞刀速攻）",
+      "tiers": [
+        "Rare"
+      ],
+      "skin": "SILENT",
+      "deck": "STRIKE_SILENT, STRIKE_SILENT, DEFEND_SILENT, DEFEND_SILENT, DEFEND_SILENT, NEUTRALIZE+, BLADE_DANCE+, BLADE_DANCE+, UP_MY_SLEEVE+, FINISHER+, CLOAK_AND_DAGGER+, CLOAK_AND_DAGGER+, DEFLECT+, EXPOSE+, BLUR+, BLUR+, ACCURACY+, ACCURACY+, FAN_OF_KNIVES, SURVIVOR",
+      "relics": [
+        "RING_OF_THE_SNAKE",
+        "NINJA_SCROLL",
+        "PAPER_KRANE",
+        "TINGSHA"
+      ],
+      "default": false
+    },
+    {
+      "id": "silent2",
+      "name": "静默猎手（幽魂毒爆爆发）",
+      "tiers": [
+        "Epic"
+      ],
+      "skin": "SILENT",
+      "deck": "DEFEND_SILENT, NEUTRALIZE+, DEADLY_POISON+, ACCELERANT+, ACCELERANT+, BURST+, OUTBREAK+, WRAITH_FORM+, WRAITH_FORM+, ACROBATICS+, ACROBATICS+, ACROBATICS, PIERCING_WAIL+, PIERCING_WAIL, DEFLECT, DEFLECT, AFTERIMAGE+, AFTERIMAGE, NOXIOUS_FUMES+, NOXIOUS_FUMES+, SURVIVOR",
+      "relics": [
+        "RING_OF_THE_SNAKE",
+        "KUNAI",
+        "TOUGH_BANDAGES",
+        "BEATING_REMNANT"
+      ],
+      "default": false
+    },
+    {
+      "id": "silent3",
+      "name": "静默猎手（弃牌无限毒刃流）",
+      "tiers": [
+        "Ancient"
+      ],
+      "skin": "SILENT",
+      "deck": "SUPPRESS+, OUTBREAK+, UP_MY_SLEEVE+, BURST+, ACCELERANT+, WRAITH_FORM+, ACROBATICS+, ACROBATICS+, CALCULATED_GAMBLE+, CALCULATED_GAMBLE+[SOULS_POWER], TACTICIAN+, SCRAWL+[SOWN], BLUR+, AFTERIMAGE+, AFTERIMAGE+, TOOLS_OF_THE_TRADE+",
+      "relics": [
+        "RING_OF_THE_DRAKE",
+        "RUNIC_PYRAMID",
+        "ALCHEMICAL_COFFER"
+      ],
+      "default": false
+    },
+    {
+      "id": "defect1",
+      "name": "故障机器人（冰雷共生球流）",
+      "tiers": [
+        "Rare"
+      ],
+      "skin": "DEFECT",
+      "deck": "STRIKE_DEFECT, STRIKE_DEFECT, DEFEND_DEFECT, DEFEND_DEFECT, DEFEND_DEFECT, DEFEND_DEFECT, ZAP+, DUALCAST+, BALL_LIGHTNING, COOLHEADED+, COOLHEADED+, GLACIER, GLACIER, FUSION+, HOLOGRAM+, HOLOGRAM+, WHITE_NOISE+, DEFRAGMENT+, DEFRAGMENT+, TEMPEST+, LOOP+, LOOP+",
+      "relics": [
+        "CRACKED_CORE",
+        "SYMBIOTIC_VIRUS",
+        "GOLD_PLATED_CABLES",
+        "NUNCHAKU"
+      ],
+      "default": false
+    },
+    {
+      "id": "defect2",
+      "name": "故障机器人（0费全息利爪流）",
+      "tiers": [
+        "Epic"
+      ],
+      "skin": "DEFECT",
+      "deck": "DEFEND_DEFECT, CLAW+, CLAW+, CLAW+, CLAW+, BEAM_CELL+, MOMENTUM_STRIKE+, FTL+, SCRAPE+, SCRAPE+, ALL_FOR_ONE+, ALL_FOR_ONE+, HOLOGRAM+, HOLOGRAM+, DEFLECT, DEFLECT, BULK_UP+, FERAL+, TURBO+",
+      "relics": [
+        "CRACKED_CORE",
+        "EMOTION_CHIP",
+        "DATA_DISK",
+        "POWER_CELL"
+      ],
+      "default": false
+    },
+    {
+      "id": "defect3",
+      "name": "故障机器人（回响极圈核爆流）",
+      "tiers": [
+        "Ancient"
+      ],
+      "skin": "DEFECT",
+      "deck": "QUADCAST+, VOLTAIC+, GLACIER+, GLACIER+, COOLHEADED+, COOLHEADED+, HOLOGRAM+, HOLOGRAM+, FUSION+, COMPACT+, WHITE_NOISE+, ECHO_FORM+, ECHO_FORM+, THUNDER+, TURBO+, BIASED_COGNITION+, BIASED_COGNITION+",
+      "relics": [
+        "INFUSED_CORE",
+        "RUNIC_PYRAMID",
+        "ECTOPLASM"
+      ],
+      "default": false
+    },
+    {
+      "id": "regent1",
+      "name": "储君（王刃锻造斩杀）",
+      "tiers": [
+        "Rare"
+      ],
+      "skin": "REGENT",
+      "deck": "STRIKE_REGENT, STRIKE_REGENT, STRIKE_REGENT, DEFEND_REGENT, DEFEND_REGENT, DEFEND_REGENT, FALLING_STAR+, VENERATE+, WROUGHT_IN_WAR+, WROUGHT_IN_WAR+, WROUGHT_IN_WAR, CRESCENT_SPEAR+, BULWARK+, BULWARK, BULWARK+, SUMMON_FORTH+, SUMMON_FORTH+, GLOW+, GLOW+, ALIGNMENT+, COSMIC_INDIFFERENCE+, COSMIC_INDIFFERENCE+, NEUTRON_AEGIS+, NEUTRON_AEGIS",
+      "relics": [
+        "DIVINE_RIGHT",
+        "REGALITE",
+        "GALACTIC_DUST",
+        "FENCING_MANUAL"
+      ],
+      "default": false
+    },
+    {
+      "id": "regent2",
+      "name": "储君（星辰聚变连击）",
+      "tiers": [
+        "Epic"
+      ],
+      "skin": "REGENT",
+      "deck": "DEFEND_REGENT, DEFEND_REGENT, FALLING_STAR+, VENERATE+, RADIATE+, RADIATE+, BIG_BANG+, GAMMA_BLAST+, STARDUST+, STARDUST+, CONVERGENCE+, CONVERGENCE+, ALIGNMENT+, ALIGNMENT+, GLOW+, GLOW+, GLOW+, BULWARK+, BULWARK, GENESIS+, CHILD_OF_THE_STARS+, CHILD_OF_THE_STARS+, THE_SEALED_THRONE+, ARSENAL, SWORD_SAGE+",
+      "relics": [
+        "DIVINE_RIGHT",
+        "LUNAR_PASTRY",
+        "RAINBOW_RING",
+        "MINI_REGENT"
+      ],
+      "default": false
+    },
+    {
+      "id": "regent3",
+      "name": "储君（虚空主权神罚流）",
+      "tiers": [
+        "Ancient"
+      ],
+      "skin": "REGENT",
+      "deck": "METEOR_SHOWER+, CONQUEROR+, GAMMA_BLAST+, CONVERGENCE+, CONVERGENCE+, GLOW+, GLOW+, ALIGNMENT+[SWIFT:3], ALIGNMENT+[SWIFT:3], SUMMON_FORTH+, DYING_STAR+, PARTICLE_WALL+, VOID_FORM+, VOID_FORM+, THE_SEALED_THRONE+[SWIFT:3], CHILD_OF_THE_STARS+, CHILD_OF_THE_STARS+, MASTER_OF_STRATEGY+",
+      "relics": [
+        "DIVINE_DESTINY",
+        "RADIANT_PEARL"
+      ],
+      "default": false
+    },
+    {
+      "id": "necrobinder1",
+      "name": "亡灵契约师（血肉灾厄处决）",
+      "tiers": [
+        "Rare"
+      ],
+      "skin": "NECROBINDER",
+      "deck": "STRIKE_NECROBINDER, STRIKE_NECROBINDER, DEFEND_NECROBINDER, DEFEND_NECROBINDER, DEFEND_NECROBINDER, DEFEND_NECROBINDER, BODYGUARD+, UNLEASH+, SCOURGE+, SCOURGE, SCOURGE+, FLATTEN+, FLATTEN, DEATHS_DOOR+, DEATHS_DOOR+, ENFEEBLING_TOUCH+, ENFEEBLING_TOUCH, BORROWED_TIME+, SPUR+, AFTERLIFE+, SLEIGHT_OF_FLESH+, SLEIGHT_OF_FLESH+, DIRGE, DIRGE",
+      "relics": [
+        "BOUND_PHYLACTERY",
+        "BOOK_REPAIR_KNIFE",
+        "FUNERARY_MASK",
+        "BONE_FLUTE"
+      ],
+      "default": false
+    },
+    {
+      "id": "necrobinder2",
+      "name": "亡灵契约师（奥斯提巨拳降灵）",
+      "tiers": [
+        "Epic"
+      ],
+      "skin": "NECROBINDER",
+      "deck": "DEFEND_NECROBINDER, DEFEND_NECROBINDER, DEFEND_NECROBINDER, BODYGUARD, UNLEASH+, UNLEASH+, NEUROSURGE+, NEUROSURGE+, SQUEEZE+, DIRGE+, DIRGE+, TRANSFIGURE+, TRANSFIGURE+, SEANCE+, SEANCE+, SOUL_STORM+, BORROWED_TIME+, BORROWED_TIME+, REAPER_FORM+, DEATHBRINGER+, DEATHBRINGER+, SPIRIT_OF_ASH, FEEL_NO_PAIN+, REANIMATE+",
+      "relics": [
+        "BOUND_PHYLACTERY",
+        "UNDYING_SIGIL",
+        "BEATING_REMNANT",
+        "GAME_PIECE"
+      ],
+      "default": false
+    },
+    {
+      "id": "necrobinder3",
+      "name": "亡灵契约师（无限灵魂湮灭流）",
+      "tiers": [
+        "Ancient"
+      ],
+      "skin": "NECROBINDER",
+      "deck": "PROTECTOR+, NEUROSURGE+, SOUL_STORM+, END_OF_DAYS+, DIRGE+, DIRGE+, TRANSFIGURE+, TRANSFIGURE+, SEANCE+, SEANCE+, BORROWED_TIME+, DEATHS_DOOR+, OBLIVION+, OBLIVION+, SPIRIT_OF_ASH, FEEL_NO_PAIN+, ENFEEBLING_TOUCH+",
+      "relics": [
+        "PHYLACTERY_UNBOUND",
+        "RADIANT_PEARL"
+      ],
+      "default": false
+    }
+  ]
+}

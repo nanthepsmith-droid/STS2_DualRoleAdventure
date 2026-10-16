@@ -48,7 +48,8 @@ internal static class HellwarPresetCatalog
             list.Add(HellwarWarGodPresets.Resolve(tier));
         }
 
-        list.AddRange(LocalHellwarPresetStore.AllForTier(tier));
+        // 玩家文件 ∪ 内置（可用性过滤在 UsableForTier 里做：引用了本机没有内容的预设会被剔除并点名）。
+        list.AddRange(LocalHellwarPresetStore.UsableForTier(tier, "选角色预设候选"));
         return list;
     }
 
@@ -113,7 +114,7 @@ internal static class HellwarPresetCatalog
         foreach (HellwarWarGodPreset preset in HellwarWarGodPresets.ResolveRandomPool(includeAncient))
         {
             builtin.Add(preset);
-            file.AddRange(LocalHellwarPresetStore.AllForTier(preset.Tier));
+            file.AddRange(LocalHellwarPresetStore.UsableForTier(preset.Tier, "无尽战神池"));
         }
 
         return HellwarPresetChoices.BuildRandomPool(builtin, file);
@@ -125,7 +126,9 @@ internal static class HellwarPresetCatalog
     internal static IReadOnlyList<HellwarWarGodPreset> NineChainPool()
     {
         List<HellwarWarGodPreset> builtin = new() { HellwarWarGodPresets.Resolve(HellwarWarGodTier.Ancient) };
-        return HellwarPresetChoices.BuildRandomPool(builtin, LocalHellwarPresetStore.AllForTier(HellwarWarGodTier.Ancient));
+        return HellwarPresetChoices.BuildRandomPool(
+            builtin,
+            LocalHellwarPresetStore.UsableForTier(HellwarWarGodTier.Ancient, "九连环池"));
     }
 
     /// <summary>第二层弹层里一行的**显示文案**（自动 / 随机 / 具体预设）。</summary>

@@ -8,8 +8,15 @@ using MegaCrit.Sts2.Core.Models.Cards;
 
 namespace LocalMultiControl.Scripts.Runtime;
 
-/// <summary>预设卡组一条的**落地形态**：canonical 卡模板 + 这一张是否升级。</summary>
-internal readonly record struct HellwarWarGodDeckCard(CardModel Canonical, bool Upgraded);
+/// <summary>
+/// 预设卡组一条的**落地形态**：canonical 卡模板 + 这一张是否升级
+/// + 这一张要带的**附魔**（裸 entry；r277 新增，<c>null</c> = 不带）与附魔数量。
+/// </summary>
+internal readonly record struct HellwarWarGodDeckCard(
+    CardModel Canonical,
+    bool Upgraded,
+    string? EnchantEntry = null,
+    int EnchantAmount = HellwarWarGodDeckPlan.DefaultEnchantAmount);
 
 /// <summary>
 /// 预设卡组的解析结果。
@@ -47,6 +54,9 @@ internal static class HellwarWarGodDecks
     /// <summary>entry → canonical 卡模板的懒查表（<c>ModelDb.AllCards</c> 忽略解锁/纪元状态，全量可见）。</summary>
     private static Dictionary<string, CardModel>? _byEntry;
 
+    /// <summary>entry → canonical 附魔的懒查表（<c>ModelDb.DebugEnchantments</c> 去掉 mock，r277）。</summary>
+    private static Dictionary<string, EnchantmentModel>? _enchantByEntry;
+
     /// <summary>
     /// 解析"这一档该用什么卡组"。
     /// <paramref name="configOverride"/> 传该档位的配置文本（空 = 用内置默认）。
@@ -69,7 +79,7 @@ internal static class HellwarWarGodDecks
                         continue;
                     }
 
-                    cards.Add(new HellwarWarGodDeckCard(canonical, entry.Upgraded));
+                    cards.Add(new HellwarWarGodDeckCard(canonical, entry.Upgraded, entry.EnchantEntry, entry.EnchantAmount));
                 }
 
                 if (missing.Count > 0)
@@ -154,6 +164,42 @@ internal static class HellwarWarGodDecks
         foreach (CardModel card in ModelDb.AllCards)
         {
             map[card.Id.Entry] = card;
+        }
+
+        return map;
+    }
+
+    /// <summary>
+    /// 按 entry（<c>ModelId.Entry</c>，大小写不敏感）查 **canonical 附魔**模板；查不到返回 null。
+    ///
+    /// <para>数据源 = <c>ModelDb.DebugEnchantments</c> —— 那是全游戏**唯一**的附魔全量入口
+    /// （注释原文 *"including mock ones for testing"*），所以**按 <c>IsMock</c> 过滤掉测试用附魔**；
+    /// 它基于 <c>AllAbstractModelSubtypes</c> ⇒ **mod 附魔也在里面**。</para>
+    /// </summary>
+    internal static EnchantmentModel? LookupEnchantmentByEntry(string entry)
+    {
+        _enchantByEntry ??= BuildEnchantEntryMap();
+        return _enchantByEntry.TryGetValue(entry, out EnchantmentModel? enchantment) ? enchantment : null;
+    }
+
+    /// <summary>全部可用的附魔 entry（内容目录导出 / 排查用；已排除 mock）。</summary>
+    internal static IReadOnlyCollection<string> AllEnchantmentEntries()
+    {
+        _enchantByEntry ??= BuildEnchantEntryMap();
+        return _enchantByEntry.Keys;
+    }
+
+    private static Dictionary<string, EnchantmentModel> BuildEnchantEntryMap()
+    {
+        Dictionary<string, EnchantmentModel> map = new(StringComparer.OrdinalIgnoreCase);
+        foreach (EnchantmentModel enchantment in ModelDb.DebugEnchantments)
+        {
+            if (enchantment.IsMock)
+            {
+                continue;
+            }
+
+            map[enchantment.Id.Entry] = enchantment;
         }
 
         return map;

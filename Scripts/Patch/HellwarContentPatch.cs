@@ -113,28 +113,36 @@ internal static class HellwarContentPatch
                 // ⚠ 这里**不能 return**（r273 实机踩过）：下面的 ④ 预设候选自检与预设表无关，
                 //    一旦提前返回，"没写预设文件"这个最常见的情况下 ④ 永远打不出来（锚点全缺 ⇒ 判读时误以为链路没走到）。
                 LocalMultiControlLogger.Info(
-                    "[地狱战神] 预设表: 未配置（文件不存在或为空），四档用内置默认。"
-                    + $"想自定义（或给编辑器用）就写 {LocalHellwarPresetStore.FilePath}");
+                    "[地狱战神] 预设表: 未配置（玩家文件与内置资源都为空），四档用内置默认。"
+                    + $"想自定义（或给编辑器用）就写 {LocalHellwarPresetStore.PlayerFilePath}"
+                    + $"；想让预设随 mod 分发就把 json 放进 Scripts/Data/hellwar_presets.json 重新构建"
+                    + $"（嵌入资源 {LocalHellwarPresetStore.BuiltinResourceName}）");
             }
             else
             {
                 foreach (HellwarWarGodTier tier in Enum.GetValues<HellwarWarGodTier>())
                 {
-                    HellwarPresetDefinition? definition = table.DefaultForTier(tier);
-                    if (definition == null)
-                    {
-                        LocalMultiControlLogger.Info($"[地狱战神] 预设表: 档位={tier} 未配置预设，用内置默认");
-                        continue;
-                    }
+                    HellwarPresetDefinition? configured = table.DefaultForTier(tier);
 
-                    HellwarWarGodPreset runtime = HellwarPresetRuntimeMapping.ToRuntimePreset(
-                        definition, tier, HellwarWarGodPresets.Resolve(tier));
-                    int deckCount = HellwarWarGodDeckPlan.Parse(runtime.DeckText)?.Count ?? 0;
+                    // ⚠ 打的是**实际会用的那套**（ResolveDefault 与召唤时同一口径）：
+                    //    配置的默认预设引用了本机没有的内容时会被跳过并换成别的，日志必须反映这件事，
+                    //    否则会变成"日志说用 A、实际用了 B"的判读陷阱。
+                    HellwarWarGodPreset runtime = LocalHellwarPresetStore.ResolveDefault(tier);
+                    bool fromFile = runtime.PresetId.Length > 0;
+                    string label = runtime.DisplayName.Length > 0 ? runtime.DisplayName : "（内置默认）";
+                    bool fellBack = configured != null
+                        && !string.Equals(configured.Id, runtime.PresetId, StringComparison.OrdinalIgnoreCase);
+                    IReadOnlyList<HellwarWarGodDeckEntry>? parsedDeck = HellwarWarGodDeckPlan.Parse(runtime.DeckText);
+                    int deckCount = parsedDeck?.Count ?? 0;
+                    int enchantCount = parsedDeck?.Count((entry) => !string.IsNullOrEmpty(entry.EnchantEntry)) ?? 0;
                     LocalMultiControlLogger.Info(
-                        $"[地狱战神] 预设表: 档位={tier} 默认预设=\"{runtime.DisplayName}\"(id={runtime.PresetId}, "
-                        + $"皮肤={runtime.SkinKey}, 卡组={deckCount} 张, 遗物="
+                        $"[地狱战神] 预设表: 档位={tier} 实际使用=\"{label}\"(id={(fromFile ? runtime.PresetId : "内置")}, "
+                        + $"皮肤={runtime.SkinKey}, 卡组={deckCount} 张, 带附魔={enchantCount} 张, 遗物="
                         + $"{runtime.RelicEntries?.Count.ToString() ?? "继承内置"} 件, 全升级={runtime.UpgradeDeck}, "
-                        + $"额外血={runtime.BonusHp})");
+                        + $"额外血={runtime.BonusHp})"
+                        + (fellBack
+                            ? $"，⚠ 配置的默认预设({configured!.Id})已跳过（引用了本机没有的内容）"
+                            : string.Empty));
                     VerifyPresetIds(tier, runtime);
                 }
             }
@@ -165,9 +173,36 @@ internal static class HellwarContentPatch
         {
             LocalMultiControlLogger.Warn($"[地狱战神] 预设候选自检失败（召唤时会重新构建）: {exception.Message}");
         }
+
+        // ⑤ 内容目录（预设构筑器的数据源，r275）：`ModelDb.Preload` 之后**卡 / 遗物 / 角色才可枚举**
+        //    ⇒ 就在这里把"已就绪"告诉导出器。设置页若在这个时点之前被点过「导出内容目录」，
+        //    排队中的那次导出会在这一行里补做（见 LocalContentCatalogExporter.MarkModelDbReady）。
+        //    只置位 + 打一条锚点，不抛（那类内部已全套兜异常，这里再包一层保险）。
+        try
+        {
+            LocalContentCatalogExporter.MarkModelDbReady("modeldb-preload");
+        }
+        catch (System.Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"[内容目录] 就绪自检失败: {exception.Message}");
+        }
+
+        // ⑥ 附魔可选项（r277）：预设里写 `卡[附魔]` 要用的 entry 全在这儿 —— 启动就打一份**可复制的清单**，
+        //    省得玩家去翻内容目录 / 猜 id。只打日志不抛。
+        try
+        {
+            IReadOnlyCollection<string> enchantments = HellwarWarGodDecks.AllEnchantmentEntries();
+            LocalMultiControlLogger.Info(
+                $"[地狱战神] 附魔可选项: {enchantments.Count} 个（预设里写成 `卡[附魔]`，可带数量 `卡[附魔:3]`）"
+                + $"[{string.Join(", ", enchantments.OrderBy((entry) => entry, StringComparer.Ordinal))}]");
+        }
+        catch (System.Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"[地狱战神] 附魔清单自检失败（召唤时仍会逐个解析）: {exception.Message}");
+        }
     }
 
-    /// <summary>趁 ModelDb 已就绪，把预设里的卡 / 遗物 id 当场查一遍（认不出的 WARN 点名，不抛）。</summary>
+    /// <summary>趁 ModelDb 已就绪，把预设里的卡 / 遗物 / 附魔 id 当场查一遍（认不出的 WARN 点名，不抛）。</summary>
     private static void VerifyPresetIds(HellwarWarGodTier tier, HellwarWarGodPreset preset)
     {
         if (preset.DeckText != null)
@@ -185,6 +220,20 @@ internal static class HellwarContentPatch
                     LocalMultiControlLogger.Warn(
                         $"[地狱战神] 预设卡组里有认不出的卡牌（召唤时会跳过）: 档位={tier}, 预设=\"{preset.DisplayName}\", "
                         + $"认不出=[{string.Join(", ", missingCards)}]");
+                }
+
+                // r277：附魔也当场查一遍（写错 / 该 mod 没装 ⇒ 召唤时只跳过附魔，这里先点名）。
+                List<string> missingEnchants = entries
+                    .Where((entry) => !string.IsNullOrEmpty(entry.EnchantEntry))
+                    .Select((entry) => entry.EnchantEntry!)
+                    .Where((entry) => HellwarWarGodDecks.LookupEnchantmentByEntry(entry) == null)
+                    .Distinct()
+                    .ToList();
+                if (missingEnchants.Count > 0)
+                {
+                    LocalMultiControlLogger.Warn(
+                        $"[地狱战神] 预设里有认不出的附魔（召唤时只跳过附魔，卡照给）: 档位={tier}, 预设=\"{preset.DisplayName}\", "
+                        + $"认不出=[{string.Join(", ", missingEnchants)}]");
                 }
             }
         }

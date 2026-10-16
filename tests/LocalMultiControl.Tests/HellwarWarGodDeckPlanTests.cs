@@ -139,4 +139,88 @@ public class HellwarWarGodDeckPlanTests
         Assert.That(wrapped.Select((entry) => entry.Upgraded), Is.All.False);
         Assert.That(HellwarWarGodDeckPlan.Format(wrapped), Is.EqualTo("BASH, DASH"));
     }
+
+    // ---- 附魔（r277）---------------------------------------------------------------------------------
+
+    [Test]
+    public void 方括号里写附魔不写数量时数量为一()
+    {
+        IReadOnlyList<HellwarWarGodDeckEntry>? entries = HellwarWarGodDeckPlan.Parse("BASH[SHARP], DASH");
+
+        Assert.That(entries, Is.Not.Null);
+        Assert.That(entries![0].Entry, Is.EqualTo("BASH"));
+        Assert.That(entries[0].EnchantEntry, Is.EqualTo("SHARP"));
+        Assert.That(entries[0].EnchantAmount, Is.EqualTo(HellwarWarGodDeckPlan.DefaultEnchantAmount));
+        Assert.That(entries[0].Upgraded, Is.False);
+        Assert.That(entries[1].EnchantEntry, Is.Null, "没写附魔的条目保持 null");
+    }
+
+    [Test]
+    public void 升级标记与附魔的先后顺序随便()
+    {
+        IReadOnlyList<HellwarWarGodDeckEntry>? entries =
+            HellwarWarGodDeckPlan.Parse("BASH+[SHARP], DASH[SHARP]+, POMMEL_STRIKE++[SHARP]");
+
+        Assert.That(entries, Is.Not.Null);
+        Assert.That(
+            entries!.Select((entry) => (entry.Entry, entry.Upgraded, entry.EnchantEntry)),
+            Is.EqualTo(new[]
+            {
+                ("BASH", true, "SHARP"),
+                ("DASH", true, "SHARP"),
+                ("POMMEL_STRIKE", true, "SHARP"),
+            }));
+    }
+
+    [Test]
+    public void 附魔可写数量()
+    {
+        IReadOnlyList<HellwarWarGodDeckEntry>? entries =
+            HellwarWarGodDeckPlan.Parse("BASH[SHARP:3], DASH[SHARP:0], TWIN_STRIKE[SHARP:abc]");
+
+        Assert.That(entries, Is.Not.Null);
+        Assert.That(entries![0].EnchantAmount, Is.EqualTo(3));
+        Assert.That(entries[1].EnchantAmount, Is.EqualTo(HellwarWarGodDeckPlan.DefaultEnchantAmount), "非法数量回落 1");
+        Assert.That(entries[2].EnchantAmount, Is.EqualTo(HellwarWarGodDeckPlan.DefaultEnchantAmount), "非法数量回落 1");
+    }
+
+    [Test]
+    public void 附魔前缀可选且大小写不敏感()
+    {
+        IReadOnlyList<HellwarWarGodDeckEntry>? entries = HellwarWarGodDeckPlan.Parse(
+            "BASH[enchantment.sharp], DASH[Enchant.Swift:2]");
+
+        Assert.That(entries, Is.Not.Null);
+        Assert.That(entries![0].EnchantEntry, Is.EqualTo("SHARP"));
+        Assert.That(entries[1].EnchantEntry, Is.EqualTo("SWIFT"));
+        Assert.That(entries[1].EnchantAmount, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void 括号不配对时不当附魔且整串保留()
+    {
+        // `BASH[` 里的 `[` 没有配对的 `]` ⇒ 不按附魔切，整串原样当卡名（运行时按"认不出的卡"WARN，不静默吃掉）。
+        IReadOnlyList<HellwarWarGodDeckEntry>? entries = HellwarWarGodDeckPlan.Parse("BASH[, DASH[SHARP]");
+
+        Assert.That(entries, Is.Not.Null);
+        Assert.That(entries![0].Entry, Is.EqualTo("BASH["));
+        Assert.That(entries[0].EnchantEntry, Is.Null);
+        Assert.That(entries[1].Entry, Is.EqualTo("DASH"));
+        Assert.That(entries[1].EnchantEntry, Is.EqualTo("SHARP"));
+    }
+
+    [Test]
+    public void 格式化会把附魔写回去且能往返()
+    {
+        IReadOnlyList<HellwarWarGodDeckEntry>? original =
+            HellwarWarGodDeckPlan.Parse("BASH+[SHARP], DASH[SHARP:3], TWIN_STRIKE");
+        string formatted = HellwarWarGodDeckPlan.Format(original);
+
+        Assert.That(formatted, Is.EqualTo("BASH+[SHARP], DASH[SHARP:3], TWIN_STRIKE"));
+
+        IReadOnlyList<HellwarWarGodDeckEntry>? roundTrip = HellwarWarGodDeckPlan.Parse(formatted);
+        Assert.That(
+            roundTrip!.Select((entry) => (entry.Entry, entry.Upgraded, entry.EnchantEntry, entry.EnchantAmount)),
+            Is.EqualTo(original!.Select((entry) => (entry.Entry, entry.Upgraded, entry.EnchantEntry, entry.EnchantAmount))));
+    }
 }

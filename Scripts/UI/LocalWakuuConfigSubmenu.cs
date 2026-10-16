@@ -361,6 +361,8 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
                 + "**留空 = 用内置默认**（每档 14 张、已按「托管 AI 好驾驭」挑过：罕见=毒+格挡+敏捷 / 稀有=易伤+力量+大格挡 / 先古=攒星+花星）。"
                 + "写法：逗号/分号/换行分隔的卡牌 id（游戏里的 `ModelId.Entry`，如 `BASH`、`DEMON_FORM`），"
                 + "`CARD.` 前缀可省、大小写不敏感；末尾加 `+` = 这一张**单独升级**（贴着写，别加空格）；写几遍就是几张。"
+                + "末尾加 `[附魔]` = 这一张带某个**附魔**（如 `BASH[SHARP]`、`BASH+[SHARP:3]`；不写数量 = 1，"
+                + "`+` 与 `[附魔]` 顺序随便）—— 认不出 / 这张牌不能带时**只跳过附魔、卡照给**（日志锚点 `①d 预设附魔`）。"
                 + "⚠ 认不出的 id 会被**跳过并在日志里打 WARN**（不崩、不阻塞召唤）；一条都没认出来就回落角色初始卡组。"
                 + "日志里那句 `①a 预设卡组已替换` 会打印**内置默认卡组的完整文本**，复制过来改最省事。",
                 "**Config file only** (no input box in this page): the four keys in `%APPDATA%\\SlayTheSpire2\\vakuu_autopilot.json` — "
@@ -369,8 +371,26 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
                 + "**Empty = built-in default** (14 cards per tier, hand-picked to be AI-friendly). "
                 + "Format: card ids separated by comma / semicolon / newline (the game's `ModelId.Entry`, e.g. `BASH`, `DEMON_FORM`); "
                 + "the `CARD.` prefix is optional and case-insensitive; a trailing `+` marks that single card as upgraded (no space before it); "
-                + "write an id N times for N copies. ⚠ Unknown ids are skipped with a WARN log (never blocks the summon). "
+                + "write an id N times for N copies. A trailing `[enchantment]` gives that card an enchantment "
+                + "(e.g. `BASH[SHARP]`, `BASH+[SHARP:3]`; no amount means 1; `+` and `[...]` may be in either order) — "
+                + "if it's unknown or the card can't take it, **only the enchantment is skipped** and the card is still given "
+                + "(log anchor `①d 预设附魔`). ⚠ Unknown ids are skipped with a WARN log (never blocks the summon). "
                 + "The log line `①a 预设卡组已替换` prints the built-in deck as ready-to-copy config text."));
+        column.AddChild(CreateExportContentCatalogRow(
+            LocalModText.Select(
+                "战灵召唤 · 导出内容目录（给预设构筑器用）",
+                "War God Summon · Export Content Catalog (for the preset builder)"),
+            LocalModText.Select(
+                "点一下把**本机的全部卡牌 / 遗物 / 角色**导出成 "
+                + "`%APPDATA%\\SlayTheSpire2\\content_catalog.json`（含你装的**第三方 mod 内容**，会逐条标注来源 mod）—— "
+                + "外部「预设构筑器」读它来列卡 / 图 / 中英文名，**不吃游戏源码、也不联网**。"
+                + "**装 / 卸 mod 或游戏更新后要重新点一次**（文件里记了导出时间与游戏版本，方便自查新旧）。"
+                + "只读操作，不改游戏任何状态；台账看日志锚点 `[内容目录]`（条数 + 路径）。",
+                "Click to export **every card / relic / character of this machine** to "
+                + "`%APPDATA%\\SlayTheSpire2\\content_catalog.json` (includes **third-party mod content**, each row tagged with its source mod). "
+                + "The external \"preset builder\" reads it for the card list / art / localized names — **it never parses game source and never goes online**. "
+                + "**Click again after installing or removing mods, or after a game update** (the file records the export time and game version so you can tell how old it is). "
+                + "Read-only: it changes no game state. Check the log anchor `[内容目录]` for counts + path.")));
         AddToggleRow(column,
             LocalModText.RestSiteOptionScrollTitle,
             LocalModText.Select(
@@ -1160,6 +1180,54 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             WakuuStatBadgeCorner.TopRight => WakuuStatBadgeCorner.TopLeft,
             _ => WakuuStatBadgeCorner.BottomLeft,
         };
+    }
+
+    /// <summary>
+    /// 「导出内容目录」行（**一次性动作按钮** —— 本页唯一不持久化状态的行）：
+    /// 点击 ⇒ <see cref="LocalContentCatalogExporter.RequestExport"/>（内容表还没就绪则排队，`ModelDb.Preload`
+    /// 之后自动补一次），按钮文案当场反映结果，细节看日志锚点 `[内容目录]`。
+    /// 排版抄 <see cref="CreateStatBadgeSourceRow"/>，只把右侧换成"点一下就跑一次"的按钮。
+    /// </summary>
+    private Control CreateExportContentCatalogRow(string title, string description)
+    {
+        HBoxContainer row = new();
+        row.AddThemeConstantOverride("separation", 28);
+
+        VBoxContainer textColumn = new();
+        textColumn.CustomMinimumSize = new Vector2(880f, 0f);
+        textColumn.SizeFlagsHorizontal = (SizeFlags)3; // ExpandFill
+        textColumn.AddThemeConstantOverride("separation", 2);
+
+        Label titleLabel = CreateLabel(title, 26, new Color(1f, 0.85f, 0.35f));
+        titleLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        textColumn.AddChild(titleLabel);
+
+        Label descLabel = CreateLabel(description, 19, new Color(0.8f, 0.78f, 0.72f));
+        descLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        descLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        textColumn.AddChild(descLabel);
+
+        row.AddChild(textColumn);
+
+        LocalSimpleTextButton exportButton = new()
+        {
+            ButtonText = LocalModText.Select("导出", "Export"),
+            FontSize = 24,
+            SizeFlagsVertical = (SizeFlags)4, // ShrinkCenter
+        };
+        exportButton.CustomMinimumSize = new Vector2(220f, 64f);
+        exportButton.Connect(NClickableControl.SignalName.Released, Callable.From<NClickableControl>(_ =>
+        {
+            ContentCatalogExportResult result = LocalContentCatalogExporter.RequestExport("settings-button");
+            exportButton.ButtonText = result switch
+            {
+                ContentCatalogExportResult.Exported => LocalModText.Select("已导出", "Exported"),
+                ContentCatalogExportResult.Queued => LocalModText.Select("已排队", "Queued"),
+                _ => LocalModText.Select("失败", "Failed"),
+            };
+        }));
+        row.AddChild(exportButton);
+        return row;
     }
 
     private void AddToggleRow(VBoxContainer column, string title, string description, Func<bool> getter, Action<bool> setter)

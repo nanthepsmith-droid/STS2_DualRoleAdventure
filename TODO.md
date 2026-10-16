@@ -409,6 +409,26 @@
 
 ---
 
+### 待查-8 第三方「圣主历险记（ShengZhuSts2Mod 1.0.13）」**每次结束回合必抛 NRE ⇒ `turn loop died`**（2026-10-16 判读；**不是我方**，⭐ 待用户复测确认）
+
+- **现象（用户原话）**：「点击结束回合后不会进入敌方回合」（游戏里能看到内置预设是另一回事，见 §r279）。
+- **日志**（`logs-archive/godot__20261016-090151__r279.log`）：`Combat #1 / #2 / #4 turn loop died while its combat is in progress … System.NullReferenceException`，
+  栈顶固定是 `ShengZhuSts2Mod.…Patches.RabbitTurnEndHookPatch.RestorePlayerHooksAfter(Task, RabbitHookSuppressionState, string)`
+  → `RestorePlayerHooksAndClearContextAfter` → `STS2RitsuLib.Utils.HarmonyIl.HarmonyAsyncTaskBridge.After` → `CombatManager.EndPlayerTurnPhaseTwoInternal`。
+  **我方帧一个都没有**。
+- **排除我们的三条依据**：① 同机 08:55 那份日志（marker r278、59 个 mod）`turn loop died` = **0**；
+  09:01 这份多了 3 个 mod —— **圣主历险记 / Ascendants / SilentFX**，`turn loop died` = **3**（每次结束回合一条）；
+  ② 第一次死亡在 **Combat #1**，而本局第一次召唤战神在行 15686 之后 ⇒ **没有战神时照样死**；
+  ③ 我们仓里**没有**任何补丁挂在全局 `Hook.AfterSideTurnEnd` / `BeforeSideTurnEnd` 上（只有 LexNinja2 那个按它自己模型方法的守卫）。
+- **反编译定位**（`ilspycmd` 该 mod 的 dll）：`RestorePlayerHooksAfter` 第一句就是 `state.DeactivatedPlayers.Count`
+  ⇒ **`state == null` 时必 NRE**；而整局**一条【卯兔】日志都没有**（它的前缀里会打「临时停用…」）
+  ⇒ 即 **它的 Prefix 没跑、只有 Postfix 跑了**（Harmony 经典成因 = 更早注册的某个 prefix 返回 `false` 跳过原方法；
+  该修复版 README 自己写着"尚未逐项验证…其他 mod 组合与多人联机场景"）。
+- **为什么不进 `compat-mods/`**：这是**它自己**的健壮性缺口（`state` 可能为 null 没防），不是「主 mod ↔ 它」的交互；
+  且我们**没法**从外部给它补 `__state`（Harmony 的 `ref` 参数要求类型精确匹配，而它是个私有嵌套类型）。
+- **下一步（用户 1 分钟可验）**：游戏内**关掉「圣主历险记」**再打一场 ⇒ 若不再 `turn loop died` = 确认是它（要留这个 mod 就带栈反馈给作者）；
+  若关掉后仍复现 ⇒ 回来找我们，按判读流程重跑（先看"我方锚点在不在" + 跨会话对比）。
+
 ## 维护性改进 backlog（门禁体系 2026-09-08 之后的那批）
 
 已落地（明细见 `AGENTS.md` §9 门禁表 + `Scripts/Tools/`）：源码隔离 Guard、单元测试门禁、
@@ -741,11 +761,137 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
       另：三局都以"退出 run"结束 ⇒ **发奖前的战后清理**这条路径仍未走到（不是缺陷，退局复位按 r231 口径兜住）；
       session B `战神已自动结束回合` 9 次 ⇒ 托管出牌正常。
       观察：session A 10 掷没出 Epic（≈1.7% 小概率；session B 分布正常 4C/2R/4E；`Rng.NextInt(maxExclusive)` 已确认是 `[0,n)` 均匀）⇒ 判为运气。
-    - ⚠ 拍板① 的"罕见/稀有/先古每档要哪几套内容"仍**等用户手搓给表**（UI 通道已通，表来即生效）。
-  - **⏳ Phase B-3（未做）= 游戏内导出 `content_catalog.json`**：mod 加一个"导出内容目录"的开关，
-    dump 卡 / 遗物（id / 名称 / 描述 / 稀有度 / 类型 / 费用 / 图片路径 / 是否有立绘 / 来源 mod，**天然含第三方 mod 卡**），
-    给「预设构筑器」当数据源（侦察见本文件 §预设构筑器）。
-- **⏳【待排期·用户 2026-10-11 提出】「预设构筑器」：可视化造战神的程序（选卡/遗物/角色/血量/档位 → 导出给 mod）**：
+    - ✅ 拍板① 要的表**已到货并落地（r279，2026-10-15）**：用户用「战神构筑器」搓的 **18 套**
+      （罕见 5 / 稀有 5 / 先古 8）已作为**内置预设**随 mod 分发（`Scripts/Data/hellwar_presets.json`，见本文件末尾 §r279）
+      —— **不用再改代码**；想让某套当"自动默认"，在编辑器里勾「默认」再覆盖那份 json 即可。
+  - **✅ Phase B-3（r275 落地 → 2026-10-12 实机导出成功 → r276 修 3 处口径 → 用户再导一次复测全中 ⇒ **关单**）
+    = 游戏内导出 `content_catalog.json`**（编辑器的数据源）：设置页（战灵召唤段）新增一行「导出内容目录（给预设构筑器用）」
+    = 本页唯一**一次性动作按钮**（点一下导出，不持久化状态），产物 `%APPDATA%\SlayTheSpire2\content_catalog.json`
+    （与 `hellwar_presets.json` 同目录，`.tmp` + Move 原子写）。
+    - **首份实机基线（本机 26 个来源 / v0.111.0）**：`卡=2964(其中 mod 2368) / 遗物=1555(其中 mod 1256) /
+      角色=23(其中 mod 18)`、`缺名或描述=0` ⇒ 枚举层与文本层全对；角色 23 个**全 `isPlayable`**、
+      初始卡组 8~12 张 + 初始遗物 1~4 件（**含 mod 角色**）。
+    - **结构**：`cards` / `relics` / `characters` 三段，每条都带 **`Source`**（提供它的程序集简单名；
+      `base` = 游戏本体）⇒ 第三方 mod 内容天然在内且能分组。
+      卡 = id / entry / 名称 / 描述（`GetDescriptionForPile` 展开动态变量与关键词）/ 稀有度 / 类型 /
+      **费用（含 X 费与星费）** / `Pool`（`Id.Entry`，如 `SILENT_CARD_POOL`）+ `PoolTitle`（显示名）/
+      `Portrait` + `PortraitPng` + `HasPortrait`；
+      遗物 = id / entry / 名称 / 描述 / 稀有度 / 遗物池 / `Icon` + `BigIcon` + `HasIcon` / `HasBigIcon`；
+      角色 = id / entry / 名称 / `IsPlayable` / **初始卡组 entry 列表（保留重复）** / 初始遗物 entry 列表。
+    - ⚠ **图片字段的准确口径（r276 修正后）**：`Portrait` = 游戏自己给的路径（**权威**，三种形态：`.tres`
+      图集条目 / `.png` / `.jpg`，反斜杠已规范成 `/`）；`PortraitPng` = **只在能确定时给**（本身是图 ⇒ 原样；
+      是图集 `.tres` ⇒ 从该路径换算成 `packed/card_portraits/…png` 并复核存在性；否则留空）；
+      **`HasPortrait` 只对没覆写路径的卡准确**（实机 322 张 mod 卡有图却为 `false`）⇒ **编辑器判"有没有图"以
+      `Portrait` 为准**。遗物 `BigIcon` 同理（只在文件存在时给；实机 1555 件仅 306 命中）。
+      `GameVersion` 取游戏自己的 `ReleaseInfoManager`（实机 `v0.111.0`）。
+    - **口径**：枚举 `ModelDb.AllCards` / `AllRelics` / `AllCharacters` 并**显式并上 `Event*Pool`**（防漏收
+      mod 内容）+ 按 `ModelId` 去重 + 按 id 排序（便于 diff）；**`ModelDb.Preload` 之前点按钮 ⇒ 只排队**，
+      就绪那一刻自动补做（时序坑见 skill `references/local-multicontrol-pitfalls.md` 坑 AA 续-2）。
+    - **记账**：日志锚点 `[内容目录]` 打条数（含"其中 mod"）与"缺名或描述"条数（第三方卡缺本地化键时点名）。
+    - **⚠ 图片来源的实际形态（2026-10-12 查证，纠正原计划）**：玩家侧 **pck 里没有散装图片** ——
+      只有 `<图源>.png.import`（~200 B 侧车，内含 `[remap] path="res://.godot/imported/<名>-<md5>.ctex"`）
+      与 `.ctex`（主 pck 3555 个：**2311 个 WebP 容器 / 704 个 `.bptc`(BC7) / 540 个 `.s3tc`**）。
+      **单卡整图 `packed/card_portraits/…` 是 WebP（好解）**，而 **卡图集 `card_atlas_0/1.png` 与
+      `images/relics/*.png` 是 BC7**。mod 资源在**各自工坊 pck**（`steamapps\workshop\content\2868840\<itemid>\<Name>.pck`，
+      挂载为 `res://<Name>/…`；本地 mod 在 `%APPDATA%\SlayTheSpire2\mods\…`），形态相同。
+      ⇒ 编辑器提图：**优先 `PortraitPng`（WebP）**，需要图集裁剪时再加 BC7 解码器。
+    - **下一步 = 编辑器本体**（独立 WPF / .NET 8，复用 `D:\Download\pain\Sts2ModManager` 骨架：
+      读本文件 + 首次运行指向游戏目录、按需提取图片缓存到 `%APPDATA%`）。
+    - **✅ Phase C-1~C-3 编辑器本体首版已落地（2026-10-12，新目录 `D:\Download\pain\WarGodForge\`）**：
+      独立解决方案（`WarGodForge.sln`：Core 纯逻辑 + WPF App + xUnit 测试 + `Scripts\build.ps1` 门禁，
+      骨架照抄 ModKit；**零第三方依赖**）。落地内容 —— ① **Core**：`content_catalog.json` 读取 + 索引（按 entry 查卡 /
+      遗物 / 角色 / 附魔，来源 / 稀有度 / 类型筛选）、卡组文本解析与格式化（与 `HellwarWarGodDeckPlan` 逐条对齐）、
+      `hellwar_presets.json` 读写（camelCase / 枚举写成字符串 / null 省略 = 继承）、**预设校验**
+      （引用了目录里不存在的卡 / 遗物 / 附魔 / 角色、附魔与卡类型不匹配、同档多默认、id 重复 ⇒ 逐条点名）；
+      ② **App**：三栏界面（预设列表 + 校验 / 四页签目录浏览 / 当前预设编辑器），卡组逐行可勾升级、挂附魔（下拉 + 数量）、
+      上下移、删除，也可**粘贴卡组文本**追加；一键「为所有角色生成普通档」（用目录里各角色的初始卡组 + 初始遗物）；
+      ③ **导入导出** + 隐藏只读自检 `--selftest`（打印并落盘 `%APPDATA%\WarGodForge\selftest-report.txt`）。
+      **本机实机自检全绿**：目录 2964 卡 / 1555 遗物 / 23 角色 / 87 附魔（28 个来源）、现有 4 套预设逐字段解析正确、
+      校验正确点出「SHARP 不能给 Skill 类技能牌 DEADLY_POISON」、序列化往返一致。
+    - **⛔ Phase C-4（编辑器图片）= 不做（2026-10-12 用户拍板：「图片不做了没必要」）**：
+      目录里其实已带图路径（卡 `Portrait` / `PortraitPng`、遗物 `Icon` / `BigIcon`），本来只差"按路径取像素" ——
+      要给编辑器加**只读 pck 提取器**（`.png.import` 侧车 → `.ctex`；单卡整图 WebP 可直读，卡图集 / 遗物图 BC7 需解码）
+      再缓存到 `%APPDATA%`，成本与收益不成正比 ⇒ **关单**。文本信息（名称 / 描述 / 费用 / 类型 / 稀有度 / entry / 来源）
+      已足够挑卡。小尾巴（费用曲线统计）一并**不做**。
+  - **✅ 预设支持「附魔」（r277 落地 → 2026-10-12 实机关单）**（让预设里的某张牌自带某个附魔）：
+    - **三条口径（用户 2026-10-12 说「随便你」⇒ 我们拍的）**：① **语法** = 条目末尾 `[SHARP]` / `[SHARP:3]`
+      （不写数量 = **1**；`ENCHANTMENT.` / `ENCHANT.` 前缀可有可无；`+` 与 `[附魔]` **顺序随便**）；
+      ② **范围** = 战神预设 **和** `hellwarDeck*` 四档配置键**一起**（同一个解析器，等于免费）；
+      ③ **内容目录同轮加第四段 `Enchantments`**。
+    - **落地**：`HellwarWarGodDeckPlan`（词法，`Format` 同步输出 ⇒ 日志模板可复制）+
+      `HellwarWarGodDecks.LookupEnchantmentByEntry`（查表）+ `HellwarWarGodFactory.ApplyPresetEnchantment`
+      （施加点 = **`Deck.AddInternal` 之前**，`Pile == null` ⇒ 绕开"按 Owner 记账"那段，战神此刻 Owner 还是 null）；
+      校验走游戏自己的 `CanEnchant(card)`，认不出 / 不能带 / 抛异常 ⇒ **只跳过那个附魔、卡照给**。
+    - **锚点**：启动 `附魔可选项: N 个[...]`；召唤 `①d 预设附魔: 施加=N 跳过=M 明细=[…]`；预设表那行加 `带附魔=N 张`。
+    - 📌 **编辑器口径**（2026-10-12 实机导出发现）：附魔 `description` 里的**数量占位显示 `0`**
+      （如 `锋利` = "伤害值增加[blue]0[/blue]点"）—— canonical 附魔的 `Amount` 本来就是 0（游戏靠调用方传数量）
+      ⇒ 编辑器要用 `showAmount` + 自己的数量输入替换那个 0，**别当真值显示**。
+    - **⏳ 仍未观察的一条（2026-10-12 实机里那张 `DASH[TEZCATARAS_EMBER]` 没进手牌 / 没被打出来）**：
+      改费用 / 改值的附魔（`TEZCATARAS_EMBER` / `SHARP`）会不会让**托管大脑**判断分裂
+      （大脑读 `EnergyCost.Canonical` / `DynamicVars.BaseValue`，而附魔后可见值是 `EnchantedValue`）——
+      Sharp 那次证明"附魔不影响托管出牌链"，**改费用那条还等一次自然遇到**。
+  - **📌 附魔支持的**可行性依据（2026-10-12 侦察原稿，保留备查）**：
+    - **可行性 = 高**（2026-10-12 code-explorer 侦察）：游戏有公开入口
+      `CardCmd.Enchant(EnchantmentModel enchantment, CardModel card, decimal amount)`（`CardCmd.cs:534`，
+      内部 = `card.EnchantInternal(...)` + `enchantment.ModifyCard()` + `FinalizeUpgradeInternal()`），
+      附魔**随卡存档**（`SerializableCard.Enchantment`），`UpgradeInternal` 会回调 `Enchantment?.ModifyCard()`；
+      可施加性有现成判据 `EnchantmentModel.CanEnchant(card)`（默认排除 状态/诅咒/任务牌，个别附魔更严如 Sharp 只给攻击牌）。
+      全量枚举**只有** `ModelDb.DebugEnchantments`（含 mock ⇒ 按 `IsMock` 过滤；**也含 mod 附魔**）。
+      mod 侧现状：**只有"选哪张牌附魔"的决策**（`LocalWakuuEnchantPicker` / `WakuuEnchantRules`，
+      按**类型名字符串**查规则），**没有**"id → `EnchantmentModel`"查表、也没有施加动作 ⇒ 这两块要新写。
+    - **（r277 已按上面那三条口径实装**：词法扩展 + 施加点放在 `Deck.AddInternal` 之前 + 目录第四段。）
+- **✅ r278（2026-10-12 落地 → 2026-10-13 实机自检通过）—— ① 预设可随 mod 分发（= 嵌入资源）② 引用了本机没有内容的预设整条跳过**：
+  - **起因（用户原话）**：「我写了预设后作为 mod 自带预设，如果里面是 mod 角色 / mod 卡牌，可以直接跳过这个预设加载其它战神吗」
+    ⇒ 拍板"随便你" ⇒ 两条都做。
+  - **① mod 自带预设** = `Scripts/Data/hellwar_presets.json`（**编译进 dll 的嵌入资源**，csproj `EmbeddedResource` +
+    固定 `LogicalName`；**不选"文件放 dll 旁边"** —— 部署与工坊上传脚本只拷 dll，外部文件会静默漏掉）。
+    加载 = **玩家文件 ∪ 内置**：同 `id` **玩家胜出（内置那条整条丢弃，不改名）**、**玩家在前**（⇒ 同档多个 `default`
+    时玩家的先生效）；哪一份坏就只用另一份。纯逻辑 `PureLogic/HellwarPresetMerge`（6 条单测）。
+    改它要**重新构建**才生效。（**r279 起这份不再是空模板** —— 已填 18 套定稿，见本文件末尾 §r279。）
+  - **② 可用性跳过** = 角色皮 / 卡组**每一张** / 遗物**每一件**，任一在本机没有 ⇒ **该预设整条剔除**
+    （不进「选角色预设」候选、【无尽战神】/【九连环】随机池，也不当"自动默认"），其余预设照常；
+    打一条 `预设已跳过（引用了本机没有的内容，其余预设照常）…`（**同条只报一次**）。
+    **附魔缺失不算**（只跳那个附魔，卡照给）；**退化文本（全是分隔符）不算**（归归一的 WARN 管）。
+    纯逻辑 `PureLogic/HellwarPresetAvailability`（10 条单测）+ 运行时 `HellwarPresetCompat`
+    （⚠ **探测器失败按"全部可用"处理** —— 绝不能因为探测坏了把玩家预设全隐藏）。
+    启动自检那行改口径：**打"实际会用的那套"**（`实际使用="…"(id=…)`，与召唤同一个入口 `ResolveDefault`），
+    被跳过的再附一句 ⚠（原来打的是"配置里写的默认"，会出现"日志说 A、实际用 B"的判读陷阱）。
+  - **③ 顺带**：`ResolveSkin` 那句"mod 角色暂未接入"的注释已过时（r275 导出的目录里 18 个 mod 角色都来自
+    `ModelDb.AllCharacters`，与查表同一条 API）⇒ **按 entry 匹配 mod 角色大概率已可用**，待实机确认。
+  - **复测契约（r278）**：① 不填内置 json ⇒ 启动锚点与 r277 逐字一致（零回归）；
+    ② 想验跳过：往 `Scripts/Data/hellwar_presets.json` 写一条**故意引用不存在内容**的预设（如 `skin=NO_SUCH_MOD_CHAR`
+    或卡组写 `NO_SUCH_CARD`）⇒ 重新构建部署 ⇒ 启动应出现 `预设已跳过（引用了本机没有的内容…）` +
+    该档 `实际使用=…` 附 `⚠ 配置的默认预设(… )已跳过`，**召唤照常**（走别的预设 / 内置默认）；
+    ③ 想验内置通道：往那份 json 写一条**真**预设 ⇒ 重新构建 ⇒ 玩家文件里没有它时也能在候选里看到。
+    ④ 期望 0：我方 `turn loop died` / 异常 / 索引越界。
+  - **坑已沉淀**：skill `references/local-multicontrol-pitfalls.md` **AE-31**（嵌入资源分发 + 两条静默失败要单测钉住）
+    / **AE-32**（跨机器预设的跳过口径 + 探测器失败开放 + 日志打实际生效 + PureLogic 命名空间不统一）。
+  - **✅ 实机判读（2026-10-13 15:04 局，`logs-archive/godot__20261013-1504__r278-selftest.log`；做法 = 往内置 json 塞 3 条
+    "故意引用不存在内容"的假预设，名字都带「自检·」）**：
+    `内置预设已读取: 条数=3` ✓、`预设表已加载: 套数=7（玩家 4 条 / 内置 3 条）` ✓、
+    **三条 `预设已跳过` 各只出现一次**且原因分别点到 `NO_SUCH_MOD_CARD` / `NO_SUCH_MOD_CHARACTER` / `NO_SUCH_MOD_RELIC` ✓、
+    `档位=Common 实际使用="（内置默认）"(id=内置…)，⚠ 配置的默认预设(zz-selftest-bad-card-common)已跳过` ✓；
+    **反向检查**：四档候选与 r277 完全一致（普通 23 套全部可玩角色，**无任何「自检·…」**；罕见 3 / 稀有 2 / 先古 2）✓；
+    `预设可用性探测失败` / `turn loop died` / `### Exception ###` / `预设表问题` **全 0**。⇒ **关单**。
+    判读后已**清空内置 json 并重新部署**（正式版 sha256 `3b5C1E88…`，dll 里已无 `zz-selftest-*`）。
+  - **实机顺带实证**：普通档候选列出 **23 个角色**（含 蕾忍 / 忍者杀手 / 观者 / 猪 / 沙耶 / 古明地恋 等 **mod 角色**）
+    ⇒ **`ModelDb.AllCharacters` 确实含 mod 角色**，`ResolveSkin` 里"mod 角色暂未接入"的注释确已过时（上面 ③ 的判断成立）。
+- **✅ r279（2026-10-15 落地 → ⭐ 待实机）—— 内置预设从"空模板"变成 18 套定稿（行为代码零改动）**：
+  - **一句话**：用户「预设我搓好了」+ 拍板"设为内置随 mod 分发" ⇒ 把编辑器产出的 `hellwar_presets.json`
+    **原文照搬**进 `Scripts/Data/hellwar_presets.json`（11895 B / 无 BOM / 逐字节一致），marker 升 `2026-10-15-r279`。
+  - **数据**：**18 套**（罕见 5 / 稀有 5 / 先古 8；普通档**不挂文件预设** —— 那档候选由"全部可玩角色"自动组成）。
+    `tiers` 全是 `Rare|Epic|Ancient`、**无一套写 `default`** ⇒ 各档「自动」= **该档第一条文件预设**
+    （罕见 `ironclad1` / 稀有 `ironclad2` / 先古 `watchera15`）。**2 套用 `WATCHER-*`**（Watcher mod）
+    ⇒ 没装那个 mod 的玩家被 r278 判据**整条跳过**（r278 通道第一次真实使用）。
+  - **入库前的校验**：`WarGodForge.exe --selftest` ⇒ 18 套全解析 / **校验无问题** / 序列化往返逐字段一致。
+  - **新增单测** `内置预设数据归一后没有问题`（读嵌入资源 → 归一 → 断言无 `Problems`；**不钉条数**，退回空模板也合法）。
+  - **⚠ 本机验不了内置通道**（玩家那份与内置**同 id** ⇒ 玩家胜出，合并后仍是 18 套）：要验得把
+    `%APPDATA%\SlayTheSpire2\hellwar_presets.json` **临时改名**再启动（看 `玩家 0 条 / 内置 18 条`）—— 坑见 skill **AE-33**。
+  - **复测契约**：启动 `内置预设已读取: 条数=18` + `预设表已加载: 套数=18（玩家 18 条 / 内置 18 条）`；
+    罕见/稀有/先古各召一次 ⇒ `①a/①c/①d` 三条锚点 + 第二层弹层能看到这些名字；
+    期望 0 = `预设已跳过`（本机不该有）/ `预设表问题` / `turn loop died`。
+  - 口径写进 `Scripts/Data/README.md`（含"没有 default"与"改完要重新构建"）。
+- **✅【已交付·用户 2026-10-12 关单】「预设构筑器」（= 战神构筑器 `D:\Download\pain\WarGodForge\`）**：可视化造战神的程序（选卡/遗物/角色/血量/档位 → 导出给 mod）——mod 侧「预设可配置化」地基（Phase A/B）与编辑器本体（Phase C-1~C-3）均已落地并实机自检全绿；**图片（Phase C-4）用户拍板不做**：
   - **需求原话**：「可能以后需要写一个程序，自动读取杀戮尖塔2反编译的代码或我们自己把所有原版卡牌和遗物记录进去，
     我在这个程序（最好能直接显示卡牌、遗物的图片）里面自己构筑卡牌、遗物、角色、血量、战神档位，然后导入到 mod 里面。
     发布的时候需要有一些预设的战神，并且全靠我念给你你再搓有点慢，写好程序也方便玩家自己搓战神（如果可以，再兼容 mod）。
@@ -787,10 +933,15 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     - **自搓的玩家 = 只下编辑器本体**（GitHub Release 一个 zip，几 MB）。**目录与图片都不随编辑器分发**：
       ⚠ 已查证（2026-10-11）玩家侧游戏目录**没有散装资源**，全部在 `SlayTheSpire2.pck`（1.99GB）里
       ⇒ 编辑器内置一个**只读 pck 提取器**（格式知识已有：`tools/pck_tool.py`，V1~V3），首次运行指向游戏目录、
-      按需提取图片缓存到 `%APPDATA%`（卡图还要按 `atlases/card_atlas.sprites/<pool>/<id>.tres` 的 `region` 从
-      `card_atlas_0/1.png` 裁剪；遗物图 `images/relics/*.png` 整图直读）；不发布官方美术（版权 + 体积都干净）。
+      按需提取图片缓存到 `%APPDATA%`。**⚠ 2026-10-12 订正"图怎么取"**（实机查了主 pck 与两个 mod pck）：
+      pck 里**没有散装图片** —— 只有 `<图源>.png.import`（~200 B，内含
+      `[remap] path="res://.godot/imported/<名>-<md5>.ctex"`）与 `.ctex`（主 pck 3555 个：**2311 WebP / 704 BC7 / 540 S3TC**）。
+      **单卡整图 `packed/card_portraits/…` 是 WebP**（编辑器优先用它、直读即可），
+      **卡图集 `card_atlas_0/1.png` 与 `images/relics/*.png` 是 BC7**（要图集裁剪时才需要 BC7 解码器）。
+      mod 资源在**各自工坊 pck**（`steamapps\workshop\content\2868840\<itemid>\<Name>.pck`，挂载为 `res://<Name>/…`；
+      本地 mod 在 `%APPDATA%\SlayTheSpire2\mods\…`），形态一模一样 ⇒ 提取要**叠加所有 pck**。
       目录侧 = 玩家先在 mod 设置页点一次"导出内容目录"生成他自己机器的 `content_catalog.json`（含他装的 mod 卡），
-      编辑器读它；没导出则提示先导出（不显示列表）。
+      编辑器读它；没导出则提示先导出（不显示列表）。**（✅ 该按钮已于 r275 实装、r276 修图路径，见 §预设战神 v2 的 Phase B-3。）**
     - **用别人分享的预设 = 零**（预设 = 小 json，编辑器支持导入/导出）。
   - **✅ 剩余两项已拍板（2026-10-11 用户）**：④ 首批可编辑维度 = **一步到位全要**（卡组/遗物/角色皮/血量/升级，
     用户原话「大不了我慢慢测」）；⑤ 件数阶梯 = **允许破坏平衡**（用户原话「玩家想怎么样就怎么样我们无权干涉」
@@ -818,7 +969,7 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
       （`ModelDb.AllCharacters` 按 Entry 匹配，查不到回落召唤者 + WARN；**mod 角色待摸注册机制**）；
       卡组预设文本优先于 `hellwarDeck*`；遗物按 id 查（`AllRelics`+`EventRelicPool`）。
     - **Phase A 边界（刻意不做）**：【无尽战神】/【九连环】的**随机池仍走内置档位表**（接文件池与「召唤时选预设」UI 一起 = Phase B）；
-      **游戏内导出 `content_catalog.json`** = Phase B（跟编辑器一起）。
+      **游戏内导出 `content_catalog.json`** = Phase B（跟编辑器一起）—— **✅ 已落地（r275，见 §预设战神 v2 的 Phase B-3）**。
     - **复测契约（r269）**：① 不写文件 ⇒ 启动 `[地狱战神] 预设表: 未配置…`，召唤行为与 r268 逐字一致（回归）；
       ② 手写一份（Rare 一套 skin=IRONCLAD + deck + relics=[MINIATURE_CANNON] + default）⇒ 启动 `预设表已加载: 套数=1` +
       `档位=Rare 默认预设="…"(…)`，召唤罕见档 `①a 预设卡组已替换 … 来源=预设(…)` + `①c 预设遗物已发放 … MINIATURE_CANNON`；
