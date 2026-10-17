@@ -60,4 +60,27 @@ internal static class WakuuDaddyCardPolicy
 
     /// <summary>我挡目标是否合法：是队友即可（不能选自己 —— 自己挡自己没有意义）。</summary>
     internal static bool CanShieldTarget(bool targetIsSelf) => !targetIsSelf;
+
+    /// <summary>
+    /// 【合体】收编手牌时，**这一张能不能搬**（r281 修）。
+    ///
+    /// 两个不能搬的情形：
+    /// <list type="number">
+    /// <item><b>已经不在它自己的手牌里</b>（<paramref name="stillInHand"/> = false）：合体是异步链，
+    ///   逐张 <c>await CardPileCmd.Add</c> 期间牌可能已被打出 / 弃掉；此时再 <c>RemoveFromCurrentPile</c>
+    ///   会动到别的牌堆。</item>
+    /// <item><b>正处在托管的入队出牌动作里</b>（<paramref name="pendingHostedPlay"/> = true）：
+    ///   <c>PlayCardAction</c> 构造时把 <c>Player</c> 记成当时的主人，**执行时却按 <c>card.Owner</c> 记名与扣费**
+    ///   ⇒ 改归属后那条动作会以**新主人**的身份落地。</item>
+    /// </list>
+    ///
+    /// 事故原形（2026-10-17 r280 实机，用户「我合体瓦库后瓦库替我打出出手牌」）：
+    /// 真人打出【合体】的同时，瓦库的托管循环并行入队了一张 <c>C_HH_SOLAR_GUARDIAN</c>；
+    /// 合体把这张（连同另外 3 张）搬进真人手里、连能量一起收走 ⇒ 16 秒后那条动作执行时
+    /// 日志写成 <c>Player 76561198422527326 playing card C_HH_SOLAR_GUARDIAN</c>，
+    /// 真人手牌凭空被"自己"打掉一张并替瓦库付了费。调用方另外还要在搬运期间**禁止这一席继续入队**
+    /// （<c>WakuuDaddyCombatState</c> 的合体闸），本纯函数只负责"逐张判定"。
+    /// </summary>
+    internal static bool ShouldTakeOverMergedCard(bool stillInHand, bool pendingHostedPlay)
+        => stillInHand && !pendingHostedPlay;
 }

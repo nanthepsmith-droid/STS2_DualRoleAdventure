@@ -49,6 +49,22 @@ internal static class WakuuDaddyCombatState
     /// </summary>
     private static readonly HashSet<ulong> FocusConsumedLog = new();
 
+    /// <summary>
+    /// 正在被【合体】收编手牌的席位（**合体闸**，r281）。
+    ///
+    /// **为什么要一道闸**：合体与瓦库的托管出牌循环是**并行**的（并发出牌档下瓦库在自己的队列里
+    /// 逐张 <c>await</c>）。合体搬运期间若这一席又入队一张牌，那条 <c>PlayCardAction</c> 就会在
+    /// 归属改成真人之后执行 —— 它会按 `card.Owner`（= 真人）记名、扣真人的能量，
+    /// 表现就是用户 2026-10-17 报的「合体后瓦库替我把手牌打出去了」。
+    ///
+    /// 置位窗口 = **合体搬运的全过程**（<see cref="Models.Cards.LocalWakuuDaddyMergeCard"/> 的
+    /// <c>MergeAsync</c> + 收尾那一抽，`try/finally` 保证复位）；读取点 =
+    /// <c>LocalWakuuRelicRuntime.TryPlayCardViaActionQueueAsync</c>（唯一的入队口）。
+    /// **不放到整回合**：合体后这一席手牌/能量都空了，本来也没什么可打，闸开太久反而会让
+    /// 「仍有可出牌角色」挡住真人结束回合（r263 那类死锁）。
+    /// </summary>
+    private static readonly HashSet<ulong> MergingSeats = new();
+
     /// <summary>一条【合体】链接：谁把哪个瓦库合体了（只记 NetId ⇒ 跨会话残留也只会"查不到人"而不会错指）。</summary>
     private readonly struct MergeLink
     {
@@ -125,6 +141,27 @@ internal static class WakuuDaddyCombatState
         LocalMultiControlLogger.Info(
             $"[瓦库的爹] 合体：已登记本回合混抽/混弃 caster={caster.NetId}, wakuu={wakuu.NetId}");
     }
+
+    /// <summary>合体闸：声明"这一席的手牌正在被我收编"，期间禁止它再入队新的托管出牌（r281）。</summary>
+    internal static void BeginMergeSeatGuard(ulong netId)
+    {
+        if (MergingSeats.Add(netId))
+        {
+            LocalMultiControlLogger.Info($"[瓦库的爹] 合体闸关闭：暂停 {netId} 的托管出牌入队（手牌正在改归属）");
+        }
+    }
+
+    /// <summary>合体闸复位（搬运结束/异常都要走）。</summary>
+    internal static void EndMergeSeatGuard(ulong netId)
+    {
+        if (MergingSeats.Remove(netId))
+        {
+            LocalMultiControlLogger.Info($"[瓦库的爹] 合体闸重新打开：{netId} 可继续托管出牌");
+        }
+    }
+
+    /// <summary>该席位的合体闸是否关着（关着 = 手牌正在被搬走，托管出牌必须让位）。</summary>
+    internal static bool IsMergeSeatGuardActive(ulong netId) => MergingSeats.Contains(netId);
 
     /// <summary>该玩家本回合是否处在合体状态（是则返回被合体的瓦库）。</summary>
     internal static bool TryGetMergedWakuu(Player player, out Player wakuu)
@@ -332,6 +369,7 @@ internal static class WakuuDaddyCombatState
         _focusTarget = null;
         Merges.Clear();
         FocusConsumedLog.Clear();
+        MergingSeats.Clear();
         LocalMultiControlLogger.Info($"[瓦库的爹] 本回合登记已复位: {source}");
     }
 
@@ -347,6 +385,9 @@ internal static class WakuuDaddyCombatState
         _focusTarget = null;
         Merges.Clear();
         FocusConsumedLog.Clear();
+        // 兜底：正常路径由 MergeAsync 的 finally 复位；中途异常/战斗收尾时这里清干净，
+        // 免得下一回合这一席还在"让位"（合体闸开着 = 该席位永远不入队出牌）。
+        MergingSeats.Clear();
     }
 
     private static string Describe(Creature creature)

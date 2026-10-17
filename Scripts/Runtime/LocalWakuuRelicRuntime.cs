@@ -1094,6 +1094,19 @@ internal static class LocalWakuuRelicRuntime
         Player player, WakuuPlannedAction next, int round)
     {
         CardModel card = next.Card!;
+
+        // 🔴 r281 合体闸：这一席的手牌正被【合体】搬给别人 ⇒ **绝不能**再给它入队出牌。
+        // `PlayCardAction` 会把"当时的主人"记进 Player，但执行时按 card.Owner 记名 / 扣费 ——
+        // 牌一旦改归属，这条动作就会以真人的身份落地（2026-10-17 实机：合体后瓦库替真人打出手牌）。
+        // 让步方式 = 本次不入队、返回 false 让出牌循环收手（合体结束后它手牌/能量本来就空了）。
+        if (WakuuDaddyCombatState.IsMergeSeatGuardActive(player.NetId))
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库出牌让位【合体收编手牌中，本次不入队】: player={player.NetId}, round={round}, "
+                + $"card={card.Id.Entry}");
+            return false;
+        }
+
         bool isAnyTarget = card.TargetType is TargetType.AnyEnemy or TargetType.AnyAlly;
         Creature? target = WakuuPlayQueuePolicy.ShouldUseResolvedTarget(isAnyTarget) ? next.Target : null;
 
@@ -1236,6 +1249,83 @@ internal static class LocalWakuuRelicRuntime
     public static bool HasPendingQueuePlay(ulong playerNetId)
     {
         return _pendingQueuePlays.ContainsKey(playerNetId);
+    }
+
+    /// <summary>
+    /// 该牌此刻是否正处在一个**我们替托管席位入队、还没跑完**的出牌动作里（r281）。
+    ///
+    /// 用途：【合体】搬手牌前逐张过滤 —— `PlayCardAction` 构造时把 `Player` 记成**当时**的主人，
+    /// 执行时却按 `card.Owner` 记名/扣费 ⇒ 牌被改归属之后，那条动作会以**新主人**的身份落地
+    /// （2026-10-17 用户实机「合体后瓦库替我打出手牌」）。
+    ///
+    /// 只认我们自己登记的动作（`_pendingQueuePlays`）；inline `CardCmd.AutoPlay` 是就地执行、
+    /// 牌早已离开手牌，天然落进"不在手牌里"那一档。
+    /// </summary>
+    public static bool IsCardPendingQueuePlay(CardModel card)
+    {
+        foreach (PlayCardAction action in _pendingQueuePlays.Values)
+        {
+            try
+            {
+                if (ReferenceEquals(action.NetCombatCard.ToCardModelOrNull(), card))
+                {
+                    return true;
+                }
+            }
+            catch (Exception exception)
+            {
+                // 纯观测：解析不到就当作"没有在飞的动作"，不要把合体带崩。
+                LocalMultiControlLogger.Warn(
+                    $"合体前置检查：解析在飞动作的牌失败（已忽略）: {exception.Message}");
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 【合体】前置：把这一席**还没开始执行**的托管入队出牌动作撤掉（r281），返回撤掉的张数。
+    ///
+    /// **为什么撤而不是跳过**：合体的语义是"收编它的手牌+能量"。被抓在队列里的那张牌本来就还没执行，
+    /// 撤掉它（`GameAction.Cancel()`，只撤 `WaitingForExecution`，从未开始 ⇒ 不扣费不结算）
+    /// 就让它**回到手牌、跟着一起被搬走**，与用户对「合体」的预期一致；
+    /// 不撤的话，那条动作会在改归属之后以真人的名义落地（就是这个 bug）。
+    ///
+    /// 撤完立刻把自己在 `_pendingQueuePlays` 的登记摘掉：`Cancel()` 的收尾是 `CallDeferred`
+    /// （CompletionTask 下一帧才取消），而调用方**这一帧**就要逐张判定能不能搬 ——
+    /// 不摘的话 `IsCardPendingQueuePlay` 会把它当成"仍在飞"而漏搬。
+    /// 动作的 `finally` 里本来就带 `ReferenceEquals` 校验，这里先摘不会重复删除。
+    /// </summary>
+    public static int CancelPendingQueuePlaysForSeat(ulong netId, string source)
+    {
+        if (!_pendingQueuePlays.TryGetValue(netId, out PlayCardAction? action))
+        {
+            return 0;
+        }
+
+        string cardName = action.NetCombatCard.ToCardModelOrNull()?.Id.Entry ?? "unknown";
+        if (!WakuuPlayQueuePolicy.ShouldCancelPendingPlayForHumanPlay(
+                overlapEnabled: true,
+                isWaitingForExecution: action.State == GameActionState.WaitingForExecution))
+        {
+            // 已在执行 / 正在等选择 ⇒ 撤不得（撤了会以非法状态收尾或打断选牌），
+            // 交给调用方按"仍在飞"跳过这一张。
+            LocalMultiControlLogger.Info(
+                $"[瓦库的爹] 合体：瓦库那张牌已经开打，撤不回来（本次不搬它）: player={netId}, "
+                + $"card={cardName}, state={action.State}, source={source}");
+            return 0;
+        }
+
+        action.Cancel();
+        if (_pendingQueuePlays.TryGetValue(netId, out PlayCardAction? tracked) && ReferenceEquals(tracked, action))
+        {
+            _pendingQueuePlays.Remove(netId);
+        }
+
+        LocalMultiControlLogger.Info(
+            $"[瓦库的爹] 合体：撤掉瓦库尚未开始执行的入队出牌（让这张牌跟着手牌一起被收编）: "
+            + $"player={netId}, card={cardName}, actionId={action.Id?.ToString() ?? "none"}, source={source}");
+        return 1;
     }
 
     /// <summary>

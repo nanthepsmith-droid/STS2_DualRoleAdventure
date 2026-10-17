@@ -57,6 +57,22 @@ public class WakuuDaddyCardPolicyTests
     }
 
     [Test]
+    public void 合体收编手牌_跳过不在手牌与正被托管打出的牌()
+    {
+        // r281：2026-10-17 实机「合体后瓦库替我把手牌打出去」——
+        // 在飞的入队动作会在改归属之后以真人的名义落地，所以这类牌不能搬。
+        Assert.Multiple(() =>
+        {
+            Assert.That(WakuuDaddyCardPolicy.ShouldTakeOverMergedCard(stillInHand: true, pendingHostedPlay: false), Is.True);
+            // 托管出牌动作在飞（已入队、还没跑完）
+            Assert.That(WakuuDaddyCardPolicy.ShouldTakeOverMergedCard(stillInHand: true, pendingHostedPlay: true), Is.False);
+            // 已经不在它的手牌里（被打出 / 被弃掉）
+            Assert.That(WakuuDaddyCardPolicy.ShouldTakeOverMergedCard(stillInHand: false, pendingHostedPlay: false), Is.False);
+            Assert.That(WakuuDaddyCardPolicy.ShouldTakeOverMergedCard(stillInHand: false, pendingHostedPlay: true), Is.False);
+        });
+    }
+
+    [Test]
     public void 合体混弃_掷骰各半()
     {
         // 0/1 掷骰：偶数留在自己弃牌堆，奇数进瓦库弃牌堆

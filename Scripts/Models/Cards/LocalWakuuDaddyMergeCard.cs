@@ -64,7 +64,20 @@ internal sealed class LocalWakuuDaddyMergeCard : CardModel
                 || LocalSelfCoopContext.IsTemporarySeat(wakuu.NetId);
             if (WakuuDaddyCardPolicy.CanMergeTarget(isWakuuSeat, ReferenceEquals(wakuu, Owner)))
             {
-                await MergeAsync(wakuu);
+                // 🔴 r281 合体闸：搬运全过程（含下面收尾那一抽）都不许这一席再入队托管出牌。
+                // 并发出牌档下瓦库的出牌循环与真人是**并行**的 —— 2026-10-17 实机就是
+                // "真人在打【合体】、瓦库同时入队了一张牌" ⇒ 归属改成真人之后那条动作以真人的名义落地
+                // （用户原话「我合体瓦库后瓦库替我打出出手牌」）。闸的语义与读取点见
+                // WakuuDaddyCombatState.MergingSeats / LocalWakuuRelicRuntime.TryPlayCardViaActionQueueAsync。
+                WakuuDaddyCombatState.BeginMergeSeatGuard(wakuu.NetId);
+                try
+                {
+                    await MergeAsync(wakuu);
+                }
+                finally
+                {
+                    WakuuDaddyCombatState.EndMergeSeatGuard(wakuu.NetId);
+                }
             }
             else
             {
@@ -83,10 +96,28 @@ internal sealed class LocalWakuuDaddyMergeCard : CardModel
     /// <summary>手牌改归属转移 + 能量转移 + 登记本回合混抽混弃。</summary>
     private async Task MergeAsync(Player wakuu)
     {
+        // r281 第一步：把它**已入队、还没开始执行**的托管出牌动作撤掉 ⇒ 那张牌回到手牌、跟着一起被收编。
+        // 不撤的话，那条动作会在"改归属"之后执行 —— 它按 card.Owner（= 真人）记名并扣费，
+        // 就是用户看到的「瓦库替我把手牌打出去了」（2026-10-17 实机，牌=C_HH_SOLAR_GUARDIAN）。
+        LocalWakuuRelicRuntime.CancelPendingQueuePlaysForSeat(wakuu.NetId, "wakuu-daddy-merge");
+
         CardPile? hand = PileType.Hand.GetPile(wakuu);
         List<CardModel> cards = hand?.Cards.ToList() ?? new List<CardModel>();
+        List<CardModel> moved = new(cards.Count);
+        List<string> skipped = new();
         foreach (CardModel card in cards)
         {
+            // r281 第二步：逐张复核。合体是**异步链**（每张 await CardPileCmd.Add），期间这张牌可能
+            // 已经被打出/弃掉，或者仍被抓在一条已经开打（撤不回来）的动作里 —— 这两种都不能搬
+            // （判定见 WakuuDaddyCardPolicy.ShouldTakeOverMergedCard）。
+            bool stillInHand = card.Pile?.Type == PileType.Hand;
+            bool pendingHostedPlay = LocalWakuuRelicRuntime.IsCardPendingQueuePlay(card);
+            if (!WakuuDaddyCardPolicy.ShouldTakeOverMergedCard(stillInHand, pendingHostedPlay))
+            {
+                skipped.Add($"{card.Id.Entry}(在手牌={stillInHand}, 托管动作在飞={pendingHostedPlay})");
+                continue;
+            }
+
             // 🔴 **顺序铁律**（r229 实机事故，务必照抄）：
             //   `CardModel.Pile` 不是自己的字段，而是**按 Owner 反查**出来的 ——
             //   `Pile => _owner?.Piles.FirstOrDefault(p => p.Cards.Contains(this))`。
@@ -103,6 +134,16 @@ internal sealed class LocalWakuuDaddyMergeCard : CardModel
             card.RemoveFromCurrentPile(silent: true);
             card.GiveToAnotherPlayer(Owner);
             await CardPileCmd.Add(card, PileType.Hand);
+            moved.Add(card);
+        }
+
+        if (skipped.Count > 0)
+        {
+            // WARN 而不是 INFO：这代表"合体没把它的手牌全收走"，判读时要能一眼看到原因
+            // （撤不回来的在飞动作 / 已经被打掉的牌）。
+            LocalMultiControlLogger.Warn(
+                $"[瓦库的爹] 合体：跳过 {skipped.Count} 张（已不在手牌 / 托管动作还在飞，本回合仍归瓦库）: "
+                + string.Join(" ", skipped));
         }
 
         int energy = wakuu.PlayerCombatState?.Energy ?? 0;
@@ -119,16 +160,16 @@ internal sealed class LocalWakuuDaddyMergeCard : CardModel
         int wakuuDraw = PileType.Draw.GetPile(wakuu)?.Cards.Count ?? -1;
         int ownDraw = PileType.Draw.GetPile(Owner)?.Cards.Count ?? -1;
         LocalMultiControlLogger.Info(
-            $"[瓦库的爹] 合体：收编手牌={cards.Count} 张、能量={energy}，施牌者 {Owner.NetId} ← "
+            $"[瓦库的爹] 合体：收编手牌={moved.Count} 张、能量={energy}，施牌者 {Owner.NetId} ← "
             + $"瓦库 {wakuu.NetId}{(targetIsWarGod ? "(战神)" : string.Empty)}"
             + $"（混抽可用性：瓦库抽牌堆={wakuuDraw} 张, 我方={ownDraw} 张）"
             + (targetIsWarGod ? "；⚠ 战神是临时席位：本回合混抽/混弃走 TryGetMergedWakuu 的【在册战神】分支" : string.Empty));
 
         // 「空气牌」自检（见 ProbeMergedCards 注释）：只在真的搬了牌时排一次。
-        if (cards.Count > 0)
+        if (moved.Count > 0)
         {
-            List<CardModel> moved = cards;
-            Callable.From(() => ProbeMergedCards(Owner, moved)).CallDeferred();
+            List<CardModel> movedCards = moved;
+            Callable.From(() => ProbeMergedCards(Owner, movedCards)).CallDeferred();
         }
     }
 
