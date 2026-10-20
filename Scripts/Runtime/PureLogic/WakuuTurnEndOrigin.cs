@@ -115,6 +115,26 @@ internal static class WakuuTurnEndOrigin
         return _externallyEnded.Contains(BuildKey(playerNetId, roundNumber));
     }
 
+    /// <summary>
+    /// **新的一段回合开始 ⇒ 忘掉这一位"上一段已结束回合"的记忆**（r283）。
+    ///
+    /// 为什么需要：登记表的键是 `回合号:席位`，而**额外回合**（原版【帕尔之眼】、
+    /// 新三国「天意」`HeavensForcePower.ShouldTakeExtraTurn` 等）**不开新回合号**。
+    /// 于是同一回合里"上一段被模组收口 / 被卡牌效果强行结束"的记忆会继续生效 ⇒
+    /// 这一位在额外回合里**永远不许自动出牌**、也不会被自动收口 ⇒ 额外回合卡在那里没人结束。
+    ///
+    /// 调用点 = `CombatManager.SetupPlayerTurn` 前缀（每段玩家回合开始都会走，普通回合里
+    /// 因为回合号变了本就没有命中，只有额外回合会真的清掉东西 ⇒ 也可以当作额外回合的观测锚点）。
+    /// </summary>
+    /// <returns>true = 真的清掉了记录（说明这是"同一回合里的新一段回合"）。</returns>
+    public static bool ForgetTurnEnd(ulong playerNetId, int roundNumber)
+    {
+        string key = BuildKey(playerNetId, roundNumber);
+        bool removed = _modEnded.Remove(key);
+        removed |= _externallyEnded.Remove(key);
+        return removed;
+    }
+
     /// <summary>换战斗/退出本局时清空（回合号在战斗内才有意义）。</summary>
     public static void ResetForCombat()
     {

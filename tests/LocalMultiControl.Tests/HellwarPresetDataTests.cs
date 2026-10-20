@@ -239,14 +239,21 @@ public class HellwarPresetDataTests
     }
 
     [Test]
-    public void 负数血量归零并记问题()
+    public void 负数血量原样保留_表示减少血上限()
     {
-        HellwarPresetDefinition definition = NormalizeOne(
-            """{ "presets": [ { "id": "p", "tiers": ["Rare"], "bonusHp": -7 } ] }""");
+        // r289（2026-10-20 用户拍板）：bonusHp 负数 = **减少血上限**（下限 1 点由 HellwarPresetHpPolicy 在施加时收住），
+        // 归一阶段不改值、也不再记「为负数」的问题 —— 否则玩家每局启动都被这条 WARN 刷一遍。
+        HellwarPresetTable table = HellwarPresetPolicy.Normalize(
+            HellwarPresetJson.Parse("""{ "presets": [ { "id": "p", "tiers": ["Rare"], "bonusHp": -7 } ] }"""));
         Assert.Multiple(() =>
         {
-            Assert.That(definition.BonusHp, Is.EqualTo(0));
-            Assert.That(definition.UpgradeDeck, Is.Null);
+            Assert.That(table.All, Has.Count.EqualTo(1));
+            Assert.That(table.All[0].BonusHp, Is.EqualTo(-7));
+            Assert.That(table.All[0].UpgradeDeck, Is.Null);
+            Assert.That(
+                table.Problems.Any((problem) => problem.Contains("bonusHp")),
+                Is.False,
+                "负数已是合法写法，不该再记问题");
         });
     }
 

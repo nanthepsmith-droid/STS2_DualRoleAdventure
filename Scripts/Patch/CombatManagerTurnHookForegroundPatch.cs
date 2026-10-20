@@ -1,5 +1,6 @@
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
+using LocalMultiControl.Scripts.Runtime.PureLogic;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Players;
@@ -19,6 +20,30 @@ internal static class CombatManagerSetupPlayerTurnForegroundPatch
     [HarmonyPrefix]
     private static void Prefix(Player player)
     {
+        // r285：**先把战斗级台账按"战斗身份"复位**，再谈"新一段回合"。
+        // 复位枢纽原本只挂在看门狗那条 100ms 重活里，而新一场战斗的第一个 SetupPlayerTurn 往往更早
+        // ⇒ 上一场同号回合的记录会残留（r284 日志：`[回合归属] … 额外回合` 4 条其实是误报，
+        // `检测到战斗场次切换` 反而更晚才打）。提前复位后，下面那条锚点才真的是"额外回合"。
+        if (player?.Creature?.CombatState is CombatState combatStateForReset)
+        {
+            LocalMultiControlRuntime.RefreshCombatScopedStateAtTurnStart(combatStateForReset, "turn-start-setup");
+        }
+
+        // r283：**新的一段玩家回合开始**（普通回合或额外回合）⇒ 忘掉这一位"上一段已结束回合"的记忆。
+        // 额外回合（原版帕尔之眼 / 新三国「天意」这类接管回合的效果）**不开新回合号**，
+        // 不清的话旧记忆会让这一位在额外回合里永久不许自动出牌、也不被自动收口 ⇒ 额外回合卡住。
+        // 普通回合里回合号变了本就没有命中；真的清掉了 ⇒ 说明这是"同一回合里的新一段"，顺手当观测锚点。
+        if (player != null)
+        {
+            int round = player.Creature?.CombatState?.RoundNumber ?? -1;
+            if (round >= 0 && WakuuTurnEndOrigin.ForgetTurnEnd(player.NetId, round))
+            {
+                LocalMultiControlLogger.Info(
+                    $"[回合归属] 同一回合里开了新一段回合（**额外回合**）⇒ 清掉「已结束回合」记忆: "
+                    + $"player={player.NetId}, round={round}");
+            }
+        }
+
         // 战灵召唤 Phase 2（正式召唤）：真人席位回合开始 ⇒ 延后一帧弹"召唤选择"（消耗计数）；
         // 开关没开时立即返回（零影响）。**不新增 Harmony 目标**（挂在既有 hook 上）。
         if (HellwarSummonCombatRuntime.OnPlayerTurnStart(player, "turn-start-setup"))

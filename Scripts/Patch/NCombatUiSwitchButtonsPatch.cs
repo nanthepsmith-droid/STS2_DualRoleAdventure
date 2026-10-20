@@ -83,6 +83,12 @@ internal static class LocalCombatSwitchButtons
     private static readonly Vector2 PingShowPosRatio = new Vector2(1536f, 932f) / NGame.devResolution;
     private static readonly Vector2 EndTurnAnchorOffset = new Vector2(-28f, -42f);
 
+    /// <summary>结束回合按钮的递归兜底缓存（r282；见 <see cref="ResolveEndTurnButton"/>）。</summary>
+    private static NEndTurnButton? _cachedEndTurnButton;
+
+    /// <summary>缓存属于哪一份战斗 UI（换战斗就作废，避免拿着上一场已释放的节点）。</summary>
+    private static NCombatUi? _cachedEndTurnButtonOwner;
+
     /// <summary>「我们联合」按钮相对容器原点的位置（两个切人钮在 (0,0) / (136,0)，这个放它们上面）。</summary>
     private static readonly Vector2 UniteButtonOffset = new Vector2(0f, -40f);
 
@@ -214,7 +220,7 @@ internal static class LocalCombatSwitchButtons
             return;
         }
 
-        NEndTurnButton? endTurnButton = FindEndTurnButton(combatUi);
+        NEndTurnButton? endTurnButton = ResolveEndTurnButton(combatUi);
         if (endTurnButton != null)
         {
             container.GlobalPosition = endTurnButton.GlobalPosition + EndTurnAnchorOffset;
@@ -231,6 +237,40 @@ internal static class LocalCombatSwitchButtons
         container?.QueueFreeSafely();
     }
 
+    /// <summary>
+    /// 取结束回合按钮（r282 性能修：**不要再每帧递归全树找**）。
+    ///
+    /// 原实现的 <see cref="Refresh"/> 挂在逐帧 <c>_Process</c> 上，却每帧都调
+    /// <see cref="FindEndTurnButton"/> 递归遍历整个战斗 UI 树 —— 每次 <c>GetChildren()</c> 都要分配，
+    /// **战神越多节点越多 ⇒ 每帧开销线性放大**（2026-10-17 用户报「战神一多就会很卡」的嫌疑之一）。
+    ///
+    /// 现在三级取法，正常路径 O(1)：
+    /// ① 原版本来就暴露了 <c>NCombatUi.EndTurnButton</c>（`_Ready` 里 `GetNode&lt;NEndTurnButton&gt;("%EndTurnButton")`）；
+    /// ② 万一那一刻还没绑好 → 用**上一次递归找到的缓存**（只要还挂在树上、且属于同一份 UI）；
+    /// ③ 都没有才递归一次，然后缓存。
+    /// </summary>
+    private static NEndTurnButton? ResolveEndTurnButton(NCombatUi combatUi)
+    {
+        NEndTurnButton? direct = combatUi.EndTurnButton;
+        if (direct != null && GodotObject.IsInstanceValid(direct) && direct.IsInsideTree())
+        {
+            return direct;
+        }
+
+        if (_cachedEndTurnButton != null
+            && ReferenceEquals(_cachedEndTurnButtonOwner, combatUi)
+            && GodotObject.IsInstanceValid(_cachedEndTurnButton)
+            && _cachedEndTurnButton.IsInsideTree())
+        {
+            return _cachedEndTurnButton;
+        }
+
+        _cachedEndTurnButtonOwner = combatUi;
+        _cachedEndTurnButton = FindEndTurnButton(combatUi);
+        return _cachedEndTurnButton;
+    }
+
+    /// <summary>递归兜底（只在 <see cref="NCombatUi.EndTurnButton"/> 与缓存都拿不到时跑一次）。</summary>
     private static NEndTurnButton? FindEndTurnButton(Node root)
     {
         if (root is NEndTurnButton endTurnButton)
@@ -253,7 +293,14 @@ internal static class LocalCombatSwitchButtons
 
 internal sealed partial class LocalCombatSwitchTracker : Node
 {
+    /// <summary>
+    /// 切人按钮容器刷新的节流（r282）：显隐/位置按 **100ms** 更新完全够用（观感上察觉不到），
+    /// 但把这个"每帧必做"的活儿从 60fps 降到 10fps —— 战神多开时它的相对开销不再随节点数滚动。
+    /// </summary>
+    private const long UiRefreshIntervalMs = 100L;
+
     private NCombatUi? _combatUi;
+    private long _lastUiRefreshMs;
 
     public void Initialize(NCombatUi combatUi)
     {
@@ -269,15 +316,38 @@ internal sealed partial class LocalCombatSwitchTracker : Node
             return;
         }
 
-        LocalCombatSwitchButtons.Refresh(_combatUi);
+        // r282：逐帧开销探针（自身零分配，每 5s 打一条；见 LocalPerfProbe）。
+        LocalPerfProbe.TickFrames();
+
+        long nowMs = (long)Time.GetTicksMsec();
+        if (nowMs - _lastUiRefreshMs >= UiRefreshIntervalMs)
+        {
+            _lastUiRefreshMs = nowMs;
+            long refreshStart = LocalPerfProbe.Begin();
+            LocalCombatSwitchButtons.Refresh(_combatUi);
+            LocalPerfProbe.End(LocalPerfProbe.Slot.SwitchRefresh, refreshStart);
+        }
+
         // r215：角色立绘站位位移探针（内部 250ms 节流、只在真的变了时打日志）。
+        long probeStart = LocalPerfProbe.Begin();
         LocalCreaturePositionProbe.Sample("combat-tick");
+        LocalPerfProbe.End(LocalPerfProbe.Slot.PositionProbe, probeStart);
+
+        // r282：内部做了 100ms 重活节流（扫 12 席手牌 + 托管调度 + 战神收口，战神越多越贵）。
+        long gateStart = LocalPerfProbe.Begin();
         LocalMultiControlRuntime.TryAutoEndTurnForRelicControlledPlayer();
+        LocalPerfProbe.End(LocalPerfProbe.Slot.EndTurnGate, gateStart);
+
         // r104（BUG-2）：结束回合按钮状态机绑定前台角色，而自动切人/瓦库自动结束回合会绕开
         // 原版按钮事件，可能把按钮留在禁用/隐藏状态 → 点结束回合没反应。这里逐帧兜底自愈（内部节流）。
+        long reconcileStart = LocalPerfProbe.Begin();
         LocalMultiControlRuntime.ReconcileEndTurnButtonForForeground("combat-tick");
+        LocalPerfProbe.End(LocalPerfProbe.Slot.EndTurnReconcile, reconcileStart);
+
         // r111（BUG-7）：显示的手牌 UI 顺序必须等于前台角色手牌堆顺序（后台角色手牌变换跳过视觉后会脱节）。
         // 同样逐帧兜底、内部 250ms 节流；只在真的不一致时动手并打日志。
+        long handStart = LocalPerfProbe.Begin();
         LocalMultiControlRuntime.ReconcileDisplayedHandOrder("combat-tick");
+        LocalPerfProbe.End(LocalPerfProbe.Slot.HandOrderReconcile, handStart);
     }
 }

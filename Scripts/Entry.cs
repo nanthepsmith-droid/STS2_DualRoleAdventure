@@ -738,7 +738,17 @@ public partial class Entry
     //   （Watcher mod）⇒ 没装那个 mod 的玩家会被 r278 的可用性判据整条跳过（其余照常）。
     //   ⚠ 本机（玩家那份与内置**同 id**）合并后仍是 18 套 ⇒ **本地行为零变化**；要验内置通道得先把
     //   `%APPDATA%\SlayTheSpire2\hellwar_presets.json` 临时改名，再启动看 `内置预设已读取: 条数=18`。
-    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-17-r281)";
+    // r289（2026-10-20，用户拍板）：**预设 `bonusHp` 负数 = 减少血上限**（最少留 1 点），不再归 0。
+    //   ① 归一（`HellwarPresetPolicy.Normalize`）**不改值、不记问题** —— 原来会对负数打一条
+    //      "为负数，已按 0 处理" 的 WARN，玩家每局启动都被刷一遍（r288 实机日志 3 条）；而且归一阶段
+    //      拿不到"角色基础血量"（普通档可能是 mod 角色的皮），算不上下限。
+    //   ② 施加（`HellwarWarGodFactory.ApplyPresetToInventory`）改走纯逻辑 `HellwarPresetHpPolicy`：
+    //      `max(1, 基础 + bonusHp)`，正负一律先 SetMax 再 SetCurrent(新上限)；新增锚点
+    //      `①e 预设额外血: seat=…, 基础=…, 调整=-39 => 上限=31`（被下限收住时带一句说明）。
+    //   ③ 为什么下限是 1：原版 `Creature.SetMaxHpInternal` 对负数**直接抛**
+    //      （`amount must be non-negative`），0 上限又会当场进死亡流程 ⇒ 1 最稳。
+    //   ④ 编辑器侧（WarGodForge）同步：负数额外血从 Warning 降为 Info 提示 + 字段标题写明正负语义。
+    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-20-r289)";
 
     private static Harmony? _harmony;
 

@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using LocalMultiControl.Scripts.Models.Relics;
+using LocalMultiControl.Scripts.Runtime.PureLogic;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Context;
@@ -567,7 +568,13 @@ internal static class LocalWakuuRelicRuntime
                         playedThisTurn: cardsPlayed,
                         isBackground: IsBackgroundHostedWakuu(player));
 
-                    if (!brain.TryDecideNext(ctx, out WakuuPlannedAction next)
+                    // r285：大脑决策的单次耗时（scored 档逐张评分 + 知识层抽样；调度调用会同步启动本循环，
+                    // 所以这一段的耗时也算在「门-看门狗调度」里 —— 探针分开记，判读时才能分清是谁）。
+                    long decideStart = LocalPerfProbe.Begin();
+                    bool decided = brain.TryDecideNext(ctx, out WakuuPlannedAction next);
+                    LocalPerfProbe.End(LocalPerfProbe.Slot.PlayLoopDecide, decideStart);
+
+                    if (!decided
                         || next.Kind != WakuuActionKind.PlayCard
                         || next.Card == null)
                     {
@@ -1390,7 +1397,12 @@ internal static class LocalWakuuRelicRuntime
         return TryScheduleWatchdog(player, source, out _);
     }
 
-    public static bool TryScheduleWatchdog(Player player, string source, out string reason)
+    /// <param name="knownHasPlayableCards">
+    /// r285：调用方**刚刚**已经算过「这一席托管还有牌能打吗」时传 <c>true</c>，省掉这里再扫一遍
+    /// （每次扫描里每张牌都走 `CanPlay()` → `Hook.ShouldPlay` → `IterateHookListeners`，战神多时是纯浪费）。
+    /// 传 <c>null</c>（默认）= 自己扫，行为与旧版一致。
+    /// </param>
+    public static bool TryScheduleWatchdog(Player player, string source, out string reason, bool? knownHasPlayableCards = null)
     {
         reason = "unknown";
         if (Volatile.Read(ref _selectorScopeInFlight) > 0)
@@ -1418,6 +1430,16 @@ internal static class LocalWakuuRelicRuntime
         if (combatState == null || combatState.CurrentSide != CombatSide.Player || CombatManager.Instance.IsOverOrEnding)
         {
             reason = "invalid-combat-state";
+            return false;
+        }
+
+        // r283：额外回合（原版帕尔之眼 / 新三国「天意」这类**接管回合**效果）只让名单内的席位行动 ——
+        // 不在名单里的席位这一回合没有行动权，绝不能替它调度出牌（见 TurnParticipationPolicy）。
+        if (!TurnParticipationPolicy.CanDriveSeat(
+                currentSideIsPlayer: true,
+                isPartOfPlayerTurn: CombatManager.Instance.IsPartOfPlayerTurn(player)))
+        {
+            reason = "not-part-of-this-turn";
             return false;
         }
 
@@ -1454,7 +1476,8 @@ internal static class LocalWakuuRelicRuntime
 
         // r263：托管口径 —— "需要目标却没目标"或"效果会抛"的牌不算可出牌（见 HasHostedPlayableCards），
         // 否则这一席会被每帧反复调度、每次都撞同一个坑（r262 实机的空转/selector-scope-busy 挤压）。
-        if (!HasHostedPlayableCards(player, combatState.RoundNumber))
+        // r285：调用方（结束回合门）刚算过就传进来，别再扫一遍。
+        if ((knownHasPlayableCards ?? HasHostedPlayableCards(player, combatState.RoundNumber)) != true)
         {
             reason = "no-playable-cards";
             return false;
@@ -1835,6 +1858,17 @@ internal static class LocalWakuuRelicRuntime
         if (combatState.CurrentSide != CombatSide.Player)
         {
             reason = $"side-{combatState.CurrentSide}";
+            return true;
+        }
+
+        // r283：**额外回合**（原版帕尔之眼 / 新三国「天意」等接管回合的效果）只让 `PlayersTakingExtraTurn`
+        // 里的席位行动。原来的守卫只问了"是不是玩家侧"，于是别人的额外回合里我们仍会替非参与者出牌
+        // （`PlayCardAction` 不校验行动权）⇒ 白打牌 / 把额外回合的回合链搅乱。判据见 TurnParticipationPolicy。
+        if (!TurnParticipationPolicy.CanDriveSeat(
+                currentSideIsPlayer: true,
+                isPartOfPlayerTurn: CombatManager.Instance.IsPartOfPlayerTurn(player)))
+        {
+            reason = "not-part-of-this-turn";
             return true;
         }
 

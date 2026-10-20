@@ -256,6 +256,11 @@ internal static class PatchDomainMap
             ["NMultiplayerPlayerStateReadyPatch"] = PatchDomain.Ui,
             ["NMultiplayerPlayerStatePetHpPatch"] = PatchDomain.Ui,
             ["NOverlayStackPatch"] = PatchDomain.Ui,
+            // r283：没有球槽视觉节点的席位（战神 / 战斗中才加入的席位）跳过球的进出动画 ——
+            // 否则原版 `NOrbManager.AddOrbAnim` 的 `_orbs.First(...)` 会抛，把 turn loop 打死。
+            ["NOrbManagerSlotlessSeatPatch"] = PatchDomain.Ui,
+            // r287：战神（临时席位）的"额外奖励"会写进存档，读档时找不到主人 ⇒ Reward.FromSerializable NRE ⇒ 读档失败。
+            ["CombatRoomTemporarySeatRewardPatch"] = PatchDomain.Rewards,
             ["NOverlayStackPhantomGuardPatch"] = PatchDomain.Ui,
             ["NPauseMenuRestartRoomPatch"] = PatchDomain.Ui,
             ["NPlayerHandAddOwnerGuardPatch"] = PatchDomain.Ui,

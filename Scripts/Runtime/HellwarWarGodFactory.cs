@@ -665,8 +665,9 @@ internal static class HellwarWarGodFactory
     /// <item><b>卡组全升级</b>（<paramref name="preset"/>.<c>UpgradeDeck</c>）：逐张 `IsUpgradable` 判定后
     ///   `UpgradeInternal()` + `FinalizeUpgradeInternal()`（顺序不能反，后者收尾预览态）。
     ///   已在配置里单独标了 <c>+</c> 的牌此时已到满级 ⇒ `IsUpgradable` 为假，**不会重复升级**。</item>
-    /// <item><b>额外血上限</b>（`BonusHp`）：`SetMaxHpInternal` 之后再 `SetCurrentHpInternal`（把当前血补满到新上限，
-    ///   否则会显示成"半血出生"）。</item>
+    /// <item><b>额外血上限</b>（`BonusHp`，**正数加、负数减**）：`SetMaxHpInternal` 之后再 `SetCurrentHpInternal`
+    ///   （把当前血补满到新上限，否则会显示成"半血出生"）。负数按 <see cref="HellwarPresetHpPolicy"/>
+    ///   收在**最少 1 点** —— 原版 `SetMaxHpInternal` 对负数直接抛，0 上限又会当场进死亡流程（r289）。</item>
     /// </list>
     /// 返回实际升级的张数（打日志用）。
     /// </summary>
@@ -689,11 +690,20 @@ internal static class HellwarWarGodFactory
             }
         }
 
-        if (preset.BonusHp > 0 && player.Creature != null)
+        // r289（2026-10-20 用户拍板）：bonusHp **负数 = 减少血上限**（最少留 1 点），不再归 0。
+        // 正负都不做"半血出生"：先 SetMax 再 SetCurrent(新上限)。
+        if (HellwarPresetHpPolicy.ShouldApply(preset.BonusHp) && player.Creature != null)
         {
-            decimal maxHp = player.Creature.MaxHp + preset.BonusHp;
+            int baseMaxHp = player.Creature.MaxHp;
+            int maxHp = HellwarPresetHpPolicy.ResolveMaxHp(baseMaxHp, preset.BonusHp);
             player.Creature.SetMaxHpInternal(maxHp);
             player.Creature.SetCurrentHpInternal(maxHp);
+            LocalMultiControlLogger.Info(
+                $"{tag} ①e 预设额外血: seat={player.NetId}, 基础={baseMaxHp}, 调整={preset.BonusHp:+0;-0;0} "
+                + $"=> 上限={maxHp}"
+                + (HellwarPresetHpPolicy.WasClampedToMinimum(baseMaxHp, preset.BonusHp)
+                    ? $"（扣得比血还多，已按最少 {HellwarPresetHpPolicy.MinimumMaxHp} 点收住）"
+                    : string.Empty));
         }
 
         if (player.Deck.Cards.Count == 0)
@@ -1120,7 +1130,14 @@ internal static class HellwarWarGodFactory
     /// 会被托管链放行继续打（与瓦库 <c>TryEndAllPlayersWhenNoCards</c> 同款语义）。
     /// </summary>
     /// <returns>本次收口的战神个数。</returns>
-    internal static int TryEndIdleWarGodTurns(CombatState? state, string source, string tag = "[地狱战神]")
+    /// <param name="hasPlayableCards">
+    /// r286：调用方（结束回合门）**本 tick 已经算过**的"这一席托管还有没有能打的牌"，传进来就复用。
+    /// 每次扫描里每张牌都走 `CanPlay()` → `Hook.ShouldPlay` → `IterateHookListeners`（每次 new List(玩家数×50)），
+    /// 实测"门-手牌扫描"在一个 5s 窗口里能吃掉 **1.24s / 363 次**（10 战神局），是逐帧开销的第一名。
+    /// 传 <c>null</c> = 自己扫（行为与旧版一致）。
+    /// </param>
+    internal static int TryEndIdleWarGodTurns(
+        CombatState? state, string source, string tag = "[地狱战神]", Func<Player, bool>? hasPlayableCards = null)
     {
         if (state == null || state.CurrentSide != CombatSide.Player)
         {
@@ -1143,16 +1160,43 @@ internal static class HellwarWarGodFactory
                     continue;
                 }
 
-                // 还有**托管能打**的牌 ⇒ 交给托管出牌（下一帧 tick 会再判）；没有 ⇒ 这一席当刻没事做，替它 ready。
-                // ⚠ r263：判据必须是**托管口径**（`LocalWakuuRelicRuntime.HasHostedPlayableCards`），不能用裸 `CanPlay()` ——
-                // 一张"数据上能打、托管一打就卡"的牌（需要目标却没目标 / 效果内部抛）会让这里永远认为
-                // "还有牌可出" ⇒ 战神永不 ready ⇒ 真人「结束回合」被挡（r262 实机死锁的收口那一跳）。
-                if (LocalWakuuRelicRuntime.HasHostedPlayableCards(warGod, state.RoundNumber))
+                // r283：**额外回合**（原版帕尔之眼 / 新三国「天意」等）只让 `PlayersTakingExtraTurn` 里的席位行动 ——
+                // 非参与者这一回合没有行动权，我们既不该替它出牌，也不该替它 ready
+                // （对不在回合里的席位发 `PlayerCmd.EndTurn` 会把回合链搅乱）。判据见 TurnParticipationPolicy。
+                if (!TurnParticipationPolicy.CanDriveSeat(
+                        currentSideIsPlayer: true,
+                        isPartOfPlayerTurn: CombatManager.Instance?.IsPartOfPlayerTurn(warGod) ?? false))
                 {
                     continue;
                 }
 
-                EndWarGodTurn(warGod, tag, source);
+                // 还有**托管能打**的牌 ⇒ 交给托管出牌（下一帧 tick 会再判）；没有 ⇒ 这一席当刻没事做，替它 ready。
+                // ⚠ r263：判据必须是**托管口径**（`LocalWakuuRelicRuntime.HasHostedPlayableCards`），不能用裸 `CanPlay()` ——
+                // 一张"数据上能打、托管一打就卡"的牌（需要目标却没目标 / 效果内部抛）会让这里永远认为
+                // "还有牌可出" ⇒ 战神永不 ready ⇒ 真人「结束回合」被挡（r262 实机死锁的收口那一跳）。
+                if (hasPlayableCards != null
+                        ? hasPlayableCards(warGod)
+                        : LocalWakuuRelicRuntime.HasHostedPlayableCards(warGod, state.RoundNumber))
+                {
+                    continue;
+                }
+
+                // r288：**把"真的结束回合"挪出逐帧门**。`EndWarGodTurn` → `PlayerCmd.EndTurn` 会**同步**跑完
+                // 整个 turn-end 前缀（hooks / 能量重置 / 同步消息）—— 实测单次 **702ms**，叠在 100ms 的
+                // 结束回合门里就是一整帧卡死（2026-10-19 探针 `门-战神收口 单次最大 702.68ms`）。
+                // 判定（未 ready + 托管无牌可出）仍当帧做，只把"执行"延后一帧；执行前再复核一次可出牌。
+                Player targetWarGod = warGod;
+                int roundForCheck = state.RoundNumber;
+                Callable.From(() =>
+                {
+                    if (LocalWakuuRelicRuntime.HasHostedPlayableCards(targetWarGod, roundForCheck))
+                    {
+                        // 这一帧里又拿到能打的牌 ⇒ 不收（让托管链继续打）。
+                        return;
+                    }
+
+                    EndWarGodTurn(targetWarGod, tag, source);
+                }).CallDeferred();
                 ended++;
             }
             catch (Exception exception)

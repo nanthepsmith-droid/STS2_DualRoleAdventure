@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Models.Relics;
 using LocalMultiControl.Scripts.Patch;
+using LocalMultiControl.Scripts.Runtime.PureLogic;
 using MegaCrit.Sts2.Core.Assets;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Context;
@@ -53,6 +54,55 @@ internal static class LocalMultiControlRuntime
     /// <summary>结束回合按钮自愈（r104）节流：同一场战斗最多尝试间隔 500ms，失败日志每场最多 5 条。</summary>
     private static long _lastEndTurnReconcileAttemptMs;
     private static int _endTurnReconcileLogCount;
+
+    /// <summary>
+    /// 结束回合按钮对账的**逐帧入口**节流（r282）：真动作本来就有 500ms 节流，但"判定要不要自愈"那段
+    /// 每帧都在跑反射（`AccessTools.Field` + 两次 `GetValue` 装箱）—— 10 个战神时属于纯浪费。
+    /// 150ms 判一次足够（它只是兜底自愈，延迟 150ms 没有观感差别）。
+    /// </summary>
+    private const long EndTurnReconcileCheckIntervalMs = 150L;
+
+    private static long _lastEndTurnReconcileCheckMs;
+
+    /// <summary>按钮内部 `_state` 字段的反射句柄（r282：解析一次，别每帧 `AccessTools.Field`）。</summary>
+    private static FieldInfo? _endTurnButtonStateField;
+
+    /// <summary>
+    /// 「这一席托管还有没有能打的牌」的**跨 tick 复用**（r288）。
+    ///
+    /// 为什么需要：`HasHostedPlayableCards` 逐张走 `CanPlay()` → `Hook.ShouldPlay` →
+    /// `CombatState.IterateHookListeners()`（**每次**都 `new List(玩家数×50)` 再遍历所有生物的能力/遗物）。
+    /// 10 战神局实测：363 次/5s，最差窗口合计 **2554ms/5.18s**（约占墙钟一半）。
+    ///
+    /// 复用条件 = **状态签名没变**（回合号 / 能量 / 手牌张数 / 手牌实例哈希）+ 未超
+    /// <see cref="HostedPlayableCacheTtlMs"/>。手牌或能量一变立刻重算 ⇒ **只容忍"能力类 buff 让某张牌
+    /// 突然可打"这种极端情况**延迟 ≤ TTL。方向上也安全：缓存住的"有牌可打"只会让收口晚 ≤TTL；
+    /// 缓存住的"无牌可打"最坏是把它这一回合少打一张牌（不是卡死 —— 出牌链自己还会复核 `CanPlay`）。
+    /// </summary>
+    private const long HostedPlayableCacheTtlMs = 400L;
+
+    private static readonly Dictionary<ulong, HostedPlayableCacheEntry> _hostedPlayableCache = new();
+
+    private struct HostedPlayableCacheEntry
+    {
+        public int Round;
+        public int Energy;
+        public int HandCount;
+        public long Signature;
+        public long AtMs;
+        public bool Value;
+    }
+
+    /// <summary>
+    /// 「结束回合门 + 托管调度 + 战神收口」的**重活节流**（r282）。
+    ///
+    /// 为什么：这段逐帧跑，而且开销**随席位/手牌数线性放大**（每个托管席位都要扫一遍手牌判"还有能打的吗"，
+    /// 再各自调度看门狗；战神一多就是十几个席位 × 十几张牌）。100ms 一次对"托管出牌调度"这种
+    /// 人类感知不到的时序完全够用，却能把逐帧成本直接砍到 1/6。
+    /// </summary>
+    private const long HeavyAutoEndTickIntervalMs = 100L;
+
+    private static long _lastHeavyAutoEndTickMs;
 
     /// <summary>改进-1 跳过回合开始抽牌演出的日志去重（战斗场次变化时清空）。</summary>
     private static readonly HashSet<string> _skipDrawAnimLogged = new HashSet<string>();
@@ -177,6 +227,11 @@ internal static class LocalMultiControlRuntime
         _combatEnergyDiagKeys.Clear();
         _lastEndTurnReconcileAttemptMs = 0L;
         _endTurnReconcileLogCount = 0;
+        // r282 性能优化新增的两个节流点 + 逐帧开销探针（退局后不该带着上一局的窗口）。
+        _lastEndTurnReconcileCheckMs = 0L;
+        _lastHeavyAutoEndTickMs = 0L;
+        _hostedPlayableCache.Clear();
+        LocalPerfProbe.Reset("run-cleanup");
         LocalMerchantInventoryRuntime.Clear();
         LocalRestSiteSeatBubble.Reset("run-cleanup");
         // 瓦库四功能 · 我们联合：「本场战斗已发动」的记忆与流程中的防重入标记（R5 生命周期契约）。
@@ -423,37 +478,123 @@ internal static class LocalMultiControlRuntime
             return;
         }
 
+        // r282：**重活节流**（见 HeavyAutoEndTickIntervalMs）—— 从这个位置开始（R8 联坐检查、战神收口、
+        // 逐席位扫手牌判"还有能打的吗"、逐个调度看门狗）开销都随"席位 × 手牌"放大，
+        // 战神一多就是十几席 × 十几张牌的扫描。100ms 一次对调度语义没有影响。
+        long nowMs = (long)Time.GetTicksMsec();
+        if (nowMs - _lastHeavyAutoEndTickMs < HeavyAutoEndTickIntervalMs)
+        {
+            return;
+        }
+
+        _lastHeavyAutoEndTickMs = nowMs;
+
         // Phase 4（R8）：绑主一死就收掉它的战神 —— **刻意放在"当前是玩家侧 / 队列在出牌相位"这两道门之前**：
         // 主人可能死在**敌方回合**，那时也得收（否则死掉那位玩家的战神会变成给队友白嫖的肉盾）。
         // 内部只做"绑主已死且战神还活着"的收口，条数少、每帧一次开销可忽略。
+        long preludeStart = LocalPerfProbe.Begin();
         HellwarWarGodFactory.EnforceSummonerBond(combatState, "war-god-bond-tick");
         // Phase 4 观测锚点：战神"活着→死了"时各打一条（"被敌人打死"原本没有任何锚点）。
         HellwarWarGodFactory.LogWarGodDeaths(combatState);
 
         if (combatState.CurrentSide != CombatSide.Player)
         {
+            LocalPerfProbe.End(LocalPerfProbe.Slot.GatePrelude, preludeStart);
             return;
         }
 
         if (RunManager.Instance.ActionQueueSynchronizer.CombatState != ActionSynchronizerCombatState.PlayPhase)
         {
+            LocalPerfProbe.End(LocalPerfProbe.Slot.GatePrelude, preludeStart);
             return;
         }
 
         RefreshAutoEndTrackingForCombat(combatState);
         TryConsumePendingWakuuAutoSwitch(combatState);
+        LocalPerfProbe.End(LocalPerfProbe.Slot.GatePrelude, preludeStart);
         if (LocalManualPlayGuard.IsActive)
         {
             return;
         }
 
+        // r286：**一次 tick 只算一遍**「每一席托管还有没有能打的牌」（本 tick 内是纯读，不会变）。
+        // 三个消费点（战神空闲收口 / 自动切人 / 下面的调度循环）共用同一份结果 ——
+        // 实测 10 战神局一个 5s 窗口里 "门-手牌扫描" 跑了 **363 次、吃掉 1.24s**（占整个门的 72%），
+        // 其中约 2/3 是同一 tick 内的重复扫描（每张牌都要 `CanPlay()` → `Hook.ShouldPlay` →
+        // `IterateHookListeners()`，后者每次都 `new List(玩家数×50)`）。
+        Dictionary<ulong, bool> playableMemo = new();
+        bool HasPlayableCached(Player candidate)
+        {
+            if (playableMemo.TryGetValue(candidate.NetId, out bool cached))
+            {
+                return cached;
+            }
+
+            // r288：跨 tick 复用 —— 只要"回合号 / 能量 / 手牌张数 / 手牌实例哈希"没变且未超 TTL，
+            // 就直接用上次结果，省掉一次全手牌 `CanPlay()`（钩子遍历）。见 HostedPlayableCacheTtlMs 的注释。
+            CardPile? handPile = PileType.Hand.GetPile(candidate);
+            int handCount = handPile?.Cards.Count ?? 0;
+            long handSignature = 0L;
+            if (handPile != null)
+            {
+                foreach (CardModel handCard in handPile.Cards)
+                {
+                    // 实例级哈希（CardModel 不是 GodotObject，没有 GetInstanceId；这里只要"同一实例稳定、换牌变动"）。
+                    handSignature = unchecked((handSignature * 31)
+                        + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(handCard));
+                }
+            }
+
+            int energy = candidate.PlayerCombatState?.Energy ?? 0;
+            long nowMs = (long)Time.GetTicksMsec();
+
+            bool computed;
+            if (_hostedPlayableCache.TryGetValue(candidate.NetId, out HostedPlayableCacheEntry entry)
+                && entry.Round == combatState.RoundNumber
+                && entry.Energy == energy
+                && entry.HandCount == handCount
+                && entry.Signature == handSignature
+                && nowMs - entry.AtMs <= HostedPlayableCacheTtlMs)
+            {
+                computed = entry.Value;
+            }
+            else
+            {
+                long scanStartInner = LocalPerfProbe.Begin();
+                computed = LocalWakuuRelicRuntime.HasHostedPlayableCards(candidate, combatState.RoundNumber);
+                LocalPerfProbe.End(LocalPerfProbe.Slot.GateHandScan, scanStartInner);
+                _hostedPlayableCache[candidate.NetId] = new HostedPlayableCacheEntry
+                {
+                    Round = combatState.RoundNumber,
+                    Energy = energy,
+                    HandCount = handCount,
+                    Signature = handSignature,
+                    AtMs = nowMs,
+                    Value = computed,
+                };
+            }
+
+            playableMemo[candidate.NetId] = computed;
+            return computed;
+        }
+
         // Phase 3（R11）：战神（临时席位）由托管链出牌 —— 它自己不会 ready，
         // 手牌再无可出牌时在这里替它收口（否则「结束回合」门的分母永远多一个 ⇒ r244 那类卡死）。
-        HellwarWarGodFactory.TryEndIdleWarGodTurns(combatState, "war-god-idle-tick");
+        long idleStart = LocalPerfProbe.Begin();
+        HellwarWarGodFactory.TryEndIdleWarGodTurns(
+            combatState, "war-god-idle-tick", hasPlayableCards: HasPlayableCached);
+        LocalPerfProbe.End(LocalPerfProbe.Slot.GateIdleWarGods, idleStart);
 
-        TryAutoSwitchFromWakuuWhenAllWakuuNoPlayableCards(combatState, "wakuu-no-playable-cards-tick");
+        long switchStart = LocalPerfProbe.Begin();
+        TryAutoSwitchFromWakuuWhenAllWakuuNoPlayableCards(
+            combatState, "wakuu-no-playable-cards-tick", HasPlayableCached);
+        LocalPerfProbe.End(LocalPerfProbe.Slot.GateAutoSwitch, switchStart);
 
         bool anyWakuuPlayerHasPlayableCards = false;
+        // r286：**同一 tick 只启动一个出牌循环** —— `TryScheduleWatchdog` 会同步跑到循环的第一个 await
+        // （实测单次最大 96ms，其中大脑决策 22ms），10 个战神同时召唤、同时又都可出牌时会把一帧拉成近 1 秒。
+        // 被挡下的席位下一 tick（100ms 后）自然轮到；已在飞的席位会被便宜地拒掉，不会饿死。
+        int scheduledThisTick = 0;
         foreach (Player player in combatState.Players)
         {
             if (player?.Creature == null || !player.Creature.IsAlive)
@@ -461,16 +602,44 @@ internal static class LocalMultiControlRuntime
                 continue;
             }
 
+            // r283：**额外回合**只驱动参与者（`PlayersTakingExtraTurn` 名单；普通回合 = 全员）。
+            // 非参与者这一回合没有行动权 —— 不替它出牌、也不替它收口（见 TurnParticipationPolicy）。
+            // 顺带省掉"别人的额外回合里还去扫它整手牌"的无效开销。
+            if (!TurnParticipationPolicy.CanDriveSeat(
+                    currentSideIsPlayer: true,
+                    isPartOfPlayerTurn: CombatManager.Instance.IsPartOfPlayerTurn(player)))
+            {
+                continue;
+            }
+
+            // r284：**先判是不是托管席位，再扫手牌** —— 真人自己 / 第三方 Bot 的扫描结果本来就没人用。
+            if (!LocalWakuuRelicRuntime.IsAutoplayHosted(player))
+            {
+                continue;
+            }
+
             // r263：**托管口径**的可出牌（把"需要目标却没目标"/"托管打它会抛"的牌剔掉）——
             // 否则一张托管打不了的牌会让这一席被每帧反复调度、每次都空转（r262 实机死锁的一环）。
-            bool hasPlayableCards = LocalWakuuRelicRuntime.HasHostedPlayableCards(player, combatState.RoundNumber);
+            bool hasPlayableCards = HasPlayableCached(player);
 
             // Phase 3：托管候选 = 持有接管遗物 **或临时席位（战神）**（见 LocalWakuuRelicRuntime.IsAutoplayHosted）。
-            if (LocalWakuuRelicRuntime.IsAutoplayHosted(player) && hasPlayableCards)
+            if (hasPlayableCards)
             {
                 anyWakuuPlayerHasPlayableCards = true;
-                bool scheduled = LocalWakuuRelicRuntime.TryScheduleWatchdog(player, "combat-watchdog", out string reason);
+                if (scheduledThisTick >= 1)
+                {
+                    continue;
+                }
+
+                long watchdogStart = LocalPerfProbe.Begin();
+                bool scheduled = LocalWakuuRelicRuntime.TryScheduleWatchdog(
+                    player, "combat-watchdog", out string reason, knownHasPlayableCards: true);
                 RecordWatchdogScheduleResult(scheduled, reason, player.NetId, combatState.RoundNumber, "combat-watchdog");
+                LocalPerfProbe.End(LocalPerfProbe.Slot.GateWatchdog, watchdogStart);
+                if (scheduled)
+                {
+                    scheduledThisTick++;
+                }
             }
         }
 
@@ -520,6 +689,15 @@ internal static class LocalMultiControlRuntime
                 continue;
             }
 
+            // r283：额外回合里"非参与者"这一回合本来就不能行动 —— 它手上有没有牌都不该挡住
+            // 参与者这边的全员结束（否则别人的额外回合会被它拖住）。
+            if (!TurnParticipationPolicy.CanDriveSeat(
+                    currentSideIsPlayer: true,
+                    isPartOfPlayerTurn: CombatManager.Instance.IsPartOfPlayerTurn(player)))
+            {
+                continue;
+            }
+
             // r263：**托管口径**（见 HasHostedPlayableCards）—— 只剩"托管打不了"的牌时必须放行，
             // 否则真人点「结束回合」会被永远挡住（r262 实机现象，日志 16 条"检测到仍有可出牌角色"）。
             // 真人真想手动打那张牌，直接打即可（这条只看"要不要触发全员结束"）。
@@ -547,6 +725,14 @@ internal static class LocalMultiControlRuntime
             // 只结束我们自己的席位：第三方 Bot 的回合该由它自己的 mod 结束，
             // 我们替它 `EndTurn` 会污染它的动作流（r144 实机：日志里出现过对 Bot 席位的切人失败告警）。
             if (!IsLocalSessionPlayer(player) || player.Creature == null || !player.Creature.IsAlive)
+            {
+                continue;
+            }
+
+            // r283：额外回合里只有参与者可以"结束回合"（对非参与者发结束动作会搅乱回合链）。
+            if (!TurnParticipationPolicy.CanDriveSeat(
+                    currentSideIsPlayer: true,
+                    isPartOfPlayerTurn: CombatManager.Instance.IsPartOfPlayerTurn(player)))
             {
                 continue;
             }
@@ -587,7 +773,33 @@ internal static class LocalMultiControlRuntime
         return endedAnyPlayer;
     }
 
-    private static void RefreshAutoEndTrackingForCombat(CombatState combatState)
+    /// <summary>
+    /// 回合开始时的"战斗级状态复位"入口（r285）。**已有的复位枢纽**是
+    /// <see cref="RefreshAutoEndTrackingForCombat"/>（战斗身份变了就清台账 + 归因表 + 各项节流），
+    /// 但它原先只在**看门狗那条 100ms 重活**里跑 —— 而新一场战斗的第一个 `SetupPlayerTurn`
+    /// 往往比我们下一次 tick **更早**。后果（2026-10-19 r284 日志实测）：
+    /// <code>13049 [回合归属] 同一回合里开了新一段回合（**额外回合**）… player=…326, round=1
+    /// 13059 …327, round=1
+    /// 13358 检测到战斗场次切换，重置瓦库自动结束回合状态: combat=32704528   ← 复位比上面那两条晚</code>
+    /// ① 上一条"额外回合"锚点是**误报**（其实是上一场战斗 round 1 的残留记录被清掉）；
+    /// ② 更要紧的是 `_allPlayersAutoEndedRounds` / `_wakuuAutoEndIssued` 这类按回合号记的台账
+    ///   也会**跨战斗**命中同一回合号 ⇒ 新战斗第一回合可能出现"全员无牌却不自动收口"。
+    /// 所以把复位提前到"玩家回合开始"这个最早的既有挂点上（与 <c>SetupPlayerTurn</c> 前缀共用）。
+    /// </summary>
+    public static void RefreshCombatScopedStateAtTurnStart(CombatState combatState, string source)
+    {
+        try
+        {
+            RefreshAutoEndTrackingForCombat(combatState, source);
+        }
+        catch (Exception exception)
+        {
+            // 纯台账复位，绝不能打断 SetupPlayerTurn。
+            LocalMultiControlLogger.Warn($"回合开始的战斗级状态复位失败（已忽略）: {exception.Message}");
+        }
+    }
+
+    private static void RefreshAutoEndTrackingForCombat(CombatState combatState, string source = "combat-tick")
     {
         int combatIdentity = RuntimeHelpers.GetHashCode(combatState);
         if (_lastAutoEndCombatIdentity == combatIdentity)
@@ -605,7 +817,10 @@ internal static class LocalMultiControlRuntime
         _pendingManualEndTurnRound = -1;
         _lastEndTurnReconcileAttemptMs = 0L;
         _endTurnReconcileLogCount = 0;
-        LocalMultiControlLogger.Info($"检测到战斗场次切换，重置瓦库自动结束回合状态: combat={combatIdentity}");
+        // r288：手牌可出牌结果的跨 tick 复用缓存是**按战斗**的（RoundNumber 会重置），换战斗必须清。
+        _hostedPlayableCache.Clear();
+        LocalMultiControlLogger.Info(
+            $"检测到战斗场次切换，重置瓦库自动结束回合状态: combat={combatIdentity}, source={source}");
         LocalWakuuRelicRuntime.ProbeAndRecoverSelectorStack($"combat-switch-{combatIdentity}", allowRecover: true);
     }
 
@@ -1084,7 +1299,8 @@ internal static class LocalMultiControlRuntime
     /// 没有瓦库席位 / 瓦库都死了 / 有任一瓦库还有可出牌 ⇒ false（即不该走"瓦库无牌可出"的兜底）。
     /// 只看瓦库席位：真人席位有没有牌不在这里判。
     /// </summary>
-    private static bool AreAllAliveWakuuSeatsWithoutPlayableCard(CombatState combatState)
+    private static bool AreAllAliveWakuuSeatsWithoutPlayableCard(
+        CombatState combatState, Func<Player, bool>? hasPlayableCards = null)
     {
         bool hasAliveWakuu = false;
         foreach (Player player in combatState.Players)
@@ -1096,7 +1312,11 @@ internal static class LocalMultiControlRuntime
 
             hasAliveWakuu = true;
             // r263：托管口径 —— 只剩"托管打不了"的牌 = 当刻无牌可出（否则切人兜底永远不触发）。
-            if (LocalWakuuRelicRuntime.HasHostedPlayableCards(player, combatState.RoundNumber))
+            // r286：调用方本 tick 算过就复用（见 TryEndIdleWarGodTurns 的 hasPlayableCards 注释）。
+            bool playable = hasPlayableCards != null
+                ? hasPlayableCards(player)
+                : LocalWakuuRelicRuntime.HasHostedPlayableCards(player, combatState.RoundNumber);
+            if (playable)
             {
                 return false;
             }
@@ -1105,7 +1325,8 @@ internal static class LocalMultiControlRuntime
         return hasAliveWakuu;
     }
 
-    private static bool TryAutoSwitchFromWakuuWhenAllWakuuNoPlayableCards(CombatState combatState, string source)
+    private static bool TryAutoSwitchFromWakuuWhenAllWakuuNoPlayableCards(
+        CombatState combatState, string source, Func<Player, bool>? hasPlayableCards = null)
     {
         string roundKey = BuildWakuuSwitchRoundKey(combatState.RoundNumber);
         if (WakuuRoundSwitchLedger.HasSwitched(roundKey))
@@ -1119,7 +1340,7 @@ internal static class LocalMultiControlRuntime
             return false;
         }
 
-        if (!AreAllAliveWakuuSeatsWithoutPlayableCard(combatState))
+        if (!AreAllAliveWakuuSeatsWithoutPlayableCard(combatState, hasPlayableCards))
         {
             return false;
         }
@@ -2442,6 +2663,16 @@ internal static class LocalMultiControlRuntime
             return;
         }
 
+        // r282：逐帧入口节流（150ms）。下面这段要反射读 `_state`（每帧两次装箱），
+        // 真自愈动作本来也有 500ms 节流 —— 判定值不值当不必按 60fps 算。
+        long checkMs = (long)Time.GetTicksMsec();
+        if (checkMs - _lastEndTurnReconcileCheckMs < EndTurnReconcileCheckIntervalMs)
+        {
+            return;
+        }
+
+        _lastEndTurnReconcileCheckMs = checkMs;
+
         NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
         if (combatUi == null)
         {
@@ -2470,7 +2701,9 @@ internal static class LocalMultiControlRuntime
             return;
         }
 
-        FieldInfo? stateField = AccessTools.Field(typeof(NEndTurnButton), "_state");
+        // r282：反射句柄解析一次即可（原来每帧 `AccessTools.Field` 一次 + `GetValue` 两次）。
+        FieldInfo? stateField = _endTurnButtonStateField
+            ??= AccessTools.Field(typeof(NEndTurnButton), "_state");
         bool buttonStateEnabled = stateField?.GetValue(button) != null
             && Convert.ToInt32(stateField.GetValue(button)) == 0;
 

@@ -28,6 +28,28 @@ public class WakuuTurnEndOriginTests
         => WakuuTurnEndOrigin.ShouldStopAutoplay(ready, external, byMod, allReady);
 
     [Test]
+    public void 额外回合_新一段回合开始会清掉上一段的结束记忆()
+    {
+        // r283：额外回合不开新回合号 ⇒ 若不清，"本回合已被模组收口"的记忆会让这一位在额外回合里
+        // 永远不许自动出牌、也不会被自动收口。
+        WakuuTurnEndOrigin.BeginModIssuedEnd();
+        WakuuTurnEndOrigin.Record(Wakuu, Round);
+        WakuuTurnEndOrigin.EndModIssuedEnd();
+        Assert.That(WakuuTurnEndOrigin.EndedByMod(Wakuu, Round), Is.True);
+
+        bool removed = WakuuTurnEndOrigin.ForgetTurnEnd(Wakuu, Round);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(removed, Is.True);
+            Assert.That(WakuuTurnEndOrigin.EndedByMod(Wakuu, Round), Is.False);
+            Assert.That(WakuuTurnEndOrigin.EndedExternally(Wakuu, Round), Is.False);
+            // 再清一次：已经没有记忆可清 ⇒ false（调用点据此决定打不打"额外回合"锚点）。
+            Assert.That(WakuuTurnEndOrigin.ForgetTurnEnd(Wakuu, Round), Is.False);
+        });
+    }
+
+    [Test]
     public void 未ready_永不停手()
     {
         Assert.Multiple(() =>

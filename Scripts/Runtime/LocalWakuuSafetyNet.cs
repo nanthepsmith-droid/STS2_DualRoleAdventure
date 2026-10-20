@@ -1,5 +1,6 @@
 using System.Linq;
 using Godot;
+using LocalMultiControl.Scripts.Runtime.PureLogic;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Cards;
@@ -185,6 +186,15 @@ internal static class LocalWakuuSafetyNet
                 || !player.Creature.IsAlive
                 || !IsBackgroundFormPlayer(player)
                 || IsForeground(player.NetId))
+            {
+                continue;
+            }
+
+            // r283：额外回合只让参与者行动 —— 非参与者"手上还有牌"不是卡住，别把它当滞留去切前台
+            // （切过去它也没有行动权，只会让真人以为能打）。判据见 TurnParticipationPolicy。
+            if (!TurnParticipationPolicy.CanDriveSeat(
+                    currentSideIsPlayer: true,
+                    isPartOfPlayerTurn: CombatManager.Instance.IsPartOfPlayerTurn(player)))
             {
                 continue;
             }

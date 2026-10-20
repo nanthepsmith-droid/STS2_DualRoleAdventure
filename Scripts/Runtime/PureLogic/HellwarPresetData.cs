@@ -21,7 +21,8 @@ namespace LocalMultiControl.Scripts.Runtime.PureLogic;
 ///   显式空串 = **不替换**（用该角色的初始卡组）；</item>
 /// <item><see cref="RelicEntries"/> = 预设遗物（裸 entry 列表）；<c>null</c> = **继承**该档内置默认；
 ///   空列表 = **一件都不加**；非空 = 完全接管（不与内置合并）；</item>
-/// <item><see cref="UpgradeDeck"/> / <see cref="BonusHp"/>：缺省 = 继承该档内置默认。</item>
+/// <item><see cref="UpgradeDeck"/> / <see cref="BonusHp"/>：缺省 = 继承该档内置默认；
+///   <c>BonusHp</c> **负数 = 减少血上限**（运行时按 <see cref="HellwarPresetHpPolicy"/> 收在**最少 1 点**）。</item>
 /// </list>
 ///
 /// ⚠ 件数阶梯（成本 − 1）**只做提示、不阻断**（2026-10-11 用户拍板：允许破坏平衡，
@@ -34,7 +35,7 @@ namespace LocalMultiControl.Scripts.Runtime.PureLogic;
 /// <param name="DeckText">卡组文本（null = 继承；空串 = 不替换；其余 = 自定义卡组）。</param>
 /// <param name="RelicEntries">预设遗物（null = 继承；空列表 = 不加；非空 = 完全接管）。</param>
 /// <param name="UpgradeDeck">整组全升级（null = 继承）。</param>
-/// <param name="BonusHp">额外血上限（null = 继承）。</param>
+/// <param name="BonusHp">额外血上限（null = 继承；**负数 = 减少**，运行时下限 1 点）。</param>
 /// <param name="IsDefault">该档的**默认预设**（召唤时不弹选择就用它；同档多个 = 取第一个并记问题）。</param>
 internal sealed record HellwarPresetDefinition(
     string Id,
@@ -253,7 +254,8 @@ internal sealed record HellwarPresetFileData(int Version, List<HellwarPresetEntr
 ///   「罕见」= <see cref="HellwarWarGodTier.Rare"/>、「稀有」= <see cref="HellwarWarGodTier.Epic"/>（游戏侧命名如此）；</item>
 /// <item>档位一条都不合法 ⇒ 整条跳过并记问题（不阻断其余预设）；</item>
 /// <item>同档显式 default 多个 ⇒ 第一个生效、其余记问题；</item>
-/// <item>bonusHp 负数 ⇒ 归 0 并记问题。</item>
+/// <item>bonusHp 负数 ⇒ **原样保留**（= 减少血上限，运行时由 <see cref="HellwarPresetHpPolicy"/> 收在最少 1 点），
+///   不再归 0、不记问题（2026-10-20 用户拍板：负数是一种合法写法，用来做"脆皮高收益"的战神）。</item>
 /// </list>
 /// 任何问题都**只记不抛**：预设表再脏也不能影响召唤（消费端还有内置默认兜底）。
 /// </summary>
@@ -329,12 +331,9 @@ internal static class HellwarPresetPolicy
                 continue;
             }
 
+            // bonusHp 负数 = 减少血上限（合法写法，2026-10-20 用户拍板）：**不改值、不记问题**，
+            // 下限（最少 1 点）在施加时由 HellwarPresetHpPolicy 收住 —— 归一阶段拿不到角色基础血量，算不了。
             int? bonusHp = entry.BonusHp;
-            if (bonusHp.HasValue && bonusHp.Value < 0)
-            {
-                problems.Add($"预设「{displayName}」({id}) 的 bonusHp={bonusHp.Value} 为负数，已按 0 处理");
-                bonusHp = 0;
-            }
 
             string? deckText = entry.Deck;
             if (deckText != null && HellwarWarGodDeckPlan.Parse(deckText) == null && deckText.Trim().Length > 0)
