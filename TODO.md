@@ -965,6 +965,9 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     - **格式**：每条 = `id / name / tiers(一套可复用多档) / skin / deck(与 hellwarDeck* 同文本格式) / relics(id 列表) /
       upgradeDeck / bonusHp / default`；**字段缺省(null) = 继承该档内置默认**；deck 显式空串 = 不替换；relics 空列表 = 一件不加；
       **件数阶梯只 INFO 不阻断**（拍板⑤）；档位名收中文别名（⚠「罕见」=Rare、「稀有」=Epic，测试钉死）。
+      **`bonusHp` 正数加、负数减**（r289，2026-10-20 用户拍板）：负数 = 减少血上限、**最少留 1 点**
+      （纯逻辑 `HellwarPresetHpPolicy`，召唤锚点 `①e 预设额外血`）；归一阶段**不改值、不记问题**
+      —— 下限要等拿到角色基础血量才算得出（普通档可能是 mod 角色的皮）。
     - **代码**：纯逻辑 `PureLogic/HellwarPresetData.cs`（DTO + `HellwarPresetPolicy` 归一 + 继承映射，**15 条新单测**，全绿 1172）+
       运行时 `LocalHellwarPresetStore`（entry-init / run-launched / ModelDb.Preload 后三处幂等重读）；
       record `HellwarWarGodPreset` 加 4 个可选参数（内置四档零改动）。
