@@ -468,6 +468,12 @@ internal static class HellwarWarGodFactory
             await CreatureCmd.Heal(creature, maxHp);
             warGod.ResetCombatState();
             warGod.PopulateCombatState(warGod.RunState.Rng.Shuffle, state);
+
+            // r290：死亡时原版 `NCreature.AnimDie` 会 `OrbManager.ClearOrbs()`（球槽节点全清），
+            //   而 `ResetCombatState` 又把数据层容量补回 BaseOrbSlotCount ⇒ 复活后同样是"有槽无数视觉节点"，
+            //   必须再对齐一次（幂等）。
+            WarGodOrbSlotBridge.SyncVisualSlots(warGod, tag);
+
             MarkReadyToEndTurnIfMidPlayerTurn(state, warGod, tag);
             await ApplySummonProtectionAsync(creature, tag);
             registration.ReviveCount++;
@@ -611,6 +617,12 @@ internal static class HellwarWarGodFactory
 
             CombatManager.Instance!.AddCreature(player.Creature);
             NCombatRoom.Instance?.AddCreature(player.Creature);
+
+            // ③c r290：补**球槽视觉节点**。原版只在 `CombatSetUp` 那一帧按 `OrbQueue.Capacity` 建槽
+            //   （`NOrbManager.OnCombatSetup`），战神是战斗中途加入 ⇒ 数据层有 3 槽（故障机器人）但画面上
+            //   **一个球都没有**（r283 只是把动画兜掉了）。这里补差额；收尾阶段还会再同步一次（幂等）。
+            WarGodOrbSlotBridge.SyncVisualSlots(player, tag);
+
             LocalMultiControlLogger.Info(
                 $"{tag} ③ 已建战斗内节点（**立绘/血条应已出现**）: seat={seatId}, "
                 + $"房间可用={NCombatRoom.Instance != null} —— 角色皮取该预设的 skin（{preset.SkinKey}）："
@@ -1219,6 +1231,13 @@ internal static class HellwarWarGodFactory
         try
         {
             await CombatManager.Instance!.AfterCreatureAdded(creature);
+
+            // r290：再同步一次球槽视觉（幂等）—— 覆盖"节点是 deferred 建出来的"那条路径。
+            if (creature.Player != null)
+            {
+                WarGodOrbSlotBridge.SyncVisualSlots(creature.Player, tag);
+            }
+
             await Hook.AfterCreatureAddedToCombat(state, creature);
 
             // r255（② 预设遗物）：补调"获得时"钩子（`AddRelicInternal` 不会替你调，见 HellwarWarGodRelics 注释）。

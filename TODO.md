@@ -993,6 +993,22 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     reroll 按钮 / `EnemyHexAuthorityCompatPatch` 那套"只有可调席位能改"的归属判据是本轮可复用先例）；
     并且要定义"选项很烂"的判据（抓率全低？稀有度全银？ —— ⚠ 注意：**用户已实测"每次 3 个选项稀有度一致"**，
     所以稀有度不能当判据，得靠抓率或效果质量）。
+- **⑰ r290（2026-10-20 判读 + 修复，⭐ 待实机）—— 「故障机器人被召唤时不会显示充能球」= 视觉球槽只在**开战那一帧**建，战神是中途席位**：
+  - **根因**（`NOrbManager.cs:88-94`）：球槽**视觉节点**只在 `CombatManager.CombatSetUp` 时按当时的
+    `PlayerCombatState.OrbQueue.Capacity` 建（`OnCombatSetup → AddSlotAnim(Capacity)`）。战神是**战斗中途中**
+    加入的席位 ⇒ `NOrbManager._orbs` 永远 **0 个节点**；而**数据层有槽**（`PlayerCombatState` 构造里
+    `OrbQueue.AddCapacity(player.BaseOrbSlotCount)`，`Defect.BaseOrbSlotCount = 3`）⇒ 充能/激发**数值全对**、
+    只是画面上一个球都看不到。r283 的 `球槽视觉兜底` 只把动画兜掉了（不再打死 turn loop），这层一直没补。
+    （旁证：r288 局同一次打 `TEMPEST` 时日志只有 `球槽视觉兜底 … method=AddOrbAnim`，没有任何球节点。）
+  - **修法**：`Runtime/WarGodOrbSlotBridge.SyncVisualSlots` —— 取 `NCreature.OrbManager`，把
+    `Capacity − 视觉槽数` 的差额补成空槽（等价于原版开战那一刻做的事）；**幂等**、纯表现、失败只 WARN。
+    调用三处：③ 建完节点立刻一次 / `FinishSpawnAsync` 收尾一次（覆盖 deferred 建节点）/
+    `ReviveWarGodAsync` 一次（死亡时 `NCreature.AnimDie` 会 `OrbManager.ClearOrbs()`，复活后同样缺槽）。
+    顺带把 `_orbs` 的反射读收进 `OrbSlotVisualProbe`（r283 兜底补丁与本桥共用一份）。
+  - **复测契约（r290）**：召唤**故障机器人皮**的战神 ⇒ 立绘旁出现 3 个空球槽 + 日志
+    `[地狱战神] ③c 已补球槽视觉节点: seat=…, 数据层槽=3, 视觉 0 → 3`；它充能后球**看得见**，
+    且**不再**出现 `球槽视觉兜底 … method=AddOrbAnim`；复活后（死一次再复活）同样有槽。
+  - 未覆盖：`RemoveSlotAnim`（`BULK_UP` 类"减球槽"）仍留着 r288 的兜底 —— 有槽后本应正常执行，待踩到再验。
 - **⑮ r271（2026-10-11 判读 + 修复，⭐ 待实机）—— 「进战斗没怪 / 不抽牌 / 不能换人 / 不能结束回合」= 第三方坏怪 + 第三方开战特效把 turn loop 打死**：
   - **判读**（`logs-archive/godot__20261011-191308__r270.log`，1.3MB 小局，用户进战斗就卡）：
     `turn loop died: NullReferenceException at VfxCmd.PlayOnCreatureCenter_Patch2 ← CreatureCmd.GainBlock ←

@@ -1,7 +1,6 @@
 #nullable enable
 
 using System.Collections.Generic;
-using System.Reflection;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
 using LocalMultiControl.Scripts.Runtime.PureLogic;
@@ -31,12 +30,14 @@ namespace LocalMultiControl.Scripts.Patch;
 ///
 /// **修法**：动画是纯表现 ⇒ 没有视觉球槽就跳过动画，**数据层（OrbQueue / 充能与激发效果）照常**；
 /// 有球槽的玩家（正常故障机器人）完全不受影响。两个调用点（`OrbCmd` 只有这两处）都补。
+///
+/// ⚠ r290（2026-10-20）之后这条兜底**不再是战神的主要体验**：召唤时已由
+/// <see cref="Runtime.WarGodOrbSlotBridge"/> 把视觉球槽补齐（故障机器人的球**看得见**了），
+/// 本补丁只在"读不到节点 / 非球槽角色中途拿到球 / 第三方席位"这些真正没有槽的场合兜住。
 /// </summary>
 [HarmonyPatch(typeof(NOrbManager))]
 internal static class NOrbManagerSlotlessSeatPatch
 {
-    private static readonly FieldInfo? OrbsField = AccessTools.Field(typeof(NOrbManager), "_orbs");
-
     /// <summary>已打过"跳过球动画"日志的 manager（按实例 id 去重；每场战斗最多几条）。</summary>
     private static readonly HashSet<ulong> LoggedManagers = new();
 
@@ -95,12 +96,5 @@ internal static class NOrbManagerSlotlessSeatPatch
     }
 
     private static int ReadVisualSlotCount(NOrbManager manager)
-    {
-        if (OrbsField?.GetValue(manager) is ICollection<NOrb> orbs)
-        {
-            return orbs.Count;
-        }
-
-        return -1;
-    }
+        => OrbSlotVisualProbe.ReadSlotCount(manager);
 }

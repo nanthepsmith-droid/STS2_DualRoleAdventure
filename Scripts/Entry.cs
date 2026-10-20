@@ -748,7 +748,16 @@ public partial class Entry
     //   ③ 为什么下限是 1：原版 `Creature.SetMaxHpInternal` 对负数**直接抛**
     //      （`amount must be non-negative`），0 上限又会当场进死亡流程 ⇒ 1 最稳。
     //   ④ 编辑器侧（WarGodForge）同步：负数额外血从 Warning 降为 Info 提示 + 字段标题写明正负语义。
-    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-20-r289)";
+    // r290（2026-10-20，用户实机："故障机器人被召唤时不会显示充能球"）：**召唤时补球槽视觉节点**。
+    //   ① 根因：`NOrbManager` 的球槽**视觉节点**只在 `CombatSetUp` 那一帧按 `OrbQueue.Capacity` 建
+    //      （`OnCombatSetup → AddSlotAnim`）；战神是战斗中途加入的席位 ⇒ `_orbs` 永远 0 个节点，
+    //      而数据层有槽（`PlayerCombatState` 构造里 `AddCapacity(BaseOrbSlotCount)`，故障机器人 = 3）
+    //      ⇒ 充能/激发数值全对，**画面上一个球都没有**。r283 只把动画兜掉了（不再崩），这层一直没补。
+    //   ② 修法：`WarGodOrbSlotBridge.SyncVisualSlots` —— 取 `NCreature.OrbManager`，把
+    //      `Capacity - 视觉槽数` 的差额补成空槽（等价于原版开战那一刻做的事）；幂等、纯表现、失败只 WARN。
+    //      调用两处：③ 建完节点立刻一次 + `FinishSpawnAsync` 收尾再同步一次（覆盖 deferred 建节点）。
+    //   ③ 顺带把 `_orbs` 的反射读收进 `OrbSlotVisualProbe`（r283 的兜底补丁与本桥共用一份）。
+    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-20-r290)";
 
     private static Harmony? _harmony;
 
