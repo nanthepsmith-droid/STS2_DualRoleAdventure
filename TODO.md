@@ -52,7 +52,7 @@
 
 > 下列都是「能用但别扭」或「偶发自愈」的问题，**用户已拍板先记录不修** —— 复现 / 想修时按各条自己的
 > 判据与备选路线走（逐条已写好现象、日志锚点、根因分析与修法备选）。
-> ⚠ **例外**：**BUG-14 已于 2026-10-10 排期**（当前线做完后做），见该条末尾的排期段。
+> ⚠ 原「BUG-14 已排期」的例外已随 §BUG-14 关单切到归档（2026-10-21，见文末索引）。
 > 同类既有备案：`maintenance-docs\decision-records\瓦库托管优化可行性分析.md` §16.2。
 
 ### 待查-1 宝藏房共享选遗物界面：本地席位的手牌图像被**重复添加**（`add hand … twice!`，r246 判读时发现，**纯日志、无行为影响**）
@@ -341,101 +341,6 @@
   `WakuuStatBadgeLayout.Resolve` 增参数，可单测）；② 事件角标改用按钮矩形**左侧**固定偏移，
   彻底避开右下投票区；③ 若确认是 overlay 每帧写 `Size/Position` 触发了按钮重排，则改为
   只画不写（CanvasItem `_Draw` 自绘）。
-
-### BUG-33 宝箱里最多只有 4 个遗物（12 个玩家也只能抢这 4 个）—— **r297 补格 + r298 改方阵（marker `2026-10-21-r298`），⭐ 待实机**
-
-- **现象（用户 2026-10-21）**：「现在宝箱里面最多只有 4 个遗物，就算有 12 个玩家也只能抢这 4 个遗物，也需要改」。
-- **根因（代码层，已核对反编译源码 + 场景文件）**：
-  - 遗物**数量**本身没问题：`TreasureRoomRelicSynchronizer.BeginRelicPicking` 是
-    `foreach (Player player in _playerCollection.Players)`，每个玩家过一次 `Hook.ShouldGenerateTreasure`
-    ⇒ 12 人就是 **12 个遗物**（`CurrentRelics`）。
-  - 卡的是**表现层**：`scenes/rooms/treasure_room.tscn` 里只硬编码了
-    `RelicCollection/Container/MultiplayerRelicHolder1..4` **四个格子**，而
-    `NTreasureRoomRelicCollection.InitializeRelics` 只 `for (i < _multiplayerHolders.Count)` 上遗物
-    ⇒ 第 5 个遗物起**根本没有节点**（看不见、点不到）；`DefaultFocusedControl` 的
-    `_holdersInUse[GetPlayerSlotIndex(me)]` 在 5 号席位起还会越界（这就是原版作者当年
-    「5 人以上宝箱卡死」的来路，他的绕法 = `TreasureRoomRelicSynchronizerBeginPatch` 里
-    「只有 1 号位参与，其余直接复制同一件遗物」，所以我们一直没暴露）。
-- **r297 两条（都不动 ≤4 人的原版行为）**：
-  1. 新补丁 `NTreasureRoomRelicCollectionHoldersPatch`（**Prefix** on `InitializeRelics`）+
-     `TreasureRelicHoldersRuntime`：遗物数 > 4 时按遗物数量补建格子（`SceneHelper.Instantiate`
-     `ui/treasure_relic_holder`，同构实例），摆位由纯逻辑 `TreasureRelicHolderLayoutPolicy` 算。
-  2. `TreasureRoomRelicSynchronizerBeginPatch` 的手动上限 `MAX_MANUAL_RELIC_OPTIONS` **4 → 12**
-     ⇒ 5~12 人不再走「1 号位单事件 + 其余复制」，而是**每个席位自己选**（原 overflow 复制路径保留成
-     >12 的兜底，现在不会触发）。日志 `宝箱已禁用自动代投，改为逐角色手动选择: 席位数=…, 遗物数=…, 手动上限=12`。
-- **✅ r298（2026-10-21 用户实机反馈后改布局）**：第一版是「两排 × 6 列」（列距 300 ⇒ 整块 ±750），
-  用户实测「**这个是横着的，遗物太多的时候会伸到左边，然后被玩家血条挡住点不到**」⇒ 改成**方阵**：
-  - 列数 = `ceil(sqrt(n))`（上限 **4**），行数 = `ceil(n/列数)`，每行件数**平均分**（7 ⇒ 3/2/2，不留孤零零的末行）；
-  - 列距 **210** / 行距 **190**，补出来的格子统一 `Scale=0.72`（图标在 `OnFocus/OnUnfocus` 会放大到 2 倍，
-    0.72 后 ≈196px，横向仍不压邻格；缩放必须配 `PivotOffset=Size/2`，否则会往左上角缩）；
-  - 结果：12 件 = **4 列 × 3 行**，最左/最右 = **±315**（比原版 `holder3/4` 的 ±320 还窄）、最上/最下 = ±190
-    ⇒ 整块落在原版 `RelicCollection`（900×580）内，**不会再伸到屏幕左侧**。
-- **已知未做 / 风险**：单个格子上"谁投了它"的头像（`NMultiplayerVoteContainer`）在多人同投一件时会叠在一起
-  （纯表现）；平票时的 RPS 手（`NHandImageCollection`）12 只会比较挤（纯表现）；两处都不影响发放。
-- **复测契约（⭐ 待实机）**：
-  1. **≤4 人**开宝箱 ⇒ 布局/观感与以前一致，日志**不出现** `宝箱遗物格已补齐`；
-  2. **5~12 人**开宝箱 ⇒ 日志 `宝箱遗物格已补齐（12 人扩展）: relics=N, 原版格=4, 新建=N-4, 总格数=N, 列数上限=4, 列距=210, 行距=190, scale=0.72`
-     + `宝箱已禁用自动代投，改为逐角色手动选择: 席位数=N, 遗物数=N, 手动上限=12`；箱子里**看得见 N 个遗物**，
-     **最左边的也能点到**（不再压在玩家状态条下面）；
-  3. 逐席位都能点到自己想要的遗物（切人会跟着走），**发奖动画结束后每个人都有遗物**、房间正常退出；
-  4. 若看到 `宝箱遗物格补齐失败/跳过` ⇒ 带回那行日志（会退回原版 4 格：此时所有人仍能投 0~3 号，不会卡死）。
-
-### BUG-14 火堆最多只显示 4 个玩家的角色气泡（5 号及以后不显示）—— **r295 已落地 + r296 修容器复用（marker `2026-10-21-r297`），⭐ 待实机**
-
-- **现象（用户 2026-09-14）**：「老 bug：火堆最多显示 4 个玩家，多的不显示（除了不知道 5~12 号瓦库
-  玩家选什么选项以外无影响，可以先不修）」。
-- **根因（代码层，已核对反编译源码）**：原版休息区场景**硬编码了 4 个角色容器** ——
-  `NRestSiteRoom._Ready`（`sts2src/src/Core/Nodes/Rooms/NRestSiteRoom.cs:124-151`）只
-  `GetNode("BgContainer/Character_1..4")` 四次，然后对**全部玩家**循环
-  `_characterContainers[i].AddChildSafely(...)` ⇒ 第 5 个玩家起**必然 `ArgumentOutOfRangeException`**。
-  模组的 `NRestSiteRoomReadyGuardPatch`（`Scripts/Patch/RoomFocusGuardPatch.cs`，Finalizer）把它接住
-  （日志 `休息区初始化出现越界，已拦截并继续流程: …`）+ 延迟恢复（`rest-site-finalizer-recover-N`，
-  日志 `休息区选项可见性已恢复: … options=4`），所以**流程不受影响**；
-  但 5 号及以后的玩家**根本没有气泡节点** ⇒ 看不到他们选的选项，也看不到他们的角色立绘。
-- **数据层无影响（实机核对）**：5 个瓦库的选项**都真的生效**（`瓦库火堆已自动选择: player=…, option=…,
-  success=True`，见 2026-09-14 r134 会话）；没显示的只是"谁选了什么"这一层表现。
-- **附带一条 WARN**：`驱动瓦库火堆气泡失败: option=MEND, error=Object reference not set to an instance of an object.`
-  （`LocalWakuuRestAutoChoice.ShowCharacterBubble` 里驱动 MEND 的确认图标时空引用）——同样只是表现层，
-  已被自身 try-catch 兜住，选择本身 `success=True`。
-- **修法备选（未做，留档）**：① 运行时给休息区**补建** `Character_5..N` 容器并加进
-  `_characterContainers`（要克隆场景节点/摆位，风险在布局）；② 只补"选项气泡"层（不做立绘），
-  把 5+ 玩家的选择渲染到固定位置的一排文字/图标上；③ 干脆接受（当前选择）。用户拍板：**先不修**。
-- **历史**：该问题自 v1.05 前就存在（`docs/archive/player-update-history.zh.md` 里
-  「休息区5+越界改为Finalizer恢复链路」「[待修复] 休息区5人以上首帧可能不显示选项」等条目），
-  属于**游戏侧 4 人上限**与模组"本地 12 人"叠加的固有限制。
-- **✅ r295 已落地（2026-10-21，⭐ 待实机）** = 修法备选 ①：
-  - 纯逻辑 `Scripts/Runtime/PureLogic/RestSiteSeatLayoutPolicy.cs`（`Compute(playerCount)`）：
-    4 人及以下**返回原版 4 个容器的场景真值**（`624.775/641.775`、`1238.78/648.775`、`749.775/584.775`、
-    `1091.78/582.775`，scale 0.5）⇒ 一个值都不动；5 人以上按"前 `ceil(n/2)` / 后 `floor(n/2)`"两排
-    （与原版 4 人前 2 后 2 同构）+ 同排等距 + 一排上限 `MaxRowSpan=1600` + 按比例缩 scale（下限 0.20）。
-  - 运行时 `Scripts/Runtime/RestSiteSeatLayoutRuntime.cs`：反射取 `_characterContainers`，
-    缺的席位**新建同构 Control**（中心锚点 / 零尺寸 / `MouseFilter=Ignore`）塞进 `BgContainer` 与列表。
-  - 挂点 = `NRestSiteRoomReadyGuardPatch` 新加的 **`[HarmonyPrefix]`**（必须早于原版那个
-    `_characterContainers[i]` 循环）；原 Finalizer 保留当第二层，走到它时日志改成
-    `休息区角色容器补齐未生效（BUG-14），退回老行为…`。
-  - 单测 `RestSiteSeatLayoutPolicyTests`（12 条，含"4 人及以下逐值一致"与"5/8/12 人不出屏幕、同排等距"）。
-  - 顺带：`LocalWakuuRestAutoChoice.ShowCharacterBubble` 的 WARN 补**异常类型 + 栈顶一行**
-    （本条附带的 `驱动瓦库火堆气泡失败 … MEND` 的 NRE 一直只有 message，判不出是谁空引用）。
-  - 门禁：构建 0/0；单测 **1251 全绿**；`preflight -Deploy` = 5 PASS / 3 SKIP；marker `2026-10-21-r295`，dll 已部署并字节校验。
-- **✅ r296（2026-10-21，r295 实机判读后自查）：容器复用修掉一个"看不出来但不干净"的缺陷**
-  - 判读件 `logs-archive/godot__20261021-141056__r295.log`：12 人火堆日志是
-    `休息区角色容器已补齐（BUG-14）: players=12, 原版容器=4, 新建=12` —— **新建了 12 个**，而原版只有 4 个。
-  - 真因：`_characterContainers` 是**原版 `_Ready` 里才填**的，我们是 Prefix ⇒ 取到时列表是空的 ⇒
-    把 `Character_1..4` 也当"缺的"造了一份同名副本，4 个原版容器成了空孤儿节点（功能无影响，但日志误导、
-    节点数翻倍）。
-  - 修法：`SeedVanillaContainers` —— 先按 `BgContainer/Character_1..4` 把原版节点**认领**进列表，再"缺谁补谁"；
-    日志改成 `复用=4, 新建=N-4`。
-  - 实机判读结果（同上一份 log，r295 编号）：`休息区初始化出现越界` **0**、
-    `休息区5人以上首帧…` **0**、`驱动瓦库火堆气泡失败` **0**；12 个席位全部成功选择（`success=True`）；
-    ERROR 97 条全是第三方的（Oddmelt 资源缺失 / 存档删除失败 / Manosaba·MEP 分支 / `add hand twice!` 待查-1）。
-- **复测契约（⭐ 待实机）**：
-  1. **≤4 人**（含单人）进火堆 ⇒ 布局/观感与改动前**逐像素一致**，日志**不出现** `休息区角色容器已补齐`；
-  2. **5~12 人**进火堆 ⇒ 日志 `休息区角色容器已补齐（BUG-14）: players=N, 原版容器=4, 复用=4, 新建=N-4, 每排最多=…, scale=…`；
-     **所有人的立绘都在**（5 号及以后也有），且瓦库/真人选完后**头顶气泡都能看到**（以前 5+ 完全没有）；
-     不再出现 `休息区初始化出现越界` 那条 WARN（说明 Prefix 生效、原版循环没越界）；
-  3. 选项按钮照常可点（`UpdateRestSiteOptions` 因为 `_Ready` 跑完而恢复正常），
-     且**没有**多弹 `休息区5人以上首帧可能不显示选项` 的全屏提示；
-  4. 若看到 `休息区角色容器补齐失败/跳过` ⇒ 说明补节点没生效，把那行日志带回来（会退回老行为，不卡流程）。
 
 ### BUG-8 瓦库自动出牌作用域被游戏侧 `OrbQueue is full` 打断（2026-09-11 实机日志发现；**暂不修，已记录**）
 
@@ -1576,7 +1481,7 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
 skill 侧 `references/`、各提案里都有 `TODO.md §xxx` 的写法；这些 § 在本文件已不存在）：
 
 - **bug 类**：§BUG-1 / §BUG-2 / §BUG-4~§BUG-7 / §BUG-9~§BUG-13 / §BUG-19 /
-  §BUG-20（**两处**：特殊卡牌奖励、结算页结束按钮）/ §BUG-21 / §BUG-22 / §BUG-23 / §BUG-27 / §BUG-29~§BUG-32
+  §BUG-20（**两处**：特殊卡牌奖励、结算页结束按钮）/ §BUG-14 / §BUG-21 / §BUG-22 / §BUG-23 / §BUG-27 / §BUG-29~§BUG-33
 - **改进类**：§改进-1~§改进-7（§改进-2 含 ⑭~⑳ 逐轮；§改进-7 = BUG-16）/
   §维护性改进 backlog / §决策表缺口 / §另记：逐卡评级草表
 - **功能 / 重构类**：§瓦库四功能（§① 净化 / §② 我们联合 / §③ 炼化）/ §立绘站位对调 / §R3 / §R4 / §R5 / §Daily 本地多控
