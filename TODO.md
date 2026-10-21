@@ -432,6 +432,28 @@
 - **下一步（用户 1 分钟可验）**：游戏内**关掉「圣主历险记」**再打一场 ⇒ 若不再 `turn loop died` = 确认是它（要留这个 mod 就带栈反馈给作者）；
   若关掉后仍复现 ⇒ 回来找我们，按判读流程重跑（先看"我方锚点在不在" + 跨会话对比）。
 
+### 待查-9 局内**经常没有背景音乐**（用户 2026-10-21 口径；**没有锚点，先装探针再定性**）
+
+- **现象（用户原话）**：「最近玩感觉好像经常没有背景音乐」—— 不崩、不是音量设置（音效仍在）。
+- **本次零成本排除**（`logs-archive/godot__20261021-124341__r290.log`）：
+  - 原版**唯一会动总音量**的 `NMuteInBackgroundHandler` 全程正常：4 次焦点切换全部 `FocusOut → FocusIn →
+    Unmuted, restored volume to 1`；只有**退出游戏时**一条 `NullReferenceException @ _Notification`
+    （`SaveManager.Instance` 已销毁），与本现象无关。
+  - 我方仓里**没有任何 BGM 代码**（全仓搜 `Music|BGM` 只命中 `LocalQuickRestartLoader` 的
+    `SfxCmd.Play(CharacterTransitionSfx)`）⇒ 现有日志里**根本没有音乐锚点**，先别猜。
+- **下轮判据（按顺序，别跳）**：
+  1. **先问用户三件事**：① 整局一直没有 / 还是某次切场景后不再回来？② 与 alt-tab、过场、切角色有关吗？
+     ③ 主菜单有音乐、进局内没有？—— 三种答案指向三条完全不同的链路。
+  2. **加只读探针**（先让它可观测）：在音乐入口（反编译找 `AudioManager` / `MusicCmd` / 进局的音乐播放点）
+     挂**只打日志的前缀**（`[BGM探针] play=…, key=…, source=…`）+ 换场景/开战/战斗结束时打一次"当前曲目"。
+     **不打补丁干预**，先要一行能数的事实。
+  3. **跨会话 A/B**：同一台机**关掉本 mod** 打一局对照；再区分"第三方 / 原版 / 我们"（
+     `references/diagnostics-and-triage.md` §一 三分法）。
+- **当前怀疑面（未验证，不是结论）**：本机至少三处会动音乐 —— `IntegratedStrategyEvents`
+  （`IntegratedStrategyMusicReturnToMainMenuPatch` / `...AfterRunPatch`，自带战斗音乐）、`Oddmelt`（预载自己的 BGM）、
+  `NinjaSlayer` + `RitsuLib`（FMOD bank / `EventMusicGUIDs`）；任一处"切场景后不恢复"都长得像"没 BGM"。
+- **优先级**：中（纯体验）；**登记即可，未排期**。
+
 ## 维护性改进 backlog（门禁体系 2026-09-08 之后的那批）
 
 已落地（明细见 `AGENTS.md` §9 门禁表 + `Scripts/Tools/`）：源码隔离 Guard、单元测试门禁、
@@ -993,6 +1015,23 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     reroll 按钮 / `EnemyHexAuthorityCompatPatch` 那套"只有可调席位能改"的归属判据是本轮可复用先例）；
     并且要定义"选项很烂"的判据（抓率全低？稀有度全银？ —— ⚠ 注意：**用户已实测"每次 3 个选项稀有度一致"**，
     所以稀有度不能当判据，得靠抓率或效果质量）。
+- **⑱【待排期 · 用户 2026-10-21 点名】把**战神的血条**挪到「本体玩家」旁边（复用既有的**召唤物血条** `LocalPlayerPetHpBadgeUi`）**：
+  - **需求原话**：「记下来以后把战神的血条放到本体玩家的旁边（用我们之前做的召唤物血条）」⇒ **只登记、不排期**。
+  - **既有载体现状**（`Patch/NMultiplayerPlayerStatePetHpPatch.cs`，r86）：在**多人顶部玩家状态条**
+    `NMultiplayerPlayerState` 的 HP 条右缘挂一块面板，逐行画该玩家 `PlayerCombatState.Pets` 的迷你血条
+    （名字 + 当前/上限；死亡 `0-X` 置灰）；每帧从数据重算、`MouseFilter=Ignore` 不挡点击、
+    开关 `PetHpBadge`、仅"本地双控 + run 进行中"显示 ⇒ **中途召唤/死亡/复活/战斗结束清空天然正确**。
+  - **差距**：战神**不是 pet**（不在 `Pets` 里），它是 `CombatState` 里的**临时 Player**（有自己的立绘 +
+    立绘上方血条）⇒ badge 现在完全看不到它。抓手 = `HellwarWarGodFactory` 的登记
+    `Registration.SummonerNetId` + `SpawnedWarGods`（按绑主分到对应真人的面板上）。
+  - **做法两档（待拍板）**：
+    - **A（最小）**：tracker 的数据源改成 `Pets ∪ 绑主=本 player 的在册战神`，行样式照旧（建议加前缀区分，
+      如 `战神·先古`、死亡显示 `0-X` 置灰）；**不隐藏**原位血条。
+    - **B（A + 隐藏原位）**：再把战神立绘上方的血条隐藏掉（`NCreatureStateDisplay`）免得两处重复 ——
+      需先确认不影响 hover 提示 / 意图显示 / 死亡动画 / 尸体留场阶段。
+  - **细节口径**：最多 12 席 ⇒ 行数需要上限（可滚动或只显示最近 N 个）；切战斗/退局要清表，
+    防 tracker 持有已释放的 Player（`GodotObject.IsInstanceValid` + 战斗结束清空）。
+  - **未动工**：本轮只登记需求与抓手，**不改代码**。
 - **⑰ r290（2026-10-20 判读 + 修复，✅ **实机关单**）—— 「故障机器人被召唤时不会显示充能球」= 视觉球槽只在**开战那一帧**建，战神是中途席位**：
   - **根因**（`NOrbManager.cs:88-94`）：球槽**视觉节点**只在 `CombatManager.CombatSetUp` 时按当时的
     `PlayerCombatState.OrbQueue.Capacity` 建（`OnCombatSetup → AddSlotAnim(Capacity)`）。战神是**战斗中途中**
@@ -1013,8 +1052,9 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     全场 `球槽视觉兜底` **0 条**；4096 实打 `ZAP`/`VOLTAIC`/`TURBO`/`ECHO_FORM`/`BIASED_COGNITION`
     （球的进出动画正常走）；`turn loop died` 0、`托管出牌抛异常` 0、退局复位 `无残留`。
     4097 在 round 3 才首次轮到、战斗随即结束 ⇒ 0 出牌（= §待查-4 "没轮到" 同口径，良性）。
-  - **仍未覆盖**：①「死一次再复活」后补槽（本局没走到；代码已在 `ReviveWarGodAsync` 里）；
-    ② `RemoveSlotAnim`（`BULK_UP` 类"减球槽"）仍留着 r288 的兜底 —— 有槽后本应正常执行，待踩到再验。
+  - ✅ **复活路径也验了（2026-10-21，`logs-archive/godot__20261021-124341__r290.log`）**：
+    `③c 已补球槽视觉节点: seat=4096 … 视觉 0 → 3` 紧跟着 `已复活战神（R9）: 血量=75/75` ⇒ 死亡清槽后复活能补回来。
+  - **仍未覆盖**：`RemoveSlotAnim`（`BULK_UP` 类"减球槽"）仍留着 r288 的兜底 —— 有槽后本应正常执行，待踩到再验。
 - **⑮ r271（2026-10-11 判读 + 修复，⭐ 待实机）—— 「进战斗没怪 / 不抽牌 / 不能换人 / 不能结束回合」= 第三方坏怪 + 第三方开战特效把 turn loop 打死**：
   - **判读**（`logs-archive/godot__20261011-191308__r270.log`，1.3MB 小局，用户进战斗就卡）：
     `turn loop died: NullReferenceException at VfxCmd.PlayOnCreatureCenter_Patch2 ← CreatureCmd.GainBlock ←
