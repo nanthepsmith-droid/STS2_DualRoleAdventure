@@ -771,16 +771,13 @@ public partial class Entry
     //   ② `ApplyPatchGroup` 改**逐类隔离**：非 Core 组里坏一个类只跳过它并点名，同组其余继续（原来整组套一个
     //      try ⇒ 一个坏类 = 40 个类全丢）；Core 仍"失败即停"；
     //   ③ 新增单测 `HarmonyTargetAmbiguityTests`：只写方法名且目标有同名重载 ⇒ **构建期 FAIL**。
-    // r293（2026-10-21，r292 局判读出的两件）：
-    //   ① **局内没 BGM = 第三方幕没自带音乐**（本局跑 `ARKNIGHTS_BOSS_ACT_GARDEN_OF_GROTESQUERIES_ACT1/2`，
-    //      `BgMusicOptions` 为空 ⇒ 原版 `ResolveMusic` 返回 null ⇒ 整幕静音；主菜单走另一条入口所以有）。
-    //      兜底 = `BgmProbeRunMusicPatch.ResolveMusicFallback` 前缀：只在**空**时用原版第一幕的曲目 + bank 顶上
-    //      （`LMC_BGM_FALLBACK=0` 可关），锚点 `[BGM探针] 本幕没有自带音乐…⇒ 用原版第一幕兜底`。
-    //   ② **瓦库突然不打牌 + 画面狂闪 = 出牌死循环**：大脑给的 AnyEnemy 目标**已阵亡** ⇒ `CanPlayTargeting` 为假
-    //      ⇒ 原实现只 `return false` ⇒ 看门狗下一轮又选同一张（实测 16ms 一圈、54 次）。
-    //      修法 = 先**改道**到当前合法目标（`FindAlternativeTargetForHostedPlay`），换不到才把这张记入
-    //      **本回合弃牌名单**（`MarkSkippedForMissingTarget`，下一轮大脑不再选它）+ 循环闸 WARN（r293）。
-    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-21-r293)";
+    // r293（2026-10-21，r292 局判读）：**瓦库突然不打牌 + 画面狂闪 = 出牌死循环** —— 大脑给的 AnyEnemy 目标
+    //   **已阵亡** ⇒ `CanPlayTargeting` 为假 ⇒ 原实现只 `return false` ⇒ 看门狗下一轮又选同一张
+    //   （实测 16ms 一圈、54 次）。修法 = 先**改道**到当前合法目标（`FindAlternativeTargetForHostedPlay`），
+    //   换不到才把这张记入**本回合弃牌名单**（`MarkSkippedForMissingTarget`，下一轮大脑不再选它）+ 循环闸 WARN。
+    // ⚠ 同一轮曾加过"第三方幕没音乐 ⇒ 用原版第一幕兜底"，2026-10-21 用户拍板**移除**（第三方缺内容，
+    //   主 mod 不修、也不做兼容补丁）⇒ 只剩只读探针 `BgmProbeRunMusicPatch` 留着判读用（r294）。
+    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-21-r294)";
 
     private static Harmony? _harmony;
 
