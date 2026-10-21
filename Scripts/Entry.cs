@@ -763,7 +763,15 @@ public partial class Entry
     //   `StopMusic` / `PlayCustomMusic` / `StopCustomMusic` / `UpdateCustomTrack`（**第三方改音乐走这条**）/
     //   `NAudioManager.PlayMusic|StopMusic`（菜单与 game_over；`_audioNode == null` 时调用被静默丢弃）。
     //   日志前缀 `[BGM探针]`，环境变量 `LMC_BGM_PROBE=0` 可关；两个补丁类登记在 `PatchDomainMap` 的 Ui 域。
-    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-21-r291)";
+    // r292（2026-10-21，**r291 线上事故的修复**）：BGM 探针把 `NRunMusicController.UpdateTrack`（**有同名重载**：
+    //   `UpdateTrack()` / `UpdateTrack(string,float)`）只按方法名解析 ⇒ Harmony `AmbiguousMatchException`
+    //   ⇒ **整个 Ui 补丁组被跳过**（切人按钮 / 手牌 UI / 结束回合按钮全没挂）⇒ 用户看到"瓦库不打牌、
+    //   不能一键切人、瓦库的牌出现在真人手里"（`INIT_OK` 照样 OK，只有一行 ERROR 藏在启动段）。
+    //   ① 两个探针补丁类的目标**全部显式给 `Type[]`**（无参也写 `new Type[0]`）—— 本项目新口径；
+    //   ② `ApplyPatchGroup` 改**逐类隔离**：非 Core 组里坏一个类只跳过它并点名，同组其余继续（原来整组套一个
+    //      try ⇒ 一个坏类 = 40 个类全丢）；Core 仍"失败即停"；
+    //   ③ 新增单测 `HarmonyTargetAmbiguityTests`：只写方法名且目标有同名重载 ⇒ **构建期 FAIL**。
+    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-21-r292)";
 
     private static Harmony? _harmony;
 
@@ -1303,9 +1311,10 @@ public partial class Entry
     }
 
     /// <summary>
-    /// 应用单个补丁组。组内任一补丁失败时：
+    /// 应用单个补丁组（**逐类隔离**，r292 起）。组内某个类失败时：
     ///   failFast=true（Core）→ 打 Error 并上抛，后续补丁组不再应用（错误基线上继续更危险）；
-    ///   failFast=false → 打 Error 并跳过本组，继续其余组。
+    ///   failFast=false → **只跳过失败的那一个类**（打 Error 点名 + 组末 WARN 汇总），同组其余照常应用。
+    /// ⚠ r291 事故：原来整组套一个 try ⇒ 一个坏类（同名重载只写方法名）让整个 Ui 组消失。
     /// </summary>
     private static void ApplyPatchGroup(PatchDomain? domain, IReadOnlyList<Type> patchTypes, bool failFast)
     {
@@ -1315,26 +1324,47 @@ public partial class Entry
         }
 
         string groupName = domain?.ToString() ?? "Unregistered";
-        try
+        int applied = 0;
+        List<string> failed = new();
+
+        // r292（线上事故）：**逐类隔离**。原来整组套一个 try ⇒ 一个补丁类解析失败（例：
+        //   `NRunMusicController.UpdateTrack` 有同名重载，只写方法名 ⇒ `AmbiguousMatchException`）
+        //   会把**同组其余 40 个类全丢掉**（r291 就是这么让整个 Ui 组消失的：切人按钮/手牌 UI/结束回合
+        //   按钮全没挂，表现为"瓦库不打牌 + 不能一键切人 + 瓦库的牌出现在真人手里"）。
+        //   口径：failFast（Core）保持"失败即停"；其余组**只跳过坏的那一个类**并点名，其余继续。
+        foreach (Type patchType in patchTypes)
         {
-            foreach (Type patchType in patchTypes)
+            try
             {
                 _harmony!.CreateClassProcessor(patchType).Patch();
+                applied++;
             }
+            catch (Exception exception)
+            {
+                if (failFast)
+                {
+                    LocalMultiControlLogger.Error(
+                        $"补丁组[{groupName}] 应用失败（本组失败即停，后续补丁组不再应用）: "
+                        + $"{patchType.Name} ⇒ {exception}");
+                    throw;
+                }
 
-            LocalMultiControlLogger.Info($"补丁组[{groupName}] 应用完成：{patchTypes.Count} 类");
+                failed.Add(patchType.Name);
+                LocalMultiControlLogger.Error(
+                    $"补丁类应用失败（**只跳过这一个类**，同组其余继续）: {groupName}/{patchType.Name} ⇒ "
+                    + $"{exception.GetType().Name}: {exception.Message}");
+            }
         }
-        catch (Exception exception) when (failFast)
+
+        if (failed.Count == 0)
         {
-            LocalMultiControlLogger.Error(
-                $"补丁组[{groupName}] 应用失败（本组失败即停，后续补丁组不再应用）: {exception}");
-            throw;
+            LocalMultiControlLogger.Info($"补丁组[{groupName}] 应用完成：{applied} 类");
+            return;
         }
-        catch (Exception exception)
-        {
-            LocalMultiControlLogger.Error(
-                $"补丁组[{groupName}] 应用失败，已跳过该组（其余组继续）: {exception}");
-        }
+
+        LocalMultiControlLogger.Warn(
+            $"补丁组[{groupName}] 应用完成但有失败：成功 {applied} 类 / 失败 {failed.Count} 类"
+            + $"（{string.Join(", ", failed)}）—— 失败项的功能会缺失，按上面的 ERROR 行修目标解析");
     }
 
     /// <summary>

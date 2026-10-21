@@ -113,8 +113,11 @@ internal static class BgmProbeRunMusicPatch
     private static readonly FieldInfo? RunStateField =
         AccessTools.Field(typeof(NRunMusicController), "_runState");
 
+    // ⚠ r292：`NRunMusicController.UpdateTrack` 有**两个重载**（无参 public + `(string,float)` private），
+    //   只写方法名会让 Harmony 抛 `AmbiguousMatchException` ⇒ **整个 Ui 补丁组被跳过**（r291 线上事故）。
+    //   本项目口径：**同名重载一律显式给 `Type[]`**（无参也写成 `new Type[0]`）。
     [HarmonyPostfix]
-    [HarmonyPatch(nameof(NRunMusicController.UpdateMusic))]
+    [HarmonyPatch(nameof(NRunMusicController.UpdateMusic), new Type[0])]
     private static void UpdateMusicPostfix(NRunMusicController __instance)
     {
         if (!BgmProbe.Enabled)
@@ -166,7 +169,7 @@ internal static class BgmProbeRunMusicPatch
     }
 
     [HarmonyPostfix]
-    [HarmonyPatch(nameof(NRunMusicController.UpdateTrack))]
+    [HarmonyPatch(nameof(NRunMusicController.UpdateTrack), new Type[0])]
     private static void UpdateTrackPostfix(NRunMusicController __instance)
     {
         if (!BgmProbe.Enabled)
@@ -193,7 +196,7 @@ internal static class BgmProbeRunMusicPatch
     }
 
     [HarmonyPostfix]
-    [HarmonyPatch(nameof(NRunMusicController.StopMusic))]
+    [HarmonyPatch(nameof(NRunMusicController.StopMusic), new Type[0])]
     private static void StopMusicPostfix(NRunMusicController __instance)
     {
         if (!BgmProbe.Enabled)
@@ -213,12 +216,12 @@ internal static class BgmProbeRunMusicPatch
     }
 
     [HarmonyPrefix]
-    [HarmonyPatch(nameof(NRunMusicController.PlayCustomMusic))]
+    [HarmonyPatch(nameof(NRunMusicController.PlayCustomMusic), new[] { typeof(string) })]
     private static void PlayCustomMusicPrefix(string customMusic)
         => BgmProbe.Info($"PlayCustomMusic（第三方自定义曲目）: track={customMusic}, 调用方={BgmProbe.CallerHint()}");
 
     [HarmonyPostfix]
-    [HarmonyPatch(nameof(NRunMusicController.StopCustomMusic))]
+    [HarmonyPatch(nameof(NRunMusicController.StopCustomMusic), new Type[0])]
     private static void StopCustomMusicPostfix(NRunMusicController __instance)
     {
         if (!BgmProbe.Enabled)
@@ -238,7 +241,7 @@ internal static class BgmProbeRunMusicPatch
     }
 
     [HarmonyPrefix]
-    [HarmonyPatch(nameof(NRunMusicController.UpdateCustomTrack))]
+    [HarmonyPatch(nameof(NRunMusicController.UpdateCustomTrack), new[] { typeof(string), typeof(float) })]
     private static void UpdateCustomTrackPrefix(string customTrack, float label)
         => BgmProbe.Info($"UpdateCustomTrack: track={customTrack}, label={label}, 调用方={BgmProbe.CallerHint()}");
 
@@ -263,7 +266,7 @@ internal static class BgmProbeAudioManagerPatch
         AccessTools.Field(typeof(NAudioManager), "_audioNode");
 
     [HarmonyPrefix]
-    [HarmonyPatch(nameof(NAudioManager.PlayMusic))]
+    [HarmonyPatch(nameof(NAudioManager.PlayMusic), new[] { typeof(string) })]
     private static void PlayMusicPrefix(NAudioManager __instance, string music)
     {
         if (!BgmProbe.Enabled)
@@ -283,7 +286,7 @@ internal static class BgmProbeAudioManagerPatch
     }
 
     [HarmonyPrefix]
-    [HarmonyPatch(nameof(NAudioManager.StopMusic))]
+    [HarmonyPatch(nameof(NAudioManager.StopMusic), new Type[0])]
     private static void StopMusicPrefix(NAudioManager __instance)
     {
         if (!BgmProbe.Enabled)
