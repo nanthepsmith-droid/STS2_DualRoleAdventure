@@ -31,6 +31,7 @@
     { "name": "NinjaSlayerBossGreetingFix", "enabled": true, "note": "主仓库 compat-mods/ 托管（2026-10-07 迁入）；本地回环 Host-无-NetHost 致第三方 Boss 问候 NRE 的补丁" },
     { "name": "PreloadStallGuard", "enabled": true, "note": "主仓库 compat-mods/ 托管（2026-10-07 迁入）；第三方预加载未完成致战斗卡 NotPlayPhase 的兜底" },
     { "name": "YuiVfxSceneFix", "enabled": true, "note": "显式登记 2026-10-05（此前靠自动发现）" },
-    { "name": "HextechRunesLocalCoopFix", "enabled": true, "note": "主仓库 compat-mods/ 托管（2026-10-05 迁入）；同仓托管、独立 csproj/dll/槽位" }
+    { "name": "HextechRunesLocalCoopFix", "enabled": true, "note": "主仓库 compat-mods/ 托管（2026-10-05 迁入）；同仓托管、独立 csproj/dll/槽位" },
+    { "name": "HextechBurnVisualFix", "enabled": true, "note": "⚠ 本地专用补丁（源码在仓库外 D:\\Download\\pain\\HextechBurnVisualFix\\，不进 git、不随 Release 分发）：海克斯燃烧视觉每帧读已释放 Spine 骨骼 ⇒ 1fps 的止损；上游自修后设 HBV_DISABLE=1 即可关闭" }
   ]
 }

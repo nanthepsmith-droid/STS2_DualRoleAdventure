@@ -350,7 +350,7 @@ cd D:\Download\pain\STS2_DualRoleAdventure-itriedtofix
 还差一次实机探针确认：① 符文界面里那个按钮的**节点名/字段**；② "剩余次数"读哪个字段；
 ③ 自选池屏（锻造）有没有 reroll（大概率没有）。
 
-## Co-op Bots 并存 + 燃烧视觉掉帧（v1.4.0，2026-10-21 实机）
+## Co-op Bots 并存（v1.4.0，2026-10-21 实机）
 
 ### ① Co-op Bots 的合成 Bot 席位被海克斯当成远端玩家（符文批次死等）
 
@@ -368,57 +368,22 @@ cd D:\Download\pain\STS2_DualRoleAdventure-itriedtofix
 并让 ⑤ 的代答判据也接上 Bot 席位（日志里叫 `Co-op Bots` 而不是 `瓦库`）。
 主 mod 缺席 / 没装 Co-op Bots ⇒ 判定恒 false，行为退回原状。
 
-### ② 打到一半突然 1fps —— 燃烧视觉每帧读**已释放的 Spine 骨骼**
+### ② 燃烧视觉每帧读**已释放的 Spine 骨骼**（v1.5.0 起已**拆出本补丁**）
 
-**观测**：同一份日志里 `ERROR: Native Spine object not set. at SpineBone::get_world_x/y` **2944 次**，
-栈固定为 `HextechBurnVisual.UpdateBoneEmissionPoints ← ApplyIntensity ← Tick`；
-spine 报错开始后所有性能窗口 `fps均=1.0`、`引擎 process≈1500ms/帧`（之前是 53.8 / 49.7ms）。
+2026-10-21 实机曾在这里修「打到一半 1fps」：`HextechBurnVisual` 在生物的 Spine 被摘/换掉后
+仍每帧读已释放的骨骼 ⇒ 原生 ERROR 刷屏（实测 2944 次、引擎 process≈1500ms/帧）⇒ 帧率 1fps。
 
-**根因**：`HextechBurnVisual.Start()` 抓一次该生物的 Spine 骨骼（`_emissionBones` + `_spineSpriteNode`），
-之后每帧 `Tick → ApplyIntensity → UpdateBoneEmissionPoints` 逐骨读 `get_world_x/y` 定位火焰粒子；
-**生物节点被摘 / Spine 被换掉后它不重新校验**，骨骼原生对象已释放 ⇒ 每帧打印原生错误。
-Godot 的 `ERROR` 是同步 I/O ⇒ 日志写盘直接把帧时间打爆（≈1500ms/帧）。
+**这条修法已移到本地独立补丁（不进本包、不发布）**，原因：
 
-**⚠ v1.4.2 起改为「默认强制矩形发射」**（v1.4.0/1.4.1 的"检测失效再降级"抓不住真实故障）：
-第二次实机同一条栈又刷了 1472 次、fps 依旧掉到 1.0，而我们的守卫日志 **0 条** —— 说明
-`IsInstanceValid(_spineSpriteNode)`、`IsInstanceValid(_emissionBones[i])` **都为真**，
-海克斯自己那句"比较 `SpineBody.BoundObject` 的 InstanceId"也过（同一颗 SpineSprite 节点、id 不变），
-**但骨骼原生对象已被就地释放** ⇒ `get_world_x` 已经没对象可读。可观测层面判不出"安全"，就不读它：
+- 点名确认触发者是**怪物**（`ASSASSIN_RUBY_RAIDER` / `AXE_RUBY_RAIDER` / `BRUTE_RUBY_RAIDER`，
+  且发生在第三方 Loadout 的怪物图鉴预热里）⇒ 病灶在海克斯自身、**与本地多控无关**；
+- 它的默认行为是**强制矩形发射**（永久改变火焰观感）—— 上游一旦自修，这层守卫就从"止血"
+  变成"挡住人家修好的效果"，不该混在随主 mod 发布的兼容包里；
+- 因此本补丁 v1.5.0 起只剩符文/锻造选择与归属，**不再含任何燃烧视觉代码**。
 
-- `Tick` 前缀：一发现骨骼缓存非空就 `DisableBoneEmission()`（每个视觉只打一条点名日志）；
-- `TryInitBoneEmission` 前缀：直接挡掉（不让它自己 re-init 再抖回来）；
-- `UpdateBoneEmissionPoints` 前缀：兜底，永不放行骨骼读。
-- 想恢复海克斯原样（火焰跟骨骼走）：环境变量 `HRLX_BURN_BONE_EMISSION=1`（此时退回 v1.4.0 的检测档）。
-- 代价：火焰粒子从一个**矩形区域**发射，不再贴着骨骼分布 —— 纯观感，火焰本身照常显示。
-
-**（v1.4.0 原始修法，检测档仍保留）两层守卫，反射，缺成员整套不挂**：
-
-| 层 | 目标 | 判据 | 动作 |
-|---|---|---|---|
-| ① | `HextechBurnVisual.Tick`（前缀） | `_spineSpriteNode` 已释放 / 排队释放 | 调它自带的 `DisableBoneEmission()` ⇒ 切矩形发射 |
-| ② | `UpdateBoneEmissionPoints`（前缀） | 上面那条 **或** `_emissionBones` 里任一骨 `IsInstanceValid=false` | 再兜一次并**跳过原方法**（一次 native 读都不发生） |
-
-⇒ 火焰**照常显示**（它自带"矩形发射"兜底），只是不再跟着骨骼走。
-
-日志（只打前 3 次，**v1.4.1 起带"点名"**）：
-
-```
-海克斯燃烧视觉的 Spine 骨骼发射点已停用（源=Tick，第 1 次）:
-  对象=怪物=SLUDGE_SPINNER                                        ← 怪物
-  对象=席位=角色2(Co-op Bots 合成席位, netId=12716757972810793218)  ← Co-op Bots 席位
-  对象=席位=角色?(不在 run 玩家表 = 临时席位/战神, netId=4096), 角色=... ← 我们的战神
-```
-
-点名靠基类 `HextechCreatureAttachedVisual.Creature`（`protected NCreature`，反射拿）
-→ `Creature.Entity` → `IsMonster/Monster` 或 `Player.NetId`；席位描述走
-`MainModBridge.DescribeSeat`（Bot → 本地 → 正式 → **不在 run 玩家表 = 临时席位**，顺序不能反：
-合成 Bot 席位**也在** `runState.Players` 里）。
-
-⚠ 刻意**不**加 `IsInsideTree` 判据：生物入场/换位瞬间可能暂时不在树里，那种情况骨骼照样能读，
-误判会把正常火焰永久降级。
-
-**通用教训**：第三方每帧打印的**原生**错误（`ERROR:` + C# backtrace）不是"噪音"，是**同步 I/O 炸弹** ——
-日志里看到成对出现的同一栈就要立刻按"每帧 × 行数"估帧时间。（本例 4 行/次 × 60 次/秒 = 240 行/秒。）
+**通用教训（仍适用）**：第三方每帧打印的**原生**错误（`ERROR:` + C# backtrace）不是"噪音"，
+是**同步 I/O 炸弹** —— 日志里看到成对出现的同一栈就要立刻按"每帧 × 行数"估帧时间
+（本例 4 行/次 × 60 次/秒 = 240 行/秒）。
 
 ## 其它未做（按需再加）
 

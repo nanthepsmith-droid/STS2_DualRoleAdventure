@@ -439,6 +439,19 @@
   `NinjaSlayer` + `RitsuLib`（FMOD bank / `EventMusicGUIDs`）；任一处"切场景后不恢复"都长得像"没 BGM"。
 - **优先级**：中（纯体验）；**登记即可，未排期**。
 
+### 待查-10 第三方「悬停 tooltip」与「血条节点」两族 ERROR（2026-10-21 判读；**均为第三方自身缺陷、只登记不动手**）
+
+- **`System.ArgumentOutOfRangeException` @ `BaseLib.Patches.UI.ModSourceTooltip.Fold`**（r298 长局 39 次）：
+  栈固定 `ModSourceTooltip.Fold → List.get_Item`，宿主 `NCreature.OnFocus()`（30 次 = 鼠标悬停生物）
+  与 `NCreatureStateDisplay.OnHovered()`（9 次 = 悬停状态图标）⇒ BaseLib 折叠 tooltip 时对空/单项列表取下标越界。
+  **栈里没有任何我方帧**；影响面 = 悬停提示可能不显示，战斗流程正常（`turn loop died` 0）。
+- **`ERROR: Node not found: "MintyIncomingDamageText"`**（同局 9 次）：MintySpire2 的
+  `SummedIncomingDamageRender.RepositionLabel` ← RitsuLib 血条 graft `NHealthBarGraftCompat.TryResizeHpBarContainer`，
+  节点路径在 `AllyContainer`（**托管席位血条**）。紧跟在我们「第三方询问本地玩家身份，已按同机席位放行」之后，
+  但栈里**只有第三方帧**；与 ⑱「战神血条挪到本体玩家旁边」是同一条血条链。
+- **动作**：两条都**不做兜底**（按 compat-mods 口径：第三方自身缺陷 ⇒ 登记 + 探针就行）；若将来真的影响可玩
+  （tooltip 卡死 / 血条消失）再谈。
+
 ## 维护性改进 backlog（门禁体系 2026-09-08 之后的那批）
 
 已落地（明细见 `AGENTS.md` §9 门禁表 + `Scripts/Tools/`）：源码隔离 Guard、单元测试门禁、
@@ -1035,6 +1048,10 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     拿不到 `GetInstanceId()` ⇒ 去重键改用**引用**（`ConditionalWeakTable`），下次着火就会打出 `对象=…`；
     ② ⑧b（`CreateForgeSelectionScreenAsync`）在海克斯 0.111 **已被重构掉**（锻造屏改走符文协调器的
     `CreateRuneSelectionScreenAsync`，③b 已覆盖）⇒ 标为**可选目标**，不再把 `INIT` 打成 `DEGRADED`。
+  - **✅ v1.5.0 拆分（2026-10-21 用户拍板「完全和我们无关 ⇒ 拆成独立补丁并且不上传 github」）**：
+    燃烧视觉守卫已从本补丁**移出**（点名确认触发者是**怪物**、且在第三方 Loadout 图鉴预热里 ⇒ 纯海克斯自身问题），
+    改放到仓库外 `D:\Download\pain\HextechBurnVisualFix\`（不进 git、不随 Release/compat 附件分发；
+    `HBV_BONE_EMISSION=1` 检测档、`HBV_DISABLE=1` 整套不挂）。本补丁从 v1.5.0 起只管符文/锻造选择与归属。
   - **⏳ 剩：选项很烂时自主 roll**。已确认海克斯自带 reroll（dll 字符串：`RerollButton_` /
     `PlayerRuneRerollLimit` / `RerollCount` / `RerollHistory` / `hextechRerollButton`）——
     还差一次实机探针确认 ① 按钮的**节点名/私有字段** ② "剩余次数"读哪个字段 ③ 锻造自选池屏有没有 reroll。
@@ -1043,6 +1060,9 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
   - **✅ 抓率统计首日实测**（`logs-archive/godot__20261021-184214__r298.log`）：`符文抓率记账（候选）` 10 条 /
     `（选中）` 9 条 / `rule=按抓率` 5 条；落盘 `%APPDATA%\SlayTheSpire2\hextech_rune_stats.json` 已积累
     （如 `STARLIGHT_SPARKLE_RUNE` 3/3、`MORE_THE_MERRIER_RUNE` 0/5）。
+- **🕐【退场动作·上游自修后】海克斯若自己在 `HextechBurnVisual` 修好骨骼校验**：本地独立补丁
+  `D:\Download\pain\HextechBurnVisualFix\` 设 `HBV_DISABLE=1`（或删 `mods\HextechBurnVisualFix\`）即可，
+  **不必追版本**；该补丁代码在仓库外，无需改本仓库。
 - **🕐【已排期·用户 2026-10-21 点名，以后做】猪猪 mod（`YuWanCard`）本地多控兼容补丁**：
   - **需求原话**：「排期以后做一个猪猪 mod（YuWanCard mod）兼容补丁。因为猪猪 mod 有一些功能还不兼容，
     包括遗物【我全都要】可以在卡牌奖励中选择多张牌，虽然现在还没有引发问题但是**瓦库自动抓牌可能会有问题**
