@@ -279,6 +279,8 @@ internal static class PatchDomainMap
             ["PlatformUtilGetPlayerNamePatch"] = PatchDomain.Ui,
             ["NRestSiteRoomReadyGuardPatch"] = PatchDomain.Ui,
             ["NTreasureRoomRelicCollectionFocusGuardPatch"] = PatchDomain.Ui,
+            // r297 宝箱遗物格按遗物数量补齐（原版场景只有 4 格）
+            ["NTreasureRoomRelicCollectionHoldersPatch"] = PatchDomain.Ui,
             ["NTreasureRoomRelicHolderFocusGuardPatch"] = PatchDomain.Ui,
             // 自有统计角标/悬停弹窗（r69+）：奖励选牌 / 商店 / 事件
             ["StatBadgeRewardRowPatch"] = PatchDomain.Ui,

@@ -236,7 +236,13 @@ internal static class TreasureRoomRelicSynchronizerPatch
 [HarmonyPatch(typeof(TreasureRoomRelicSynchronizer), nameof(TreasureRoomRelicSynchronizer.BeginRelicPicking))]
 internal static class TreasureRoomRelicSynchronizerBeginPatch
 {
-    private const int MAX_MANUAL_RELIC_OPTIONS = 4;
+    /// <summary>
+    /// 逐角色手动选遗物的席位上限 = 本 mod 的席位上限（12）。
+    /// 原来写死 4 是因为**场景只有 4 个遗物格**（`MultiplayerRelicHolder1..4`）⇒ 5 人以上的席位
+    /// 根本点不到第 5 个遗物、`DefaultFocusedControl` 还会越界，所以当年退化成"1 号位单事件 + 其余复制"。
+    /// r297 起格子会按遗物数量补建（见 <see cref="TreasureRelicHoldersRuntime"/>）⇒ 12 人各选各的。
+    /// </summary>
+    private const int MAX_MANUAL_RELIC_OPTIONS = 12;
 
     [HarmonyPostfix]
     private static void Postfix(TreasureRoomRelicSynchronizer __instance)
@@ -270,7 +276,8 @@ internal static class TreasureRoomRelicSynchronizerBeginPatch
                 }
 
                 TreasureRoomRelicSynchronizerPatch.RemoveOverflowPlan(__instance);
-                LocalMultiControlLogger.Info("宝箱已禁用自动代投，改为逐角色手动选择。");
+                LocalMultiControlLogger.Info(
+                    $"宝箱已禁用自动代投，改为逐角色手动选择: 席位数={sharedCount}, 遗物数={currentRelics.Count}, 手动上限={MAX_MANUAL_RELIC_OPTIONS}");
                 return;
             }
 

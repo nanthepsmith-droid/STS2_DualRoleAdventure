@@ -777,7 +777,7 @@ public partial class Entry
     //   换不到才把这张记入**本回合弃牌名单**（`MarkSkippedForMissingTarget`，下一轮大脑不再选它）+ 循环闸 WARN。
     // ⚠ 同一轮曾加过"第三方幕没音乐 ⇒ 用原版第一幕兜底"，2026-10-21 用户拍板**移除**（第三方缺内容，
     //   主 mod 不修、也不做兼容补丁）⇒ 只剩只读探针 `BgmProbeRunMusicPatch` 留着判读用（r294）。
-    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-21-r294)";
+    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-21-r297)";
 
     private static Harmony? _harmony;
 
