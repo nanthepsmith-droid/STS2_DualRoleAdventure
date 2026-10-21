@@ -206,19 +206,36 @@ internal static class HextechRuneSelectionCompatPatch
         }
     }
 
-    /// <summary>① 放宽「本机玩家」判定：只对本地多控会话里的**本地席位**改口，其余一律不动。</summary>
+    /// <summary>
+    /// ① 放宽「本机玩家」判定：本地多控会话里的**本地席位** + **Co-op Bots 合成的 Bot 席位**改口，
+    /// 其余一律不动。
+    ///
+    /// <para>Co-op Bots 那条是 2026-10-21 实机补的：合成席位 NetId 巨大（`12716757972810793218`），
+    /// 既非本地席位也非真远端 ⇒ 海克斯把它当远端玩家、`WaitForRemoteHextechChoice` 死等
+    /// （实测 11 条 WARN、符文批次一直挂着 = 用户报的「Co-op Bots 导致海克斯符文用不了」）。</para>
+    /// </summary>
     private static void IsLocalPlayerPostfix(Player? player, ref bool __result)
     {
-        if (__result || player == null || !MainModBridge.IsLocalCoopRun() || !MainModBridge.IsLocalSeat(player.NetId))
+        if (__result || player == null || !MainModBridge.IsLocalCoopRun())
+        {
+            return;
+        }
+
+        bool localSeat = MainModBridge.IsLocalSeat(player.NetId);
+        bool coopBotSeat = !localSeat && MainModBridge.IsCoopBotSeat(player.NetId);
+        if (!localSeat && !coopBotSeat)
         {
             return;
         }
 
         __result = true;
         LogOnce(
-            $"islocal#{player.NetId}",
-            $"本地席位已按「本机玩家」放行（原版只认一个本机玩家；不放行该席位的符文界面不会弹、"
-            + $"也没人会替它作答）: player={player.NetId}");
+            localSeat ? $"islocal#{player.NetId}" : $"islocal-coopbot#{player.NetId}",
+            localSeat
+                ? $"本地席位已按「本机玩家」放行（原版只认一个本机玩家；不放行该席位的符文界面不会弹、"
+                    + $"也没人会替它作答）: player={player.NetId}"
+                : $"Co-op Bots 合成席位已按「本机玩家」放行（否则海克斯会把它当远端玩家死等，"
+                    + $"符文批次永远不完成）: player={player.NetId}");
     }
 
     /// <summary>② 本地多控下选完即关闭界面（原版的「保持等待其他玩家」在同机多席位下会把下一个界面永久挡住）。</summary>

@@ -149,10 +149,12 @@ internal static class WakuuRuneAutoAnswer
                 return;
             }
 
-            if (!MainModBridge.IsAutomatedWakuuSeat(state.Seat))
+            bool wakuuSeat = MainModBridge.IsAutomatedWakuuSeat(state.Seat);
+            bool coopBotSeat = !wakuuSeat && MainModBridge.IsCoopBotSeat(state.Seat);
+            if (!wakuuSeat && !coopBotSeat)
             {
                 state.Handled = true;
-                Log.Info($"{Entry.LogPrefix} 符文界面归属席位不是「后台托管瓦库」，交真人作答: "
+                Log.Info($"{Entry.LogPrefix} 符文界面归属席位不是「托管席位（瓦库 / Co-op Bots）」，交真人作答: "
                     + $"seat={MainModBridge.SeatLabelById(state.Seat)}({state.Seat}), screen=HextechRuneSelectionScreen");
                 return;
             }
@@ -165,7 +167,8 @@ internal static class WakuuRuneAutoAnswer
 
             state.Handled = true;
             ulong seat = state.Seat;
-            Log.Info($"{Entry.LogPrefix} 瓦库席位符文界面已登记自动作答（延迟 {AnswerDelaySeconds:0.0}s 避开界面自带的 1s 点击保护窗）: "
+            string driver = wakuuSeat ? "瓦库" : "Co-op Bots";
+            Log.Info($"{Entry.LogPrefix} {driver}席位符文界面已登记自动作答（延迟 {AnswerDelaySeconds:0.0}s 避开界面自带的 1s 点击保护窗）: "
                 + $"seat={MainModBridge.SeatLabelById(seat)}({seat}), screen=HextechRuneSelectionScreen");
             tree.CreateTimer(AnswerDelaySeconds).Timeout += () => TryAnswer(node, seat, visibleAttempt: 1, retry: false);
         }

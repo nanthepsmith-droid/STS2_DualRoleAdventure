@@ -999,11 +999,26 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     - 瓦库作答改成按抓率挑（`WakuuRuneAutoAnswer`）；**自选池屏（锻造选择）不参与统计**（会冲爆 offered）、仍取最左；
     - 开关 `HRLF_RUNE_STATS=0`；新锚点 `符文抓率记账（候选/选中）`、`rule=按抓率, 抓率=[…]`；
     - 单测 15 条（`tests/LocalMultiControl.Tests/RunePickRatePolicyTests.cs`，**链接源码**进测试工程）。
+  - **✅ v1.4.0（2026-10-21 实机判读后补的两件，r299b）**：
+    ① **与 Co-op Bots 并存**：它的**合成 Bot 席位**（NetId 巨大，实测 `12716757972810793218`）
+    既不是主 mod 的本地席位、也不是真远端 ⇒ 海克斯判成远端玩家 ⇒ `WaitForRemoteHextechChoice` 死等
+    （实测 11 条 WARN、符文批次一直挂着 = 用户报的「Co-op Bots 导致海克斯符文无法正常使用」）。
+    修法 = ① 的放行判据扩成 `IsLocalSeat || CoopBotsAdapter.Drives(seat)`（后者反射自主 mod），
+    ⑤ 的代答判据同一口径（日志里叫 `Co-op Bots` 席位）。
+    ② **「打到一半突然 1fps」**（同一份日志）：`HextechBurnVisual` 在生物的 Spine 被摘/换掉后仍每帧读
+    已释放骨骼 ⇒ `ERROR: Native Spine object not set` **2944 次**（Godot 的 ERROR 是同步 I/O）⇒
+    `fps均=1.0`、`引擎 process≈1500ms/帧`（之前 53.8 / 49.7ms）。修法 = 两层反射守卫
+    （`Tick` 前缀查 `_spineSpriteNode`，`UpdateBoneEmissionPoints` 前缀再逐个查 `_emissionBones`）
+    ⇒ 失效就调它自带的 `DisableBoneEmission()`（火焰改走矩形发射，照常显示）。
+    新锚点：`海克斯燃烧视觉的 Spine 骨骼发射点已停用（源=Tick/UpdateBoneEmissionPoints，第 N 次）`。
   - **⏳ 剩：选项很烂时自主 roll**。已确认海克斯自带 reroll（dll 字符串：`RerollButton_` /
     `PlayerRuneRerollLimit` / `RerollCount` / `RerollHistory` / `hextechRerollButton`）——
     还差一次实机探针确认 ① 按钮的**节点名/私有字段** ② "剩余次数"读哪个字段 ③ 锻造自选池屏有没有 reroll。
     判据口径已定：**抓率全低**（例如当前 3 个候选的抓率都 ≤ 首批数据的低分位）；⚠ 稀有度不能当判据
     （用户实测"每次 3 个选项稀有度一致"）。
+  - **✅ 抓率统计首日实测**（`logs-archive/godot__20261021-184214__r298.log`）：`符文抓率记账（候选）` 10 条 /
+    `（选中）` 9 条 / `rule=按抓率` 5 条；落盘 `%APPDATA%\SlayTheSpire2\hextech_rune_stats.json` 已积累
+    （如 `STARLIGHT_SPARKLE_RUNE` 3/3、`MORE_THE_MERRIER_RUNE` 0/5）。
 - **🕐【已排期·用户 2026-10-21 点名，以后做】猪猪 mod（`YuWanCard`）本地多控兼容补丁**：
   - **需求原话**：「排期以后做一个猪猪 mod（YuWanCard mod）兼容补丁。因为猪猪 mod 有一些功能还不兼容，
     包括遗物【我全都要】可以在卡牌奖励中选择多张牌，虽然现在还没有引发问题但是**瓦库自动抓牌可能会有问题**

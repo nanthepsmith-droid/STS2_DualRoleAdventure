@@ -109,6 +109,21 @@ public static class Entry
         //（补丁 ① 把每个本地席位都判成「本机玩家」，会让两屏都可调 ⇒「先作答那屏说了算」）。
         EnemyHexAuthorityCompatPatch.Install(_harmony, coordinatorType, screenType, Patched, Missing);
 
+        // ⑨ 「燃烧」视觉的 Spine 骨骼发射点兜底：生物节点被摘 / Spine 换掉后它仍每帧读已释放的骨骼
+        //   ⇒ native ERROR 刷屏（Godot 同步 I/O）⇒ 帧率掉到 1（2026-10-21 实机 2944 次）。
+        //   与符文选择无关，但同一个 mod、同一个兼容域 ⇒ 收在本补丁里。
+        Type? burnVisualType = FindType(HextechBurnVisualGuardPatch.BurnVisualTypeName);
+        if (burnVisualType == null)
+        {
+            Missing.Add($"{HextechBurnVisualGuardPatch.BurnVisualTypeName}(燃烧视觉 Spine 守卫)");
+            Log.Warn($"{LogPrefix} 未找到 {HextechBurnVisualGuardPatch.BurnVisualTypeName}"
+                + "（海克斯版本较旧或已改名）⇒ 不挂燃烧视觉守卫（掉落帧风险仍在）。");
+        }
+        else
+        {
+            HextechBurnVisualGuardPatch.Install(_harmony, burnVisualType, Patched, Missing);
+        }
+
         _installed = true;
         AppDomain.CurrentDomain.AssemblyLoad -= OnAssemblyLoad;
 

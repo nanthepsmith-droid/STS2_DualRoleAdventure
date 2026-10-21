@@ -350,6 +350,51 @@ cd D:\Download\pain\STS2_DualRoleAdventure-itriedtofix
 还差一次实机探针确认：① 符文界面里那个按钮的**节点名/字段**；② "剩余次数"读哪个字段；
 ③ 自选池屏（锻造）有没有 reroll（大概率没有）。
 
+## Co-op Bots 并存 + 燃烧视觉掉帧（v1.4.0，2026-10-21 实机）
+
+### ① Co-op Bots 的合成 Bot 席位被海克斯当成远端玩家（符文批次死等）
+
+**日志**（`logs-archive/godot__20261021-184214__r298.log`）：
+
+```
+[WARN] [HextechRunes][Mayhem] WaitForRemoteHextechChoice: still waiting context=rune-choice act=0 ordinal=0
+       player=12716757972810793218 choiceId=0      ← ×11，那个巨大的 NetId 就是 Co-op Bots 的合成席位
+```
+
+**根因**：补丁 ① 只把「主 mod 的本地席位」放宽成「本机玩家」；Co-op Bots 的合成席位**两边都不是**
+（不是本地席位、也不是真远端）⇒ 海克斯走远端等待分支，单进程回环里没人会回这条消息。
+
+**修法**：① 的判定扩成 `IsLocalSeat(seat) || CoopBotsAdapter.Drives(seat)`（后者由主 mod 反射过来），
+并让 ⑤ 的代答判据也接上 Bot 席位（日志里叫 `Co-op Bots` 而不是 `瓦库`）。
+主 mod 缺席 / 没装 Co-op Bots ⇒ 判定恒 false，行为退回原状。
+
+### ② 打到一半突然 1fps —— 燃烧视觉每帧读**已释放的 Spine 骨骼**
+
+**观测**：同一份日志里 `ERROR: Native Spine object not set. at SpineBone::get_world_x/y` **2944 次**，
+栈固定为 `HextechBurnVisual.UpdateBoneEmissionPoints ← ApplyIntensity ← Tick`；
+spine 报错开始后所有性能窗口 `fps均=1.0`、`引擎 process≈1500ms/帧`（之前是 53.8 / 49.7ms）。
+
+**根因**：`HextechBurnVisual.Start()` 抓一次该生物的 Spine 骨骼（`_emissionBones` + `_spineSpriteNode`），
+之后每帧 `Tick → ApplyIntensity → UpdateBoneEmissionPoints` 逐骨读 `get_world_x/y` 定位火焰粒子；
+**生物节点被摘 / Spine 被换掉后它不重新校验**，骨骼原生对象已释放 ⇒ 每帧打印原生错误。
+Godot 的 `ERROR` 是同步 I/O ⇒ 日志写盘直接把帧时间打爆（≈1500ms/帧）。
+
+**修法（两层守卫，反射，缺成员整套不挂）**：
+
+| 层 | 目标 | 判据 | 动作 |
+|---|---|---|---|
+| ① | `HextechBurnVisual.Tick`（前缀） | `_spineSpriteNode` 已释放 / 排队释放 | 调它自带的 `DisableBoneEmission()` ⇒ 切矩形发射 |
+| ② | `UpdateBoneEmissionPoints`（前缀） | 上面那条 **或** `_emissionBones` 里任一骨 `IsInstanceValid=false` | 再兜一次并**跳过原方法**（一次 native 读都不发生） |
+
+⇒ 火焰**照常显示**（它自带"矩形发射"兜底），只是不再跟着骨骼走。
+日志：`海克斯燃烧视觉的 Spine 骨骼发射点已停用（源=Tick，第 N 次）…`（只打前 3 次）。
+
+⚠ 刻意**不**加 `IsInsideTree` 判据：生物入场/换位瞬间可能暂时不在树里，那种情况骨骼照样能读，
+误判会把正常火焰永久降级。
+
+**通用教训**：第三方每帧打印的**原生**错误（`ERROR:` + C# backtrace）不是"噪音"，是**同步 I/O 炸弹** ——
+日志里看到成对出现的同一栈就要立刻按"每帧 × 行数"估帧时间。（本例 4 行/次 × 60 次/秒 = 240 行/秒。）
+
 ## 其它未做（按需再加）
 
 - 把受控位自动切到「当前这一屏的归属席位」（省一次按 Tab）；

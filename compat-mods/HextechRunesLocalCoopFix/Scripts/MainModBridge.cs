@@ -34,6 +34,9 @@ internal static class MainModBridge
     private const string AutopilotConfigTypeName = "LocalMultiControl.Scripts.Runtime.LocalWakuuAutopilotConfig";
     private const string WakuuRelicRuntimeTypeName = "LocalMultiControl.Scripts.Runtime.LocalWakuuRelicRuntime";
 
+    /// <summary>Co-op Bots 适配器（`Drives(ulong)` = 这一席是否由它的 AI 驱动，含<b>合成 Bot 席位</b>）。</summary>
+    private const string CoopBotsAdapterTypeName = "LocalMultiControl.Scripts.Runtime.CoopBotsAdapter";
+
     private static bool _resolved;
     private static MethodInfo? _isLocalSeat;
     private static MethodInfo? _getSlotLabel;
@@ -45,6 +48,10 @@ internal static class MainModBridge
     private static PropertyInfo? _backgroundMode;
     private static MethodInfo? _isVakuuFormModeById;
     private static bool _wakuuFallbackWarned;
+
+    private static bool _coopBotsResolved;
+    private static MethodInfo? _coopBotsDrives;
+    private static bool _coopBotsWarned;
 
     /// <summary>当前 Run 是不是主 mod 的本地多控会话（按回环网络服务的类型名判定）。</summary>
     internal static bool IsLocalCoopRun()
@@ -178,6 +185,73 @@ internal static class MainModBridge
             bool value => value,
             _ => null,
         };
+    }
+
+    /// <summary>
+    /// 这一席是不是 **Co-op Bots 驱动的席位**（含它创建的合成 Bot 席位）。
+    ///
+    /// <para><b>为什么需要</b>（2026-10-21 实机）：Co-op Bots 的合成席位 NetId 是一个巨大的合成号
+    /// （实测 `12716757972810793218`），既不是主 mod 的"本地席位"，也不是真远端 ⇒ 海克斯把它判成
+    /// **远端玩家**、走 `WaitForRemoteHextechChoice` 死等（实测 11 条 WARN，符文批次一直挂着）。
+    /// 本补丁把它和"后台托管瓦库席位"同样处理：放行成本机玩家 + 由我们按抓率代选。</para>
+    ///
+    /// <para>主 mod 缺席 / Co-op Bots 未装 ⇒ 返回 false（行为退回原状，不会多出坏行为）。</para>
+    /// </summary>
+    internal static bool IsCoopBotSeat(ulong netId)
+    {
+        if (netId == 0UL)
+        {
+            return false;
+        }
+
+        EnsureCoopBotsResolved();
+        if (_coopBotsDrives == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return _coopBotsDrives.Invoke(null, new object[] { netId }) is true;
+        }
+        catch (Exception exception)
+        {
+            if (!_coopBotsWarned)
+            {
+                _coopBotsWarned = true;
+                MegaCrit.Sts2.Core.Logging.Log.Warn(
+                    $"{Entry.LogPrefix} 读取主 mod「Co-op Bots 席位」判定失败（本补丁不再单独照顾 Bot 席位）: "
+                    + $"{exception.GetType().Name}: {exception.Message}");
+            }
+
+            return false;
+        }
+    }
+
+    private static void EnsureCoopBotsResolved()
+    {
+        if (_coopBotsResolved)
+        {
+            return;
+        }
+
+        Type? adapterType = FindType(CoopBotsAdapterTypeName);
+        _coopBotsDrives = adapterType?.GetMethod(
+            "Drives",
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic,
+            binder: null,
+            types: new[] { typeof(ulong) },
+            modifiers: null);
+
+        if (_coopBotsDrives == null)
+        {
+            // 只在真正用得上时提示一次：没装 Co-op Bots 的玩家不该看到这条。
+            MegaCrit.Sts2.Core.Logging.Log.Info(
+                $"{Entry.LogPrefix} 未找到 CoopBotsAdapter.Drives（未装 Co-op Bots 或主 mod 版本较旧），"
+                + "符文界面只按「本地席位 + 托管瓦库」判定归属。");
+        }
+
+        _coopBotsResolved = true;
     }
 
     /// <summary>
