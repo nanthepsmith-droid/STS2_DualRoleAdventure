@@ -1025,7 +1025,16 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     **改为默认「强制矩形发射」**：`Tick` 前缀见骨骼缓存就 `DisableBoneEmission()`（每视觉一条点名日志）+
     `TryInitBoneEmission` 前缀挡掉重抓 + `UpdateBoneEmissionPoints` 前缀兜底；
     想恢复原样设 `HRLX_BURN_BONE_EMISSION=1`（退回检测档）。代价 = 火焰从"贴骨骼"变"矩形区域发射"（纯观感）。
-    通用原则（已沉淀 references §十一补记）：**修第三方性能事故，结构性绕开 &gt; 精确检测**。
+    通用原则（已沉淀 references §十一 *补记*）：**修第三方性能事故，结构性绕开 &gt; 精确检测**。
+  - **✅ 掉帧关单（2026-10-21 第三次实机，用户「现在不卡了」）**：
+    `logs-archive/godot__20261021-190924__r298.log`（1.5MB）—— `Native Spine object not set` **0 条**；
+    性能窗口 24 个：`fps均=53.1`（最低 31.2）、`引擎 process` 均 66.0ms / 最大 258.6ms（单次场景切换尖峰）；
+    同一个触发点（L11758 `Missing sprite 'hextech_burn_power'` + `missing_power.png`）**这次不再有后续报错**；
+    `[ERROR]` 只剩 5 条既存第三方（Oddmelt 注册/挂载、Manosaba·MEP 分支）。
+  - **✅ v1.4.3 两处收尾**：① 点名日志一直没打出来 —— `HextechBurnVisual` **不是 Godot 节点**，
+    拿不到 `GetInstanceId()` ⇒ 去重键改用**引用**（`ConditionalWeakTable`），下次着火就会打出 `对象=…`；
+    ② ⑧b（`CreateForgeSelectionScreenAsync`）在海克斯 0.111 **已被重构掉**（锻造屏改走符文协调器的
+    `CreateRuneSelectionScreenAsync`，③b 已覆盖）⇒ 标为**可选目标**，不再把 `INIT` 打成 `DEGRADED`。
   - **⏳ 剩：选项很烂时自主 roll**。已确认海克斯自带 reroll（dll 字符串：`RerollButton_` /
     `PlayerRuneRerollLimit` / `RerollCount` / `RerollHistory` / `hextechRerollButton`）——
     还差一次实机探针确认 ① 按钮的**节点名/私有字段** ② "剩余次数"读哪个字段 ③ 锻造自选池屏有没有 reroll。

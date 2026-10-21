@@ -128,8 +128,12 @@ internal static class HextechRuneSelectionCompatPatch
         {
             Patch(harmony, forgeCoordinatorType, "SelectLocalForge", 3, patched, missing,
                 prefix: nameof(SelectLocalForgePrefix));
+
+            // ⑧b 是**可选**目标：海克斯 0.111 起把锻造屏改成直接调符文协调器的
+            // `CreateRuneSelectionScreenAsync(options, …, titleOverride, …, mode=Forge)`（反编译确认），
+            // 那条方法 ③b 早就挂了 ⇒ ⑧b 已无必要。目标不在 = "已重构"，不是缺件（别把 INIT 打成 DEGRADED）。
             Patch(harmony, forgeCoordinatorType, "CreateForgeSelectionScreenAsync", 1, patched, missing,
-                prefix: nameof(CreateForgeSelectionScreenPrefix));
+                prefix: nameof(CreateForgeSelectionScreenPrefix), optional: true);
         }
     }
 
@@ -386,7 +390,8 @@ internal static class HextechRuneSelectionCompatPatch
         List<string> patched,
         List<string> missing,
         string? prefix = null,
-        string? postfix = null)
+        string? postfix = null,
+        bool optional = false)
     {
         try
         {
@@ -402,6 +407,14 @@ internal static class HextechRuneSelectionCompatPatch
 
             if (target == null)
             {
+                if (optional)
+                {
+                    // 可选目标：不在 = 第三方已重构掉这条链（不是我们的缺件）⇒ 只记 INFO，不算 DEGRADED。
+                    Log.Info($"{Entry.LogPrefix} 可选目标方法已不存在（第三方重构，本条补丁不再需要）: "
+                        + $"{type.Name}.{methodName}/{parameterCount}，候选={candidates.Count}");
+                    return;
+                }
+
                 missing.Add($"{type.Name}.{methodName}/{parameterCount}");
                 Log.Warn($"{Entry.LogPrefix} 目标方法未找到（海克斯可能已更新），跳过: "
                     + $"{type.Name}.{methodName}/{parameterCount}，候选={candidates.Count}");

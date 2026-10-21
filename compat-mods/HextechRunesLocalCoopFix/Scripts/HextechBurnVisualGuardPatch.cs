@@ -48,8 +48,15 @@ internal static class HextechBurnVisualGuardPatch
     private static bool _warned;
     private static int _disabledCount;
 
-    /// <summary>「点名」日志去重（每个视觉只打一条，最多 3 条）。</summary>
-    private static readonly HashSet<ulong> LoggedVisuals = new();
+    /// <summary>
+    /// 「点名」日志去重（每个视觉只打一条，最多 3 条）。
+    ///
+    /// <para>⚠ 键必须用**引用**而不是 `GetInstanceId()`：`HextechBurnVisual` 不是 Godot 节点
+    /// （它内部自己管 `_backRoot` 等节点），拿不到 instance id ⇒ v1.4.2 那条点名日志一直没打出来。</para>
+    /// </summary>
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, object> LoggedVisuals = new();
+
+    private static int _loggedVisualCount;
 
     /// <summary>
     /// **默认强制矩形发射**（不给骨骼发射机会）。
@@ -247,29 +254,32 @@ internal static class HextechBurnVisualGuardPatch
     /// <summary>强制档下给**每个视觉**只打一条（最多 3 条），用来回答"这个燃烧挂在谁身上"。</summary>
     private static void LogOncePerVisual(object instance)
     {
+        bool shouldLog;
         try
         {
-            if (instance is not GodotObject godotObject)
-            {
-                return;
-            }
-
-            ulong id = godotObject.GetInstanceId();
             lock (LoggedVisuals)
             {
-                if (!LoggedVisuals.Add(id) || LoggedVisuals.Count > 3)
+                if (LoggedVisuals.TryGetValue(instance, out _))
                 {
                     return;
                 }
-            }
 
-            Log.Info($"{Entry.LogPrefix} 海克斯燃烧视觉改用矩形发射（不读骨骼，防 native 报错把帧率打到 1）: "
-                + $"对象={DescribeOwner(instance)}");
+                LoggedVisuals.Add(instance, instance); // 键 = 引用本身（视觉不是 Godot 节点，没有 instance id）
+                shouldLog = ++_loggedVisualCount <= 3;
+            }
         }
         catch
         {
-            // 纯诊断，失败就算了
+            return; // 纯诊断，失败就算了
         }
+
+        if (!shouldLog)
+        {
+            return;
+        }
+
+        Log.Info($"{Entry.LogPrefix} 海克斯燃烧视觉改用矩形发射（不读骨骼，防 native 报错把帧率打到 1）: "
+            + $"对象={DescribeOwner(instance)}");
     }
 
     /// <summary>
