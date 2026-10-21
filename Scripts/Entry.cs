@@ -777,7 +777,14 @@ public partial class Entry
     //   换不到才把这张记入**本回合弃牌名单**（`MarkSkippedForMissingTarget`，下一轮大脑不再选它）+ 循环闸 WARN。
     // ⚠ 同一轮曾加过"第三方幕没音乐 ⇒ 用原版第一幕兜底"，2026-10-21 用户拍板**移除**（第三方缺内容，
     //   主 mod 不修、也不做兼容补丁）⇒ 只剩只读探针 `BgmProbeRunMusicPatch` 留着判读用（r294）。
-    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-21-r298)";
+    // r299（2026-10-21，§待查-11 定因）：自动用药抛「Nullable object must have a value」不是目标为空，
+    //   而是**本局正在退出到主菜单**时开的药 —— 原版 OnUseWrapper 内 ~0.5s 投掷动画 await 跨过
+    //   `RunManager.CleanUp`，`LocalContext.NetId` 已置空 ⇒ 构造 BranchingPlayerChoiceContext 时 `.Value` 抛；
+    //   且异常路径不执行 PopModel ⇒ 药水模型留在 choice context 栈顶 ⇒ 同 hook 遗物 pop 错位（原版 ERROR）。
+    //   修法 = ① 进入清理期就不再开新的用药（`IsRunTeardown` 闸门）② catch 里**只在自己是栈顶时**摘掉残留模型
+    //   （`PotionUseAbortPolicy`，原版 PopModel 栈顶不符时只打 ERROR 不弹，不能当清栈工具）
+    //   ③ 异常日志改「类型名 + 栈帧压成一行」（原来只打 Message，把"谁抛的"这条线索丢了）。
+    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-21-r299)";
 
     private static Harmony? _harmony;
 

@@ -392,6 +392,17 @@ internal static class LocalWakuuPotionAutoUse
         PotionRuleContext ctx = BuildContext(player, combatState, potions);
         foreach (PotionModel potion in potions)
         {
+            // §待查-11（2026-10-21）：运行已进入清理期（退出到主菜单 / 本局结束）时**不再开新的用药**。
+            // 原版 OnUseWrapper 内部有 ~0.5s 的投掷动画 await，跨过清理点后 LocalContext.NetId 已被置空，
+            // 再构造 BranchingPlayerChoiceContext 就抛「Nullable object must have a value」，且药水模型
+            // 留在 choice context 栈顶 ⇒ 同 hook 里的遗物模型 pop 错位（原版 ERROR）。
+            if (LocalWakuuRelicRuntime.IsRunTeardown())
+            {
+                LocalMultiControlLogger.Info(
+                    $"瓦库自动用药中止（运行已进入清理期）: player={player.NetId}, phase={phase}, potion={potion.Id.Entry}");
+                return;
+            }
+
             // 污浊药水绝不自动使用：战斗中使用会伤害全场（含自己与队友），只允许在商人处投掷
             if (potion is FoulPotion)
             {
@@ -459,11 +470,61 @@ internal static class LocalWakuuPotionAutoUse
             }
             catch (Exception exception)
             {
+                // §待查-11：异常路径上原版不会执行 PopModel ⇒ 先把「还在栈顶的我」摘掉，
+                // 再判断这次异常要不要按故障上报（清理期 = 预期中止，见 WakuuTeardownPolicy）。
+                int popped = RepairChoiceContextStack(choiceContext, potion);
+                string repair = popped > 0 ? $"，已摘除残留药水模型 {popped} 层" : string.Empty;
+                string detail = PotionUseAbortPolicy.DescribeException(exception);
+
                 // 单瓶失败不影响后续药水与出牌流程；若药水已被移除则不会重复喝
-                LocalMultiControlLogger.Warn(
-                    $"瓦库自动用药异常（跳过该瓶）: potion={potion.Id.Entry}, error={exception.Message}");
+                if (LocalWakuuRelicRuntime.IsRunTeardown())
+                {
+                    LocalMultiControlLogger.Info(
+                        $"瓦库自动用药在运行清理期中止（预期内，跳过该瓶）: potion={potion.Id.Entry}{repair}, error={detail}");
+                }
+                else
+                {
+                    LocalMultiControlLogger.Warn(
+                        $"瓦库自动用药异常（跳过该瓶）: potion={potion.Id.Entry}{repair}, error={detail}");
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// 把「异常路径上没来得及 pop 的药水模型」从 choice context 栈顶摘掉（§待查-11）。
+    ///
+    /// 原版 <c>PlayerChoiceContext.PopModel</c> 只在**栈顶就是自己**时弹栈；栈顶是别人时只打一条 ERROR
+    /// 且**不弹**（所以不能拿它当清栈工具）。这里只在「栈顶确实是这瓶药水的同一个实例」时调用它，
+    /// 弹干净就停；栈顶是别人时**什么都不做**（宁可留着，也不给原版制造第二次错位）。
+    /// </summary>
+    /// <returns>实际弹出的层数（正常路径返回 0，行为零变化）。</returns>
+    private static int RepairChoiceContextStack(PlayerChoiceContext choiceContext, PotionModel potion)
+    {
+        int popped = 0;
+        try
+        {
+            while (PotionUseAbortPolicy.ShouldPopResidualModel(
+                       ReferenceEquals(choiceContext.LastInvolvedModel, potion),
+                       popped))
+            {
+                choiceContext.PopModel(potion);
+                popped++;
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn(
+                $"瓦库用药后清栈失败（忽略，不影响本瓶已跳过）: potion={potion.Id.Entry}, error={exception.Message}");
+        }
+
+        if (popped > 0)
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库自动用药后已摘除残留的药水模型（防后续 PopModel 错位）: potion={potion.Id.Entry}, 层数={popped}");
+        }
+
+        return popped;
     }
 
     // ------------------------------------------------------------------

@@ -195,7 +195,7 @@ internal static class LocalWakuuRelicRuntime
     /// （游戏状态已被 <c>RunManager.CleanUp</c> 拆掉），不该报 WARN 也不该上抛。
     /// 判定口径见纯函数 <see cref="WakuuTeardownPolicy"/>。
     /// </summary>
-    private static bool IsRunTeardown()
+    public static bool IsRunTeardown()
     {
         try
         {

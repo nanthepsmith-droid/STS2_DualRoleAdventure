@@ -455,7 +455,7 @@
 - **动作**：两条都**不做兜底**（按 compat-mods 口径：第三方自身缺陷 ⇒ 登记 + 探针就行）；若将来真的影响可玩
   （tooltip 卡死 / 血条消失）再谈。
 
-### 待查-11 瓦库自动用药抛异常后把药水留在 `PlayerChoiceContext` 栈顶 ⇒ 原版 pop 遗物报 ERROR（2026-10-21 判读；**是我方**）
+### 待查-11 瓦库自动用药抛异常后把药水留在 `PlayerChoiceContext` 栈顶 ⇒ 原版 pop 遗物报 ERROR（**✅ 已定因并修复（r299），⭐ 待实机**）
 
 **日志**（`logs-archive/godot2026-10-21T20.52.32__20261021-205232__r298.log`）：
 
@@ -466,17 +466,41 @@
         at PlayerChoiceContext.PopModel ← Hook.AfterAutoPrePlayPhaseEntered
 ```
 
-**推演**：`LocalWakuuPotionAutoUse` 的 try 里 `await potion.OnUseWrapper(choiceContext, target)` 抛异常，
-catch **只打 WARN**；但药水模型已经 push 进 choiceContext、异常路径没有 pop ⇒ 之后遗物 hook 的 `PopModel`
-发现栈顶不是自己 ⇒ 原版 ERROR，且栈继续错位。
-**影响**：那一瓶没喝成（跳过），本局仅 1 次；不影响出牌/回合（该局 `turn loop died` 0）。
+**✅ 真因（2026-10-21 r299 定案）：不是「目标为空」，是这一按撞上了「退出这一局」**。
+同一段日志的时序（按行号）：
 
-**下一步（先量后猜）**：
-1. catch 里的 `exception.Message` 换成完整栈（`exception.ToString()` 截断前 800 字），下次能定位 `Nullable.Value` 来自哪层；
-2. 确认 `FIRE_POTION` 的 `TargetType` 与 `ResolveTarget` 是否返回 null —— 若"需要目标却给了 null"，
-   应在调用前跳过（`IsValidTarget` 对 target=null 的返回要实测，别假设）；
-3. **清理策略**：原版 `PopModel` 在不匹配时**抛且不 pop** ⇒ 不能拿它清栈；要么保证 `OnUseWrapper` 不抛（首选），
-   要么反射移除栈项（风险高，暂不做）。
+| 行 | 事件 |
+|---|---|
+| 63118 | `[BGM探针] StopMusic … 调用方=<CloseToMenu>` ⇒ **玩家此刻已经在退出到主菜单** |
+| 63159 | 我们的 `瓦库自动用药: potion=FIRE_POTION, target=灵魂枢纽`（目标合法） |
+| 63185 | `检测到 RunManager.CleanUp(graceful=True)` |
+| 63332 | `瓦库自动用药异常 … Nullable object must have a value`（异步 catch 直到主菜单加载完才回来） |
+| 63333 | 原版 `PopModel` 错位 ERROR |
+
+反编译核对（`src/Core/Models/PotionModel.cs:297-354`）：`OnUseWrapper` 在 `PushModel(this)` 之后、
+走到 `new BranchingPlayerChoiceContext(this, LocalContext.NetId.Value, …)` 之前还有 **~0.5s 的投掷动画
+`await Cmd.Wait(0.5f)`**；而 `RunManager.CleanUp` 会把 `LocalContext.NetId` 置 **null**
+（`src/Core/Runs/RunManager.cs:1612`）⇒ **`.Value` 抛 `InvalidOperationException: Nullable object must have a value`**。
+这是药水使用链上唯一没有 `HasValue` 保护的那处（`CardModel.cs:1931` 同款，`CombatManager` 各 hook 派发点都做了保护）。
+药水自己的 `PopModel` 在异常路径上永远不执行 ⇒ 模型留在栈顶 ⇒ 同 hook 里原版遗物模型 pop 错位。
+**影响**：那一瓶没喝成（跳过）、一条原版 ERROR；不影响出牌/回合（该局 `turn loop died` 0）。属**时序竞态**，
+不是每局必现。
+
+**r299 修法（三层，均无新反射面）**：
+1. **进入清理期就不再开新的用药**：循环内每瓶前 `LocalWakuuRelicRuntime.IsRunTeardown()`（既有口径 =
+   `!RunManager.IsInProgress || RunState==null`）⇒ 打 `瓦库自动用药中止（运行已进入清理期）` 并整段退出；
+2. **catch 里摘残留**：只在「栈顶**就是这瓶药水的同一个实例**」时调原版 `PopModel`（`RepairChoiceContextStack`
+   + 纯逻辑 `PotionUseAbortPolicy.ShouldPopResidualModel`，上限 4 层防死循环），摘到即停、打
+   `瓦库自动用药后已摘除残留的药水模型（防后续 PopModel 错位）: … 层数=N`；
+   **栈顶是别人一律不动**（原版 `PopModel` 不匹配时只打 ERROR 且不 pop，不能拿它当清栈工具）；
+3. **异常日志改口径**：`PotionUseAbortPolicy.DescribeException` = `类型名: 消息 | 栈帧压成一行`（截断 900 字），
+   并且清理期的异常降级为 INFO `瓦库自动用药在运行清理期中止（预期内）`（与 r110 的选择器清理期口径一致）。
+
+**复测契约（r299）**：正常打完一局（中途**从战斗里按 ESC 退回主菜单**最理想）⇒
+① `Tried to pop model … POTION.… was on the top of the stack` **应为 0**；
+② 若又撞上清理期，应看到 `瓦库自动用药中止（运行已进入清理期）` 或
+`瓦库自动用药在运行清理期中止（预期内，跳过该瓶）`，且异常详情里带**类型名 + 栈帧**；
+③ 正常用药路径的锚点 `瓦库自动用药: …` 与之前完全一致（本修不改行为）。
 
 ## 维护性改进 backlog（门禁体系 2026-09-08 之后的那批）
 
@@ -487,7 +511,7 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
 `ExpectedPatchTargets` 完整签名（r92）、发布包构建元数据（2026-09-19）、S8 源码编码卫生、
 格式存量收口（2026-10-05，口径 = 不把 `dotnet format --verify-no-changes` 加进强制门禁链）。
 
-仍挂着**两项**（第二项 2026-10-11 登记）：
+仍挂着**三项**（第二项 2026-10-11 登记、第三项 2026-10-21 用户点名）：
 
 1. **版本 lane + 根 loader（**待正式版更新再做**，用户 2026-09-19 拍板）**：
    现状 = 只吃当前游戏版本（public-beta `0.111.0`），而原作者的 mod 依旧适配现在的正式版
@@ -506,6 +530,32 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
    或者**每轮收工顺手规范化一次**。⚠ 两个坑：① 规范化对**提交内容零影响**（`git hash-object --path=<f>` == `HEAD:<f>`），
    但 `git status` 会多列一批 ` M`（stat 缓存噪声，**以 `git diff --name-only` 为准**）；
    ② 规范化会改变 **dll 字节**（本仓库构建不逐字节可复现）⇒ **必须排在最后一次构建之前**，否则要重跑 build + deploy 并订正 sha。
+
+3. **补丁 mod 的「本体已修 ⇒ 退场自检」+ 加载项精简（2026-10-21 用户点名登记，只登记未排期）**：
+   用户原话：「我们有若干补丁 mod，但是不知道这些 mod 能不能检测本体 mod 有没有修，如果本体 mod 修了补丁报错还行，
+   不报错就静默运行卡我游戏加载时间了」。
+   **现状盘点**（2026-10-21）：仓库外 11 个补丁/辅助 mod（`Act4FinalAscentFixes` / `EnchantTargetRandomFix` /
+   `HextechBurnVisualFix` / `HistoryFilter` / `HistoryLoadoutExport` / `LexNinja2LaserFix` / `OddmeltGaugeCardRenderFix` /
+   `TouhouAncientsAncientFixes`（obsolete）/ `TouhouAncientsMiniHakkeroFixed`（obsolete）/ `YuiVfxSceneFix` /
+   `YuWanCardWhiteScarfFix`）+ 仓库内 `compat-mods/` 3 个（`HextechRunesLocalCoopFix` / `NinjaSlayerBossGreetingFix` /
+   `PreloadStallGuard`）。现在只有"**目标成员缺失 ⇒ 不挂补丁**"这一种防御（多数 mod 有），
+   **没有"目标还在、但上游已经自己修好"的判定**，也没有"这个 mod 现在还需不需要"的统一结论 ⇒ 会静静加载、静静挂补丁。
+   ⚠ **先认清成本结构**（否则方案会做成无效功）：**补丁不挂 ≠ 省加载时间** —— 游戏仍要扫槽位、加载 dll、跑
+   `ModInitializer`。真正省时间只有三条：① 提示用户**禁用/删除**槽位；② **合并**多个小补丁成一个 dll（减少槽位/程序集）；
+   ③ 让 `ModInitializer` 尽早 return（省 Harmony 挂载开销，省不了 dll 加载）。
+   **拟做（待拍板先做哪条）**：
+   - **A. 统一退场自检**（每个补丁 Entry，三层判据）：① 目标类型/方法**不存在**（改名或已删）；
+     ② 目标存在但**形状变了**（已有 `参数个数已变` 这类 WARN ⇒ 可升级为"疑似已修"）；
+     ③ **适用上游版本基线**（照 `compat-target.txt` 的做法：当初修的是哪个上游版本；上游版本 > 基线 ⇒ 提示"可能已修"）。
+     输出统一一行：`INIT_SKIPPED: 目标 mod 已更新到 <ver>，本补丁可能不再需要（依据=…），建议禁用/删除本 mod`，**且不挂任何补丁**。
+   - **B. 巡检工具** `tools/scan_compat_need.py`（本机层，不动游戏）：扫 mods 槽位 + 各补丁的"适用上游版本"表
+     ⇒ 输出"建议保留 / 建议删除"清单（附证据：dll 版本、目标是否存在、上游 manifest 版本）。这条**最直接省加载时间**。
+   - **C. 合并**（可选，先不动）：把 `compat-mods/` 3 个 + 若干仓库外补丁合成一个 `LmcCompatSuite` dll；
+     代价 = 单点失败连累整包 ⇒ 必须"每组独立 try/catch + 各自 INIT 行"。
+   ⚠ **判据坑**：`目标消失` 既可能是"上游已修"、也可能是"上游改名"⇒ 不要自动当成已修就静默退场，
+   必须打醒目日志 + 建议人工确认（尤其仓库外私有补丁 `HextechBurnVisualFix`：用户明确要求上游自修后靠 `HBV_DISABLE=1` 退场）。
+   ⚠ 已知特例：`HextechRunesLocalCoopFix` 已出现 `CreateRuneSelectionScreenAsync 期望 10，实际 11`（上游加参数）——
+   这正是"形状变了"的活样本，可作为 A-② 的首个用例与回归锚点。
 
 ## ④「瓦库的爹」（遗物 + 三张牌）—— ✅ 全部实机关单（r227~r231，2026-10-07），已随 **v1.45.0** 发版
 
