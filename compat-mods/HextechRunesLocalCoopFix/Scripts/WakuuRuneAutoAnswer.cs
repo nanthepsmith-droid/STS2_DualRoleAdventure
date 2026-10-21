@@ -37,9 +37,10 @@ namespace HextechRunesLocalCoopFix.Scripts;
 /// 稀有度**不能**当判据（用户实测：海克斯每次给的 3 个选项稀有度一致）。
 /// 自选池屏（锻造选择：一屏一大堆符文）仍取最左、也不参与统计。</para>
 ///
-/// <para>📌 后续排期（用户 2026-10-11 点名的第三件）：**选项很烂时自主 roll**。
-/// 已确认海克斯自带 reroll（dll 字符串里 `RerollButton_` / `PlayerRuneRerollLimit` / `RerollCount`），
-/// 还差一次实机探针确认界面里按钮的节点名与"剩余次数"字段（见 <c>TODO.md</c> §海克斯符文兼容补丁）。</para>
+/// <para><b>选项很烂时自主 roll</b>（v1.6.0，用户 2026-10-11 点名的第三件）：反编译确认界面有
+/// <c>_rerollButtons</c>（节点名 <c>RerollButton_{slotIndex}</c>，<c>Pressed</c> 连到 <c>OnRerollPressed(slot)</c>；
+/// 次数上限 <c>PlayerRuneRerollLimit</c>，按钮 <c>Disabled</c> 即"这槽用完了"）⇒ 三张候选**全烂**时按最烂那张的
+/// reroll（判据见 <see cref="RuneRerollPolicy"/>；`HRLF_RUNE_REROLL=0` 可关）。</para>
 /// </summary>
 internal static class WakuuRuneAutoAnswer
 {
@@ -66,6 +67,10 @@ internal static class WakuuRuneAutoAnswer
         /// <summary>是否已经排程/处理过（防同一屏被驱动两次 —— <c>RelicsSelected</c> /
         /// <c>AfterOverlayShown</c> 都可能被多次调用）。</summary>
         internal bool Handled;
+
+        /// <summary>本屏已经试过 reroll 的槽位（v1.6.0）。
+        /// 界面在"reroll 结果和原来相同"时会原地返回、按钮也不变灰 ⇒ 只靠 Disabled 判断会无限重试。</summary>
+        internal readonly HashSet<int> RerollAttempted = new();
     }
 
     // ---- 反射面（界面类型与私有字段一律反射，海克斯改名 ⇒ 整体退化为「不代答」，绝不拖垮游戏）----
@@ -78,6 +83,14 @@ internal static class WakuuRuneAutoAnswer
     private static FieldInfo? _pendingSlotField;      // int?                      已单击但未确认的槽位
     private static FieldInfo? _choiceLockedField;     // bool
     private static FieldInfo? _closedField;           // bool
+    private static FieldInfo? _rerollButtonsField;    // List<Button>              RerollButton_{slotIndex}（v1.6.0）
+
+    /// <summary>自主 reroll 开关（v1.6.0）：默认开；<c>HRLF_RUNE_REROLL=0</c> 关。</summary>
+    private static readonly bool RerollEnabled =
+        !string.Equals(System.Environment.GetEnvironmentVariable("HRLF_RUNE_REROLL"), "0", StringComparison.Ordinal);
+
+    /// <summary>"烂"阈值（默认 0.4；<c>HRLF_RUNE_REROLL_THRESHOLD</c> 可覆盖，解析失败用默认）。</summary>
+    private static readonly double RerollPoorThreshold = ReadThreshold();
 
     private static bool _warned;
 
@@ -93,6 +106,7 @@ internal static class WakuuRuneAutoAnswer
         _pendingSlotField = FindField(screenType, "_pendingPlayerRuneSlot");
         _choiceLockedField = FindField(screenType, "_choiceLocked");
         _closedField = FindField(screenType, "_closed");
+        _rerollButtonsField = FindField(screenType, "_rerollButtons");
 
         if (_holdersField == null || _relicsField == null)
         {
@@ -215,6 +229,14 @@ internal static class WakuuRuneAutoAnswer
                 return;
             }
 
+            // v1.6.0：三张候选**全烂**时先自主 reroll（海克斯每张候选各给一次，白给的次数不用白不用）。
+            // reroll 会 RebuildCards（旧按钮全失效、还有 1s 点击保护窗重置）⇒ 按一次就重入 TryAnswer 重新读候选。
+            if (!selfPickMode && TryRerollPoorOptions(node, seat, options))
+            {
+                Schedule(node, () => TryAnswer(node, seat, visibleAttempt: 1, retry: false), AnswerDelaySeconds);
+                return;
+            }
+
             // 选哪个：**按抓率**（v1.3.0；抓率 = 该符文"出现过/被选过"，来自真人+瓦库的每一屏）。
             // 并列时取最左 ⇒ 没有统计时行为与旧版"取最左"逐个下标一致。
             // 自选池屏（锻造选择：一屏一大堆符文）没有"3 选 1"的语义 ⇒ 仍取最左。
@@ -328,6 +350,9 @@ internal static class WakuuRuneAutoAnswer
 
         return !ReadBool(_closedField, node);
     }
+
+    /// <summary>给角标刷新循环复用（同一个"这一屏还开着吗"口径）。</summary>
+    internal static bool IsScreenOpenPublic(Node node) => IsScreenOpen(node);
 
     private static bool ReadBool(FieldInfo? field, object target)
     {
@@ -448,13 +473,102 @@ internal static class WakuuRuneAutoAnswer
         }
     }
 
+    // ---- 自主 reroll（v1.6.0）----------------------------------------------------------------------
+
+    /// <summary>
+    /// 三张候选**全烂**（有数据且抓率 ≤ 阈值）就按一次 reroll 按钮。
+    /// 返回 true = 已按，调用方应延迟重入 <see cref="TryAnswer"/>（界面会重建候选，旧按钮全失效）。
+    ///
+    /// <para>只走 <c>Button.Pressed</c> 信号（海克斯把 `RerollButton_{slot}` 的 Pressed 连到
+    /// <c>OnRerollPressed(slot)</c>）；它自己带 `_choiceLocked` / 次数上限 / "新候选与旧相同则不动" 的守卫。</para>
+    /// </summary>
+    private static bool TryRerollPoorOptions(Node node, ulong seat, IReadOnlyList<RelicModel> options)
+    {
+        if (!RerollEnabled || _rerollButtonsField == null)
+        {
+            return false;
+        }
+
+        ScreenState? state = GetState(node);
+        if (state == null)
+        {
+            return false;
+        }
+
+        List<Button> rerollButtons = new();
+        ReadList(_rerollButtonsField, node, rerollButtons);
+        if (rerollButtons.Count == 0 || rerollButtons.Count != options.Count)
+        {
+            return false; // 海克斯没开 reroll（_rerollFunc 为 null 时根本不建按钮）/ 列表没对齐 ⇒ 不干预
+        }
+
+        List<string> entries = new(options.Count);
+        for (int i = 0; i < options.Count; i++)
+        {
+            entries.Add(RelicEntry(options, i));
+        }
+
+        List<bool> canReroll = new(rerollButtons.Count);
+        for (int i = 0; i < rerollButtons.Count; i++)
+        {
+            Button button = rerollButtons[i];
+            canReroll.Add(GodotObject.IsInstanceValid(button)
+                && !button.Disabled
+                && !state.RerollAttempted.Contains(i));
+        }
+
+        int slot = RuneRerollPolicy.ChooseSlotToReroll(entries, RunePickStats.Lookup, canReroll, RerollPoorThreshold);
+        if (slot < 0)
+        {
+            return false;
+        }
+
+        Button target = rerollButtons[slot];
+        state.RerollAttempted.Add(slot);
+        Log.Info($"{Entry.LogPrefix} 瓦库符文选项全烂，自主 reroll: seat={MainModBridge.SeatLabelById(seat)}({seat}), "
+            + $"slot={slot}, 旧={entries[slot]}, options=[{DescribeOptions(options)}], "
+            + $"抓率=[{DescribePickRates(options)}], 阈值={RerollPoorThreshold:0.00}, screen=HextechRuneSelectionScreen");
+        target.EmitSignal(BaseButton.SignalName.Pressed);
+        return true;
+    }
+
+    private static ScreenState? GetState(Node node)
+    {
+        try
+        {
+            return Screens.TryGetValue((GodotObject)node, out ScreenState? state) ? state : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>读阈值（`HRLF_RUNE_REROLL_THRESHOLD`，要求 0 &lt; x &lt; 1；解析失败用默认 0.4）。</summary>
+    private static double ReadThreshold()
+    {
+        string? raw = System.Environment.GetEnvironmentVariable("HRLF_RUNE_REROLL_THRESHOLD");
+        if (!string.IsNullOrWhiteSpace(raw)
+            && double.TryParse(
+                raw,
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out double value)
+            && value > 0.0
+            && value < 1.0)
+        {
+            return value;
+        }
+
+        return RuneRerollPolicy.DefaultPoorThreshold;
+    }
+
     // ---- 选哪一个 ---------------------------------------------------------------------------------
     // 规则 = **按抓率**（v1.3.0，用户 2026-10-11 点名；统计见 RunePickStats / RunePickRatePolicy）。
     //   · 抓率 = picked/offered（Laplace 平滑），真人和瓦库的每一屏都记；瓦库只读。
     //   · **并列取最左** ⇒ 没有任何统计时行为与旧版"取最左"完全一致。
     //   · 稀有度不能当判据（用户实测：海克斯每次给的 3 个选项稀有度一致）。
-    // 后续排期：**选项很烂时自主 roll**（海克斯有 reroll：`RerollButton_*` / `PlayerRuneRerollLimit`，
-    // 位置与判定还要一次实机探针确认，见 TODO.md §海克斯符文兼容补丁）。
+    // 选项很烂时自主 reroll = v1.6.0（见上方 TryRerollPoorOptions / RuneRerollPolicy）。
 
     private static int ChooseIndexByPickRate(IReadOnlyList<RelicModel> options)
     {

@@ -112,6 +112,10 @@ internal static class HextechRuneSelectionCompatPatch
         Patch(harmony, screenType, "DismissAfterSelectionComplete", 0, patched, missing,
             prefix: nameof(DismissAfterSelectionCompletePrefix));
 
+        // ⑩ 选取率角标（v1.7.0，用户 2026-10-21）：把本地抓率画到每张候选卡左上角
+        //    （瓦库就是按这个挑的，真人看不到就没法判断它为什么这么选）；reroll 重建时靠 RebuildCards 刷新。
+        RunePickRateBadge.Install(harmony, screenType, patched, missing);
+
         // ⑧ 锻造器路径（v1.2.3）：商店买的【随机属性锻造器】、锻造奖励、「随机锻造发放」走的是
         //    **另一个协调器** HextechForgeSelectionCoordinator，它自己建屏（且自带标题、不经 ③a/③b）
         //    ⇒ 归属一直没登记、⑤ 无从代答。用户 2026-10-11 实测「商店买完还是不会自动选」。
@@ -254,6 +258,7 @@ internal static class HextechRuneSelectionCompatPatch
         if (MainModBridge.IsLocalCoopRun())
         {
             RunePickStats.ObserveScreen(__instance, owner, "relics-selected");
+            RunePickRateBadge.Attach(__instance);
         }
 
         if (removeOverlay || !MainModBridge.IsLocalCoopRun())

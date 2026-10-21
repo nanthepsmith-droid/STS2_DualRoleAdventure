@@ -350,6 +350,23 @@ cd D:\Download\pain\STS2_DualRoleAdventure-itriedtofix
 还差一次实机探针确认：① 符文界面里那个按钮的**节点名/字段**；② "剩余次数"读哪个字段；
 ③ 自选池屏（锻造）有没有 reroll（大概率没有）。
 
+**✅ v1.6.0 已实现（反编译确认，2026-10-21）**：界面私有字段 `_rerollButtons`（`List<Button>`，
+节点名 **`RerollButton_{slotIndex}`**，与 `_holders` / `_relics` 同序同下标），`Pressed` 连着它自己的
+`OnRerollPressed(slot)`；**"还剩几次"不用另读字段** —— 该槽按钮 `Disabled == true` 就代表这槽用完了
+（上限 `_playerRuneRerollLimit`，默认 1；点击后它自己 `RebuildCards()` 重建候选并重置 1s 点击保护窗）。
+
+判据（纯逻辑 `RuneRerollPolicy.cs`，已链接进单测工程，10 条）：
+
+- **三张全烂才 roll**：每张都要有数据（`offered > 0`）且抓率 ≤ **0.40**（`0/1=0.33`、`0/3=0.20`、`1/3=0.40`）；
+  **没数据（0.5 未知）不算烂** ⇒ 有一张是没见过的符文就不赌，直接选它；
+- roll **抓率最低**的那一槽（该槽没次数就换次烂的；全没次数 ⇒ 不动）；
+- 每屏每槽只试一次（`ScreenState.RerollAttempted`）。
+  ⚠ 不能只看按钮 `Disabled`：海克斯在"新候选与旧候选相同"时会**原地 return**（不计数、按钮也不变灰）⇒ 会无限重试；
+- reroll 后延迟 `1.2s` 重入作答（它 `RestartSelectionConfirmGuard()` 会重置 1s 点击保护窗，早按会被吞）；
+- 日志锚点：`瓦库符文选项全烂，自主 reroll: seat=…, slot=…, 旧=…, options=[…], 抓率=[…], 阈值=0.40`；
+- 开关：`HRLF_RUNE_REROLL=0` 关；阈值 `HRLF_RUNE_REROLL_THRESHOLD=0.35`（要求 0 < x < 1）；
+- 自选池屏（锻造选择）**不 reroll**（一屏一大堆符文，没有"三选一"语义）。
+
 ## Co-op Bots 并存（v1.4.0，2026-10-21 实机）
 
 ### ① Co-op Bots 的合成 Bot 席位被海克斯当成远端玩家（符文批次死等）
@@ -384,6 +401,27 @@ cd D:\Download\pain\STS2_DualRoleAdventure-itriedtofix
 **通用教训（仍适用）**：第三方每帧打印的**原生**错误（`ERROR:` + C# backtrace）不是"噪音"，
 是**同步 I/O 炸弹** —— 日志里看到成对出现的同一栈就要立刻按"每帧 × 行数"估帧时间
 （本例 4 行/次 × 60 次/秒 = 240 行/秒）。
+
+## 符文候选卡的选取率角标（v1.7.0，用户 2026-10-21 点名）
+
+**为什么**：瓦库自动作答是按抓率挑的，但真人看不到每个选项的抓率 ⇒ 无法判断"它为什么选这个"。
+
+**做法**：在符文候选按钮（`_holders[i]`）**左上角**加一个子 `Label`（`MouseFilter=Ignore`，不挡点击）：
+
+```
+33% (1/3)     ← 绿色：≥50%
+40% (2/5)     ← 黄色：30%~49%
+20% (1/5)     ← 红色：<30%
+—             ← 灰色：没有任何记录
+```
+
+- 显示的是**原始比例** `picked / offered`（不是决策用的 Laplace 平滑分；那分只在日志 `抓率=[…]` 里）；
+- 数字来源 = 同一份 `%APPDATA%\SlayTheSpire2\hextech_rune_stats.json`（真人 + 瓦库的每一屏都记）；
+- **刷新时机**：`RelicsSelected` 前缀先画一次；另外挂 `RebuildCards()` postfix（reroll 后立即补）+
+  0.5s 轮询兜底（界面晚半拍 / postfix 没挂上都能补；屏关掉自动停）；
+- 自选池屏（锻造选择：一屏一大堆符文）**不画**（不参与统计）；
+- 开关：`HRLF_RUNE_BADGE=0`；纯逻辑 `RuneBadgePolicy.cs`（格式化 + 档位）已链接进单测工程（4 条）；
+- 日志锚点：`符文选取率角标已挂到候选卡（左上角…），候选=3`。
 
 ## 其它未做（按需再加）
 

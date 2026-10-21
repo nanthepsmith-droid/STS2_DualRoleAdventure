@@ -445,12 +445,38 @@
   栈固定 `ModSourceTooltip.Fold → List.get_Item`，宿主 `NCreature.OnFocus()`（30 次 = 鼠标悬停生物）
   与 `NCreatureStateDisplay.OnHovered()`（9 次 = 悬停状态图标）⇒ BaseLib 折叠 tooltip 时对空/单项列表取下标越界。
   **栈里没有任何我方帧**；影响面 = 悬停提示可能不显示，战斗流程正常（`turn loop died` 0）。
+  后续局（20:22）同族还多出 12 条 **`ERROR: Exception thrown while trying to log another exception...`** ——
+  看 `### Exception ###` / `### Logger exception ###` 两段可知**同一根因**：Godot 记这条越界时自己又 NRE
+  （`ExceptionUtils.LogException`）⇒ 以后见到这一对，不用另开条目。
 - **`ERROR: Node not found: "MintyIncomingDamageText"`**（同局 9 次）：MintySpire2 的
   `SummedIncomingDamageRender.RepositionLabel` ← RitsuLib 血条 graft `NHealthBarGraftCompat.TryResizeHpBarContainer`，
   节点路径在 `AllyContainer`（**托管席位血条**）。紧跟在我们「第三方询问本地玩家身份，已按同机席位放行」之后，
   但栈里**只有第三方帧**；与 ⑱「战神血条挪到本体玩家旁边」是同一条血条链。
 - **动作**：两条都**不做兜底**（按 compat-mods 口径：第三方自身缺陷 ⇒ 登记 + 探针就行）；若将来真的影响可玩
   （tooltip 卡死 / 血条消失）再谈。
+
+### 待查-11 瓦库自动用药抛异常后把药水留在 `PlayerChoiceContext` 栈顶 ⇒ 原版 pop 遗物报 ERROR（2026-10-21 判读；**是我方**）
+
+**日志**（`logs-archive/godot2026-10-21T20.52.32__20261021-205232__r298.log`）：
+
+```
+[WARN]  [LocalMultiControl] 瓦库自动用药异常（跳过该瓶）: potion=FIRE_POTION, error=Nullable object must have a value.
+[ERROR] Tried to pop model RELIC.LOCAL_WAKUU_FORM_RELIC (65152824) from stack of player choice context
+        HookPlayerChoiceContext but POTION.FIRE_POTION (26879195) was on the top of the stack instead! (Stack size: 2)
+        at PlayerChoiceContext.PopModel ← Hook.AfterAutoPrePlayPhaseEntered
+```
+
+**推演**：`LocalWakuuPotionAutoUse` 的 try 里 `await potion.OnUseWrapper(choiceContext, target)` 抛异常，
+catch **只打 WARN**；但药水模型已经 push 进 choiceContext、异常路径没有 pop ⇒ 之后遗物 hook 的 `PopModel`
+发现栈顶不是自己 ⇒ 原版 ERROR，且栈继续错位。
+**影响**：那一瓶没喝成（跳过），本局仅 1 次；不影响出牌/回合（该局 `turn loop died` 0）。
+
+**下一步（先量后猜）**：
+1. catch 里的 `exception.Message` 换成完整栈（`exception.ToString()` 截断前 800 字），下次能定位 `Nullable.Value` 来自哪层；
+2. 确认 `FIRE_POTION` 的 `TargetType` 与 `ResolveTarget` 是否返回 null —— 若"需要目标却给了 null"，
+   应在调用前跳过（`IsValidTarget` 对 target=null 的返回要实测，别假设）；
+3. **清理策略**：原版 `PopModel` 在不匹配时**抛且不 pop** ⇒ 不能拿它清栈；要么保证 `OnUseWrapper` 不抛（首选），
+   要么反射移除栈项（风险高，暂不做）。
 
 ## 维护性改进 backlog（门禁体系 2026-09-08 之后的那批）
 
@@ -1052,11 +1078,26 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     燃烧视觉守卫已从本补丁**移出**（点名确认触发者是**怪物**、且在第三方 Loadout 图鉴预热里 ⇒ 纯海克斯自身问题），
     改放到仓库外 `D:\Download\pain\HextechBurnVisualFix\`（不进 git、不随 Release/compat 附件分发；
     `HBV_BONE_EMISSION=1` 检测档、`HBV_DISABLE=1` 整套不挂）。本补丁从 v1.5.0 起只管符文/锻造选择与归属。
-  - **⏳ 剩：选项很烂时自主 roll**。已确认海克斯自带 reroll（dll 字符串：`RerollButton_` /
-    `PlayerRuneRerollLimit` / `RerollCount` / `RerollHistory` / `hextechRerollButton`）——
-    还差一次实机探针确认 ① 按钮的**节点名/私有字段** ② "剩余次数"读哪个字段 ③ 锻造自选池屏有没有 reroll。
-    判据口径已定：**抓率全低**（例如当前 3 个候选的抓率都 ≤ 首批数据的低分位）；⚠ 稀有度不能当判据
-    （用户实测"每次 3 个选项稀有度一致"）。
+  - **✅ v1.6.0 已实现：选项很烂时自主 roll**（2026-10-21，**⭐ 待实机**）：
+    反编译 `lib\0.111.0\HextechRunes.dll` 确认 —— `HextechRuneSelectionScreen._rerollButtons`
+    （节点 **`RerollButton_{slotIndex}`**，与 `_holders`/`_relics` 同序同下标；`Pressed` → `OnRerollPressed(slot)`），
+    **"剩余次数"不用另读字段**：该槽按钮 `Disabled` = 已用完（上限 `_playerRuneRerollLimit`，默认 1）；
+    reroll 后它自己 `RebuildCards()` + `RestartSelectionConfirmGuard()`（1s 点击保护窗重置）。
+    判据（纯逻辑 `RuneRerollPolicy.cs` + 10 条单测）：**三张全烂才 roll**（每张都要有数据且抓率 ≤ 0.40；
+    没数据 0.5 = 未知不算烂）⇒ 按最烂那槽；每屏每槽只试一次（**不能只看 Disabled**：新候选与旧相同时它原地
+    return、按钮不变灰 ⇒ 会无限重试）；reroll 后 1.2s 重入作答；自选池屏不 roll；`HRLF_RUNE_REROLL=0` 关、
+    `HRLF_RUNE_REROLL_THRESHOLD` 调阈值。
+    **✅ 已实机生效（2026-10-21，`logs-archive/godot__20261021-202243__r298.log`）**：
+    `L34276 自主 reroll: slot=0, 旧=STRENGTH_TO_DEXTERITY_RUNE, 抓率=[0.33(0/1) ×3], 阈值=0.40` →
+    `L34278 自动作答: picked=ATTACK_DEFENSE_UNITY_RUNE（新符文无数据）, rule=按抓率` → `L34286 界面已关闭`。
+    闭环正确：全烂 → 换最烂那槽 → 重读候选 → 选到新符文。⚠ 若一次没触发，先看抓率是否真有 `offered>0` 数据。
+    - **✅ v1.7.0：符文候选卡**选取率角标**（用户 2026-10-21 当面新需求「我自己看不到选取率，请像本体 mod 一样做个显示」；⭐ 待实机）**：
+    `RunePickRateBadge` 在候选按钮（`_holders[i]`）**左上角**加子 `Label`：`33% (1/3)`（**原始比例**，
+    不是决策用的 Laplace 分）/ 无记录 `—` / 30%·50% 分档 红·黄·绿；`MouseFilter=Ignore` 不挡点击。
+    刷新 = `RelicsSelected` 前缀 + `RebuildCards()` postfix（reroll 后立即补）+ 0.5s 轮询兜底（屏关自动停）；
+    自选池屏不画；`HRLF_RUNE_BADGE=0` 关；纯逻辑 `RuneBadgePolicy.cs` + 4 条单测。
+    **实机验证契约**：进符文屏应看到 `符文选取率角标已挂到候选卡（左上角…），候选=3`，
+    三张卡左上角各有一行百分比（没统计过的显示灰色 `—`）；reroll 后角标应跟着换内容/立刻出现。
   - **✅ 抓率统计首日实测**（`logs-archive/godot__20261021-184214__r298.log`）：`符文抓率记账（候选）` 10 条 /
     `（选中）` 9 条 / `rule=按抓率` 5 条；落盘 `%APPDATA%\SlayTheSpire2\hextech_rune_stats.json` 已积累
     （如 `STARLIGHT_SPARKLE_RUNE` 3/3、`MORE_THE_MERRIER_RUNE` 0/5）。
