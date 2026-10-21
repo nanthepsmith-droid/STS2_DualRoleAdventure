@@ -17,6 +17,17 @@ internal static class NRestSiteRoomReadyGuardPatch
 {
     private const int MaxRecoveryAttempts = 6;
 
+    /// <summary>
+    /// BUG-14 主修法：玩家 &gt; 4 时先补建 `BgContainer/Character_5..N` 并重排，让原版那个
+    /// `_characterContainers[i]` 循环不再越界（4 人及以下一律不碰，原版布局逐值不变）。
+    /// 必须在 Prefix 里做 —— 原版 `_Ready` 一抛就再也不会走到后面的选项刷新/事件订阅。
+    /// </summary>
+    [HarmonyPrefix]
+    private static void Prefix(NRestSiteRoom __instance)
+    {
+        RestSiteSeatLayoutRuntime.EnsureContainersForAllPlayers(__instance);
+    }
+
     [HarmonyFinalizer]
     private static Exception? Finalizer(NRestSiteRoom __instance, Exception? __exception)
     {
@@ -32,8 +43,10 @@ internal static class NRestSiteRoomReadyGuardPatch
 
             if (playerCount > 4)
             {
+                // BUG-14 的正路是 Prefix 里补建 Character_5..N（正常不该走到这里）；
+                // 走到这里说明补容器失败（第三方换过场景 / 拿不到字段）⇒ 退回老行为 + 提示手动切人。
                 NGame.Instance?.AddChildSafely(NFullscreenTextVfx.Create(LocalModText.RestSiteFocusHint));
-                LocalMultiControlLogger.Warn($"[待修复] 休息区5人以上首帧可能不显示选项，已弹出手动切换提示。players={playerCount}");
+                LocalMultiControlLogger.Warn($"休息区角色容器补齐未生效（BUG-14），退回老行为：5 人以上首帧可能不显示选项，已弹出手动切换提示。players={playerCount}");
             }
 
             Callable.From(delegate

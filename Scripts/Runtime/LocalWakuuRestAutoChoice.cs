@@ -488,8 +488,12 @@ internal static class LocalWakuuRestAutoChoice
         }
         catch (Exception exception)
         {
-            // 纯表现层兜底，失败不影响选择本身
-            LocalMultiControlLogger.Warn($"驱动瓦库火堆气泡失败: option={option.OptionId}, error={exception.Message}");
+            // 纯表现层兜底，失败不影响选择本身。
+            // 带异常类型 + 栈顶一行：BUG-14 里那条 MEND 的 NRE 一直只有 message，判不出是谁空引用
+            // （是角色节点还没 _Ready、还是 option.Icon/确认场景缺失）。
+            string topFrame = exception.StackTrace?.Split('\n').FirstOrDefault()?.Trim() ?? "无栈";
+            LocalMultiControlLogger.Warn(
+                $"驱动瓦库火堆气泡失败: option={option.OptionId}, error={exception.GetType().Name}: {exception.Message}, at={topFrame}");
         }
     }
 
