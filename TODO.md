@@ -432,7 +432,15 @@
 - **下一步（用户 1 分钟可验）**：游戏内**关掉「圣主历险记」**再打一场 ⇒ 若不再 `turn loop died` = 确认是它（要留这个 mod 就带栈反馈给作者）；
   若关掉后仍复现 ⇒ 回来找我们，按判读流程重跑（先看"我方锚点在不在" + 跨会话对比）。
 
-### 待查-9 局内**经常没有背景音乐**（用户 2026-10-21 口径；**没有锚点，先装探针再定性**）
+### 待查-9 局内**经常没有背景音乐** —— ✅ **已定性（2026-10-21，r292 探针首跑）：第三方幕 `BgMusicOptions` 为空**；r293 已加原版第一幕兜底（⭐ 待实机听声）
+
+> **✅ 判读结果**（`logs-archive/godot__20261021-132230__r292.log`）：`UpdateMusic: act=index0, 候选=0, 选中=none`
+> 而 `Audio.PlayMusic: event=event:/music/menu_update, audioNode=ok` 正常 ⇒ 本局跑的是 **ArknightsBoss 的幕**
+> （`Preloading 'Act=ARKNIGHTS_BOSS_ACT_GARDEN_OF_GROTESQUERIES_ACT1'`），它的 `BgMusicOptions` 是**空数组**
+> ⇒ 原版 `ResolveMusic` 返回 null ⇒ 整幕不放音乐；主菜单走另一条入口所以有声音。
+> **处理**：r293 加 `ResolveMusicFallback` 前缀（只在空时用 `Overgrowth` 的曲目 + bank 顶上，`LMC_BGM_FALLBACK=0` 可关）。
+> **仍未覆盖**：其他第三方幕（三国 / Oddmelt 等）是否也有同款空数组，留待自然踩到看日志；
+> 若某幕有音乐但"切场景后不回"，再按下面原始判据继续。
 
 - **现象（用户原话）**：「最近玩感觉好像经常没有背景音乐」—— 不崩、不是音量设置（音效仍在）。
 - **本次零成本排除**（`logs-archive/godot__20261021-124341__r290.log`）：

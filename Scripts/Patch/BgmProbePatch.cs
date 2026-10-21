@@ -5,6 +5,8 @@ using System.Reflection;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
 using MegaCrit.Sts2.Core.Helpers;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Acts;
 using MegaCrit.Sts2.Core.Nodes.Audio;
 using MegaCrit.Sts2.Core.Runs;
 
@@ -37,6 +39,10 @@ internal static class BgmProbe
     /// <summary>默认开；`LMC_BGM_PROBE=0` 可关（关掉后连"是否就绪"都不打）。</summary>
     internal static bool Enabled { get; } =
         !string.Equals(Environment.GetEnvironmentVariable("LMC_BGM_PROBE"), "0", StringComparison.Ordinal);
+
+    /// <summary>「第三方幕没自带音乐 ⇒ 用原版第一幕兜底」的开关（r293）：默认开，`LMC_BGM_FALLBACK=0` 关。</summary>
+    internal static bool FallbackEnabled { get; } =
+        !string.Equals(Environment.GetEnvironmentVariable("LMC_BGM_FALLBACK"), "0", StringComparison.Ordinal);
 
     internal static void Info(string message)
     {
@@ -244,6 +250,48 @@ internal static class BgmProbeRunMusicPatch
     [HarmonyPatch(nameof(NRunMusicController.UpdateCustomTrack), new[] { typeof(string), typeof(float) })]
     private static void UpdateCustomTrackPrefix(string customTrack, float label)
         => BgmProbe.Info($"UpdateCustomTrack: track={customTrack}, label={label}, 调用方={BgmProbe.CallerHint()}");
+
+    /// <summary>
+    /// r293（2026-10-21 实机判读）：**第三方幕没有自带音乐 ⇒ 整幕静音**。
+    /// 实测本局跑的是 `ARKNIGHTS_BOSS_ACT_GARDEN_OF_GROTESQUERIES_ACT1/2`，它（以及它的兄弟幕）的
+    /// `BgMusicOptions` 是**空数组** ⇒ 原版 `ResolveMusic` 直接返回 null ⇒ `UpdateMusic` 什么都不放；
+    /// 主菜单音乐走另一条入口（`NAudioManager.PlayMusic`）所以照常响 —— 完美对上"主界面有、局内没有"。
+    ///
+    /// 兜底口径：只在**本幕一个候选都没有**时，用原版第一幕（`Overgrowth`）的曲目 + bank 顶上；
+    /// 有音乐的幕完全不受影响。`LMC_BGM_FALLBACK=0` 可关。
+    /// </summary>
+    [HarmonyPrefix]
+    [HarmonyPatch(
+        nameof(NRunMusicController.ResolveMusic),
+        new[] { typeof(string), typeof(string[]), typeof(string[]), typeof(ulong) })]
+    private static void ResolveMusicFallback(ref string[] options, ref string[] bankPaths)
+    {
+        if (!BgmProbe.FallbackEnabled || options is { Length: > 0 })
+        {
+            return;
+        }
+
+        try
+        {
+            ActModel? fallbackAct = ModelDb.Act<Overgrowth>();
+            string[] fallbackOptions = fallbackAct?.BgMusicOptions ?? Array.Empty<string>();
+            string[] fallbackBanks = fallbackAct?.MusicBankPaths ?? Array.Empty<string>();
+            if (fallbackOptions.Length == 0 || fallbackBanks.Length != fallbackOptions.Length)
+            {
+                BgmProbe.Warn("本幕没有自带音乐，且拿不到原版兜底曲目 ⇒ 维持静音（第三方 act 缺音乐）");
+                return;
+            }
+
+            options = fallbackOptions;
+            bankPaths = fallbackBanks;
+            BgmProbe.Info(
+                $"本幕没有自带音乐（第三方 act 常见）⇒ 用原版第一幕兜底: track={string.Join(" / ", fallbackOptions)}");
+        }
+        catch (Exception exception)
+        {
+            BgmProbe.Warn($"BGM 兜底失败（已忽略，保持原版静音）: {exception.Message}");
+        }
+    }
 
     private static string ReadString(FieldInfo? field, object instance)
     {

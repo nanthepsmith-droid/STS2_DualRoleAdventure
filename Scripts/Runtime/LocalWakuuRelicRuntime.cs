@@ -1117,11 +1117,39 @@ internal static class LocalWakuuRelicRuntime
         bool isAnyTarget = card.TargetType is TargetType.AnyEnemy or TargetType.AnyAlly;
         Creature? target = WakuuPlayQueuePolicy.ShouldUseResolvedTarget(isAnyTarget) ? next.Target : null;
 
+        // 🔴 r293（2026-10-21 实机）：大脑给的目标可能**已经阵亡 / 不可选中**（本局：`ASHEN_STRIKE` 的 AnyEnemy
+        //   目标 `匕现` 已死 ⇒ `IsValidTarget` 为假 ⇒ `CanPlayTargeting` 为假）。原实现只 `return false`，
+        //   看门狗下一轮又选中同一张 ⇒ **16ms 一圈空转**（实测 54 次）、瓦库整回合不出牌、画面狂闪。
+        //   先换一个当前合法的目标；换不到再弃牌（并记入本回合弃牌名单，见下）。
+        if (isAnyTarget && !card.IsValidTarget(target))
+        {
+            Creature? alternative = FindAlternativeTargetForHostedPlay(card, player);
+            if (alternative != null)
+            {
+                LocalMultiControlLogger.Info(
+                    $"瓦库出牌目标已改道（原目标不合法，可能已阵亡）: player={player.NetId}, card={card.Id.Entry}, "
+                    + $"原={target?.LogName ?? "无"}, 改={alternative.LogName}");
+                target = alternative;
+            }
+        }
+
         if (!card.CanPlayTargeting(target))
         {
-            LocalMultiControlLogger.Info(
+            // 只有"牌本身能打、问题出在目标"才记入**本回合弃牌名单**（下一轮大脑就不会再选它）；
+            // 费用/阶段类原因不记（下回合还能正常打）。
+            bool targetProblem = card.CanPlay();
+            bool newlyMarked = targetProblem && MarkSkippedForMissingTarget(player.NetId, round, card);
+            LocalMultiControlLogger.Warn(
                 $"瓦库出牌入队前检查未通过（牌留在手牌，交看门狗下一轮）: player={player.NetId}, round={round}, "
-                + $"card={card.Id.Entry}, targetType={card.TargetType}, target={target?.LogName ?? "无"}");
+                + $"card={card.Id.Entry}, targetType={card.TargetType}, target={target?.LogName ?? "无"}, "
+                + $"targetAlive={target?.IsAlive}, 目标问题={targetProblem}, 首次记入本回合弃牌={newlyMarked}");
+            if (targetProblem && !newlyMarked)
+            {
+                // 循环闸（r293）：同一张"目标不合法"的牌被再次选中 ⇒ 弃牌名单没生效 ⇒ 收手，别再空转。
+                LocalMultiControlLogger.Warn(
+                    $"瓦库「目标不合法」的牌被重复选中 ⇒ 本回合收手（循环闸 r293）: player={player.NetId}, "
+                    + $"round={round}, card={card.Id.Entry}");
+            }
             return false;
         }
 
@@ -1174,6 +1202,40 @@ internal static class LocalWakuuRelicRuntime
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// 给"目标类"牌找一个**当前合法**的目标（r293：原目标已阵亡 / 不可选中时改道用）。
+    /// 只在本席位自己的战斗里挑；挑不到返回 null（调用方按"目标问题"弃牌）。
+    /// </summary>
+    private static Creature? FindAlternativeTargetForHostedPlay(CardModel card, Player player)
+    {
+        try
+        {
+            ICombatState? state = player.Creature?.CombatState;
+            if (state == null)
+            {
+                return null;
+            }
+
+            IReadOnlyList<Creature> candidates = card.TargetType == TargetType.AnyEnemy
+                ? state.Enemies
+                : state.Allies;
+
+            foreach (Creature candidate in candidates)
+            {
+                if (candidate != null && candidate.IsAlive && card.IsValidTarget(candidate))
+                {
+                    return candidate;
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"瓦库出牌目标改道失败（已忽略，按弃牌处理）: {exception.Message}");
+        }
+
+        return null;
     }
 
     /// <summary>
