@@ -987,19 +987,41 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
       ② 手写一份（Rare 一套 skin=IRONCLAD + deck + relics=[MINIATURE_CANNON] + default）⇒ 启动 `预设表已加载: 套数=1` +
       `档位=Rare 默认预设="…"(…)`，召唤罕见档 `①a 预设卡组已替换 … 来源=预设(…)` + `①c 预设遗物已发放 … MINIATURE_CANNON`；
       ③ 故意写不存在的卡/遗物 id ⇒ 启动 WARN 点名、召唤跳过不崩；④ relics 写 5 件 ⇒ `超出阶梯（允许，玩家自由）` INFO。
-- **⏳【待排期·用户 2026-10-11 点名】海克斯符文兼容补丁（`compat-mods\HextechRunesLocalCoopFix`）：加**抓率统计** + 按抓率选符文 + 选项很烂时自主 roll**：
+- **⏳【用户 2026-10-11 点名】海克斯符文兼容补丁（`compat-mods\HextechRunesLocalCoopFix`）：抓率统计 + 按抓率选符文 + 选项很烂时自主 roll**：
   - **需求原话**：「为海克斯符文兼容补丁 mod 加上我们的本体 mod 相似的**抓率统计**，瓦库根据抓率选择，
     并且在**选项很烂的情况下自主 roll 符文**」。
-  - **载体建议**（`code-explorer` 已侦察）：该补丁 mod **当前没有任何统计/配置文件**，照抄主 mod 的
-    `Scripts\Runtime\LocalPersonalRecorder.cs`（`%APPDATA%\SlayTheSpire2\personal_stats.json`，原子写；
-    `Reload :46` / 入账 `:124/:181/:219/:260/:313` / 落盘 `:442`）与其开关
-    `LocalWakuuAutopilotConfig.PersonalRecorder`（`vakuu_autopilot.json`）。
-  - **入账挂点**：`WakuuRuneAutoAnswer.TryAnswer` 作答处（`WakuuRuneAutoAnswer.cs` 里
-    `picked=` 日志那一段，约 :223-233）—— 落盘 `{席位, 幕, 候选 options, 选中项, 是否 roll}`。
-  - **"自主 roll"前置**：必须先确认海克斯允许掷骰/重掷的入口（`HextechRuneSelectionScreen` 的
-    reroll 按钮 / `EnemyHexAuthorityCompatPatch` 那套"只有可调席位能改"的归属判据是本轮可复用先例）；
-    并且要定义"选项很烂"的判据（抓率全低？稀有度全银？ —— ⚠ 注意：**用户已实测"每次 3 个选项稀有度一致"**，
-    所以稀有度不能当判据，得靠抓率或效果质量）。
+  - **✅ 前两件已落地（v1.3.0 / r299，⭐ 待实机）**：
+    - 纯逻辑 `Scripts/RunePickRatePolicy.cs`（抓率 = `picked/offered`，Laplace 平滑 ⇒ 没数据 = 0.5；
+      并列取最左 ⇒ **没有统计时行为与旧版"取最左"逐下标一致**；坏 JSON 按空账本）；
+    - 运行时 `Scripts/RunePickStats.cs`：落盘 `%APPDATA%\SlayTheSpire2\hextech_rune_stats.json`
+      （写 `.tmp` 再原子替换）；**真人与瓦库的每一屏都记**（`RelicsSelected` 之前记 offered +
+      给候选按钮挂"按下即记账"的 picked，一屏只记一次）；
+    - 瓦库作答改成按抓率挑（`WakuuRuneAutoAnswer`）；**自选池屏（锻造选择）不参与统计**（会冲爆 offered）、仍取最左；
+    - 开关 `HRLF_RUNE_STATS=0`；新锚点 `符文抓率记账（候选/选中）`、`rule=按抓率, 抓率=[…]`；
+    - 单测 15 条（`tests/LocalMultiControl.Tests/RunePickRatePolicyTests.cs`，**链接源码**进测试工程）。
+  - **⏳ 剩：选项很烂时自主 roll**。已确认海克斯自带 reroll（dll 字符串：`RerollButton_` /
+    `PlayerRuneRerollLimit` / `RerollCount` / `RerollHistory` / `hextechRerollButton`）——
+    还差一次实机探针确认 ① 按钮的**节点名/私有字段** ② "剩余次数"读哪个字段 ③ 锻造自选池屏有没有 reroll。
+    判据口径已定：**抓率全低**（例如当前 3 个候选的抓率都 ≤ 首批数据的低分位）；⚠ 稀有度不能当判据
+    （用户实测"每次 3 个选项稀有度一致"）。
+- **🕐【已排期·用户 2026-10-21 点名，以后做】猪猪 mod（`YuWanCard`）本地多控兼容补丁**：
+  - **需求原话**：「排期以后做一个猪猪 mod（YuWanCard mod）兼容补丁。因为猪猪 mod 有一些功能还不兼容，
+    包括遗物【我全都要】可以在卡牌奖励中选择多张牌，虽然现在还没有引发问题但是**瓦库自动抓牌可能会有问题**
+    （**其它 mod 也有可能有类似的功能可能有影响**）；【队友帮付】遗物可以在商店让其它玩家付钱，
+    但是**我实际测试是不行的**」。
+  - **① 遗物【我全都要】（卡牌奖励多选）**：症状 = 我们假设"选一张 → 关屏 → 进入下一张奖励"，
+    多选遗物会让一屏持续存在 / 一次取多张 ⇒ 瓦库自动抓牌可能重复取、卡在等屏、或把别人的卡算到自己头上。
+    抓手 = `Scripts/Runtime/LocalWakuuRewardAutoClaim.cs` + `Scripts/Patch/CardRewardPatch.cs`（自动抓牌入口）
+    ⇒ 判据要改成"看这一屏**还能不能继续取**"，而不是"取完一张就收口"；**同类第三方功能一律按这个口径兜**
+    （用户明确点名"其它 mod 也可能有类似功能"）。
+  - **② 遗物【队友帮付】（商店让其它玩家付钱）**：用户实测**不行**。可疑面 = 本地多控下"其它玩家"是同机
+    伪造席位 ⇒ 大概率卡在 ①`LocalContext.IsMe` 判定 或 ②付费者选择 UI（原版走远端玩家输入）。
+    抓手 = 反编译 YuWanCard 找该遗物的支付链（先看它在商店里点了什么、有没有自己的"选择玩家"弹层）；
+    没有就复用 `LocalWakuuPlayerPicker` 那套"选一个玩家"的弹层。
+  - **先量后猜**：`YUWANCARD-TEAMMATE_PAY` 已经在 r298 局出现过（`logs-archive/godot__20261021-144037__r298.log`
+    L11684，某席位拿到过这件遗物）⇒ 下次进商店买一件东西专门测这条，把日志锚点补齐再动代码。
+  - **载体**：`compat-mods/YuWanCardLocalCoopFix`（新目录，独立 csproj/dll/槽位，符合
+    "compat-mods 只收主 mod ↔ 第三方交互"的口径）；**不排期到当前轮**。
 - **⑱【待排期 · 用户 2026-10-21 点名】把**战神的血条**挪到「本体玩家」旁边（复用既有的**召唤物血条** `LocalPlayerPetHpBadgeUi`）**：
   - **需求原话**：「记下来以后把战神的血条放到本体玩家的旁边（用我们之前做的召唤物血条）」⇒ **只登记、不排期**。
   - **既有载体现状**（`Patch/NMultiplayerPlayerStatePetHpPatch.cs`，r86）：在**多人顶部玩家状态条**

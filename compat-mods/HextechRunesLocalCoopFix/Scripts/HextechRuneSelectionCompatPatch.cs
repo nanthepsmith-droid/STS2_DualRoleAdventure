@@ -228,6 +228,13 @@ internal static class HextechRuneSelectionCompatPatch
         //    再决定要不要替它自动作答。真人在玩时这些判断都不会命中 ⇒ 行为与原来一致。
         ulong owner = TryBindAndScheduleAutoAnswer(__instance);
 
+        // 抓率统计（v1.3.0）：在这一屏**开始等作答之前**记下候选，并给候选按钮挂"按下即记账"
+        // ⇒ 真人选的和瓦库代选的都是同一份数据（瓦库随后按抓率挑，见 WakuuRuneAutoAnswer）。
+        if (MainModBridge.IsLocalCoopRun())
+        {
+            RunePickStats.ObserveScreen(__instance, owner, "relics-selected");
+        }
+
         if (removeOverlay || !MainModBridge.IsLocalCoopRun())
         {
             return;

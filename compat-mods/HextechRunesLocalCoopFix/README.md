@@ -330,6 +330,26 @@ cd D:\Download\pain\STS2_DualRoleAdventure-itriedtofix
 - **失败姿态 = 全上或全不上**：两处补丁 + 3 个反射成员（`_enemyHexControlsEnabled` / `CurrentMonsterHexSlots` /
   `RemoteReceiveTask`）任一缺失 ⇒ 整套退化（保留旧行为）。**半挂状态会造出「只读屏照样发 final」这种更糟的组合**。
 
+## 符文抓率统计 + 按抓率挑（v1.3.0，用户 2026-10-11 点名）
+
+**原来**：瓦库席位自动作答固定「取最左」（删掉"按稀有度挑"之后）—— 和真人偏好没关系。
+**现在**：每一屏（真人 + 瓦库）都在 `RelicsSelected` 被等待**之前**记下候选，并给候选按钮挂"按下即记账"：
+
+- `offered` = 这个符文在候选里出现过几次；`picked` = 其中被选中几次；
+- 抓率 = `(picked + 1) / (offered + 2)`（Laplace 平滑 ⇒ 没数据 = 0.5）；
+- 瓦库挑**抓率最高**的，**并列取最左** ⇒ 没有任何统计时行为与旧版"取最左"逐下标一致（可回归）；
+- 落盘 `%APPDATA%\SlayTheSpire2\hextech_rune_stats.json`（写 `.tmp` 再原子替换；坏文件按空账本处理，只 WARN 一次）；
+- **自选池屏**（锻造选择：一屏一大堆符文）**不参与统计**（没有"3 选 1"语义，记进去会把 offered 冲爆），仍取最左；
+- 日志锚点：`符文抓率记账（候选）: seat=…, options=[…]` / `符文抓率记账（选中）: … picked=…, 累计=n/m` /
+  `瓦库符文界面自动作答: … rule=按抓率, 抓率=[A=0.80(3/3), …]`；关掉统计与按抓率：环境变量 `HRLF_RUNE_STATS=0`；
+- 纯逻辑 `RunePickRatePolicy.cs` 不依赖 Godot，已**链接源码**进主仓库单测工程（15 条，见
+  `tests/LocalMultiControl.Tests/RunePickRatePolicyTests.cs`）。
+
+**还没做**：选项很烂时**自主 roll**。已确认海克斯自带 reroll（dll 字符串里
+`RerollButton_` / `PlayerRuneRerollLimit` / `RerollCount` / `RerollHistory` / `hextechRerollButton`），
+还差一次实机探针确认：① 符文界面里那个按钮的**节点名/字段**；② "剩余次数"读哪个字段；
+③ 自选池屏（锻造）有没有 reroll（大概率没有）。
+
 ## 其它未做（按需再加）
 
 - 把受控位自动切到「当前这一屏的归属席位」（省一次按 Tab）；

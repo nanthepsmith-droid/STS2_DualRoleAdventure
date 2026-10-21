@@ -31,13 +31,15 @@ namespace HextechRunesLocalCoopFix.Scripts;
 ///   符文确认；仍未关 ⇒ WARN 点名并交回真人（下一轮适配的实证锚点）。</item>
 /// </list>
 ///
-/// <para><b>选哪个符文</b>：**取最左**（用户 2026-10-11 实测口径：海克斯每次给的 3 个选项**稀有度一致**
-/// ⇒ 原"稀有度优先（棱彩 &gt; 金 &gt; 银）+ 同档取最左"的挑选逻辑没有区分度，已删除）。
-/// 每次作答仍把候选打进日志，换规则只要改 <see cref="TryAnswer"/> 里那一处 <c>index</c>。</para>
+/// <para><b>选哪个符文</b>：**按抓率**（v1.3.0，用户 2026-10-11 点名）——
+/// 抓率来自 <see cref="RunePickStats"/>（真人与瓦库的每一屏都记「候选出现过谁 / 选了谁」），
+/// 并列时取最左 ⇒ 没有统计时行为与旧版"取最左"一致。
+/// 稀有度**不能**当判据（用户实测：海克斯每次给的 3 个选项稀有度一致）。
+/// 自选池屏（锻造选择：一屏一大堆符文）仍取最左、也不参与统计。</para>
 ///
-/// <para>📌 后续排期（用户 2026-10-11 点名）：给本补丁加**抓率统计**（仿主 mod 的
-/// <c>personal_stats.json</c>），瓦库按抓率选符文，并在**选项很烂**时自主 roll（见
-/// <c>TODO.md</c> §海克斯符文兼容补丁）。</para>
+/// <para>📌 后续排期（用户 2026-10-11 点名的第三件）：**选项很烂时自主 roll**。
+/// 已确认海克斯自带 reroll（dll 字符串里 `RerollButton_` / `PlayerRuneRerollLimit` / `RerollCount`），
+/// 还差一次实机探针确认界面里按钮的节点名与"剩余次数"字段（见 <c>TODO.md</c> §海克斯符文兼容补丁）。</para>
 /// </summary>
 internal static class WakuuRuneAutoAnswer
 {
@@ -203,15 +205,22 @@ internal static class WakuuRuneAutoAnswer
                 return; // 已经有人选过了
             }
 
-            if (!TryReadCandidates(node, out List<Button> buttons, out List<RelicModel> options, out bool selfPickMode))
+            if (!TryReadCandidatesPublic(node, out List<Button> buttons, out List<RelicModel> options, out bool selfPickMode))
             {
                 Log.Info($"{Entry.LogPrefix} 瓦库符文界面没有可选项（例如「敌人 hex 预览」屏），交回真人: "
                     + $"seat={MainModBridge.SeatLabelById(seat)}({seat})");
                 return;
             }
 
-            // 取最左（用户 2026-10-11：海克斯每次 3 个选项稀有度一致 ⇒ 不再按稀有度挑）。
-            int index = 0;
+            // 选哪个：**按抓率**（v1.3.0；抓率 = 该符文"出现过/被选过"，来自真人+瓦库的每一屏）。
+            // 并列时取最左 ⇒ 没有统计时行为与旧版"取最左"逐个下标一致。
+            // 自选池屏（锻造选择：一屏一大堆符文）没有"3 选 1"的语义 ⇒ 仍取最左。
+            int index = selfPickMode ? 0 : ChooseIndexByPickRate(options);
+            if (index < 0)
+            {
+                index = 0;
+            }
+
             Button target = buttons[index];
             if (!GodotObject.IsInstanceValid(target))
             {
@@ -224,7 +233,8 @@ internal static class WakuuRuneAutoAnswer
                 Log.Info($"{Entry.LogPrefix} 瓦库符文界面自动作答: seat={MainModBridge.SeatLabelById(seat)}({seat}), "
                     + $"mode={(selfPickMode ? "自选池" : "符文选择")}, options=[{DescribeOptions(options)}], "
                     + $"picked={RelicEntry(options, index)}, "
-                    + "rule=取最左（3 个选项稀有度一致）, screen=HextechRuneSelectionScreen");
+                    + $"rule={(selfPickMode ? "自选池取最左" : "按抓率")}, 抓率=[{DescribePickRates(options)}], "
+                    + "screen=HextechRuneSelectionScreen");
             }
 
             // 走游戏自己的点击路径（海克斯把 Button.Pressed 连到自己的 OnHolderSelected / SelectSelfPick）：
@@ -375,8 +385,11 @@ internal static class WakuuRuneAutoAnswer
         }
     }
 
-    /// <summary>读候选按钮与它们对应的符文（普通屏 = <c>_holders</c>/<c>_relics</c>；自选池屏 = <c>_selfPickButtons</c>/<c>_selfPickPool</c>）。</summary>
-    private static bool TryReadCandidates(
+    /// <summary>
+    /// 读候选按钮与它们对应的符文（普通屏 = <c>_holders</c>/<c>_relics</c>；自选池屏 = <c>_selfPickButtons</c>/<c>_selfPickPool</c>）。
+    /// <c>internal</c> 给 <see cref="RunePickStats"/> 复用（抓率记账要同一份候选）。
+    /// </summary>
+    internal static bool TryReadCandidatesPublic(
         object screen,
         out List<Button> buttons,
         out List<RelicModel> options,
@@ -433,8 +446,34 @@ internal static class WakuuRuneAutoAnswer
     }
 
     // ---- 选哪一个 ---------------------------------------------------------------------------------
-    // 规则 = **取最左**（用户 2026-10-11：海克斯每次 3 个选项稀有度一致 ⇒ 按稀有度挑没有区分度）。
-    // 后续排期：加抓率统计 + 按抓率挑 + 选项很烂时自主 roll（见 TODO.md §海克斯符文兼容补丁）。
+    // 规则 = **按抓率**（v1.3.0，用户 2026-10-11 点名；统计见 RunePickStats / RunePickRatePolicy）。
+    //   · 抓率 = picked/offered（Laplace 平滑），真人和瓦库的每一屏都记；瓦库只读。
+    //   · **并列取最左** ⇒ 没有任何统计时行为与旧版"取最左"完全一致。
+    //   · 稀有度不能当判据（用户实测：海克斯每次给的 3 个选项稀有度一致）。
+    // 后续排期：**选项很烂时自主 roll**（海克斯有 reroll：`RerollButton_*` / `PlayerRuneRerollLimit`，
+    // 位置与判定还要一次实机探针确认，见 TODO.md §海克斯符文兼容补丁）。
+
+    private static int ChooseIndexByPickRate(IReadOnlyList<RelicModel> options)
+    {
+        List<string> entries = new(options.Count);
+        for (int i = 0; i < options.Count; i++)
+        {
+            entries.Add(RelicEntry(options, i));
+        }
+
+        return RunePickRatePolicy.ChooseIndex(entries, RunePickStats.Lookup);
+    }
+
+    private static string DescribePickRates(IReadOnlyList<RelicModel> options)
+    {
+        List<string> entries = new(options.Count);
+        for (int i = 0; i < options.Count; i++)
+        {
+            entries.Add(RelicEntry(options, i));
+        }
+
+        return RunePickStats.DescribeForLog(entries);
+    }
 
     private static RelicModel? RelicAt(IReadOnlyList<RelicModel> options, int index)
     {
