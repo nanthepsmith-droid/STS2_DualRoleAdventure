@@ -1011,6 +1011,12 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     （`Tick` 前缀查 `_spineSpriteNode`，`UpdateBoneEmissionPoints` 前缀再逐个查 `_emissionBones`）
     ⇒ 失效就调它自带的 `DisableBoneEmission()`（火焰改走矩形发射，照常显示）。
     新锚点：`海克斯燃烧视觉的 Spine 骨骼发射点已停用（源=Tick/UpdateBoneEmissionPoints，第 N 次）`。
+  - **✅ v1.4.1「点名」探针**（用户 2026-10-21「好吧加一个」）：停用那一刻打出**挂在谁身上** ——
+    `对象=怪物=<ID>` / `对象=席位=<角色N>(本地席位|Co-op Bots 合成席位|**不在 run 玩家表=临时席位/战神**)`。
+    取法 = 反射基类 `HextechCreatureAttachedVisual.Creature`（`protected NCreature`）→ `Creature.Entity`
+    → `IsMonster/Monster` 或 `Player.NetId`；席位描述走 `MainModBridge.DescribeSeat`
+    （**判据顺序：Bot → 本地 → 正式 → 临时**，因为合成 Bot 席位**也在** `runState.Players` 里）。
+    目的 = 海克斯自己不打挂载日志（`[Burn]` 全 0 条），下次复发就能一句话定死是不是我们的战神。
   - **⏳ 剩：选项很烂时自主 roll**。已确认海克斯自带 reroll（dll 字符串：`RerollButton_` /
     `PlayerRuneRerollLimit` / `RerollCount` / `RerollHistory` / `hextechRerollButton`）——
     还差一次实机探针确认 ① 按钮的**节点名/私有字段** ② "剩余次数"读哪个字段 ③ 锻造自选池屏有没有 reroll。

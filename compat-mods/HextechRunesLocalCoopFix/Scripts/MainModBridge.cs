@@ -53,6 +53,37 @@ internal static class MainModBridge
     private static MethodInfo? _coopBotsDrives;
     private static bool _coopBotsWarned;
 
+    /// <summary>
+    /// 席位的**一句话描述**（诊断日志用）：本地席位 / Co-op Bots 合成席位 / 正式席位 /
+    /// **不在 run 玩家表里的临时席位（战神）**。
+    /// 判据顺序很重要：合成 Bot 席位**也在** `runState.Players` 里 ⇒ 必须先判 Bot，再判 run 玩家表。
+    /// </summary>
+    internal static string DescribeSeat(ulong netId)
+    {
+        if (netId == 0UL)
+        {
+            return "未知席位(0)";
+        }
+
+        string label = SeatLabelById(netId);
+        if (IsCoopBotSeat(netId))
+        {
+            return $"{label}(Co-op Bots 合成席位, netId={netId})";
+        }
+
+        if (IsLocalSeat(netId))
+        {
+            return $"{label}(本地席位, netId={netId})";
+        }
+
+        return IsRunPlayer(netId)
+            ? $"{label}(正式席位, netId={netId})"
+            : $"{label}(**不在 run 玩家表 = 临时席位/战神**, netId={netId})";
+    }
+
+    /// <summary>这一席在不在 `runState.Players`（临时席位 = 不在）。主 mod 缺席时退化为 false。</summary>
+    internal static bool IsRunPlayer(ulong netId) => netId != 0UL && PlayerIndexOfCurrentRun(netId) >= 0;
+
     /// <summary>当前 Run 是不是主 mod 的本地多控会话（按回环网络服务的类型名判定）。</summary>
     internal static bool IsLocalCoopRun()
     {

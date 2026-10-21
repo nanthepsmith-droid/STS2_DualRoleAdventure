@@ -387,7 +387,20 @@ Godot 的 `ERROR` 是同步 I/O ⇒ 日志写盘直接把帧时间打爆（≈15
 | ② | `UpdateBoneEmissionPoints`（前缀） | 上面那条 **或** `_emissionBones` 里任一骨 `IsInstanceValid=false` | 再兜一次并**跳过原方法**（一次 native 读都不发生） |
 
 ⇒ 火焰**照常显示**（它自带"矩形发射"兜底），只是不再跟着骨骼走。
-日志：`海克斯燃烧视觉的 Spine 骨骼发射点已停用（源=Tick，第 N 次）…`（只打前 3 次）。
+
+日志（只打前 3 次，**v1.4.1 起带"点名"**）：
+
+```
+海克斯燃烧视觉的 Spine 骨骼发射点已停用（源=Tick，第 1 次）:
+  对象=怪物=SLUDGE_SPINNER                                        ← 怪物
+  对象=席位=角色2(Co-op Bots 合成席位, netId=12716757972810793218)  ← Co-op Bots 席位
+  对象=席位=角色?(不在 run 玩家表 = 临时席位/战神, netId=4096), 角色=... ← 我们的战神
+```
+
+点名靠基类 `HextechCreatureAttachedVisual.Creature`（`protected NCreature`，反射拿）
+→ `Creature.Entity` → `IsMonster/Monster` 或 `Player.NetId`；席位描述走
+`MainModBridge.DescribeSeat`（Bot → 本地 → 正式 → **不在 run 玩家表 = 临时席位**，顺序不能反：
+合成 Bot 席位**也在** `runState.Players` 里）。
 
 ⚠ 刻意**不**加 `IsInsideTree` 判据：生物入场/换位瞬间可能暂时不在树里，那种情况骨骼照样能读，
 误判会把正常火焰永久降级。

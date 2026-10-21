@@ -4,7 +4,10 @@ using System.Reflection;
 using System.Threading;
 using Godot;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Logging;
+using MegaCrit.Sts2.Core.Nodes.Combat;
 
 namespace HextechRunesLocalCoopFix.Scripts;
 
@@ -38,6 +41,10 @@ internal static class HextechBurnVisualGuardPatch
     private static FieldInfo? _spineField;
     private static FieldInfo? _bonesField;
     private static MethodInfo? _disableBoneEmission;
+
+    /// <summary>基类 `HextechCreatureAttachedVisual` 的 <c>protected NCreature Creature</c>（点名用，缺了不影响守卫）。</summary>
+    private static PropertyInfo? _creatureProperty;
+
     private static bool _warned;
     private static int _disabledCount;
 
@@ -52,6 +59,7 @@ internal static class HextechBurnVisualGuardPatch
         _disableBoneEmission = burnVisualType.GetMethod(
             "DisableBoneEmission",
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        _creatureProperty = FindPropertyInHierarchy(burnVisualType, "Creature");
 
         if (_spineField == null || _bonesField == null || _disableBoneEmission == null)
         {
@@ -172,9 +180,94 @@ internal static class HextechBurnVisualGuardPatch
         int count = Interlocked.Increment(ref _disabledCount);
         if (count <= 3)
         {
-            Log.Info($"{Entry.LogPrefix} 海克斯燃烧视觉的 Spine 骨骼发射点已停用（源={source}，第 {count} 次）："
-                + "该生物的 Spine 已失效，改走它自带的矩形发射 —— 火焰照常显示，但不再每帧刷 native 错误把帧率打到 1。");
+            Log.Info($"{Entry.LogPrefix} 海克斯燃烧视觉的 Spine 骨骼发射点已停用（源={source}，第 {count} 次）: "
+                + $"对象={DescribeOwner(instance)} —— 该生物的 Spine 已失效，改走它自带的矩形发射"
+                + "（火焰照常显示，但不再每帧刷 native 错误把帧率打到 1）。");
         }
+    }
+
+    /// <summary>
+    /// 「点名」这个视觉挂在谁身上 —— 下次复发就能一句话定死是**我们的临时席位（战神）**、
+    /// **Co-op Bots 合成席位**、真人、还是**怪物**（2026-10-21 用户要求补的探针）。
+    /// 纯诊断：任何失败都只返回一段说明，不抛、不影响守卫。
+    /// </summary>
+    private static string DescribeOwner(object instance)
+    {
+        try
+        {
+            if (_creatureProperty == null)
+            {
+                return "未知（基类的 Creature 属性没解析到）";
+            }
+
+            if (_creatureProperty.GetValue(instance) is not NCreature creatureNode)
+            {
+                return "未知（Creature 属性为 null）";
+            }
+
+            if (!GodotObject.IsInstanceValid(creatureNode))
+            {
+                return "生物节点=已释放（IsInstanceValid=false）";
+            }
+
+            Creature? entity = creatureNode.Entity;
+            if (entity == null)
+            {
+                return "生物实体=null（节点还在、数据层已摘）";
+            }
+
+            string modelId = SafeEntry(entity);
+            if (entity.IsMonster)
+            {
+                return $"怪物={modelId}";
+            }
+
+            Player? player = entity.Player;
+            if (player != null)
+            {
+                return $"席位={MainModBridge.DescribeSeat(player.NetId)}, 角色={modelId}";
+            }
+
+            return $"生物={modelId}（既非怪物也非玩家）";
+        }
+        catch (Exception exception)
+        {
+            return $"未知（读取失败: {exception.GetType().Name}: {exception.Message}）";
+        }
+    }
+
+    private static string SafeEntry(Creature entity)
+    {
+        try
+        {
+            return entity.ModelId.Entry ?? entity.Name;
+        }
+        catch
+        {
+            try
+            {
+                return entity.Name;
+            }
+            catch
+            {
+                return "unknown";
+            }
+        }
+    }
+
+    private static PropertyInfo? FindPropertyInHierarchy(Type type, string name)
+    {
+        for (Type? current = type; current != null; current = current.BaseType)
+        {
+            PropertyInfo? property = current.GetProperty(
+                name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+            if (property != null)
+            {
+                return property;
+            }
+        }
+
+        return null;
     }
 
     private static void Patch(
