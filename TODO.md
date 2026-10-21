@@ -1017,6 +1017,15 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     → `IsMonster/Monster` 或 `Player.NetId`；席位描述走 `MainModBridge.DescribeSeat`
     （**判据顺序：Bot → 本地 → 正式 → 临时**，因为合成 Bot 席位**也在** `runState.Players` 里）。
     目的 = 海克斯自己不打挂载日志（`[Burn]` 全 0 条），下次复发就能一句话定死是不是我们的战神。
+  - **✅ v1.4.2（2026-10-21 第二次实机"还是好卡"后改口径）**：
+    `godot__20261021-185710__r298.log` 里同一条栈又刷 **1472 次**、`fps均=1.0`/`process≈1209ms`，
+    而**我们的守卫日志 0 条** ⇒ 证明"检测失效再降级"抓不住：骨骼的**原生对象被就地释放**
+    （SpineSprite 节点同 id、包装对象 `IsInstanceValid` 为真，连海克斯自己的 InstanceId 判据也过）
+    ⇒ 托管侧判不出来（唯一能判的方式就是调用它 = 刷错误）。
+    **改为默认「强制矩形发射」**：`Tick` 前缀见骨骼缓存就 `DisableBoneEmission()`（每视觉一条点名日志）+
+    `TryInitBoneEmission` 前缀挡掉重抓 + `UpdateBoneEmissionPoints` 前缀兜底；
+    想恢复原样设 `HRLX_BURN_BONE_EMISSION=1`（退回检测档）。代价 = 火焰从"贴骨骼"变"矩形区域发射"（纯观感）。
+    通用原则（已沉淀 references §十一补记）：**修第三方性能事故，结构性绕开 &gt; 精确检测**。
   - **⏳ 剩：选项很烂时自主 roll**。已确认海克斯自带 reroll（dll 字符串：`RerollButton_` /
     `PlayerRuneRerollLimit` / `RerollCount` / `RerollHistory` / `hextechRerollButton`）——
     还差一次实机探针确认 ① 按钮的**节点名/私有字段** ② "剩余次数"读哪个字段 ③ 锻造自选池屏有没有 reroll。

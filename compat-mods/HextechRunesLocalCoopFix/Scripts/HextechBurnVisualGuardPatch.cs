@@ -48,6 +48,23 @@ internal static class HextechBurnVisualGuardPatch
     private static bool _warned;
     private static int _disabledCount;
 
+    /// <summary>「点名」日志去重（每个视觉只打一条，最多 3 条）。</summary>
+    private static readonly HashSet<ulong> LoggedVisuals = new();
+
+    /// <summary>
+    /// **默认强制矩形发射**（不给骨骼发射机会）。
+    ///
+    /// <para>为什么不再"检测失效再降级"（v1.4.0/1.4.1 的教训，2026-10-21 第二次实机仍 1fps）：
+    /// 海克斯自己的有效性检查（比较 `SpineBody.BoundObject` 的 InstanceId）**恰好过不了这一关** ——
+    /// 骨骼原生对象被就地释放（同一颗 SpineSprite 节点、id 不变）时，我们的 `IsInstanceValid`
+    /// 与它的 id 比较**都为真**，而 `get_world_x` 已经读不到原生对象 ⇒ 只能每帧报错。
+    /// 既然"读骨骼"这条路在可观测层面无法判定安全，就干脆不走它（它自带矩形发射，火焰照常显示）。</para>
+    ///
+    /// <para>想恢复海克斯原样（骨骼跟随）设环境变量 <c>HRLX_BURN_BONE_EMISSION=1</c>。</para>
+    /// </summary>
+    private static readonly bool ForceRectEmission =
+        !string.Equals(System.Environment.GetEnvironmentVariable("HRLX_BURN_BONE_EMISSION"), "1", StringComparison.Ordinal);
+
     internal static void Install(
         Harmony harmony,
         Type burnVisualType,
@@ -75,9 +92,24 @@ internal static class HextechBurnVisualGuardPatch
         _resolved = true;
         Patch(harmony, burnVisualType, "Tick", 0, nameof(TickPrefix), null, patched, missing);
         Patch(harmony, burnVisualType, "UpdateBoneEmissionPoints", 0, nameof(UpdateBoneEmissionPointsPrefix), null, patched, missing);
+
+        if (ForceRectEmission)
+        {
+            // 强制矩形发射：连"重新抓骨骼"这一步也挡掉（否则它可能在 UpdateBoneEmissionPoints 尾巴里
+            // 重新 init 一次、下一帧又被我们关掉，来回抖）。
+            Patch(harmony, burnVisualType, "TryInitBoneEmission", 0, nameof(TryInitBoneEmissionPrefix), null, patched, missing);
+            Log.Info($"{Entry.LogPrefix} 燃烧视觉：默认**强制矩形发射**（不读骨骼 ⇒ 不会再刷 native 错误把帧率打到 1）。"
+                + "想恢复海克斯原样（火焰跟骨骼走）设环境变量 HRLX_BURN_BONE_EMISSION=1。");
+        }
     }
 
-    /// <summary>① 每帧便宜检查：Spine 节点被摘掉就立刻切矩形发射（之后 Tick 里 `_emissionBones == null` 直接早退）。</summary>
+    /// <summary>
+    /// ① 每帧检查。
+    /// <list type="bullet">
+    /// <item><b>默认（强制矩形发射）</b>：只要发现骨骼缓存非空就关掉它，并给每个视觉只打一条"点名"日志；</item>
+    /// <item><b>检测档</b>（`HRLX_BURN_BONE_EMISSION=1`）：只在 Spine 失效时才关（v1.4.0 行为，已知抓不到"原生对象被就地释放"）。</item>
+    /// </list>
+    /// </summary>
     private static void TickPrefix(object __instance)
     {
         if (!_resolved)
@@ -87,12 +119,24 @@ internal static class HextechBurnVisualGuardPatch
 
         try
         {
+            if (ForceRectEmission)
+            {
+                if (HasBoneEmission(__instance))
+                {
+                    Disable(__instance);
+                }
+
+                LogOncePerVisual(__instance);
+                return;
+            }
+
             if (!HasBoneEmission(__instance) || IsSpineUsable(__instance))
             {
                 return;
             }
 
-            Disable(__instance, "Tick");
+            Disable(__instance);
+            LogDisableOnce(__instance, "Tick");
         }
         catch (Exception exception)
         {
@@ -100,7 +144,7 @@ internal static class HextechBurnVisualGuardPatch
         }
     }
 
-    /// <summary>② 真要读骨骼之前再逐个校验；任何一个不合法就跳过原方法（保证一次 native 读都不发生）。</summary>
+    /// <summary>② 真到要读骨骼那一刻的最后一道闸：有任何可疑就不让原方法跑（`HRLX_BURN_BONE_EMISSION=1` 时也保留）。</summary>
     private static bool UpdateBoneEmissionPointsPrefix(object __instance)
     {
         if (!_resolved)
@@ -115,12 +159,13 @@ internal static class HextechBurnVisualGuardPatch
                 return true; // 本来就是矩形发射，原方法会自己早退
             }
 
-            if (IsSpineUsable(__instance) && AreBonesUsable(__instance))
+            if (!ForceRectEmission && IsSpineUsable(__instance) && AreBonesUsable(__instance))
             {
                 return true;
             }
 
-            Disable(__instance, "UpdateBoneEmissionPoints");
+            Disable(__instance);
+            LogDisableOnce(__instance, "UpdateBoneEmissionPoints");
             return false;
         }
         catch (Exception exception)
@@ -129,6 +174,13 @@ internal static class HextechBurnVisualGuardPatch
             WarnOnce($"燃烧视觉骨骼守卫失败（本次跳过骨骼发射点）: {exception.GetType().Name}: {exception.Message}");
             return false;
         }
+    }
+
+    /// <summary>③ 强制矩形发射时，连"重新抓骨骼"也不允许（防它自己在尾巴里 re-init 一次，下一帧再被关）。</summary>
+    private static bool TryInitBoneEmissionPrefix(object __instance)
+    {
+        _ = __instance;
+        return !(_resolved && ForceRectEmission);
     }
 
     private static bool HasBoneEmission(object instance)
@@ -174,15 +226,49 @@ internal static class HextechBurnVisualGuardPatch
         return true;
     }
 
-    private static void Disable(object instance, string source)
+    private static void Disable(object instance)
     {
         _disableBoneEmission!.Invoke(instance, null);
+    }
+
+    private static void LogDisableOnce(object instance, string source)
+    {
         int count = Interlocked.Increment(ref _disabledCount);
-        if (count <= 3)
+        if (count > 3)
         {
-            Log.Info($"{Entry.LogPrefix} 海克斯燃烧视觉的 Spine 骨骼发射点已停用（源={source}，第 {count} 次）: "
-                + $"对象={DescribeOwner(instance)} —— 该生物的 Spine 已失效，改走它自带的矩形发射"
-                + "（火焰照常显示，但不再每帧刷 native 错误把帧率打到 1）。");
+            return;
+        }
+
+        Log.Info($"{Entry.LogPrefix} 海克斯燃烧视觉的 Spine 骨骼发射点已停用（源={source}，第 {count} 次）: "
+            + $"对象={DescribeOwner(instance)} —— 该生物的 Spine 已失效，改走它自带的矩形发射"
+            + "（火焰照常显示，但不再每帧刷 native 错误把帧率打到 1）。");
+    }
+
+    /// <summary>强制档下给**每个视觉**只打一条（最多 3 条），用来回答"这个燃烧挂在谁身上"。</summary>
+    private static void LogOncePerVisual(object instance)
+    {
+        try
+        {
+            if (instance is not GodotObject godotObject)
+            {
+                return;
+            }
+
+            ulong id = godotObject.GetInstanceId();
+            lock (LoggedVisuals)
+            {
+                if (!LoggedVisuals.Add(id) || LoggedVisuals.Count > 3)
+                {
+                    return;
+                }
+            }
+
+            Log.Info($"{Entry.LogPrefix} 海克斯燃烧视觉改用矩形发射（不读骨骼，防 native 报错把帧率打到 1）: "
+                + $"对象={DescribeOwner(instance)}");
+        }
+        catch
+        {
+            // 纯诊断，失败就算了
         }
     }
 
