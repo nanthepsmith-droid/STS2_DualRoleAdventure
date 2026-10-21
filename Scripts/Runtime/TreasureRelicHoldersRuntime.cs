@@ -82,7 +82,9 @@ internal static class TreasureRelicHoldersRuntime
 
             LocalMultiControlLogger.Info(
                 $"宝箱遗物格已补齐（12 人扩展）: relics={relicCount}, 原版格={TreasureRelicHolderLayoutPolicy.VanillaHolderCount}, " +
-                $"新建={created}, 总格数={holders.Count}, 每排最多={TreasureRelicHolderLayoutPolicy.MaxPerRow}");
+                $"新建={created}, 总格数={holders.Count}, 列数上限={TreasureRelicHolderLayoutPolicy.MaxColumns}, " +
+                $"列距={TreasureRelicHolderLayoutPolicy.GridPitchX}, 行距={TreasureRelicHolderLayoutPolicy.GridPitchY}, " +
+                $"scale={TreasureRelicHolderLayoutPolicy.BackfillScale}");
         }
         catch (Exception exception)
         {
@@ -123,5 +125,10 @@ internal static class TreasureRelicHoldersRuntime
         holder.OffsetTop = placement.Top;
         holder.OffsetRight = placement.Right;
         holder.OffsetBottom = placement.Bottom;
+
+        // 补出来的格子小于原版（图标放大 2 倍后仍不压邻格）⇒ 缩放要绕**自身中心**，
+        // 否则默认 pivot=(0,0) 会把格子往左上角缩，中心和算出来的位置对不上。
+        holder.PivotOffset = new Vector2(placement.Right - placement.Left, placement.Bottom - placement.Top) * 0.5f;
+        holder.Scale = new Vector2(placement.Scale, placement.Scale);
     }
 }
