@@ -234,6 +234,9 @@ internal static class PatchDomainMap
             ["WakuuDaddyMergePilePatch"] = PatchDomain.Wakuu,
 
             // ============ Ui：纯 UI 表现层 ============
+            // BGM 探针（r291）：只读诊断，不改行为（§待查-9「局内经常没背景音乐」）
+            ["BgmProbeRunMusicPatch"] = PatchDomain.Ui,
+            ["BgmProbeAudioManagerPatch"] = PatchDomain.Ui,
             ["CardPileHandVisualOwnerGuardPatch"] = PatchDomain.Ui,
             ["NCombatRoomGhostHandsPatch"] = PatchDomain.Ui,
             ["GhostHandsHotkeysPatch"] = PatchDomain.Ui,

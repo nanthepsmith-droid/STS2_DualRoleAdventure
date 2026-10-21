@@ -757,7 +757,13 @@ public partial class Entry
     //      `Capacity - 视觉槽数` 的差额补成空槽（等价于原版开战那一刻做的事）；幂等、纯表现、失败只 WARN。
     //      调用两处：③ 建完节点立刻一次 + `FinishSpawnAsync` 收尾再同步一次（覆盖 deferred 建节点）。
     //   ③ 顺带把 `_orbs` 的反射读收进 `OrbSlotVisualProbe`（r283 的兜底补丁与本桥共用一份）。
-    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-20-r290)";
+    // r291（2026-10-21，用户报「局内经常没有背景音乐」）：**先装只读探针，不改行为**（TODO §待查-9）。
+    //   覆盖原版链路：`NRunMusicController.UpdateMusic`（本幕曲目解析 + **bank 加载失败会记 `_failedTrack`
+    //   且不再重试 ⇒ 本幕静默没 BGM**，这是最想抓的一条）/ `UpdateTrack`（房间→Progress 段）/
+    //   `StopMusic` / `PlayCustomMusic` / `StopCustomMusic` / `UpdateCustomTrack`（**第三方改音乐走这条**）/
+    //   `NAudioManager.PlayMusic|StopMusic`（菜单与 game_over；`_audioNode == null` 时调用被静默丢弃）。
+    //   日志前缀 `[BGM探针]`，环境变量 `LMC_BGM_PROBE=0` 可关；两个补丁类登记在 `PatchDomainMap` 的 Ui 域。
+    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-21-r291)";
 
     private static Harmony? _harmony;
 
