@@ -496,6 +496,8 @@ internal static class LocalMultiControlRuntime
         HellwarWarGodFactory.EnforceSummonerBond(combatState, "war-god-bond-tick");
         // Phase 4 观测锚点：战神"活着→死了"时各打一条（"被敌人打死"原本没有任何锚点）。
         HellwarWarGodFactory.LogWarGodDeaths(combatState);
+        // 注：站位纠偏**不在 tick 里**（r305 的 400ms 轮询已被 r306 撤掉）——
+        // 改成挂 `NCombatRoom.PositionPlayersAndPets` 的 Postfix（事件式，见 NCombatRoomFormationPatch）。
 
         if (combatState.CurrentSide != CombatSide.Player)
         {

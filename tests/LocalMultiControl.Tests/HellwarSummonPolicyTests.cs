@@ -522,15 +522,23 @@ public class HellwarSummonPolicyTests
         Assert.That(HellwarSummonPolicy.CanOpenEndlessWarGod(available, freeSlots, used), Is.EqualTo(expected));
     }
 
-    [TestCase(12, 10, false, true)]   // 门槛 = 整包价 12（**上限**口径，不是本场可用）
-    [TestCase(20, 10, false, true)]
-    [TestCase(11, 10, false, false)]  // 差一点就开不出来（三轮修订：不再"部分成功"）
-    [TestCase(3, 10, false, false)]
-    [TestCase(12, 0, false, false)]   // 没空位
-    [TestCase(12, 10, true, false)]   // 本场已用过（D15）
-    public void 九连环的开启判据(int cap, int freeSlots, bool used, bool expected)
+    [TestCase(12, 12, 12, 10, false, true)]    // 上限够 + 可用够 + 有空位 + 没用过 ⇒ 可开
+    [TestCase(20, 20, 12, 10, false, true)]
+    [TestCase(11, 11, 11, 10, false, false)]   // 上限差一点就开不出来（三轮修订：不再"部分成功"）
+    [TestCase(3, 3, 3, 10, false, false)]
+    [TestCase(12, 12, 12, 0, false, false)]    // 没空位
+    [TestCase(12, 12, 12, 10, true, false)]    // 本场已用过（D15）
+    // r303（2026-10-22 用户实测「计数用完了也弹九连环」）：上限 12 但**可用**不够 ⇒ 不能开
+    [TestCase(12, 2, 12, 10, false, false)]
+    [TestCase(12, 11, 12, 10, false, false)]
+    [TestCase(12, 8, 8, 3, false, true)]       // 花费按实际召唤数折算（栏位只剩 3 ⇒ 只花 8）
+    [TestCase(12, 0, 0, 0, false, false)]
+    public void 九连环的开启判据(
+        int cap, int available, int requiredCost, int freeSlots, bool used, bool expected)
     {
-        Assert.That(HellwarSummonPolicy.CanOpenNineChain(cap, freeSlots, used), Is.EqualTo(expected));
+        Assert.That(
+            HellwarSummonPolicy.CanOpenNineChain(cap, available, requiredCost, freeSlots, used),
+            Is.EqualTo(expected));
     }
 
     [Test]

@@ -137,6 +137,12 @@ internal static class HellwarSummonCombatRuntime
             return false;
         }
 
+        // r303：真人回合开始的**站位兜底**（幂等，只在需要时改）——
+        // 原版/第三方在"单位增删"时会重排玩家侧站位，可能把两个真人挤到一起、
+        // 或把战神摆回原版多人排布（用户实测：无尽战神之后偶发）。每次真人回合开一次收尾，
+        // 最坏情况也只是"本来就好好的 ⇒ 一个节点都不动"。
+        HellwarWarGodFactory.SettleFormation(state, LogTag);
+
         // 只给**真人本地席位**：瓦库托管席位首版不玩（R14 / D8），第三方席位不归我们管。
         if (!LocalSelfCoopContext.IsLocalSessionSeat(player.NetId)
             || LocalSelfCoopContext.IsWakuuEnabled(player.NetId))
@@ -272,17 +278,17 @@ internal static class HellwarSummonCombatRuntime
             }
         }
 
-        if (HellwarSummonPolicy.CanOpenNineChain(cap, freeSlots, _nineChainUsedThisCombat))
+        // 固定 9 个（只有栏位不足才截断）；消耗按**实际召唤数**折算整包价（2026-10-09 三轮修订）。
+        int nineChainCount = HellwarSummonPolicy.ResolveNineChainSummonCount(freeSlots);
+        int nineChainCost = HellwarSummonPolicy.ResolveNineChainSpiritCost(nineChainCount);
+
+        // r303：判据把**当前可用**也算进去（原来只看上限 ⇒ 可用花光后选项还弹、点了扣不动）。
+        if (HellwarSummonPolicy.CanOpenNineChain(
+                cap, available, nineChainCost, freeSlots, _nineChainUsedThisCombat))
         {
-            // 固定 9 个（只有栏位不足才截断）；消耗按**实际召唤数**折算整包价（2026-10-09 三轮修订）。
-            int count = HellwarSummonPolicy.ResolveNineChainSummonCount(freeSlots);
-            int cost = HellwarSummonPolicy.ResolveNineChainSpiritCost(count);
-            if (count > 0)
-            {
-                options.Add(new SummonOption(
-                    SummonKind.NineChain, HellwarWarGodTier.Ancient, cost, count, PermanentCost: true,
-                    LocalModText.HellwarNineChainOptionLabel(count, cost)));
-            }
+            options.Add(new SummonOption(
+                SummonKind.NineChain, HellwarWarGodTier.Ancient, nineChainCost, nineChainCount, PermanentCost: true,
+                LocalModText.HellwarNineChainOptionLabel(nineChainCount, nineChainCost)));
         }
 
         return options;
@@ -334,7 +340,12 @@ internal static class HellwarSummonCombatRuntime
             using (CardSelectForegroundSwitchPatch.PushChoiceOwner(owner.NetId))
             using (CardSelectWakuuTurnStartAutoAnswerPatch.SuppressForHumanChoice())
             {
-                index = await LocalWakuuChoiceOverlay.PickIndexAsync(LocalModText.HellwarSummonPickTitle, labels);
+                // r301：标题带上**这是谁的界面**（两个玩家都召唤时，用户分不清弹的是谁的）。
+                index = await LocalWakuuChoiceOverlay.PickIndexAsync(
+                    LocalModText.ForRole(
+                        LocalModText.HellwarSummonPickTitle,
+                        LocalSelfCoopContext.GetSlotLabel(owner.NetId)),
+                    labels);
             }
 
             if (index == null || index.Value < 0 || index.Value >= options.Count)
@@ -376,6 +387,11 @@ internal static class HellwarSummonCombatRuntime
                     LocalMultiControlLogger.Warn($"{LogTag} 未适配的召唤种类（已忽略）: {chosen.Kind}");
                     break;
             }
+
+            // r303：**整批结束之后**统一收尾站位 —— 真人间距拉开 + 战神按绑主归位。
+            // 逐只召唤时每只自己的收尾都可能被"下一次 AddCreature 触发的重排"冲掉，
+            // 放在批次之后 ⇒ 我们是最后一手（用户实测：无尽战神后有时退回原版多人排布）。
+            HellwarWarGodFactory.SettleFormation(state, LogTag);
         }
         catch (Exception exception)
         {
@@ -417,7 +433,11 @@ internal static class HellwarSummonCombatRuntime
         using (CardSelectForegroundSwitchPatch.PushChoiceOwner(owner.NetId))
         using (CardSelectWakuuTurnStartAutoAnswerPatch.SuppressForHumanChoice())
         {
-            index = await LocalWakuuChoiceOverlay.PickIndexAsync(LocalModText.HellwarPresetPickTitle, labels);
+            index = await LocalWakuuChoiceOverlay.PickIndexAsync(
+                LocalModText.ForRole(
+                    LocalModText.HellwarPresetPickTitle,
+                    LocalSelfCoopContext.GetSlotLabel(owner.NetId)),
+                labels);
         }
 
         if (index == null || index.Value < 0 || index.Value >= options.Count)

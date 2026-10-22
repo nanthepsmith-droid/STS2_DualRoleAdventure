@@ -132,7 +132,9 @@ internal sealed class LocalWakuuHellwarEarring : RelicModel
     /// </summary>
     internal bool TrySpendPermanentSpirit(int cost, string source)
     {
-        if (cost <= 0 || SpiritCount < cost)
+        // r303：**可用**也要够 —— 上限够但本场预算已花光时，直接扣上限会把
+        // `AvailableSpirit = SpiritCount - CombatSpentSpirit` 顶成负数（2026-10-22 用户实测）。
+        if (cost <= 0 || SpiritCount < cost || AvailableSpirit < cost)
         {
             return false;
         }

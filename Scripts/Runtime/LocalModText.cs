@@ -310,6 +310,17 @@ internal static class LocalModText
     public static string HellwarPresetPickTitle =>
         Select("选择战神角色预设（第 2 步）", "Choose a war god preset (step 2)");
 
+    /// <summary>
+    /// 给「某个玩家正在做选择」的弹层标题补上**这是谁的界面**（2026-10-22 用户口径：
+    /// 两个玩家都召唤战神时，弹出第一层 / 第二层都看不出现在弹的是谁的）。
+    /// </summary>
+    /// <param name="title">原标题（<see cref="HellwarSummonPickTitle"/> / <see cref="HellwarPresetPickTitle"/>）。</param>
+    /// <param name="slotLabel">席位标签（<c>LocalSelfCoopContext.GetSlotLabel</c> 的结果）。</param>
+    public static string ForRole(string title, string slotLabel)
+    {
+        return Select($"{title} —— 角色{slotLabel}", $"{title} — Player {slotLabel}");
+    }
+
     /// <summary>第二层里「自动」行的文案（后面跟该档默认预设的简称）。</summary>
     public static string HellwarPresetAutoLabel(string defaultName)
     {

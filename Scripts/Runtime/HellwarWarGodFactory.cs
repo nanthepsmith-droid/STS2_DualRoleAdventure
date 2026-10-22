@@ -181,6 +181,40 @@ internal static class HellwarWarGodFactory
     }
 
     /// <summary>
+    /// 某绑主名下**仍在场**的战神（**含已死亡、尸体留场等复活的**），按登记（= 召唤）顺序。
+    ///
+    /// 用途：表现层 —— 顶部玩家状态条旁的「战神血条」行（⑱，2026-10-22）。刻意**不带**
+    /// R10 的肉盾资格过滤（这里要的是"这个绑主现在有哪些战神"，不是"谁在替他挨打"）。
+    /// `state.Players` 里已经查不到（战斗清理过 / 换了战斗）⇒ 不返回，面板自然不再画它。
+    /// </summary>
+    internal static List<(Player Player, HellwarWarGodTier Tier)> CollectWarGodsOfSummoner(
+        CombatState? state, ulong summonerNetId)
+    {
+        List<(Player Player, HellwarWarGodTier Tier)> result = new();
+        if (state == null || summonerNetId == 0UL)
+        {
+            return result;
+        }
+
+        foreach (Registration registration in _warGods)
+        {
+            if (registration.SummonerNetId != summonerNetId)
+            {
+                continue;
+            }
+
+            if (!state.Players.Contains(registration.Player))
+            {
+                continue;
+            }
+
+            result.Add((registration.Player, registration.Tier));
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// **R10（Phase 4）**：取某绑主名下**第一个还活着、且已有资格承伤的战神** —— 就是"替它吃那一半伤害"的那个承接者。
     /// 查不到（没有战神 / 都死了 / 已被清理 / 绑主 NetId 为 0 / **刚出场还没满一个回合**）⇒ 返回 <c>null</c>
     /// ⇒ <see cref="HellwarWarGodGuardPower"/> 的两个钩子都**原样放行**（等价于没有守卫）。
@@ -487,6 +521,9 @@ internal static class HellwarWarGodFactory
                 + $"抽牌堆={warGod.PlayerCombatState?.DrawPile.Cards.Count ?? 0} 张, "
                 + $"战斗内玩家={state.Players.Count}, "
                 + $"肉盾资格=下一回合起（R10 修订：出场回合不当肉盾）");
+
+            // r301：复活同样是"重新出场"⇒ 重排一次站位（幂等；失败只 WARN）。
+            RelayoutWarGodFormation(state, tag);
             return true;
         }
         catch (Exception exception)
@@ -642,12 +679,18 @@ internal static class HellwarWarGodFactory
             //   这里是 gate ①（`PlayersReadyToEndTurn`，`SetReadyToEndTurn`）—— **两道都要认临时席位**。
             MarkReadyToEndTurnIfMidPlayerTurn(state, player, tag);
 
-            TaskHelper.RunSafely(FinishSpawnAsync(state, player.Creature, seatId, tag, presetRelics));
+            // ⚠ **登记必须早于异步收尾（r302 修）**：`RunSafely(FinishSpawnAsync(...))` 可能**同步**跑到
+            //   第一次 await 之后才返回（`AfterCreatureAdded` / `Hook.AfterCreatureAddedToCombat` 都可能
+            //   同步完成），而收尾里会做「按绑主重排战神站位」—— 用的是 `_warGods` 登记表。
+            //   登记放在后面 ⇒ **最新召唤的这个自己看不见**（r301 实机铁证：4099 一直停在原版给的
+            //   x≈-66 屏幕边缘，而前三只都被摆到了 650/742/421 的预期位置）。
             _warGods.Add(new Registration(player, summoner?.NetId ?? 0UL, preset.Tier)
             {
                 // R10 修订：记下"出场回合" ⇒ 本回合（含紧接的敌方回合）它还不能当肉盾。
                 SpawnRound = state.RoundNumber,
             });
+
+            TaskHelper.RunSafely(FinishSpawnAsync(state, player.Creature, seatId, tag, presetRelics));
 
             // ★ R10（Phase 4）：给**绑主**挂「战灵守卫」（它受到的攻击伤害减半后转给战神）。
             // 放在登记**之后**：Power 的钩子要按绑主 NetId 反查"当前守卫"（FindGuardCreature）。
@@ -1221,6 +1264,36 @@ internal static class HellwarWarGodFactory
         return ended;
     }
 
+    /// <summary>
+    /// r301：把**在册战神**按绑主重排立绘站位（纯表现，失败只 WARN）。
+    /// 数据源就是登记表 —— 顺序 = 召唤顺序，同一绑主的战神排成一个扇形（见 <see cref="WarGodFormationPolicy"/>）。
+    /// </summary>
+    private static void RelayoutWarGodFormation(CombatState? state, string tag, bool spreadPlayers = false)
+    {
+        List<(Player WarGod, ulong SummonerNetId)> snapshot =
+            _warGods.Select((registration) => (registration.Player, registration.SummonerNetId)).ToList();
+        WarGodFormationUi.Settle(state, snapshot, tag, spreadPlayers);
+    }
+
+    /// <summary>
+    /// r303：**一批召唤全部结束之后**再收尾一次站位（真人间距 + 战神归位）。
+    ///
+    /// 为什么必须"批次结束后"再收尾：每只战神的 `AddCreature` 都会触发一次布局重排（原版/第三方），
+    /// 而我们的归位是**逐只**做的 ⇒ 最后那只的收尾之后如果又发生一次重排（无尽/九连环的后续单位），
+    /// 前面的归位就被冲掉、退回"原版多人排布"。收尾放在批次之后 ⇒ 我们是最后一手。
+    ///
+    /// ⚠ r304：**真人间距只在批次结束后拉开**（`spreadPlayers: true`），逐只召唤途中不碰真人 ——
+    /// 否则每加一个战神我们就按当时的中点把两人挪 ±几十像素，用户看到的是"真人一直在动"
+    /// （r303 实机：`位移=[760→795 | 598→563]` 这类日志在无尽战神期间刷了 15 次）。
+    /// </summary>
+    internal static void SettleFormation(CombatState? state, string tag) => RelayoutWarGodFormation(state, tag, spreadPlayers: true);
+
+    // r307：**不再接管** `NCombatRoom.PositionPlayersAndPets`（r306 的 Postfix 已撤）。
+    //   用户 2026-10-22 的顾虑成立：「原版做重排肯定有它的理由，万一有其它 mod 需要重排呢」——
+    //   原版那次重排会**把宠物摆在主人脚边**、也会带上第三方的有意布局；我们在后面覆盖，
+    //   主人/战神被挪走而宠物留在旧坐标 ⇒ **宠物脱钩**。所以只在**我们自己的事件**上自愈
+    //   （召唤批次结束 + 真人回合开始），像原版奥斯提那样"回合开始自己变回去"。
+
     private static async Task FinishSpawnAsync(
         CombatState state,
         Creature creature,
@@ -1239,6 +1312,12 @@ internal static class HellwarWarGodFactory
             }
 
             await Hook.AfterCreatureAddedToCombat(state, creature);
+
+            // r301（2026-10-22 用户反馈「招了 4 个只看到 3 个」）：**自己重排战神站位**。
+            // 原版 PositionPlayersAndPets 只支持 ≤4 人（列数 = ceil(sqrt(n))、列宽只按前几列算）⇒
+            // 2 真人 + 4 战神时实测出现"两个只隔 36px 几乎重叠 + 一个被推到 x≈-150 屏幕外"。
+            // 这里按**绑主**归位（站在绑主立绘上方、同一绑主的战神排成扇形），不碰真人与第三方单位。
+            RelayoutWarGodFormation(state, tag);
 
             // r255（② 预设遗物）：补调"获得时"钩子（`AddRelicInternal` 不会替你调，见 HellwarWarGodRelics 注释）。
             await HellwarWarGodRelics.RunAfterObtainedAsync(presetRelics, tag);

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Godot;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
+using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Nodes.Combat;
@@ -12,12 +13,18 @@ using MegaCrit.Sts2.Core.Runs;
 namespace LocalMultiControl.Scripts.Patch;
 
 // ============================================================
-// 召唤物（宠物）血量显示（marker r86）。
+// 召唤物（宠物）+ 战神血量显示（marker r86 起；⑱ 战神于 2026-10-22 / r300 并入）。
 // 挂在多人顶部的「玩家状态条」NMultiplayerPlayerState 上：持有召唤物的玩家
 // （**不判职业**——Osty 可以由亡灵契约师为其他玩家召唤、其他角色也能合法持有 Necrobinder
 // 卡牌召唤；The Queen 等走原版 AddPet 体系的 mod 召唤物同样在列）
 // 在自身 HP 条右侧逐行显示其 PlayerCombatState.Pets 里每一只召唤物的迷你血条 + 名字 + 血量。
 // 死亡（尸体保留、可复活阶段）显示 0-X 置灰。
+//
+// ⑱（2026-10-22 用户点名「把战神的血条放到本体玩家的旁边，用召唤物血条」）：
+// 战神**不是 pet**，它是 CombatState 里的**临时 Player**（有自己的立绘 + 立绘上方血条）
+// ⇒ 原来这块面板里完全看不到它。现在数据源改成「Pets ∪ 绑主=本人的在册战神」
+// （行规划见纯逻辑 `WarGodHpBadgePolicy`）：召唤物在前、战神在后，战神行带 `战神·档位` 前缀，
+// 行数超上限压成「还有 N 个（已折叠）」一行。立绘上方的原血条**保留不动**（A 档口径）。
 //
 // 视觉与交互：
 // - 面板是 NMultiplayerPlayerState 的普通子 Control（非 TopLevel，随父条整体移动/隐藏），
@@ -38,8 +45,8 @@ internal static class NMultiplayerPlayerStatePetHpPatch
 }
 
 /// <summary>
-/// 玩家状态条上的召唤物血条 UI：为每个 NMultiplayerPlayerState 挂一个常驻 tracker，
-/// 由 tracker 逐帧把该玩家的 Pets 刷成一行行迷你血条。
+/// 玩家状态条上的迷你血条面板：为每个 NMultiplayerPlayerState 挂一个常驻 tracker，
+/// 由 tracker 逐帧把该玩家的「召唤物 ∪ 绑主=本人的在册战神」刷成一行行迷你血条。
 /// </summary>
 internal static partial class LocalPlayerPetHpBadgeUi
 {
@@ -96,7 +103,7 @@ internal static partial class LocalPlayerPetHpBadgeUi
         state.AddChild(tracker);
     }
 
-    /// <summary>一只召唤物对应的一行控件（根 = Bg 容器，Fg 与文本是其子节点）。</summary>
+    /// <summary>一行面板控件（根 = Bg 容器，Fg 与文本是其子节点）。</summary>
     private sealed partial class PetHpRow
     {
         public required ColorRect Bg { get; init; }
@@ -107,7 +114,7 @@ internal static partial class LocalPlayerPetHpBadgeUi
     }
 
     /// <summary>
-    /// 常驻每帧 tracker：读 state.Player.PlayerCombatState?.Pets，把血条面板钉在该玩家 HP 条右侧。
+    /// 常驻每帧 tracker：读「state.Player 的 Pets ∪ 绑主=本人的在册战神」，把血条面板钉在该玩家 HP 条右侧。
     /// 面板为该 state 的普通子节点（非 TopLevel），随父条整体移动/显隐。
     /// </summary>
     private sealed partial class LocalPlayerPetHpBadgeTracker : Node
@@ -118,7 +125,7 @@ internal static partial class LocalPlayerPetHpBadgeUi
 
         private readonly List<PetHpRow> _rows = new();
 
-        private int _lastPetCount = -1;
+        private int _lastRowCount = -1;
 
         private bool _loggedLayoutDiag;
 
@@ -142,7 +149,7 @@ internal static partial class LocalPlayerPetHpBadgeUi
             }
             catch (Exception e)
             {
-                LocalMultiControlLogger.Warn($"召唤物血条刷新失败: {e.Message}");
+                LocalMultiControlLogger.Warn($"召唤物/战神血条刷新失败: {e.Message}");
             }
         }
 
@@ -154,23 +161,25 @@ internal static partial class LocalPlayerPetHpBadgeUi
                 && RunManager.Instance.IsInProgress;
 
             Player? player = _state!.Player;
-            PlayerCombatState? combat = player?.PlayerCombatState;
-            IReadOnlyList<Creature>? pets = combat?.Pets;
-
-            bool hasPets = enabled && pets != null && pets.Count > 0;
-            if (!hasPets)
+            if (!enabled || player == null)
             {
-                if (_panel != null)
-                {
-                    _panel.Visible = false;
-                }
+                Hide();
+                return;
+            }
 
-                _lastPetCount = -1;
+            // 数据源：召唤物（r86 既有）+ 绑主=本人的在册战神（⑱）。行规划在纯逻辑里做（可单测）。
+            List<HpBadgeEntry> petEntries = BuildPetEntries(player.PlayerCombatState?.Pets);
+            List<HpBadgeEntry> warGodEntries = BuildWarGodEntries(player);
+            List<HpBadgeRow> specs = WarGodHpBadgePolicy.BuildRows(petEntries, warGodEntries);
+
+            if (specs.Count == 0)
+            {
+                Hide();
                 return;
             }
 
             EnsurePanel();
-            ReconcileRows(pets!);
+            ReconcileRows(specs.Count);
 
             NHealthBar? healthBar = ResolveHealthBar(_state!);
             Control? hpBarContainer = healthBar?.HpBarContainer;
@@ -193,50 +202,125 @@ internal static partial class LocalPlayerPetHpBadgeUi
             {
                 _loggedLayoutDiag = true;
                 LocalMultiControlLogger.Info(
-                    $"召唤物血条：player={player?.NetId}, pets={pets!.Count}, "
-                    + $"stateRect={_state!.GetGlobalRect()}, hpRect={hpRect}, panel={_panel.Position}（仅首帧）");
+                    $"召唤物/战神血条：player={player.NetId}, pets={petEntries.Count}, 战神={warGodEntries.Count}, "
+                    + $"行数={_rows.Count}, stateRect={_state!.GetGlobalRect()}, hpRect={hpRect}, "
+                    + $"panel={_panel.Position}（仅首帧）");
             }
 
-            for (int i = 0; i < _rows.Count && i < pets!.Count; i++)
+            for (int i = 0; i < _rows.Count && i < specs.Count; i++)
             {
-                PetHpRow row = _rows[i];
-                UpdateRow(row, pets[i]);
+                UpdateRow(_rows[i], specs[i]);
             }
         }
 
-        /// <summary>把一只召唤物刷到一行面板控件上（数值每帧更新，行控件复用避免频繁建删）。</summary>
-        private static void UpdateRow(PetHpRow row, Creature pet)
+        private void Hide()
         {
-            int current = Math.Max(0, (int)pet.CurrentHp);
-            int max = Math.Max(1, (int)pet.MaxHp);
-            bool alive = pet.IsAlive;
+            if (_panel != null)
+            {
+                _panel.Visible = false;
+            }
 
-            string name;
+            _lastRowCount = -1;
+        }
+
+        /// <summary>召唤物 → 行数据（名字/血量/存活；读不到名字就留空，由策略兜成 `Pet`）。</summary>
+        private static List<HpBadgeEntry> BuildPetEntries(IReadOnlyList<Creature>? pets)
+        {
+            List<HpBadgeEntry> entries = new();
+            if (pets == null)
+            {
+                return entries;
+            }
+
+            foreach (Creature pet in pets)
+            {
+                if (pet == null)
+                {
+                    continue;
+                }
+
+                string name;
+                try
+                {
+                    name = pet.Name;
+                }
+                catch (Exception)
+                {
+                    name = string.Empty;
+                }
+
+                entries.Add(new HpBadgeEntry(
+                    HpBadgeEntryKind.Pet,
+                    name,
+                    (int)pet.CurrentHp,
+                    (int)pet.MaxHp,
+                    pet.IsAlive));
+            }
+
+            return entries;
+        }
+
+        /// <summary>
+        /// 绑主=本人 的在册战神 → 行数据（⑱）。文案 = `战神·档位`；
+        /// 死亡（尸体留场等复活）同样出一行 0-X 置灰，与召唤物口径一致。
+        /// 读不到战斗态 / 没有战神 ⇒ 空列表（面板只剩召唤物，行为退回 r86）。
+        /// </summary>
+        private static List<HpBadgeEntry> BuildWarGodEntries(Player owner)
+        {
+            List<HpBadgeEntry> entries = new();
+            CombatState? combatState;
             try
             {
-                name = pet.Name;
+                combatState = CombatManager.Instance.DebugOnlyGetState();
             }
             catch (Exception)
             {
-                name = string.Empty;
+                return entries;
             }
 
-            if (string.IsNullOrEmpty(name))
+            if (combatState == null)
             {
-                name = "Pet";
+                return entries;
             }
 
-            row.Label.Text = $"{name} {current}/{max}";
+            foreach ((Player warGod, HellwarWarGodTier tier) in
+                     HellwarWarGodFactory.CollectWarGodsOfSummoner(combatState, owner.NetId))
+            {
+                Creature? creature = warGod.Creature;
+                if (creature == null)
+                {
+                    continue;
+                }
 
-            float ratio = alive ? Mathf.Clamp((float)current / max, 0f, 1f) : 0f;
+                entries.Add(new HpBadgeEntry(
+                    HpBadgeEntryKind.WarGod,
+                    WarGodHpBadgePolicy.DescribeWarGod(tier),
+                    (int)creature.CurrentHp,
+                    (int)creature.MaxHp,
+                    creature.IsAlive));
+            }
+
+            return entries;
+        }
+
+        /// <summary>把一行数据刷到面板控件上（数值每帧更新，行控件复用避免频繁建删）。</summary>
+        private static void UpdateRow(PetHpRow row, HpBadgeRow spec)
+        {
+            row.Label.Text = spec.Label;
+
             float innerWidth = Mathf.Max(0f, RowWidth - FgInsetX * 2f);
             float innerHeight = Mathf.Max(0f, RowHeight - FgInsetY * 2f);
+            float ratio = spec.IsOverflow ? 0f : Mathf.Clamp(spec.Ratio, 0f, 1f);
             row.Fg.Size = new Vector2(innerWidth * ratio, innerHeight);
-            row.Fg.Visible = alive && ratio > 0f;
-            row.Fg.Color = alive ? new Color(0.85f, 0.22f, 0.2f, 0.95f) : new Color(0.4f, 0.4f, 0.4f, 0.9f);
+            row.Fg.Visible = !spec.IsOverflow && spec.Alive && ratio > 0f;
+            row.Fg.Color = spec.Alive ? new Color(0.85f, 0.22f, 0.2f, 0.95f) : new Color(0.4f, 0.4f, 0.4f, 0.9f);
             row.Label.AddThemeColorOverride(
                 "font_color",
-                alive ? new Color(1f, 0.96f, 0.88f) : new Color(0.72f, 0.72f, 0.72f));
+                !spec.Alive
+                    ? new Color(0.72f, 0.72f, 0.72f)
+                    : spec.IsOverflow
+                        ? new Color(0.78f, 0.78f, 0.78f)
+                        : new Color(1f, 0.96f, 0.88f));
         }
 
         private static NHealthBar? ResolveHealthBar(NMultiplayerPlayerState state)
@@ -267,13 +351,13 @@ internal static partial class LocalPlayerPetHpBadgeUi
             _state!.AddChild(panel);
             _panel = panel;
             _rows.Clear();
-            _lastPetCount = -1;
+            _lastRowCount = -1;
         }
 
-        /// <summary>数量变化时重建全部行（宠物极少，重建成本可忽略）。</summary>
-        private void ReconcileRows(IReadOnlyList<Creature> pets)
+        /// <summary>行数变化时重建全部行（宠物/战神都极少，重建成本可忽略）。</summary>
+        private void ReconcileRows(int count)
         {
-            if (_rows.Count == pets.Count && _lastPetCount == pets.Count)
+            if (_rows.Count == count && _lastRowCount == count)
             {
                 return;
             }
@@ -284,7 +368,7 @@ internal static partial class LocalPlayerPetHpBadgeUi
             }
 
             _rows.Clear();
-            for (int i = 0; i < pets.Count; i++)
+            for (int i = 0; i < count; i++)
             {
                 ColorRect bg = new()
                 {
@@ -323,7 +407,7 @@ internal static partial class LocalPlayerPetHpBadgeUi
                 _rows.Add(new PetHpRow { Bg = bg, Fg = fg, Label = label });
             }
 
-            _lastPetCount = pets.Count;
+            _lastRowCount = count;
         }
     }
 }

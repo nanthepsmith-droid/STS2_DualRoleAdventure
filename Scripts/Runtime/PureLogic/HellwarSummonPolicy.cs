@@ -466,12 +466,21 @@ internal static class HellwarSummonPolicy
         && freeSlots > 0;
 
     /// <summary>
-    /// 能否开【终极九连环】：**计数上限**够整包价（= "至少够召唤 9 个"）+ 还有空位 + 本场没用过（D15）。
+    /// 能否开【终极九连环】：**计数上限**够整包价（门槛 12）+ **当前可用**够这一次的花费 + 还有空位
+    /// + 本场没用过（D15）。
+    ///
+    /// ⚠ **r303 修订（2026-10-22 用户实测）**：原来只看**上限**⇒「这一场已经把可用计数花光、
+    /// 但上限仍是 12」时，选项照样弹出来（点了也扣不动 / 会把"本场已花"顶成负数）。
+    /// 现在把**可用**也算进判据；花费按**实际召唤数**折算（<see cref="ResolveNineChainSpiritCost"/>），
+    /// 由调用方算好传进来。
     /// </summary>
-    internal static bool CanOpenNineChain(int capSpirit, int freeSlots, bool usedThisCombat)
+    internal static bool CanOpenNineChain(
+        int capSpirit, int availableSpirit, int requiredCost, int freeSlots, bool usedThisCombat)
         => !usedThisCombat
         && capSpirit >= NineChainMinSpirit
-        && freeSlots > 0;
+        && freeSlots > 0
+        && requiredCost > 0
+        && availableSpirit >= requiredCost;
 
     /// <summary>大招不能开时的一句话原因（打日志用）。</summary>
     internal static string DescribeUltimateBlockReason(
