@@ -2,6 +2,18 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
+## [Unreleased] - 2026-10-23（r316）
+
+> 修一个本地多控下的开局黑屏（用户实机 ×3 复现路径固定后收敛）。
+
+- **修复：退出本地多控大厅后再单人开局黑屏。** 原版单人开局玩家 NetId 固定为 `1`（`NGame.StartNewSingleplayerRun` 硬编码），
+  而本地回环下 `LocalContext.NetId` 是 Steam id ⇒ 任何第三方在 `RunState.CreateForNewRun` 后置里调
+  `LocalContext.GetMe(runState)` 都会抛 `Local player not found in player collection.`（实机案例：猪猪云统计
+  `CloudAnalyticsRunStartPatch`）⇒ 开局流程被打断 ⇒ 黑屏。修法 = 在 `LocalContext.GetMe(IPlayerCollection)`
+  的既有补丁上加**单人局回退**（判据：查不到 + 集合只有 1 人 + 唯一玩家 NetId==1），判据抽成纯逻辑
+  `SinglePlayerGetMeFallbackPolicy` + 5 条单测。判据经三轮实机收敛（r314 加会话条件 / r315 改席位表判据均有漏，
+  r316 回归"占位 id"本质判据）。命中时打锚点日志 `LocalContext.GetMe 单人局回退`。
+
 ## [Unreleased] - 2026-10-23（r312 / r313）
 
 > 本轮**只加诊断打点、不改玩法行为**（marker `2026-10-23-r313`）：为了回答「进主菜单那 ~120 秒花在哪」。

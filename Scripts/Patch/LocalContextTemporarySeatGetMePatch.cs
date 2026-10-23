@@ -50,6 +50,20 @@ internal static class LocalContextTemporarySeatGetMePatch
 
         if (!LocalSelfCoopContext.IsTemporarySeat(netId.Value))
         {
+            // 单人局回退（2026-10-23）：原版单人开局玩家 NetId=1，而本地回环下 LocalContext.NetId 是
+            // Steam id ⇒ 第三方在 CreateForNewRun 后置里调 GetMe 会抛并黑屏（案例：猪猪云统计）。
+            // 收窄条件见 SinglePlayerGetMeFallbackPolicy；查得到 / 双人 / 真联机 / 在册席位一律不动。
+            if (SinglePlayerGetMeFallbackPolicy.ShouldFallback(
+                    localPlayerFound: playerCollection.GetPlayer(netId.Value) != null,
+                    playerCount: playerCollection.Players.Count,
+                    solePlayerNetId: playerCollection.Players[0].NetId))
+            {
+                Player sole = playerCollection.Players[0];
+                __result = sole;
+                LogFallbackOnce(netId.Value, sole.NetId);
+                return false;
+            }
+
             return true;
         }
 
@@ -83,5 +97,25 @@ internal static class LocalContextTemporarySeatGetMePatch
         LocalMultiControlLogger.Info(
             $"LocalContext.GetMe 已按临时席位（战神）解析: seat={netId}（战神不进 runState.Players，"
             + "出牌路径的 GetMe(runState) 靠这条口子拿到它）");
+    }
+
+    /// <summary>已打过日志的"单人局回退"组合（只用于防刷屏）。</summary>
+    private static readonly HashSet<string> LoggedFallbacks = new();
+
+    private static void LogFallbackOnce(ulong requestedNetId, ulong resolvedNetId)
+    {
+        string key = $"{requestedNetId}->{resolvedNetId}";
+        lock (LoggedFallbacks)
+        {
+            if (!LoggedFallbacks.Add(key))
+            {
+                return;
+            }
+        }
+
+        LocalMultiControlLogger.Info(
+            $"LocalContext.GetMe 单人局回退: LocalContext.NetId={requestedNetId} 在集合里查不到，"
+            + $"但集合只有 1 名玩家 ⇒ 返回该玩家 NetId={resolvedNetId}"
+            + "（原版单人开局玩家 NetId=1 与本地回环的 Steam id 不一致；第三方在开局后置里调 GetMe 会因此抛异常黑屏）");
     }
 }
