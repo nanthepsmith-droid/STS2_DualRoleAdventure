@@ -25,6 +25,10 @@ internal static class StartRunLobbyPatch
             return true;
         }
 
+        // r317：开局转场期间（FadeOut + 建局）角色选择页会被隐藏、`RunManager.IsInProgress` 还没成立，
+        // 会话守卫的严格页面判据会把会话当成"残留"清掉 ⇒ 先开一个开局窗口挡住它。
+        LocalSelfCoopContext.OpenRunStartWindow("BeginRunForAllPlayers");
+
         LocalMultiControlLogger.Info("检测到本地回环 Lobby 开始开局，接管 BeginRunForAllPlayers 逻辑。");
 
         MethodInfo? updatePreferredAscensionMethod = AccessTools.Method(typeof(StartRunLobby), "UpdatePreferredAscension");

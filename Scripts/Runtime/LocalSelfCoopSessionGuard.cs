@@ -79,6 +79,16 @@ internal sealed partial class LocalSelfCoopSessionGuard : Node
             return;
         }
 
+        // r317：**开局转场窗口内也不下手**。判据收紧后（角色选择页要求"可见 + 大厅还是我们的回环"），
+        // 开局那一下页面会被 FadeOut/隐藏，而 `IsInProgress` 要等 `RunManager.Launch` 才成立
+        // ⇒ 这一两秒会被当成"残留会话"清掉（等价 r166：进局后 `IsEnabled`=false，托管/归属全失效）。
+        // 窗口只由「本地回环大厅发起开局」打开（`StartRunLobbyPatch`），官方入口永远不触发它。
+        if (LocalSelfCoopContext.IsRunStartWindowActive)
+        {
+            _idleSeconds = 0;
+            return;
+        }
+
         // r167（BUG-22 第二颗雷）：**读档窗口内绝不下手**。
         // 读档时 `RunManager.IsInProgress` 还是 false，载入界面也不在大厅白名单里 ⇒ 本守卫会在约 1 秒后
         // 把会话 `Disable` 掉；而 `GrantWakuuRelicsAsync` 首行就是 `if (!IsEnabled) return;`
@@ -132,10 +142,13 @@ internal sealed partial class LocalSelfCoopSessionGuard : Node
             return true;
         }
 
+        // 角色选择页同理要带 `Visible`，**并且**再问一句「这一页的大厅还是我们建的吗」（r317）：
+        // ① `Pop` 只隐藏不移出树 ⇒ 少了 Visible 会让我们自己的页面退回主菜单后会话永不清；
+        // ② `NSubmenuStack` 复用同一个页面实例 ⇒ 官方单人入口拿到同一对象后，只看引用仍会以为"在流程中"。
         NCharacterSelectScreen? characterSelect = LocalSelfCoopContext.ActiveCharacterSelectScreen;
         if (characterSelect != null
             && GodotObject.IsInstanceValid(characterSelect)
-            && characterSelect.IsInsideTree())
+            && LocalSelfCoopContext.IsOurCharacterSelectPage(characterSelect))
         {
             return true;
         }

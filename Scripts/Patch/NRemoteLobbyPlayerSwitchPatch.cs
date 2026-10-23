@@ -38,6 +38,16 @@ internal static class LocalRemoteLobbyPlayerSwitchUi
     private const string GlobalWakuuPlusName = "LocalLobbyGlobalWakuuPlus";
     private const string GlobalWakuuYIconName = "LocalLobbyGlobalWakuuYIcon";
 
+    /// <summary>「整屏级」注入 UI 的节点名（住在大厅页上，而不是席位卡上）。</summary>
+    private static readonly string[] ScreenLevelUiNames =
+    {
+        GlobalWakuuToggleName,
+        GlobalWakuuLabelName,
+        GlobalWakuuLtIconName,
+        GlobalWakuuPlusName,
+        GlobalWakuuYIconName
+    };
+
     private static readonly Vector2 SelectorButtonSize = new(52f, 28f);
     private static readonly Vector2 WakuuToggleSize = new(30f, 28f);
     private static readonly Vector2 GlobalToggleSize = new(44f, 28f);
@@ -292,6 +302,30 @@ internal static class LocalRemoteLobbyPlayerSwitchUi
         }
     }
 
+    /// <summary>
+    /// 收起「整屏级」注入 UI（全局瓦库开关 + 标签 + 手柄提示）。
+    ///
+    /// 用途（r317）：`NSubmenuStack` 复用同一个角色选择页实例，我们从自己的大厅退回主菜单、
+    /// 再从官方「单人」进来时拿到的是**同一个对象**，这些节点会继续留在屏上（日志里官方单人页还能点
+    /// 「全体瓦库开关变更 … source=char-select-global-wakuu-toggle」）。
+    /// 只隐藏不删：回到我们自己的大厅时 `Refresh` 会重新点亮同一批节点。
+    /// </summary>
+    internal static void HideScreenLevelUi(Node? screen)
+    {
+        if (screen == null || !GodotObject.IsInstanceValid(screen))
+        {
+            return;
+        }
+
+        foreach (string name in ScreenLevelUiNames)
+        {
+            if (screen.GetNodeOrNull<CanvasItem>(name) is { } node)
+            {
+                node.Visible = false;
+            }
+        }
+    }
+
     private static void RefreshGlobalWakuuToggle(Node? screen)
     {
         if (screen == null || !GodotObject.IsInstanceValid(screen))
@@ -312,7 +346,12 @@ internal static class LocalRemoteLobbyPlayerSwitchUi
         }
 
         List<NRemoteLobbyPlayer> localNodes = GetLocalLobbyNodes(screen);
-        bool shouldShow = LocalSelfCoopContext.IsEnabled && !RunManager.Instance.IsInProgress && localNodes.Count > 0;
+        bool shouldShow = LocalSelfCoopContext.IsEnabled
+                          && !RunManager.Instance.IsInProgress
+                          && localNodes.Count > 0
+                          // 角色选择页会被官方入口复用同一实例 ⇒ 还要问「大厅是不是仍挂在我们的回环上」（r317）
+                          && (screen is not NCharacterSelectScreen characterSelect
+                              || LocalSelfCoopContext.IsOurCharacterSelectPage(characterSelect));
         bool showControllerHints = NControllerManager.Instance?.InputType == InputType.Controller;
         toggle.Visible = shouldShow;
         label.Visible = shouldShow;

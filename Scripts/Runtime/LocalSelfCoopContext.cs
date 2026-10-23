@@ -32,6 +32,10 @@ internal static class LocalSelfCoopContext
     /// </summary>
     private static readonly SelfCoopSessionState _session = new();
 
+    /// <summary>角色选择页的大厅字段（`NCharacterSelectScreen._lobby`）。逐帧判据会读它，故缓存反射结果。</summary>
+    private static readonly System.Reflection.FieldInfo? CharacterSelectLobbyField =
+        AccessTools.Field(typeof(NCharacterSelectScreen), "_lobby");
+
     private static List<ulong> _localPlayerIds => _session.LocalPlayerIds;
     private static HashSet<ulong> _wakuuPlayerIds => _session.WakuuPlayerIds;
 
@@ -433,6 +437,23 @@ internal static class LocalSelfCoopContext
         _session.IsLoadReplayWindowActive(System.Environment.TickCount64);
 
     /// <summary>
+    /// 开局窗口是否仍在有效期内（守卫据此不下手）。详见 <see cref="RunStartWindowPolicy"/>。
+    ///
+    /// 为什么需要：r317 起角色选择页的判据收紧成「可见 + 大厅还是我们的回环服务」，
+    /// 而开局转场（`FadeOut` + 建局）期间页面会被隐藏、`RunManager.IsInProgress` 又还没成立
+    /// ⇒ 守卫会在这一两秒里把会话清掉（等价 r166：进局后 `IsEnabled`=false，托管/归属全失效）。
+    /// </summary>
+    public static bool IsRunStartWindowActive =>
+        _session.IsRunStartWindowActive(System.Environment.TickCount64);
+
+    /// <summary>打开开局窗口（只在「本地回环大厅发起开局」时调用，见 `StartRunLobbyPatch`）。</summary>
+    public static void OpenRunStartWindow(string source)
+    {
+        _session.OpenRunStartWindow(System.Environment.TickCount64);
+        LocalMultiControlLogger.Info($"开局窗口已开启: source={source}（转场期间会话守卫不下手，最长 120 秒）");
+    }
+
+    /// <summary>
     /// 打开「读档窗口」（继续游戏 / ESC 快速重启 的读档入口调用）。
     /// 有超时安全阀：万一读档被取消，守卫仍会在超时后收拾残留会话（不退化成 r158 的老问题）。
     /// </summary>
@@ -694,6 +715,34 @@ internal static class LocalSelfCoopContext
         return ReconcileStartRunLobbyPlayerCount("bootstrap-local-players");
     }
 
+    /// <summary>角色选择页当前挂的大厅（反射 `_lobby`）；还没初始化时返回 null。</summary>
+    public static StartRunLobby? TryGetCharacterSelectLobby(NCharacterSelectScreen screen)
+    {
+        return CharacterSelectLobbyField?.GetValue(screen) as StartRunLobby;
+    }
+
+    /// <summary>
+    /// 这一帧这个角色选择页是不是**我们自己的**本地多角色页（唯一判据，r317）。
+    ///
+    /// 只按 `ActiveCharacterSelectScreen` 引用判不够：`NSubmenuStack` 复用同一个页面实例，
+    /// 我们从自己的大厅退回主菜单、再点官方「单人」拿到的是**同一个对象**，只是 `_lobby` 换成了
+    /// 单人局大厅 ⇒ 人数面板 / 全局瓦库开关继续挂在官方页上（2026-10-23 r315 日志实证）。
+    /// 详见 <see cref="LocalCharacterSelectPagePolicy"/>。
+    /// </summary>
+    public static bool IsOurCharacterSelectPage(NCharacterSelectScreen screen)
+    {
+        if (!GodotObject.IsInstanceValid(screen))
+        {
+            return false;
+        }
+
+        return LocalCharacterSelectPagePolicy.ShouldShowLocalUi(
+            sessionEnabled: IsEnabled,
+            sameScreen: ReferenceEquals(ActiveCharacterSelectScreen, screen),
+            pageOpen: screen.IsInsideTree() && screen.Visible,
+            lobbyUsesLocalLoopback: TryGetCharacterSelectLobby(screen)?.NetService is LocalLoopbackHostGameService);
+    }
+
     public static void EnsureLocalAscensionOptionsUnlocked(NCharacterSelectScreen screen, string source)
     {
         if (!IsEnabled)
@@ -701,7 +750,7 @@ internal static class LocalSelfCoopContext
             return;
         }
 
-        StartRunLobby? lobby = AccessTools.Field(typeof(NCharacterSelectScreen), "_lobby")?.GetValue(screen) as StartRunLobby;
+        StartRunLobby? lobby = TryGetCharacterSelectLobby(screen);
         if (lobby == null)
         {
             return;
@@ -718,7 +767,7 @@ internal static class LocalSelfCoopContext
         }
 
         NCharacterSelectScreen screen = ActiveCharacterSelectScreen;
-        StartRunLobby? lobby = AccessTools.Field(typeof(NCharacterSelectScreen), "_lobby")?.GetValue(screen) as StartRunLobby;
+        StartRunLobby? lobby = TryGetCharacterSelectLobby(screen);
         if (lobby == null)
         {
             LocalMultiControlLogger.Warn($"大厅玩家同步跳过：Lobby尚未初始化，source={source}");
@@ -880,7 +929,7 @@ internal static class LocalSelfCoopContext
             return _localPlayerIds.Take(_desiredLocalPlayerCount).ToList();
         }
 
-        StartRunLobby? lobby = AccessTools.Field(typeof(NCharacterSelectScreen), "_lobby")?.GetValue(ActiveCharacterSelectScreen) as StartRunLobby;
+        StartRunLobby? lobby = TryGetCharacterSelectLobby(ActiveCharacterSelectScreen);
         if (lobby == null)
         {
             return _localPlayerIds.Take(_desiredLocalPlayerCount).ToList();
@@ -906,7 +955,7 @@ internal static class LocalSelfCoopContext
             _isSyncingCharacterHighlight = true;
 
             EnsureLobbyEditingPlayerIsValid();
-            StartRunLobby? lobby = AccessTools.Field(typeof(NCharacterSelectScreen), "_lobby")?.GetValue(ActiveCharacterSelectScreen) as StartRunLobby;
+            StartRunLobby? lobby = TryGetCharacterSelectLobby(ActiveCharacterSelectScreen);
             if (lobby == null)
             {
                 return;

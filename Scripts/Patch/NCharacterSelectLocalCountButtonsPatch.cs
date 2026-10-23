@@ -65,11 +65,16 @@ internal static class LocalCharacterSelectCountButtons
 
     public static void Sync(NCharacterSelectScreen screen)
     {
-        // 官方联机也用 NCharacterSelectScreen：只有「本页正是我们入口打开的那一个」才挂面板（r159），
-        // 避免残留会话让官方联机角色选择页冒出我们的人数/切换按钮。
-        bool shouldShow = LocalSelfCoopContext.IsEnabled
-            && ReferenceEquals(LocalSelfCoopContext.ActiveCharacterSelectScreen, screen);
+        // 官方联机也用 NCharacterSelectScreen，且**同一个页面实例会被复用**（官方单人页也一样）：
+        // 判据必须同时问「会话开着吗 / 是不是我们登记的那一页 / 页面还开着吗 / 大厅还挂在我们的回环上吗」，
+        // 只看引用会让残留会话把人数面板挂到官方单人页上（r159 修过一半、r317 补齐 `_lobby` 这一条）。
+        bool shouldShow = LocalSelfCoopContext.IsOurCharacterSelectPage(screen);
         Panel.Sync(screen, shouldShow);
+        if (!shouldShow)
+        {
+            // 页面实例被官方入口复用后，上一轮留在屏上的整屏级注入 UI（全局瓦库开关）必须收掉。
+            LocalRemoteLobbyPlayerSwitchUi.HideScreenLevelUi(screen);
+        }
     }
 
     public static void Remove(NCharacterSelectScreen screen)

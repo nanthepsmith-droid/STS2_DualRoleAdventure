@@ -58,6 +58,9 @@ internal sealed class SelfCoopSessionState
     /// <summary>读档窗口开启时刻（`TickCount64`；0 = 未开启）。</summary>
     public long LoadReplayWindowOpenedAtMs { get; set; }
 
+    /// <summary>开局窗口开启时刻（`TickCount64`；0 = 未开启）。见 <see cref="RunStartWindowPolicy"/>。</summary>
+    public long RunStartWindowOpenedAtMs { get; set; }
+
     /// <summary>待触发的事件自动切换来源席位（null = 无挂起请求）。</summary>
     public ulong? PendingEventAutoSwitchPlayerId { get; set; }
 
@@ -87,6 +90,7 @@ internal sealed class SelfCoopSessionState
         EventAutoSwitchPending = false;
         LobbyLocalPlayerLimit = MaxLocalPlayerCount;
         LoadReplayWindowOpenedAtMs = 0;
+        RunStartWindowOpenedAtMs = 0;
     }
 
     // ── 时序③：读档窗口（进局立刻关闭；超时安全阀）──
@@ -117,6 +121,20 @@ internal sealed class SelfCoopSessionState
         long elapsedMs = nowMs - LoadReplayWindowOpenedAtMs;
         LoadReplayWindowOpenedAtMs = 0;
         return elapsedMs;
+    }
+
+    // ── 时序④：开局窗口（守卫在开局转场期间不下手；超时安全阀）──
+
+    /// <summary>开局窗口是否仍在有效期内（判据 <see cref="RunStartWindowPolicy.IsActive"/>）。</summary>
+    public bool IsRunStartWindowActive(long nowMs)
+    {
+        return RunStartWindowPolicy.IsActive(RunStartWindowOpenedAtMs, nowMs);
+    }
+
+    /// <summary>打开开局窗口（记录开启时刻）。只在「本地回环大厅发起开局」时调用。</summary>
+    public void OpenRunStartWindow(long nowMs)
+    {
+        RunStartWindowOpenedAtMs = nowMs;
     }
 
     // ── 事件自动切换的三段式（请求 → 事件结束确认 → 消费 / 作废）──
@@ -208,6 +226,11 @@ internal sealed class SelfCoopSessionState
         if (LoadReplayWindowOpenedAtMs != 0)
         {
             residuals.Add("load-replay-window=set");
+        }
+
+        if (RunStartWindowOpenedAtMs != 0)
+        {
+            residuals.Add("run-start-window=set");
         }
 
         return residuals;

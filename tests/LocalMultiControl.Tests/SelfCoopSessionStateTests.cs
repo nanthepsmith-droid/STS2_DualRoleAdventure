@@ -155,6 +155,49 @@ public class SelfCoopSessionStateTests
     }
 
     [Test]
+    public void 开局窗口_开启即有效_到期失效()
+    {
+        SelfCoopSessionState state = Fresh;
+        state.OpenRunStartWindow(2_000);
+
+        Assert.That(state.IsRunStartWindowActive(2_000), Is.True, "开局转场期间守卫不得下手");
+        Assert.That(state.IsRunStartWindowActive(2_000 + RunStartWindowPolicy.DefaultTimeoutMs - 1), Is.True);
+        Assert.That(state.IsRunStartWindowActive(2_000 + RunStartWindowPolicy.DefaultTimeoutMs), Is.False,
+            "到期即失效（安全阀：开局被取消后守卫恢复职责）");
+    }
+
+    [Test]
+    public void 未开窗时开局窗口不生效()
+    {
+        SelfCoopSessionState state = Fresh;
+        Assert.That(state.IsRunStartWindowActive(1), Is.False);
+        Assert.That(state.RunStartWindowOpenedAtMs, Is.Zero);
+    }
+
+    [Test]
+    public void 会话关闭_带走开局窗口()
+    {
+        SelfCoopSessionState state = Fresh;
+        state.EnterSession();
+        state.OpenRunStartWindow(1_000);
+
+        state.LeaveSession();
+
+        Assert.That(state.IsRunStartWindowActive(1_000), Is.False);
+        Assert.That(state.FindResiduals(), Is.Empty, "开局窗口不进残留点名（LeaveSession 已清）");
+    }
+
+    [Test]
+    public void 残留判据_点名开局窗口()
+    {
+        SelfCoopSessionState state = Fresh;
+        state.EnterSession();
+        state.OpenRunStartWindow(1_000);
+
+        Assert.That(state.FindResiduals(), Does.Contain("run-start-window=set"));
+    }
+
+    [Test]
     public void 事件自动切换_三段式_请求_确认_消费()
     {
         SelfCoopSessionState state = Fresh;

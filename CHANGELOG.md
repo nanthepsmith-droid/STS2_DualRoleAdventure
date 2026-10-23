@@ -2,6 +2,22 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
+## [Unreleased] - 2026-10-23（r317）
+
+> 修「进过本地多控大厅后，官方单人页冒出我们的按钮」。
+
+- **修复：官方单人角色选择页被注入本地多控 UI（人数 +/- 面板 + 左上角瓦库开关）。** 两个并列根因：
+  ① 子菜单栈**复用同一个角色选择页实例**（`NSubmenuStack.GetSubmenuType<T>()` 返回缓存对象），
+  官方单人入口拿到的是同一个 `NCharacterSelectScreen`，只是大厅换成了单人局 —— 只比引用必然误判；
+  ② 会话守卫对角色选择页只判"在树上"，而 `Pop()` **只把页面隐藏、不移出树** ⇒ 从我们的大厅退回主菜单后
+  会话永不清，残留的 `IsEnabled` 继续给官方页挂 UI（还会顺手把官方页的进阶难度解到 0-10）。
+  修法 = 统一判据「会话开着 + 是登记的那一页 + 页面可见 + 页面的大厅仍挂在本地回环服务上」
+  （纯逻辑 `LocalCharacterSelectPagePolicy` + 6 条单测），UI 侧与会话守卫同一口径；
+  页面被复用时把上一轮留下的整屏级注入 UI 收起。
+- **配套：开局窗口**（`RunStartWindowPolicy`，4 条单测）。判据收紧后，开局转场（FadeOut + 建局）期间
+  `RunManager.IsInProgress` 还没成立、页面又可能被隐藏 ⇒ 守卫会把会话当残留清掉（进局后托管/归属全失效）。
+  现在 `StartRunLobby.BeginRunForAllPlayers` **只对本地回环大厅**开一个 120 秒窗口挡住守卫；官方入口不触发。
+
 ## [Unreleased] - 2026-10-23（r316）
 
 > 修一个本地多控下的开局黑屏（用户实机 ×3 复现路径固定后收敛）。
