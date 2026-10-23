@@ -34,6 +34,8 @@ public static class Entry
 
     public static void Init()
     {
+        // r312：启动耗时分段打点（只量本补丁自己的初始化耗时）
+        System.Diagnostics.Stopwatch initStopwatch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             _harmony = new Harmony("sts2.hextechrunes.localcoopfix");
@@ -52,6 +54,10 @@ public static class Entry
         {
             // 第三方兼容补丁绝不允许连累游戏启动：只记日志，不抛。
             Log.Error($"{LogPrefix} INIT_ERROR: {exception}");
+        }
+        finally
+        {
+            Log.Info($"{LogPrefix} [StartupProf] mod_init_total ms={initStopwatch.Elapsed.TotalMilliseconds:F1}");
         }
     }
 

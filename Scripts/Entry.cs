@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
@@ -836,7 +837,7 @@ public partial class Entry
     //   ⇒ 主人/战神被挪走而宠物留在旧坐标（宠物脱钩）。⇒ **撤掉 `PositionPlayersAndPets` 的 Postfix**，
     //   回到"只在自己的事件上自愈"（召唤批次结束 + 真人回合开始），并补上 `MoveWithPets`：
     //   挪立绘时**连带平移它名下的宠物**（否则奥斯提这类宠物会落单）。
-    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-22-r307)";
+    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-23-r313)";
 
     private static Harmony? _harmony;
 
@@ -965,9 +966,19 @@ public partial class Entry
     /// </summary>
     private static readonly bool StrictMode = ResolveStrictMode();
 
+    // r312：启动耗时分段打点 —— 只量"我们能控的部分"（本 mod 初始化各阶段 + 相对进程启动的位置），
+    // 第三方 mod / 引擎预加载的耗时不由这里推断，靠 A/B 与 tools\startup_profile.py 记账。
+    private static readonly List<KeyValuePair<string, double>> StageTimings = new();
+    private static readonly Stopwatch InitStopwatch = new();
+
     public static void Init()
     {
         var fatalFailures = new List<string>();
+
+        // r312：打点①——我们进入初始化时，进程已经跑了多久（前面那些 mod 的初始化都在这个数里）
+        StageTimings.Clear();
+        InitStopwatch.Restart();
+        LogStartupProfilePosition("mod_init_begin");
 
         LocalMultiControlLogger.Info("INIT_BEGIN");
         LocalMultiControlLogger.Info($"BUILD_ID {BuildMarker}");
@@ -1037,11 +1048,25 @@ public partial class Entry
             }
         });
 
+        // 阶段 4b：启动耗时诊断——逐 mod 初始化计时 + 5s 心跳（r312/r313；手工挂、失败只 WARN，不进分组 PatchAll）
+        RunStage(fatalFailures, "STARTUP_PROFILE_INSTALL", () =>
+        {
+            if (_harmony != null)
+            {
+                StartupProfilerPatch.Install(_harmony);
+            }
+
+            StartupHeartbeat.Start();
+        });
+
         // 阶段 5：补丁自检（Critical 缺失 → 致命）
         RunStage(fatalFailures, "PATCH_SELF_TEST", () => ValidatePatches(fatalFailures));
 
         // 阶段 6：选牌入口归属路由自检（改进-2 / Phase 1；只记录/告警，不致命）
         RunStage(fatalFailures, "SELECTOR_ROUTE_AUDIT", WakuuSelectorRouteAudit.Run);
+
+        // r312：打点③——汇总本 mod 初始化各阶段耗时（先记账再报终态，失败路径也不会丢这行）
+        LogStartupProfileSummary();
 
         // 终态：INIT_OK / INIT_FAILED 二选一，互斥
         FinishInitialization(fatalFailures);
@@ -1272,6 +1297,7 @@ public partial class Entry
 
     private static void RunStage(ICollection<string> fatalFailures, string stage, Action action)
     {
+        long startTicks = Stopwatch.GetTimestamp();
         try
         {
             action();
@@ -1281,6 +1307,32 @@ public partial class Entry
             LocalMultiControlLogger.Error($"初始化阶段[{stage}] 抛出未处理异常: {exception}");
             fatalFailures.Add($"[{FatalCode.Stage}] 阶段 {stage} 未处理异常: {exception.GetType().Name}");
         }
+        finally
+        {
+            // r312：阶段耗时（异常也记，方便看出"卡在哪一段抛的"）
+            double elapsedMs = (Stopwatch.GetTimestamp() - startTicks) * 1000.0 / Stopwatch.Frequency;
+            StageTimings.Add(new KeyValuePair<string, double>(stage, elapsedMs));
+            LocalMultiControlLogger.Info($"[StartupProf] stage={stage} ms={elapsedMs:F1}");
+        }
+    }
+
+    /// <summary>
+    /// r312：打点②——打一行"进程已运行多久"。用 StartTime 与当前时间作差（自身进程，不需要额外权限），
+    /// 拿不到就记 -1（绝不因为诊断而影响初始化）。日志无时间戳，这个数是我们唯一能落地的"位置"。
+    /// </summary>
+    private static void LogStartupProfilePosition(string tag)
+    {
+        LocalMultiControlLogger.Info(
+            $"[StartupProf] {tag} since_process_start_ms={StartupProfileProbe.SinceProcessStartMs():F0} " +
+            $"since_init_begin_ms={InitStopwatch.Elapsed.TotalMilliseconds:F1}");
+    }
+
+    private static void LogStartupProfileSummary()
+    {
+        string stages = string.Join("|", StageTimings.Select(pair => $"{pair.Key}:{pair.Value:F1}"));
+        LocalMultiControlLogger.Info(
+            $"[StartupProf] mod_init_total ms={InitStopwatch.Elapsed.TotalMilliseconds:F1} " +
+            $"since_process_start_ms={StartupProfileProbe.SinceProcessStartMs():F0} stages={stages}");
     }
 
     private static void SafeAction(ICollection<string> fatalFailures, string code, string what, Action action)

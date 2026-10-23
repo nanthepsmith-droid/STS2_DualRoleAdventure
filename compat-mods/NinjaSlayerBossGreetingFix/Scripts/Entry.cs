@@ -26,15 +26,25 @@ public static class Entry
 
     public static void Init()
     {
-        _harmony = new Harmony("sts2.ninjaslayer.bossgreeting.fix");
-
-        if (!TryPatch())
+        // r312：启动耗时分段打点（只量本补丁自己的初始化耗时，第三方/引擎开销不由这里推断）
+        System.Diagnostics.Stopwatch initStopwatch = System.Diagnostics.Stopwatch.StartNew();
+        try
         {
-            // NinjaSlayer 尚未加载（或未安装）：挂监听，等它的程序集加载后再补。
-            AppDomain.CurrentDomain.AssemblyLoad += OnAssemblyLoad;
-        }
+            _harmony = new Harmony("sts2.ninjaslayer.bossgreeting.fix");
 
-        Log.Info("[NinjaSlayerBossGreetingFix] initialized");
+            if (!TryPatch())
+            {
+                // NinjaSlayer 尚未加载（或未安装）：挂监听，等它的程序集加载后再补。
+                AppDomain.CurrentDomain.AssemblyLoad += OnAssemblyLoad;
+            }
+
+            Log.Info("[NinjaSlayerBossGreetingFix] initialized");
+        }
+        finally
+        {
+            Log.Info("[NinjaSlayerBossGreetingFix] [StartupProf] "
+                + $"mod_init_total ms={initStopwatch.Elapsed.TotalMilliseconds:F1}");
+        }
     }
 
     private static void OnAssemblyLoad(object? sender, AssemblyLoadEventArgs args)

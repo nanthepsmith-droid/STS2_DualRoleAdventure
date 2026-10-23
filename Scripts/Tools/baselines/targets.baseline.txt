@@ -2,8 +2,8 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-10-22 22:49  HEAD=09850f0
-# 统计: patch_classes=205 patch_rows=245 string_targets=207 descriptors=400
+# 生成时间=2026-10-23 10:54  HEAD=3cc5b66
+# 统计: patch_classes=205 patch_rows=245 string_targets=210 descriptors=403
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	BgmProbeAudioManagerPatch	NAudioManager	-	no-target
@@ -272,6 +272,7 @@ S	accesstools	MapSelectionSynchronizer	_runState	field
 S	accesstools	MapSelectionSynchronizer	_votes	field
 S	accesstools	MegaCrit.Sts2.Core.Multiplayer.Game.RestSiteSynchronizer	-	method
 S	accesstools	MerchantEntry	_player	field
+S	accesstools	ModManager	-	method
 S	accesstools	NAudioManager	_audioNode	field
 S	accesstools	NCharacterSelectButton	RefreshState	method
 S	accesstools	NCharacterSelectButton	_delegate	field
@@ -341,6 +342,8 @@ S	accesstools	StartRunLobby	BeginRunIfAllPlayersReady	method
 S	accesstools	StartRunLobby	BeginRunLocally	method
 S	accesstools	StartRunLobby	UpdatePreferredAscension	method
 S	accesstools	StartRunLobby	_isBeginningRun	field
+S	accesstools	StartupProfilerPatch	Postfix	method
+S	accesstools	StartupProfilerPatch	Prefix	method
 S	accesstools	TreasureRoomRelicSynchronizer	EndRelicVoting	method
 S	accesstools	TreasureRoomRelicSynchronizer	RelicsAwarded	field
 S	accesstools	TreasureRoomRelicSynchronizer	VotesChanged	field

@@ -2,6 +2,24 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
+## [Unreleased] - 2026-10-23（r312 / r313）
+
+> 本轮**只加诊断打点、不改玩法行为**（marker `2026-10-23-r313`）：为了回答「进主菜单那 ~120 秒花在哪」。
+
+### Added（诊断，玩家不可见）
+
+- **启动耗时分段打点**：`Entry.Init()` 打印 `[StartupProf] mod_init_begin / stage=… / mod_init_total`
+  （含 `since_process_start_ms`，即"我们出现在进程启动后的第几秒"），以及每个初始化阶段的耗时。
+- **逐 mod 初始化计时**：手工挂载 `ModManager.CallModInitializer`（目标改名只 WARN，不进分组 PatchAll）
+  ⇒ 每次启动打印 `[StartupProf] other_mod_init ms=… mod=…`，覆盖排在主 mod 之后初始化的那些 mod。
+- **启动心跳**（r313）：初始化时装一个 5 秒一拍的定时器（最多 36 拍 / 约 3 分钟）
+  ⇒ 日志里出现 `[StartupProf] heartbeat n=… since_process_start_ms=…`。
+  日志本来没有行时间戳，靠它就能把"某段日志"和"花了多少秒"对齐。
+- **`tools/startup_profile.py`**（本机层台账）：把一份日志拆成「init 前 / 我们 / 后续 mod / 余下（预加载等）」
+  四段并给占比；`--pair A B` 对比两轮（含启用 mod 集差异 = 这轮禁用了谁）；
+  `--stages` 出阶段明细 + 预加载会话耗时（解析游戏自报的 `Preloading '…' Complete: time_elapsed=`）+ 心跳序列。
+- 三个 `compat-mods` 也各打一行 `[StartupProf] mod_init_total`（只量自己，量级预期 < 10 ms）。
+
 ## [Unreleased] - 2026-10-23（r309）
 
 > 本轮**不改主 mod 行为**（marker 仍 `2026-10-22-r307`）：只做「补丁 mod 退场核查」的两步收尾 ——
