@@ -42,7 +42,7 @@
 | `补丁mod收进主仓库compat-mods.md`（#20） | ✅ 已落地（2026-10-05 迁 1 个 + 2026-10-07 再迁 2 个 ⇒ `compat-mods/` 现有 3 个；范围仍为「主 mod ↔ 第三方交互」补丁） | 无（push 已完成；**分发口径 = 主 Release 的独立附件 `compat-mods-v<major>.<minor>.zip`**，已挂 v1.45、`release_build.ps1` 支持自动打与 `-CompatOnly`） | 索引 #20 |
 | **战灵召唤（原 ④「地狱战神」）**（#21） | **D1~D13 已拍板**；**Phase 0 POC ✅ 关单（r239）**；**Phase 1 + r241 四项追加 ✅ 实机关单（r240~r243）**；**Phase 2 召唤闭环 ✅ 实机关单（r244 落地 → r245「不能结束回合」/ r246「第二个战神不会被打」两轮修复 → 2026-10-09 r246 判读全绿，部署位 `2026-10-09-r246`）**：回合开始召唤选择 + 消耗计数 + 生成完整战神（D7「普通档」）+ 战后补满清理；**🆕 两个"大招"召唤 R16【无尽战神】/ R17【终极九连环】（D14~D19 已拍板：整包价 无尽 8 / 九连环 12 + 部分成功；2026-10-09 二轮修订 = 【九连环】改扣"计数上限"本身（永久消耗、不补满），实际一轮只能开一次）**；**Phase 2b（D7 预设档 + 两个大招）✅ 实机关单（r247 落地「一切都好正常」→ r248 修订【九连环】门槛 12/固定 9 个/按实际数量计费 → 2026-10-10 判读全绿：无尽 10/10 补满 12 席·随机各档 / 九连环 9 个先古·永久扣上限 12→0），部署位 `2026-10-09-r248`** | **Phase 3（战神托管出牌 + 台词「唔」）✅ 实机关单 = r253**（r249 落地 → r250 `GetMe` → r251 队列档 → r252 补登记 → **r253 定稿：回归 inline + 不钉上下文**；同轮追加【无尽战神】先古开关 + 召唤保命【无实体】；用户「一切都变得好正常」，异常族全 0）；**2026-10-10 用户拍板后续口径 = 预设卡组走「手工 id 列表 + 开放到配置文件」/ 预设遗物走「A 方案：只挑不依赖开战时机的遗物」/ 顺序 = 卡组 → 遗物 → Phase 4/5** | **① 手工预设卡组 ✅ 实机关单（r254：内置默认改 `ModelDb.Card<T>()` 类型引用 + 四档配置键 `hellwarDeck*` 可自定义；判读全绿，`logs-archive/godot__20261010-145141__r254.log`）；② 预设遗物（A 方案）✅ 实机关单（r255：罕见 1 / 稀有 2 / 先古 3 件，全为"常驻钩子"遗物；判读全绿，`logs-archive/godot__20261010-182625__r255.log`；⚠ 稀有/先古档本场未召，效果体感待后续）；③ Phase 4 生存规则：**R8 绑主死亡联动 + R9 死后复活 ✅ 实机关单（r256，判读全绿：复活后 round 4/5 继续出牌、绑主的战神当场收掉且不影响别人）**；**R10 挡伤 1/2（D4 = 玩家零伤害 + 战神吃一半）✅ 实机关单（r257：绑主受击 0 次 / 无守卫的对照组 19 次 / 战神吸收 53 次）** → **Phase 4 全线关单**；**④ Phase 5 收尾（R12 战神无战斗奖励 + R13 我挡/你攻覆盖战神）✅ 实机关单（r258：契约四条全中 —— 奖励只发真人 / 无[未知角色] / `我挡：4096(战神)` ×2 / `你攻生效: player=4096(战神)`）** ⇒ **战灵召唤 R1~R13 全部实机关单，功能线关单**；**🆕 r259（用户三条口径）**：① R10 修订 = 肉盾资格改**下一回合**起生效 ✅ **用户实机确认**；② **R13b = 【合体】覆盖战神** ✅ **实机确认**（`合体：… ← 瓦库 4096/4097(战神)`，手牌 5 + 2 张被收编；`我挡：4096(战神)`、`你攻生效: player=4096(战神)` 同场复现）；③ 「战神当回合就能打牌」= **不做**（用户不强求）；R10 平衡（战神是否太脆）= 用户先**完整测几局**再议；**🆕 r260：战后清理逐项容错（第三方 NinjaSlayer 布局补丁抛异常曾中断清理 ⇒ 漏摘战神；同场 **R12 排除闸门立功**）+ 合体「空气牌」**自检探针** + 合体日志补混抽可用性**；**🆕 r261：① 托管**不再打"需要目标却没目标"的牌**（根因 = 猪猪 mod「抱猪」用**第三方自定义 `TargetType`**；同一根因导致"合体空气牌"）② 战后摘战神改**「数据先摘、视觉节点后收」****；**🆕 r262（2026-10-11，承接实机反馈，⭐ 待实机）：① **【无尽战神】整包价 8 → 12**（用户拍板：它一次补满 12 席 ≈ 10 个战神，太强）② **托管出牌抛异常的牌记入「本局别让托管打」名单**（沙耶 mod「色素细胞」抛 `Index was out of range` ⇒ 卡面卡屏幕中间 + 后续空气牌；不再重试、真人仍可自己打）③ 战神视觉节点**「先藏再摘」**（第三方在 `RemoveCreatureNode` 链上抛 ⇒ 原来隐藏那步永远执行不到）**；`§待查-6` 已定性（跟原版 UPPERCUT 命中特效绑定，与 R10/战灵召唤无关）**；另：D12③「1 席本地会话」入口；**改动已本地提交 9 笔、领先 origin 14 笔、未 push、未合回 master（待用户拍板）**；备选：用户提的"战神当回合就能打牌"（本轮选了无实体保命方案） | 索引 #21 + 下方 §战灵召唤 + 设计文档 §8（含 r249~r253 落地记录与后续两阶段口径） |
 
-| `协调多第四幕mod可行性分析.md`（#22） | **🕐 排队中（用户 2026-10-22 收工点名排期；⚠ 顺序调整 = 先做「补丁 mod 退场核查」，见下方维护性 backlog 第 3 项，之后再做本项）**：用户口径 = 现在装了第四幕的 mod 明显变多，彼此冲突已经影响正常游玩（除 v3 已核的 act4heart / hs / a4f / bs2 / ISE + ALI2，还有「五条悟」/「明日方舟 Boss」等未纳入）⇒ 方向重启；**开工时先跟用户确认当前装了哪些第四幕 mod**（清单可能已变） | 第一步 = 扩该提案 §2.1 对比表（新 mod 的"加内容方式 / 触发判定 / 结算行为"三列）并复核 §5 路线是否仍成立，再按 §8 未勾项推进（G1 兼容加载优先，G2 单局串联不承诺）；**先量后猜**：拿一局带 Act4 的日志按 `diagnostics-and-triage.md` §〇~§一 定位冲突面再动代码 | 索引 #22 + 该提案 §8 |
+| `协调多第四幕mod可行性分析.md`（#22） | **🕐 排队中（用户 2026-10-22 收工点名排期；⚠ 前序「补丁 mod 退场核查」已于 2026-10-23 r308 完成，剩「用户拍板退场动作」，见下方维护性 backlog 第 3 项）**：用户口径 = 现在装了第四幕的 mod 明显变多，彼此冲突已经影响正常游玩（除 v3 已核的 act4heart / hs / a4f / bs2 / ISE + ALI2，还有「五条悟」/「明日方舟 Boss」等未纳入）⇒ 方向重启；**开工时先跟用户确认当前装了哪些第四幕 mod**（清单可能已变；⚠ 现状核查已发现 `Act4FinalAscent` / `Act4Heart` / `ActsFromThePast` 等在 `settings.save` 里全是 `is_enabled=false`） | 第一步 = 扩该提案 §2.1 对比表（新 mod 的"加内容方式 / 触发判定 / 结算行为"三列）并复核 §5 路线是否仍成立，再按 §8 未勾项推进（G1 兼容加载优先，G2 单局串联不承诺）；**先量后猜**：拿一局带 Act4 的日志按 `diagnostics-and-triage.md` §〇~§一 定位冲突面再动代码 | 索引 #22 + 该提案 §8 |
 > 注：`PrimeVakuu决策桥接-本地转接头可行性分析.md`（#19）是**本地私有**提案（对方未开源），
 > **不进本表、不进任何公开载体**，只登记在 `decision-records\README.md`。
 
@@ -518,7 +518,7 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
 `ExpectedPatchTargets` 完整签名（r92）、发布包构建元数据（2026-09-19）、S8 源码编码卫生、
 格式存量收口（2026-10-05，口径 = 不把 `dotnet format --verify-no-changes` 加进强制门禁链）。
 
-仍挂着**三项**（第二项 2026-10-11 登记、第三项 2026-10-21 用户点名）：
+条目状态：第 3 项 **2026-10-23 已关单**；第 4 项 **2026-10-23 新登记（用户点名「下个对话干它」）**。
 
 1. **版本 lane + 根 loader（**待正式版更新再做**，用户 2026-09-19 拍板）**：
    现状 = 只吃当前游戏版本（public-beta `0.111.0`），而原作者的 mod 依旧适配现在的正式版
@@ -538,7 +538,7 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
    但 `git status` 会多列一批 ` M`（stat 缓存噪声，**以 `git diff --name-only` 为准**）；
    ② 规范化会改变 **dll 字节**（本仓库构建不逐字节可复现）⇒ **必须排在最后一次构建之前**，否则要重跑 build + deploy 并订正 sha。
 
-3. **补丁 mod 的「本体已修 ⇒ 退场自检」+ 加载项精简（🕐 **下一件**：2026-10-22 用户收工点名「下次任务先确认一遍已有的补丁mod所修复的bug是否已被对应的本体mod修了，然后再做第四幕协调」）**：
+3. **补丁 mod 的「本体已修 ⇒ 退场自检」+ 加载项精简（✅ **关单 2026-10-23**：r308 核查（含 `Act4FinalAscentFixes` 第二轮反编译订正）→ r309 退场 2 个槽位 → r310 两条 P1 收尾。结论 = `maintenance-docs\补丁mod退场核查.md`；⚠ 只剩「registry 摘掉两条 obsolete 登记」这件 cosmetic 和「真玩 Act4 时把 loc 补丁改成注入别名键」（P3，触发条件见下））**：
    用户原话：「我们有若干补丁 mod，但是不知道这些 mod 能不能检测本体 mod 有没有修，如果本体 mod 修了补丁报错还行，
    不报错就静默运行卡我游戏加载时间了」。
    **现状盘点**（2026-10-21）：仓库外 11 个补丁/辅助 mod（`Act4FinalAscentFixes` / `EnchantTargetRandomFix` /
@@ -564,18 +564,72 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
    ⚠ 已知特例：`HextechRunesLocalCoopFix` 已出现 `CreateRuneSelectionScreenAsync 期望 10，实际 11`（上游加参数）——
    这正是"形状变了"的活样本，可作为 A-② 的首个用例与回归锚点。
 
-   **📌 下一件的执行口径（2026-10-22 用户点名，顺序 = 先核查、后第四幕协调）**：
-   用户原话：「下次任务先确认一遍已有的补丁mod所修复的bug是否已被对应的本体mod修了，然后再做第四幕协调」。
-   **这一轮只出结论、不动代码**（拍板后再删/留）：
-   1. **清单**：`pain\mod_registry.json` 登记的 14 个（11 个仓库外 + `compat-mods/` 3 个），逐个取
-      "这个补丁到底修了什么"（代码注释 / README / 提交信息）；
-   2. **逐条核对本体现状**：反编译当前本体 dll（`ilspycmd`）看目标方法**还在不在 / 形状变没变 / 逻辑有没有自己修掉**；
-      有上游 CHANGELOG / 工坊更新说明的，按版本号对照（`lib\<ver>\` 里若有旧版 dll 可做 A/B 反编译）；
-   3. **输出一张表**：`补丁 | 修的问题 | 本体现状（证据） | 结论（仍需要 / 已修可退场 / 无法判定）| 建议动作`；
-   4. **判据红线**（沿用上面两条 ⚠）：目标消失 ≠ 已修；`HextechBurnVisualFix` 仍走 `HBV_DISABLE=1` 退场；
-      任何"可退场"都先给用户确认，不擅自删槽位。
-   5. 顺带产出 `tools/scan_compat_need.py` 的雏形（把"目标是否存在 + 上游版本"变成可重跑的巡检），
-      **但省加载时间的唯一有效动作是提示用户禁用/删除槽位**（补丁不挂 ≠ 省加载，见上面成本结构）。
+   **✅ 已核查（2026-10-23 r308）—— 结论表 + 逐条证据 + 复跑工具：`maintenance-docs\补丁mod退场核查.md`**：
+
+   - **可退场 2 个（✅ 2026-10-23 r309 已退场：槽位已删 + registry `enabled=false`）**：
+     `YuWanCardWhiteScarfFix`（上游 0.5.12 已自修，反编译 `WithCardPools(ColorlessCardPool)+flags16`
+     与补丁重建等价）/ `OddmeltGaugeCardRenderFix`（主 mod 已内置**逐字相同**的
+     `Scripts/Patch/NCardCreateHiddenCardGuardPatch.cs`，且在 `baselines/targets.baseline.txt` 里）。
+   - **仍需要 8 个**：`Act4FinalAscentFixes`（⚠ **第二轮反编译订正**：0.2.2 只补了 Powers 的 57 条复合 Entry
+     本地化别名键，事件/遭遇/幕的 loc 键仍无前缀、Boss 地图图标仍无扩展名、Power 图标仍只有 `architect_*.tres`
+     ⇒ **4 条补丁全都要留**；运行时 Entry 是 `ACT4_FINAL_ASCENT_<CATEGORY>_<TYPE>`，证据 = 存档里的
+     `EVENT.ACT4_FINAL_ASCENT_EVENT_...` + RitsuLib `ModelDbModdedEntryPatch` 强制复合命名；详见核查文档 §3.1）/
+     `EnchantTargetRandomFix`（本体 `Inky.OnPlay` 无判空；2026-09-19 r140 实机仍命中兜底 ×2）/
+     `HextechBurnVisualFix`（上游 0.9.8 仍逐骨 `Call("get_world_x")`、无有效性校验）/
+     `LexNinja2LaserFix`（本体 `vfx_hyperbeam.tscn` 未修 + `ShowLaser` 裸解引用 + LexNinja2 3.0.10 仍调 `NHyperbeamVfx`）/
+     `YuiVfxSceneFix`（`.tscn.remap` 覆盖仍在，2026-10-11 r262 仍触发重建）/
+     `HextechRunesLocalCoopFix`（`INIT_OK patched=9`，上游无本地多控支持）/
+     `NinjaSlayerBossGreetingFix`（1.1.1 lane dll 仍 `return val.NetHost.ConnectedPeerIds…` 无判空）/
+     `PreloadStallGuard`（兜底；历史 3 次强制放行，2026-10-03/04/08，全为 `MomoVfx`）。
+   - **不属退场范围 2 个**（辅助功能，`INIT_OK`）：`HistoryFilter` / `HistoryLoadoutExport`。
+   - **obsolete 残留 2 条**：`TouhouAncientsAncientFixes` / `TouhouAncientsMiniHakkeroFixed`（`enabled=false`、无槽位）。
+   - **顺带发现（均已处理或已记账）**：工坊两个 `Oddmelt` 同 id ⇒ **✅ 用户已退订旧件**；
+     `CreateRuneSelectionScreenAsync 期望 10，实际 11` 的 WARN ⇒ **✅ r310 改成按参数名验注入名**（v1.7.1）；
+     `Act4FinalAscentFixes` 的激光那条与 `LexNinja2LaserFix` 同代码（可留一份）；
+     `Act4FinalAscent` 自身两条：① 5 个 power 图标上游就没给（`Act4ArchitectRevivalPower` + 4 个书类），
+     ② 它自己的 `ImageHelperGetRoomIconPathPatch` 用**无前缀** Entry 比对 ⇒ 永远不命中（上游 bug）；
+     ③ **我们的覆盖漏洞**：`EventModel.GameInfoOptions` 走 `LocTable.Keys` 直接枚举、不经 patch 的 4 个入口
+     ⇒ 复合 Entry 下会抛 `LocException("Event Loc … does not conform")`（P3 一起修）。
+
+   **✅ 执行结果（r309 / r310）**：
+   1. 两个可退场项 → **r309**：槽位目录已删（`mods\YuWanCardWhiteScarfFix\`、`mods\OddmeltGaugeCardRenderFix\`；
+      源码在 `pain\` 下，`-Only <Name>` 可重建），registry 两条改 `enabled=false` + OBSOLETE；游戏内 `is_enabled`
+      本来就是 false ⇒ **未动 `settings.save`**；
+   2. `HextechRunesLocalCoopFix` **v1.7.1**：基线 10 → 11 + `FindUnboundPatchParameters`（真按参数名验绑定）；
+   3. `LexNinja2LaserFix` **v1.0.1**：`PatchClassProcessor` 逐个类挂 + 启动打 `PATCH_VERIFY`（含 build tag）；
+      两个 dll 均已构建 + 字节校验部署；门禁 `preflight -Lint` = 4 PASS / 0 WARN、`check_string_targets` STALE 0。
+   4. ⏳ 剩下两件（都不阻塞）：registry 摘两条 obsolete 登记（cosmetic）；真玩 Act4 时再做 P3。
+   **巡检复跑**：`python D:\Download\pain\tools\scan_compat_need.py`（本机层；只输出机械事实 + 复核线索，
+   **不判断上游是否真修好** —— 有「上游晚 5 天但没修」与「上游晚 17 天真修了」两个反例）。
+   ⚠ 判据红线（不变）：**目标消失 ≠ 已修**；`HextechBurnVisualFix` 走 `HBV_DISABLE=1` 退场；
+   任何"可退场"都先给用户确认，不擅自删槽位；**补丁不挂 ≠ 省加载**（真正省时间只有「禁用+删槽位」与「合并 dll」两件事）。
+
+4. **启动耗时分段定位（`🕐 下一件`：用户 2026-10-23 拍板「既然如此写进待办里面，下个对话干它」）**：
+   **要回答的问题** = 「进主菜单那 **120 秒**里，时间到底花在哪？哪些是我们能省的？」
+   **现状数据**（同一台机、同一套 63 个已启用 mod，两轮实测）：
+   - `[Startup] Time to main menu` = r307 **117.9 s** / r311 **120.2 s**；
+     `Resource stats (main menu loaded (complete))`: `VRAM=6.6GB, Objects≈59.5k, Resources≈5.7k, Nodes≈20k, CachedAssets=80`；
+     日志 = `logs-archive/godot__20261022-231503__r307.log` 与 `logs-archive/godot__20261023-102723__r307.log`。
+   - **同轮对照**：删掉两个"游戏内已禁用"的补丁槽位（r309）后启动时间**无可测差异** ⇒ 大头不在"被禁用的补丁静默加载"，
+     也不是"少扫几个 manifest"能解决的。
+   - **现有可用的时间信号只有 4 行**（`Time to main menu` ×2 + `Resource stats` ×2）⇒ **不足以分段**，必须自己打点或做 A/B。
+   **做法（先量后猜，按这个顺序做，别跳步）**：
+   a. **先 A/B 定位大头（最省力）**：每轮只在游戏内**禁用 1 个** mod（不必删槽位），连跑 **3 次取中位**，
+      与基线比 `Time to main menu`；优先嫌疑 = 重 pck/图集 mod（`CachedAssets=1649`、`VRAM` 6.5G 说明预加载很重）、
+      `RitsuLib`（日志自称挂 432+120+53+31+3+22 个补丁）、`BaseLib`/`MomoLib` 这类框架、以及装了很多内容的角色 mod。
+      **判据**：单次差异 **> 5 s** 才算数；单次波动不算（这台机 MV 波动大，必须中位）。
+   b. **再给启动分段打点（只打我们能控的）**：主 mod `Entry.Init()` 首尾、各 `compat-mods/*` 的 `Install()` 首尾
+      ⇒ 先证明"我们的初始化不是大头"（预期 < 1 s），再谈要不要优化；第三方只能用"少了它快多少"间接量。
+   c. **产出台账工具** `tools/startup_profile.py`（本机层，只读归档日志）：解析每轮 `Time to main menu` +
+      `Resource stats` + 该轮启用的 mod 集（日志里 `Finished mod initialization for …` 那段就是清单），
+      输出「本轮 vs 上轮差值 / 本轮禁用了谁」的表 —— 让 A/B 可跨会话复查，不用靠记性。
+   d. **只优化我们能控的地方**：查主 mod / compat 补丁初始化里的可省项（重复 `AppDomain.GetAssemblies()` 全表
+      `GetType` 扫、同步 IO、重复反射解析）；第三方慢**只记账 + 给建议**（退订 / 换轻量配置），不改人家代码。
+   **红线**：① 不许为快砍功能或砍护栏（`PreloadStallGuard` 这类兜底不算"开销"）；② 第三方自身慢不擅自修
+   （`compat-mods` 只收主↔第三方**交互**补丁，见既有口径）；③ 任何"优化"必须有 A/B 数据（≥3 次中位）；
+   ④ 结论口径 = 「这台机 / 这 63 个 mod / 这一版游戏 v0.111.0」，**不许外推**成"我们的 mod 很快"。
+   **交付判据**：能一句话答出「120 秒里 X% 在资源预加载 / Y% 在 mod 初始化 / Z% 在别处」+ 有可复查台账；
+   若结论是"大头是第三方预加载"，**到此为止**（记账 + 给退订建议），不动代码。
 
 ## ④「瓦库的爹」（遗物 + 三张牌）—— ✅ 全部实机关单（r227~r231，2026-10-07），已随 **v1.45.0** 发版
 

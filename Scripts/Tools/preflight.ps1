@@ -59,6 +59,20 @@ function Add-Result {
     $script:Results += [pscustomobject]@{ Id = $Id; Name = $Name; Status = $Status; Detail = $Detail }
 }
 
+# 工具查找：先本机层（..\tools\），再主仓库（Scripts\Tools\）——两处都有工具，混着用（见 G6 注释）。
+# 都不存在时返回第一个候选，让调用方的"缺少 …"提示仍指向最常见的那个路径。
+function Resolve-Tool {
+    param([string]$Name)
+    $candidates = @(
+        (Join-Path $ToolsDir $Name),
+        (Join-Path $RepoDir (Join-Path "Scripts\Tools" $Name))
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+    return $candidates[0]
+}
+
 # 中英混排按显示宽度对齐（CJK 记 2 列），否则表格会参差不齐
 function Get-DisplayWidth([string]$Text) {
     $w = 0
@@ -183,11 +197,14 @@ if ($Deploy) {
 }
 
 # ---------------------------------------------------------------- G6/G7 运行期日志
+# ⚠ 日志工具分两处：`log_scan.py` 在本机层（..\tools\），`log_parser.py` 随主仓库走
+#   （`Scripts\Tools\`，AGENTS §9 门禁 9）。只按 $ToolsDir 找会**静默 SKIP** G6（2026-10-23 踩到：
+#   G6 一直显示「缺少 D:\Download\pain\tools\log_parser.py」却仍报 preflight 通过 ⇒ 假绿）。
 if ($WithLogs) {
-    $logParser = Join-Path $ToolsDir "log_parser.py"
+    $logParser = Resolve-Tool "log_parser.py"
     Invoke-Native "G6" "初始化终态（INIT_STATUS=OK）" "python" @($logParser, "--init-status") `
         $(if (-not (Test-Path -LiteralPath $logParser)) { "缺少 $logParser" } else { "" })
-    $logScan = Join-Path $ToolsDir "log_scan.py"
+    $logScan = Resolve-Tool "log_scan.py"
     Invoke-Native "G7" "健康度计数（preset health --strict）" "python" @($logScan, "--preset", "health", "--strict") `
         $(if (-not (Test-Path -LiteralPath $logScan)) { "缺少 $logScan" } else { "" })
 } else {

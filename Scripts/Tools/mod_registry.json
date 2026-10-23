@@ -21,10 +21,10 @@
   "mods": [
     { "name": "Act4FinalAscentFixes", "enabled": true, "note": "游戏内已禁用（mod_list is_enabled=false）；此处 true = 仍参与构建/部署" },
     { "name": "LexNinja2LaserFix", "enabled": true, "note": "" },
-    { "name": "OddmeltGaugeCardRenderFix", "enabled": true, "note": "游戏内已禁用（mod_list is_enabled=false）；此处 true = 仍参与构建/部署" },
+    { "name": "OddmeltGaugeCardRenderFix", "enabled": false, "note": "OBSOLETE 2026-10-23（r309）：主 mod 已内置逐字相同的 NCardCreateHiddenCardGuardPatch；游戏内已禁用 + 槽位已删" },
     { "name": "TouhouAncientsAncientFixes", "enabled": false, "note": "OBSOLETE 2026-09-08: no longer needed（槽位残留已于 2026-10-05 清除）" },
     { "name": "TouhouAncientsMiniHakkeroFixed", "enabled": false, "note": "OBSOLETE 2026-09-08: no longer needed（槽位残留已于 2026-10-05 清除）" },
-    { "name": "YuWanCardWhiteScarfFix", "enabled": true, "note": "" },
+    { "name": "YuWanCardWhiteScarfFix", "enabled": false, "note": "OBSOLETE 2026-10-23（r309）：上游 YuWanCard v0.5.12 已自修（WhiteScarf 改用 ColorlessCardPool + flags16）；游戏内已禁用 + 槽位已删" },
     { "name": "HistoryFilter", "enabled": true, "note": "aux mod, not a fix" },
     { "name": "HistoryLoadoutExport", "enabled": true, "note": "aux mod, not a fix" },
     { "name": "EnchantTargetRandomFix", "enabled": true, "note": "显式登记 2026-10-05（此前靠自动发现）" },

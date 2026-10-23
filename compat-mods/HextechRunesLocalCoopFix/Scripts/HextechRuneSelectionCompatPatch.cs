@@ -102,7 +102,9 @@ internal static class HextechRuneSelectionCompatPatch
         // 异步方法的 kickoff 一定不会被内联，且它的参数里就有 titleOverride。
         Patch(harmony, coordinatorType, "CreateLocalRuneSelectionScreenAsync", 9, patched, missing,
             prefix: nameof(CreateLocalRuneSelectionScreenPrefix));
-        Patch(harmony, coordinatorType, "CreateRuneSelectionScreenAsync", 10, patched, missing,
+        // ⚠ 期望参数个数只是**重载消歧**用的偏好值，不是契约：海克斯 0.9.8 起是 11 个（旧的 10 是更早的形状），
+        // 个数不符时上面会退化为"唯一候选 + 按参数名校验注入参数"，所以这里不再靠它当告警判据。
+        Patch(harmony, coordinatorType, "CreateRuneSelectionScreenAsync", 11, patched, missing,
             prefix: nameof(CreateRuneSelectionScreenPrefix));
 
         // ④ ②的收尾兜底：界面被我们提前关掉后，批次 finally 仍会对**已释放**的节点调
@@ -428,8 +430,21 @@ internal static class HextechRuneSelectionCompatPatch
 
             if (target.GetParameters().Length != parameterCount)
             {
-                Log.Warn($"{Entry.LogPrefix} 目标方法参数个数已变（按唯一候选挂补丁，参数名对不上会被 Harmony 拒绝）: "
-                    + $"{type.Name}.{methodName} 期望 {parameterCount}，实际 {target.GetParameters().Length}");
+                // 形状变了（第三方加/删了参数）⇒ 只要我们要绑的参数名都还在，Harmony 照样绑得上。
+                // **真正该验的是参数名**（Harmony 按名注入；名字不在就静默跳过 ⇒ 补丁静默失效，
+                // 这正是 2026-10-23 之前那条 WARN 一直在担心、却从来没验过的东西）。
+                string[] unbound = FindUnboundPatchParameters(target, prefix, postfix);
+                if (unbound.Length == 0)
+                {
+                    Log.Info($"{Entry.LogPrefix} 目标方法形状已变但注入参数都还绑得上（按唯一候选挂）: "
+                        + $"{type.Name}.{methodName} 期望 {parameterCount} 个参数，实际 {target.GetParameters().Length}");
+                }
+                else
+                {
+                    Log.Warn($"{Entry.LogPrefix} 目标方法参数名已变 ⇒ Harmony 会静默跳过这些注入参数（补丁可能失效）: "
+                        + $"{type.Name}.{methodName} 缺失=[{string.Join(", ", unbound)}]，"
+                        + $"实际参数=[{string.Join(", ", target.GetParameters().Select(p => p.Name))}]");
+                }
             }
 
             harmony.Patch(
@@ -444,6 +459,52 @@ internal static class HextechRuneSelectionCompatPatch
             Log.Warn($"{Entry.LogPrefix} 挂补丁失败: {type.Name}.{methodName}/{parameterCount}: "
                 + $"{exception.GetType().Name}: {exception.Message}");
         }
+    }
+
+    /// <summary>Harmony 的注入参数（<c>__instance</c> / <c>__result</c> / <c>__state</c> / <c>__args</c> …）按约定双下划线开头。</summary>
+    private static bool IsHarmonyInjectedParameter(ParameterInfo parameter)
+        => parameter.Name != null && parameter.Name.StartsWith("__", StringComparison.Ordinal);
+
+    /// <summary>
+    /// 列出「补丁方法声明了、但目标方法里没有同名参数」的注入名。
+    /// 空数组 = 全都能绑上（形状变了也没关系）；非空 = Harmony 会**静默跳过**这些参数 ⇒ 对应功能失效。
+    /// </summary>
+    private static string[] FindUnboundPatchParameters(MethodInfo target, params string?[] patchMethodNames)
+    {
+        var targetNames = new HashSet<string>(
+            target.GetParameters().Select(parameter => parameter.Name ?? string.Empty),
+            StringComparer.Ordinal);
+        var unbound = new List<string>();
+        foreach (string? patchMethodName in patchMethodNames)
+        {
+            if (patchMethodName == null)
+            {
+                continue;
+            }
+
+            MethodInfo? patchMethod = AccessTools.Method(typeof(HextechRuneSelectionCompatPatch), patchMethodName);
+            if (patchMethod == null)
+            {
+                unbound.Add($"{patchMethodName}(方法不存在)");
+                continue;
+            }
+
+            foreach (ParameterInfo parameter in patchMethod.GetParameters())
+            {
+                if (IsHarmonyInjectedParameter(parameter))
+                {
+                    continue;
+                }
+
+                string name = parameter.Name ?? string.Empty;
+                if (!targetNames.Contains(name))
+                {
+                    unbound.Add($"{patchMethodName}.{name}");
+                }
+            }
+        }
+
+        return unbound.ToArray();
     }
 
     private static void LogOnce(string key, string message)

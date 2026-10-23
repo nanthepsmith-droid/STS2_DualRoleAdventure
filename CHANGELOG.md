@@ -2,6 +2,22 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
+## [Unreleased] - 2026-10-23（r309）
+
+> 本轮**不改主 mod 行为**（marker 仍 `2026-10-22-r307`）：只做「补丁 mod 退场核查」的两步收尾 ——
+> 退掉 2 个已被上游修好 / 被主 mod 内置守卫取代的补丁槽位，并给两个仍在用的补丁补上"能留痕"的自检。
+
+### Changed（独立补丁 mod，随各自槽位 / `compat-mods` 分发）
+
+- **退场 2 个补丁 mod**（游戏内本就禁用，槽位目录已删；源码保留，`build_all_mods.ps1 -Only <Name>` 可重建）：
+  `YuWanCardWhiteScarfFix`（猪猪 WhiteScarf 无色卡奖励空池 —— 上游 `YuWanCard` v0.5.12 已自修）、
+  `OddmeltGaugeCardRenderFix`（Oddmelt 隐藏输入卡不在卡池 —— 主 mod 早已内置同款 `NCardCreateHiddenCardGuardPatch`）。
+- **`LexNinja2LaserFix` v1.0.1**：补丁改为**逐个补丁类单独挂载**（`NHyperbeamVfx` 某个成员哪天改名，只让那一条失效，
+  不再连累其余、也不再抛掉 mod 初始化）；新增 `PATCH_VERIFY` 日志 —— 每次启动打印「实际挂上了哪些游戏方法」+ 构建标识。
+- **`HextechRunesLocalCoopFix` v1.7.1**：`CreateRuneSelectionScreenAsync` 的形状基线 10 → 11（海克斯 0.9.8 实际参数个数）；
+  原先那条「参数个数已变，参数名对不上会被 Harmony 拒绝」的 WARN 换成**真的在验参数名** ——
+  形状变了但注入名都在 ⇒ 只记 INFO（不再每局刷 WARN）；注入名不在 ⇒ WARN 并列出缺失名与实际参数。
+
 ## [1.46.0] - 2026-10-16
 
 > 本轮 = r233 ~ r279（2026-10-08 ~ 10-16）。头牌是**战灵召唤（原「地狱战神」，默认关）**整条线：
