@@ -20,6 +20,16 @@ namespace LocalMultiControl.Scripts.Runtime;
 internal static class WarGodFormationUi
 {
     /// <summary>
+    /// 「拉开真人」只在原版支持的人数范围内做（<= 4）。人多到原版自己都排不下时，
+    /// 硬按 4 人时代的 232px 下限去铺满屏幕反而更难看（r320，见 <see cref="SpreadRealPlayers"/>）。
+    /// </summary>
+    private const int MaxSpreadingPlayerCount = 4;
+
+    /// <summary>上次"因人太多而跳过"的人数（只用于日志去重，避免每回合刷屏）。</summary>
+    private static int _lastSkippedSpreadCount;
+
+
+    /// <summary>
     /// **一次性收尾**（r303）：先把**真人**之间的间距拉开到下限（原版在人数变多时会把两人挤到一起），
     /// 再按绑主把战神归位。调用点 = 每次召唤批次结束之后 + 真人回合开始（幂等；只在需要时改）。
     /// </summary>
@@ -76,6 +86,28 @@ internal static class WarGodFormationUi
             {
                 return;
             }
+
+            // r320：**超过原版支持范围（4 人）时一律不动**。
+            //
+            // 232px 这个下限是为「2~4 人 + 战神」定的（r303 用户报「用了【无尽战神】后两个玩家突然离得很近」）。
+            // 12 人实测（2026-10-24）：原版进战斗时把 12 个人排在 x=124…764 的一团（紧凑、观感可接受），
+            // 而我们按 232 去"拉开"⇒ 一次性铺到 120…1800（整个屏幕宽）⇒ 用户观感「进战斗时没问题，
+            // 然后**突然**站得很开」；而且这次位移同时要挪 12 个立绘 + 各自宠物，是一记可感的卡顿。
+            // 人多到原版自己都排不下时，**保持原版/第三方排出来的样子**比我们硬铺更好。
+            if (nodes.Count > MaxSpreadingPlayerCount)
+            {
+                if (_lastSkippedSpreadCount != nodes.Count)
+                {
+                    _lastSkippedSpreadCount = nodes.Count;
+                    LocalMultiControlLogger.Info(
+                        $"{tag} 真人站位不干预（人数 {nodes.Count} > {MaxSpreadingPlayerCount}，"
+                        + "保持原版/第三方的紧凑排布；232px 下限是为 2~4 人定的）");
+                }
+
+                return;
+            }
+
+            _lastSkippedSpreadCount = 0;
 
             Vector2 screen = room.GetViewport()?.GetVisibleRect().Size ?? Vector2.Zero;
             List<float> targets = WarGodFormationPolicy.SpreadEvenly(

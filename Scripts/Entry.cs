@@ -837,7 +837,7 @@ public partial class Entry
     //   ⇒ 主人/战神被挪走而宠物留在旧坐标（宠物脱钩）。⇒ **撤掉 `PositionPlayersAndPets` 的 Postfix**，
     //   回到"只在自己的事件上自愈"（召唤批次结束 + 真人回合开始），并补上 `MoveWithPets`：
     //   挪立绘时**连带平移它名下的宠物**（否则奥斯提这类宠物会落单）。
-    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-24-r319)";
+    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-24-r320)";
 
     private static Harmony? _harmony;
 
