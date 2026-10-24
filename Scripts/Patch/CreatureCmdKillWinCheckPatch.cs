@@ -179,7 +179,58 @@ internal static class CreatureCmdKillWinCheckPatch
             LocalMultiControlLogger.Info(message);
         }
 
-        await CombatManager.Instance.CheckWinCondition();
+        try
+        {
+            await CombatManager.Instance.CheckWinCondition();
+        }
+        catch (Exception exception)
+        {
+            // 2026-10-24 实机（12 席 + 猪猪/海克斯系列第三方）：**胜利结算链被第三方异常打断**。
+            // 现场：`CombatManager.EndCombatInternal → Hook.AfterCombatVictory →
+            // HextechRunesSponsorPack.EnchantmentMasterRune.AfterCombatVictory` 抛
+            // `Cannot enchant CARD.DEFEND_IRONCLAD with ENCHANTMENT.THINGS_DISPERSE because it already
+            // has enchantment ENCHANTMENT.NIMBLE`（第三方没判"这张牌已有附魔"）⇒ 异常冒穿
+            // `EndCombatInternal` ⇒ 结算中断，玩家看到「怪都死了但战斗不结束」，要等后续动作链
+            // 跑完再触发一次才真正收尾（那一等就是十几秒，因为 11 个瓦库还在排队）。
+            //
+            // 原版 `Hook.AfterCombatVictory` 没有逐 listener 容错 ⇒ 我们只能在**自己的调用点**兜住，
+            // 并且**不重试**（那张牌状态没变，重试必然再抛）。这里只做一件事：把真凶点名，别再让
+            // 玩家只看到"战斗不结束"却无从判断。
+            LocalMultiControlLogger.Error(
+                "战斗胜利结算被异常打断（多半是第三方遗物/卡牌的 AfterCombatVictory 抛异常）："
+                + $"{exception.GetType().Name}: {exception.Message} | {DescribeFrames(exception)}");
+        }
+    }
+
+    /// <summary>把异常栈压成一行（前 <paramref name="maxFrames"/> 帧 + 首个非本仓库帧），只用于日志。</summary>
+    private static string DescribeFrames(Exception exception, int maxFrames = 4)
+    {
+        try
+        {
+            string[] frames = (exception.StackTrace ?? string.Empty)
+                .Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+            List<string> picked = new();
+            foreach (string frame in frames)
+            {
+                string trimmed = frame.Trim();
+                if (trimmed.Length == 0 || trimmed.StartsWith("at ", StringComparison.Ordinal) == false)
+                {
+                    continue;
+                }
+
+                picked.Add(trimmed);
+                if (picked.Count >= maxFrames)
+                {
+                    break;
+                }
+            }
+
+            return picked.Count == 0 ? "无栈帧" : string.Join(" ← ", picked);
+        }
+        catch
+        {
+            return "栈读取失败";
+        }
     }
 
     private static bool AnyPrimaryEnemyAlive()

@@ -9,7 +9,7 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 > **火堆 / 宝箱房的 5+ 席位适配**（BUG-14 / BUG-33）、一批硬修复（【合体】替打、带战神局读档崩溃、托管出牌死循环、
 > 单人开局黑屏、官方单人页被注入多控 UI）与**补丁目标同名重载**事故的根治（r292）。
 > 兼容补丁侧：`HextechRunesLocalCoopFix` 走到 v1.7.1、**新增 `YuWanCardLocalCoopFix` v1.0.0**（猪猪 mod 的商店【队友帮付】）、
-> 退场 2 个补丁 mod。构建 marker `2026-10-24-r320`。
+> 退场 2 个补丁 mod。构建 marker `2026-10-24-r321`。
 
 ### Added（玩家可见的新增）
 
@@ -86,6 +86,13 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   （120…1800）—— 这正是用户看到的「进战斗时没问题，然后突然站得很开」；
   ⇒ 定稿：**人数超过原版支持范围（>4）时完全不干预**，保持原版/第三方排出来的样子；
   2~4 人仍保留"间距不足才拉开"（r303 的原始需求：用了【无尽战神】后两个玩家挤在一起）。
+- **战斗结束被第三方异常打断时，日志能一眼看出是谁**（r321，2026-10-24 实测「怪打死了不结束战斗」）：
+  胜利结算链里第三方遗物的 `AfterCombatVictory` 抛异常会冒穿 `CombatManager.EndCombatInternal`
+  （实机：`HextechRunesSponsorPack` 的【附魔大师】给一张**已经有附魔**的牌再加附魔 ⇒
+  `InvalidOperationException: Cannot enchant …`）⇒ 不切房间、不发奖励，要等后续动作链再触发一次才收尾
+  （多席位托管出牌时那一等是几十秒）。主 mod 侧只做**诊断**（结算失败时打一条点名 ERROR + 前四帧栈，
+  **不重试** —— 那张牌状态没变，重试必然再抛）；**根治用仓库外保命补丁 `CombatVictoryHookGuard`**
+  （前缀重写 `Hook.AfterCombatVictory`，逐 listener 容错：谁抛就跳过谁、记一条点名 WARN，结算继续）。
 
 ### Changed（口径 / 内部）
 

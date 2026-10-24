@@ -499,6 +499,32 @@
   每条 ERROR 带 ~20 行 C# backtrace 走同步 stderr；本局 6 条，属第三方血条兼容自身缺陷。
 - **优先级**：低（规模问题）。
 
+### 待查-13 「怪打死了不结束战斗」= 第三方胜利 hook 抛异常冒穿结算链（2026-10-24，**主 mod 侧只做诊断，根治靠仓库外补丁**）
+
+- **现象**：12 席 + 11 瓦库局，敌全灭后战斗迟迟不结束（用户等了几十秒）。
+- **日志铁证**（`logs/godot.log`，marker r320，L14706→L14763→L15171）：
+  `检测到敌方已全部死亡，登记延迟胜利结算观察器` → `触发战斗胜利结算` →
+  `[ERROR] InvalidOperationException: Cannot enchant CARD.DEFEND_IRONCLAD with ENCHANTMENT.THINGS_DISPERSE
+  because it already has enchantment ENCHANTMENT.NIMBLE` at
+  `HextechRunesSponsorPack.EnchantmentMasterRune.AfterCombatVictory` ← `Hook.AfterCombatVictory` ←
+  `CombatManager.EndCombatInternal` ← `CheckWinCondition` → **约 40 秒后**才 `Combat state becomes NotInCombat`。
+- **根因**：① 第三方【附魔大师】没判"这张牌已有附魔"；② 原版 `Hook.AfterCombatVictory` 是**裸 foreach**，
+  没有逐 listener 容错 ⇒ 一个第三方 hook 抛异常就冒穿整条结算链（不切房间、不发奖励）。
+  中间的 40 秒 = 11 个瓦库还在动作队列里逐个排队（每个 3~5s）。
+- **主 mod 侧（r321，只做诊断）**：`CreatureCmdKillWinCheckPatch.TryFinishCombatAsync` 里 catch，
+  打一条点名 ERROR（异常类型 + 消息 + 前四帧栈），**不重试**（那张牌状态没变，重试必然再抛）。
+- **根治（仓库外保命补丁，已部署）**：`D:\Download\pain\CombatVictoryHookGuard\`（不进 git、不随 Release 分发）
+  —— 前缀重写 `Hook.AfterCombatVictory`，保持原版两轮遍历与调用顺序，只给每个 listener 包 try/catch：
+  谁抛就跳过谁、记一条点名 WARN（同 listener/hook/异常类型只记一次），结算继续。没人抛时行为与原来一致。
+  代价：那个 listener 这次的效果丢掉（本例 = 那张牌这次不附魔）。
+- **复验锚点**：敌全灭后应见
+  `[CombatVictoryHookGuard] INIT_OK: 已接管 Hook.AfterCombatVictory`（启动时一次）与
+  `[WARN] [CombatVictoryHookGuard] 第三方 hook 抛异常，已跳过并继续战斗结算: model=…EnchantmentMasterRune…`，
+  **紧接着**就是奖励界面 / `Combat state becomes NotInCombat`，不再等几十秒。
+- **归属**：第三方自身缺陷（单人装同一个 mod 也会触发）⇒ 按口径不进 `compat-mods/`、不随 Release 分发；
+  已登记 `mod_registry.json`（带 ⚠ 说明）。上游修好后本补丁可静默保留（没人抛时无副作用）。
+- **优先级**：中（软锁级，但只要持有该遗物 + 有已附魔牌就必现）。
+
 ## 维护性改进 backlog（门禁体系 2026-09-08 之后的那批）
 
 已落地（明细见 `AGENTS.md` §9 门禁表 + `Scripts/Tools/`）：源码隔离 Guard、单元测试门禁、
