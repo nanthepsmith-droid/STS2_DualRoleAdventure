@@ -2,67 +2,121 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
-## [Unreleased] - 2026-10-23（r317）
+## [Unreleased]（拟 1.47.0，尚未发版）
 
-> 修「进过本地多控大厅后，官方单人页冒出我们的按钮」。
+> **尚未发版**：本节还会继续追加内容，发版时再改成 `## [1.47.0] - 日期`。
+> 本轮 = r281 ~ r317（2026-10-17 ~ 10-24）。头牌是**战神血条并入本体玩家面板 + 立绘按绑主归位**（⑱ 关单，r300~r307）、
+> **火堆 / 宝箱房的 5+ 席位适配**（BUG-14 / BUG-33）、一批硬修复（【合体】替打、带战神局读档崩溃、托管出牌死循环、
+> 单人开局黑屏、官方单人页被注入多控 UI）与**补丁目标同名重载**事故的根治（r292）。
+> 兼容补丁侧：`HextechRunesLocalCoopFix` 走到 v1.7.1、退场 2 个补丁 mod。构建 marker `2026-10-24-r318`。
 
-- **修复：官方单人角色选择页被注入本地多控 UI（人数 +/- 面板 + 左上角瓦库开关）。** 两个并列根因：
-  ① 子菜单栈**复用同一个角色选择页实例**（`NSubmenuStack.GetSubmenuType<T>()` 返回缓存对象），
-  官方单人入口拿到的是同一个 `NCharacterSelectScreen`，只是大厅换成了单人局 —— 只比引用必然误判；
-  ② 会话守卫对角色选择页只判"在树上"，而 `Pop()` **只把页面隐藏、不移出树** ⇒ 从我们的大厅退回主菜单后
-  会话永不清，残留的 `IsEnabled` 继续给官方页挂 UI（还会顺手把官方页的进阶难度解到 0-10）。
+### Added（玩家可见的新增）
+
+- **战神血条并入本体玩家面板**（⑱ / r300）：战斗中召唤战神后，绑主顶部状态条旁的"召唤物面板"里，
+  战神画在召唤物之后一行 `战神·档位 75/75`（召唤物行的文案 / 配色逐字未变）；掉血条宽跟着变、死亡置灰、
+  复活恢复、战斗结束自动消失；超过 8 行折叠成「还有 N 个（已折叠）」。
+- **战神立绘按绑主归位**（r301~r307）：原版 `PositionPlayersAndPets` 只支持 ≤4 人，战神多了会挤出屏幕 / 互相重叠；
+  现在战神站在**自己绑主立绘上方**（每行 4 个、逐行往上、按实际个数居中、屏幕边界夹取）；
+  真人被挤到太近时**才**拉开（间距不足 232px 才动，够宽一个节点都不动，避免和第三方布局补丁打架）；
+  挪立绘时**连带平移它名下的宠物**（奥斯提不再被甩在原地）；被第三方重排后，下一次"真人回合开始"自动纠回。
+- **火堆 5 人及以上：所有人的立绘 / 气泡都看得见**（BUG-14 / r295+r296）：原版 `NRestSiteRoom` 硬编码
+  `Character_1..4` 四个角色容器，第 5 个玩家起必然越界 ⇒ "选了什么都看不见"；现在在 `_Ready` 前缀里按人数
+  补齐同构容器（**4 人及以下逐值返回原版场景真值、布局不动**；5 人以上两排 + 同排等距 + 按比例缩放）。
+- **宝箱房 5~12 人各选各的**（BUG-33 / r297+r298）：`treasure_room.tscn` 只硬编码 4 个遗物格 ⇒ 第 5 件起
+  没有节点（看不见、点不到，焦点控件还会越界）；现在按遗物数补建同构格子 + 摆位改**方阵**
+  （列数 `ceil(sqrt(n))` 上限 4、格子 0.72 缩放 + 居中 pivot）⇒ 不再伸到屏幕左侧被玩家血条挡住；
+  手动选择上限 4 → 12，不再走"复制同一件"兜底。失败只 WARN 并退回 4 格，不会卡死。
+- **召唤 / 选择弹层标题带「—— 角色N」**（r301）：多个玩家同屏时看得见弹层归属。
+- **诊断打点**（玩家不可见）：常驻 `[性能探针]`（逐帧开销 / fps / 引擎 process / 节点与对象数，每 5s 一条，r282）、
+  启动分段打点 + 逐 mod 初始化计时 + 启动心跳 `[StartupProf]`（r312 / r313）。
+
+### Fixed（玩家可见行为修复）
+
+- **【合体】后瓦库不再替真人打出手牌**（r281）：合体改归属撞上瓦库**已入队未执行**的托管出牌 ⇒
+  执行时原版按当时的 `card.Owner` 记名扣费 ⇒ 真人的手牌被"自己"打掉、还替瓦库付费（身份分裂）。
+  修法三层缺一层能复发：搬运期间该席位不许入队（`MergingSeats`）+ 撤掉尚未执行的入队动作并同帧摘在飞登记 +
+  逐张复核纯函数 `ShouldTakeOverMergedCard`。
+- **带战神的局退出后能正常读档**（r287）：战神的"额外奖励"按 `Player` 记进 `CombatRoom._extraRewards` ⇒
+  照写进存档 ⇒ 读档 `GetPlayer(4096)` 返回 null ⇒ NRE ⇒ `Exception loading multiplayer run`（**直接无法读档**）。
+  三道防线：`AddExtraReward` 前置（临时席位直接不收）/ 写盘前剔除临时席位的键 /
+  读档时丢弃找不到主人的奖励（**已被写坏的存档也能救回**，锚点 `[战神奖励] 读档时丢弃…`）。
+- **托管出牌死循环 + 瓦库形态一直闪**（r293 / r294）：大脑给的 AnyEnemy 目标**已阵亡** ⇒ 原实现只 `return false`
+  ⇒ 看门狗下一轮又选中同一张 ⇒ ~16ms 无限重选（整回合不出牌 + 画面狂闪的来源）。
+  现在先**改道**到当前合法目标（`FindAlternativeTargetForHostedPlay`），换不到才记入**本回合弃牌名单**
+  （下一轮当它不存在，能正常收口）。
+- **战神打充能球牌不再打死回合循环**（r283 / r288）：`NOrbManager` 的球槽**视觉节点**只在开战时建，
+  战斗中途加入的战神 `_orbs` 恒 0 ⇒ `AddOrbAnim` / `RemoveSlotAnim` 必抛 ⇒ `turn loop died`。
+  现在视觉球槽为 0 时跳过球的进出动画（**数据层照常**：充能 / 激发 / 容量都不动）；
+  故障机器人战神的 3 个空球槽也在召唤 / 复活时补齐（r290，`数据层槽=3, 视觉 0 → 3`）。
+- **额外回合（新三国「天意侵蚀」/ 帕尔之眼）不再卡住**（r283 / r285）：额外回合不开新回合号、只让参与者行动，
+  而我方驱动 / 收口原来按 `CombatState.Players` 全量扫 ⇒ 会在别人的额外回合里替非参与者出牌 / 结束回合，
+  且"本回合已被收口"的记忆会延续到同一回合的额外回合 ⇒ 该席位在额外回合里永久不许自动出牌。
+  现在新增 `TurnParticipationPolicy.CanDriveSeat` 接到 5 个驱动点 + 回合开始清结束记忆；
+  同轮修掉"战斗级台账跨战斗残留"（新战斗第一回合可能"全员无牌却不自动收口"，r285）。
+- **退出本地多控大厅后单人开局黑屏**（r314~r316，判据经三轮实机收敛）：原版单人开局玩家 NetId 硬编码 `1`，
+  本地回环下 `LocalContext.NetId` 是 Steam id ⇒ 第三方在 `RunState.CreateForNewRun` 后置里调
+  `LocalContext.GetMe` 必抛（实机案例：猪猪云统计 `CloudAnalyticsRunStartPatch`）⇒ 开局流程被打断 ⇒ 黑屏。
+  修法 = `GetMe` 补丁加**单人局回退**（判据：查不到 + 集合只有 1 人 + 唯一玩家 NetId==1，纯逻辑 + 5 条单测），
+  命中打锚点 `LocalContext.GetMe 单人局回退`。
+- **官方单人页被注入本地多控 UI**（r317）：子菜单栈**复用同一个角色选择页实例**（只比引用必然误判）+
+  会话守卫只判"在树上"而 `Pop()` **只把页面隐藏、不移出树** ⇒ 从我们的大厅退回主菜单后会话永不清，
+  残留 UI 继续挂在官方单人页（还会顺手把官方页的进阶难度解到 0-10）。
   修法 = 统一判据「会话开着 + 是登记的那一页 + 页面可见 + 页面的大厅仍挂在本地回环服务上」
   （纯逻辑 `LocalCharacterSelectPagePolicy` + 6 条单测），UI 侧与会话守卫同一口径；
-  页面被复用时把上一轮留下的整屏级注入 UI 收起。
-- **配套：开局窗口**（`RunStartWindowPolicy`，4 条单测）。判据收紧后，开局转场（FadeOut + 建局）期间
-  `RunManager.IsInProgress` 还没成立、页面又可能被隐藏 ⇒ 守卫会把会话当残留清掉（进局后托管/归属全失效）。
-  现在 `StartRunLobby.BeginRunForAllPlayers` **只对本地回环大厅**开一个 120 秒窗口挡住守卫；官方入口不触发。
+  配套开局窗口（`RunStartWindowPolicy`，4 条单测）—— 只对本地回环大厅开 120 秒窗口挡住守卫误清，官方入口不触发。
+- **瓦库自动用药撞「退出这一局」不再留脏栈**（r299）：`PotionModel.OnUseWrapper` 在 `PushModel` 后还有
+  ~0.5s 投掷动画 await，其间 `RunManager.CleanUp` 把 `LocalContext.NetId` 置 null ⇒ `.Value` 抛 ⇒
+  药水模型留栈顶 ⇒ 后续遗物 hook 的 `PopModel` 错位（`Tried to pop model …`）。
+  现在清理期不再开新的用药 + catch 里**只在栈顶是同一实例时**摘除残留 + 异常日志带栈帧。
 
-## [Unreleased] - 2026-10-23（r316）
+### Changed（口径 / 内部）
 
-> 修一个本地多控下的开局黑屏（用户实机 ×3 复现路径固定后收敛）。
+- **战神多开性能收口**（r282~r288；10 战神局同口径对照：结束回合门窗口均 436.9ms → 16.7ms、
+  门-手牌扫描 399.3ms/363 次 → 4.7ms/3~22 次、战神收口单次最大 702.68ms → 6.85ms、fps 均 28.4 → 51.4）：
+  逐帧开销探针定位后 —— 结束回合按钮三级取法 / 反射句柄缓存 / 100ms 重活节流 /
+  一 tick 只算一遍托管可出牌 / 一 tick 最多启动一个出牌循环 / 战神收口延后一帧 / 手牌结果跨 tick 复用。
+  结论：帧成本大头在渲染 / 第三方 / 节点规模，我方五个逐帧槽位 ≈0.02~0.5ms/帧。
+- **预设额外血 `bonusHp`：正数加 / 负数减，最少留 1 点**（r289，用户拍板）：原来负数归 0 且每局启动刷 WARN
+  （原版 `SetMaxHpInternal` 对负数直接抛、0 上限又会当场进死亡流程 ⇒ 下限 1）。
+  新锚点 `①e 预设额外血: seat=…, 基础=…, 调整=-39 => 上限=31`。
+- **【终极九连环】判据补「本场可用」**（r303）：原来只看上限 ≥12，本场计数花光后选项仍会出现；
+  现在要求（上限够，可用 ≥ 本次花费，花费按实际召唤数折算，有空位，本场没用过），
+  `TrySpendPermanentSpirit` 同步要求可用够（原来只判上限，直接扣会把可用顶成负数）。
+- **补丁挂载加固**（r292）：同名重载的补丁目标**必须显式给 `Type[]`**（无参写 `new Type[0]`）——
+  r291 的 BGM 探针只写方法名 ⇒ `AmbiguousMatchException` ⇒ 异常发生在类级 `Patch()` ⇒
+  **整个 Ui 补丁组被静默跳过**（瓦库不打牌 / 切人按钮不刷新 / 瓦库的牌出现在真人手里）；
+  现在 7 个探针目标全部显式化 + `ApplyPatchGroup` 改**逐类隔离**（非 Core 组坏一个类只跳过它并点名）+
+  构建期哨兵 `HarmonyTargetAmbiguityTests`（只写方法名且有同名重载 ⇒ 构建期 FAIL）。
+- **启动耗时分段定位关单**（r312 / r313）：我们只占 **0.8%**（832ms / 107.7s），大头是第三方与引擎
+  （最大单块 = `Sts2TouhouSakuya` 的 power 图标缺失探测 25s；游戏自报预加载只 7.7s ⇒
+  "预加载是大头"的先验被数据否掉）。结论只对「这台机 / 62 个 mod / v0.111.0」成立；第三方自身慢按红线只记账不修。
 
-- **修复：退出本地多控大厅后再单人开局黑屏。** 原版单人开局玩家 NetId 固定为 `1`（`NGame.StartNewSingleplayerRun` 硬编码），
-  而本地回环下 `LocalContext.NetId` 是 Steam id ⇒ 任何第三方在 `RunState.CreateForNewRun` 后置里调
-  `LocalContext.GetMe(runState)` 都会抛 `Local player not found in player collection.`（实机案例：猪猪云统计
-  `CloudAnalyticsRunStartPatch`）⇒ 开局流程被打断 ⇒ 黑屏。修法 = 在 `LocalContext.GetMe(IPlayerCollection)`
-  的既有补丁上加**单人局回退**（判据：查不到 + 集合只有 1 人 + 唯一玩家 NetId==1），判据抽成纯逻辑
-  `SinglePlayerGetMeFallbackPolicy` + 5 条单测。判据经三轮实机收敛（r314 加会话条件 / r315 改席位表判据均有漏，
-  r316 回归"占位 id"本质判据）。命中时打锚点日志 `LocalContext.GetMe 单人局回退`。
+### 兼容补丁（随主 Release 附件 `compat-mods-v1.47.zip` 分发）
 
-## [Unreleased] - 2026-10-23（r312 / r313）
-
-> 本轮**只加诊断打点、不改玩法行为**（marker `2026-10-23-r313`）：为了回答「进主菜单那 ~120 秒花在哪」。
-
-### Added（诊断，玩家不可见）
-
-- **启动耗时分段打点**：`Entry.Init()` 打印 `[StartupProf] mod_init_begin / stage=… / mod_init_total`
-  （含 `since_process_start_ms`，即"我们出现在进程启动后的第几秒"），以及每个初始化阶段的耗时。
-- **逐 mod 初始化计时**：手工挂载 `ModManager.CallModInitializer`（目标改名只 WARN，不进分组 PatchAll）
-  ⇒ 每次启动打印 `[StartupProf] other_mod_init ms=… mod=…`，覆盖排在主 mod 之后初始化的那些 mod。
-- **启动心跳**（r313）：初始化时装一个 5 秒一拍的定时器（最多 36 拍 / 约 3 分钟）
-  ⇒ 日志里出现 `[StartupProf] heartbeat n=… since_process_start_ms=…`。
-  日志本来没有行时间戳，靠它就能把"某段日志"和"花了多少秒"对齐。
-- **`tools/startup_profile.py`**（本机层台账）：把一份日志拆成「init 前 / 我们 / 后续 mod / 余下（预加载等）」
-  四段并给占比；`--pair A B` 对比两轮（含启用 mod 集差异 = 这轮禁用了谁）；
-  `--stages` 出阶段明细 + 预加载会话耗时（解析游戏自报的 `Preloading '…' Complete: time_elapsed=`）+ 心跳序列。
-- 三个 `compat-mods` 也各打一行 `[StartupProf] mod_init_total`（只量自己，量级预期 < 10 ms）。
-
-## [Unreleased] - 2026-10-23（r309）
-
-> 本轮**不改主 mod 行为**（marker 仍 `2026-10-22-r307`）：只做「补丁 mod 退场核查」的两步收尾 ——
-> 退掉 2 个已被上游修好 / 被主 mod 内置守卫取代的补丁槽位，并给两个仍在用的补丁补上"能留痕"的自检。
-
-### Changed（独立补丁 mod，随各自槽位 / `compat-mods` 分发）
-
-- **退场 2 个补丁 mod**（游戏内本就禁用，槽位目录已删；源码保留，`build_all_mods.ps1 -Only <Name>` 可重建）：
+- **`HextechRunesLocalCoopFix` v1.3.0 → v1.7.1**：
+  ① **符文抓率统计 + 瓦库按抓率挑**（落盘 `%APPDATA%\SlayTheSpire2\hextech_rune_stats.json`；
+  Laplace 平滑 ⇒ 没数据 = 0.5、并列取最左 ⇒ **没有统计时行为与旧版逐下标一致**；真人偏好也记、瓦库只读）；
+  ② **Co-op Bots 合成席位**不再被海克斯当成远端死等（放行判据 + 代答同口径，日志里叫 `Co-op Bots` 席位）；
+  ③ **选项很烂时自主 reroll**（v1.6.0：三张全烂——都要有数据且抓率 ≤0.40——才换最烂那槽；
+  最烂那槽没次数就换次烂的；参数不一致 / 空 / 读统计抛异常一律不动）；
+  ④ **候选卡选取率角标**（v1.7.0：候选按钮左上角 `33% (1/3)`，按 30% / 50% 分档红 / 黄 / 绿，reroll 后立即补）；
+  ⑤ `CreateRuneSelectionScreenAsync` 形状基线 10 → 11（海克斯 0.9.8 实际参数个数）+ 把"参数名对不上"的
+  WARN 换成**真的在验参数名**（形状变了但注入名都在 ⇒ 只记 INFO；不在 ⇒ WARN 并列缺失名与实际参数）。
+- **退场 2 个补丁 mod**（r309，游戏内本就禁用、槽位目录已删；源码保留，`build_all_mods.ps1 -Only <Name>` 可重建）：
   `YuWanCardWhiteScarfFix`（猪猪 WhiteScarf 无色卡奖励空池 —— 上游 `YuWanCard` v0.5.12 已自修）、
   `OddmeltGaugeCardRenderFix`（Oddmelt 隐藏输入卡不在卡池 —— 主 mod 早已内置同款 `NCardCreateHiddenCardGuardPatch`）。
-- **`LexNinja2LaserFix` v1.0.1**：补丁改为**逐个补丁类单独挂载**（`NHyperbeamVfx` 某个成员哪天改名，只让那一条失效，
-  不再连累其余、也不再抛掉 mod 初始化）；新增 `PATCH_VERIFY` 日志 —— 每次启动打印「实际挂上了哪些游戏方法」+ 构建标识。
-- **`HextechRunesLocalCoopFix` v1.7.1**：`CreateRuneSelectionScreenAsync` 的形状基线 10 → 11（海克斯 0.9.8 实际参数个数）；
-  原先那条「参数个数已变，参数名对不上会被 Harmony 拒绝」的 WARN 换成**真的在验参数名** ——
-  形状变了但注入名都在 ⇒ 只记 INFO（不再每局刷 WARN）；注入名不在 ⇒ WARN 并列出缺失名与实际参数。
+- **`LexNinja2LaserFix` v1.0.1**（仓库外）：补丁改为**逐个补丁类单独挂载**（`NHyperbeamVfx` 某个成员哪天改名，
+  只让那一条失效，不再连累其余、也不再抛掉 mod 初始化）；新增 `PATCH_VERIFY` 启动自检。
+- **燃烧视觉守卫拆出**（v1.5.0 → 仓库外私有补丁 `HextechBurnVisualFix`，不随 Release 分发）：
+  第三方每帧刷原生错误（同步 I/O 炸弹）把帧率打到 1fps 的病灶在上游自身，按口径拆成不发布的本地补丁，
+  上游自修后 `HBV_DISABLE=1` 一条环境变量退回原样。
+- 三个 compat mod 也各打一行 `[StartupProf] mod_init_total`（只量自己，量级预期 < 10 ms）。
+
+### 已知事项（按既有取舍不修，均非我方功能逻辑）
+
+- 战斗里偶发的表现层 ERROR（原版 `UPPERCUT` 的重击特效粒子槽空引用、节点池回收提示）=
+  原版 / 第三方特效资源问题，不影响战斗与结算；BaseLib 悬停提示折叠越界 = 既存第三方（r134 起就有）。
+- 宝藏房 `Tried to add hand … twice!`（纯日志，无行为影响，只抬高全局 ERROR 计数）。
 
 ## [1.46.0] - 2026-10-16
 
@@ -75,7 +129,7 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ### Added（玩家可见的新增）
 
-- **战灵召唤（设置页「瓦库托管」区，默认关，配置键 `hellwarGod`；完整说明见 `PLAYER_GUIDE.zh-CN.md` §v1.46）**：
+- **战灵召唤（设置页「瓦库托管」区，默认关，配置键 `hellwarGod`；完整说明见 `PLAYER_GUIDE.zh-CN.md` §战灵召唤）**：
   - **遗物【地狱耳环】**（只发**真人席位**）+ 休息处【分裂精神】（按档位扣**当前血量** 0 / 10% / 15%（默认）/ 20%，
     最低留 1 点，换 **+1 计数**；默认**不占用整次休息**）+「每进入新的一幕自动获得计数」开关（默认关，每幕 1~3 个、同一幕只发一次）。
   - **战斗内召唤**：**每场战斗的每个回合开始**（只要买得起）弹选择 —— **四档单点 普通 1 / 罕见 2 / 稀有 3 / 先古 4 计数**
@@ -2116,7 +2170,7 @@ Final release by the original author. (Summarized from the archived player-updat
 - Minimal usable loop for local multi-control.
 - Basic input switching, key synchronization chains, and the core patch framework.
 
-[Unreleased]: https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/compare/v1.32...HEAD
+[Unreleased]: https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/compare/v1.46...HEAD
 [v1.32]: https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/releases/tag/v1.32
 [v1.31]: https://github.com/GuyGinat/STS2_DualRoleAdventure/releases/tag/v1.31
 [v1.30]: https://github.com/liwenhao0427/STS2_DualRoleAdventure/releases/tag/v1.30

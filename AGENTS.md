@@ -230,6 +230,9 @@ When the game updates and the mod breaks:
 - `README.md` — project front door; `PLAYER_GUIDE.md` — player-facing usage; `CHANGELOG.md` — history; `TODO.md` — open issues.
 - `docs/architecture.md`, `docs/console-commands.md`, `docs/design/*` — developer docs.
 - `docs/archive/*.zh.md` — original Chinese documents, preserved verbatim; do not edit them.
+- **`PLAYER_GUIDE.md` / `PLAYER_GUIDE.zh-CN.md` 只写"当前版本怎么用"**（2026-10-24 起）：**不标版本号、
+  不写「vX 新增 / vX 修复」**，也不留"哪个版本修了什么"的段落 —— 玩家想知道版本变化会去看 `CHANGELOG.md`。
+  内容**按功能分节**，同一功能的新旧说明合并成一段现状描述；修复类流水只进 `CHANGELOG.md`。
 
 ### 8.1 文档职责与单一事实源（2026-09-25 起）
 

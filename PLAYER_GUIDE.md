@@ -1,8 +1,10 @@
 # Player Guide — DualRoleAdventure (LocalMultiControl)
 
-Control 2–12 characters by yourself in Slay the Spire 2's multiplayer mode, on one machine, with no network.
-
 > 中文版指南：[PLAYER_GUIDE.zh-CN.md](PLAYER_GUIDE.zh-CN.md)
+>
+> This page only covers **how to use the current version**. For what changed in each version, see [CHANGELOG.md](CHANGELOG.md).
+
+Control 2–12 characters by yourself in Slay the Spire 2's multiplayer mode, on one machine, with no network.
 
 ## Install & enable
 
@@ -14,7 +16,7 @@ Control 2–12 characters by yourself in Slay the Spire 2's multiplayer mode, on
 1. Main menu → **Multiplayer → Host**. This page has 4 cards: **Local Multi-Control (单人多角色)** /
    Standard / Daily / Custom. The last three are the **official online modes** and still work exactly as
    vanilla when the mod is installed (the mod coexists — it never takes over an official entry).
-2. Three ways to start a local multi-character run (since v1.43):
+2. Three ways to start a local multi-character run:
    - **"Local Multi-Control" (单人多角色) card** — a normal local run (2–12 characters);
    - **"Local Custom Run" (本地·自定义模式) small button** below the card row — local run with seeds and custom rules;
    - **"Local Daily Run" (本地·每日挑战) small button** — local multi-character Daily Climb (max 4 seats, see below).
@@ -23,7 +25,7 @@ Control 2–12 characters by yourself in Slay the Spire 2's multiplayer mode, on
    - **`Tab` / `Shift+Tab`** — switch which character you're editing
    - Pick a character and ready-up for each slot, then start as usual.
 
-### Local multi-character Daily Climb (new in v1.43)
+### Local Daily Climb
 
 Enter via the **"Local Daily Run"** button under the card row (the official "Daily" card above it keeps the
 vanilla online flow):
@@ -46,7 +48,7 @@ Any character can be handed to the built-in autoplayer ("Vakuu"):
 - Controller: `Y` toggles the highlighted character, `LT + Y` toggles everyone.
 - Vakuu characters play their turns automatically; when no Vakuu character can act, control returns to you.
 
-### Vakuu Form (new in v1.36, off by default)
+### Vakuu Form (off by default)
 
 Optional upgraded hosting mode. When enabled, checked characters receive a separate relic
 【瓦库形态 / Vakuu Form】("Letting Vakuu play counts as you winning") instead of the
@@ -73,85 +75,22 @@ Configure via `%APPDATA%\SlayTheSpire2\vakuu_autopilot.json`
 | `neowAutoChoose` | `false` | Also auto-pick Neow bonuses |
 | `autoUsePotions` | `false` | Auto-use potions in combat by a per-potion rule table: heals at <50% HP, Fruit Juice on pickup, buffs/debuffs/card potions on round 1 of Elite/Boss fights, defensive potions before end turn when enemy intent damage is high, character-specific potions thrown to the matching teammate, Duplicator/Gigantification to the human player first, targeted picks for Ashwater/Gambler's Brew/etc., Foul Potion only thrown at merchants for gold, mod potions consumed at a random round in normal fights |
 
-### What Vakuu handles automatically (v1.37+)
+### What Vakuu handles automatically
 
 With the switches above on, a backgrounded Vakuu also: claims their combat/event rewards,
 resolves non-shared events, picks rest-site options, uses potions per the rule table, and
 throws Foul Potions at merchants. Shared events and the crystal sphere stay manual;
 shopping can optionally be handed to Vakuu via "Auto-buy cards" (below).
 
-### New in v1.40 (all inside the in-game "Vakuu autopilot" / "Other settings" submenus, saved instantly)
+**Keep the Vakuu Form relic** (on by default): third-party "devour relics" effects (e.g. TouhouAncients'
+Bottomless Stomach) can no longer remove the Vakuu Form relic; if it is ever lost, Vakuu keeps autopiloting
+via the configured Vakuu players and re-grants the relic. Turning this off restores the old behavior.
 
-- **Personal preference recorder**: on by default. Records your own card-reward/event choices to
-  `personal_stats.json` (only human decisions; Vakuu's automated picks are excluded; only finished runs count).
-- **Personal-stats decision assist**: off by default. Vakuu prefers your own stats when picking cards/events,
-  falling back to community stats when samples are thin. The "preference tier" cycles
-  Character-first / Volume-first / Character-only.
-- **Auto-buy cards in shops** (experimental, off): buys cards with ≥20% community win rate while keeping ≥50 gold;
-  "also buy without data" lets mod cards buy on the gold floor alone.
-- **Personal stat badge**: off by default. Shows your own pick/win percentages (XX%) with hover details on card
-  rewards / shop / event buttons; data source has three modes (personal only / personal+community fallback / blended)
-  and the badge corner is selectable (default bottom-left to avoid overlapping community-stat labels).
-- **Keep the Vakuu form relic**: on by default. Third-party "devour relics" effects (e.g. TouhouAncients'
-  Bottomless Stomach) can no longer remove the Vakuu Form relic; if it is ever lost, Vakuu keeps autopiloting
-  via the configured Vakuu players and re-grants the relic. Turning this off restores the old behavior.
-- **Other settings**: features not tied to Vakuu autopilot (cross-character card rewards, stat badges) live at the
-  end of the settings page under their own "Other settings" section and work even when Vakuu autopilot is off.
+> Features not tied to Vakuu autopilot (cross-character card rewards, stat badges, skipping draw
+> animations, …) live at the end of the settings page under their own "Other settings" section and work
+> even when Vakuu autopilot is off.
 
-### New in v1.41 (same settings submenus, saved instantly)
-
-- **Skip other players' turn-start draw animations** (`Other settings`, off by default): with many players,
-  turn start no longer switches the camera to each human player one by one — only the character you are
-  viewing plays its draw animation, the rest resolve instantly (data is unaffected).
-- **Vakuu camera policy** (`Vakuu autopilot`, three modes, default "never follow"): Vakuu no longer steals
-  your camera while autopiloting. "Key moments only" peeks at Vakuu's turn start for about a second and
-  returns; "always follow" restores the old feel. The safety nets that hand control back to you are
-  unaffected by this setting.
-- **Faster Vakuu card plays** (`Vakuu autopilot`, on by default): skips the card-pile animations during
-  Vakuu's automatic plays — measured roughly 3x faster per card, data unchanged. The two experimental
-  modes below also benefit from it (queue-mode plays skip the card's travel animation into its pile).
-- **【Experimental】Vakuu plays through the action queue** (off by default): Vakuu's plays enter the
-  game's multiplayer action queue instead of the legacy in-place autoplay, so with multiple Vakuus their
-  plays interleave instead of running strictly one-by-one. Queue plays still skip the trailing wait and
-  the result-pile tweens (the "card flies out of hand" animation cannot be skipped), so they remain a
-  little slower per card than the in-place path.
-- **【Experimental】Concurrent Vakuu plays** (off by default, requires queue mode): multiple Vakuus no
-  longer wait for each other, and when you play a card or end your turn your action jumps the queue
-  immediately (yielded Vakuu plays are simply replayed next round — nothing is lost).
-- **Event choices use your own stats**: with "Personal-stats decision assist" enabled, Vakuu picks event
-  options by your own option pick-rate + win-rate (same policy as card picks) instead of first/last/random.
-- **Recorder fixes**: save/load no longer duplicates or keeps stale choices in `personal_stats.json`;
-  shop purchases and card removals are recorded correctly now (they were silently dropped before).
-- **Fixes**: Vakuu stops playing after a card (e.g. Void Form) force-ends its turn; no more null-ref spam
-  from the action-queue UI; hand order self-heals after card transforms; reward/shop/event ownership
-  fixes for local multiplayer.
-
-### New in v1.42 (same settings submenus, saved instantly)
-
-- **Shop automation completed** (inside "Vakuu autopilot"; all off by default and requiring the
-  "Auto-buy cards" master switch):
-  - **Auto-buy relics** and **auto-buy potions**: relics/potions have no community ratings, so these only
-    check "affordable + still ≥ 50 gold afterwards"; potions additionally require a free potion slot.
-  - **Auto card removal**: when the gold floor allows it, Vakuu buys the shop's card-removal service once and
-    removes one card by pick priority (with "smart pick priority" on: Curse > Status > Quest > Strike >
-    basic Defend > the rest).
-  - With "Personal-stats decision assist" on and at least 3 finished runs that bought something, relics and
-    potions also consult **your own** win-rate delta (runs where you bought it vs. runs where you did not):
-    a **negative delta vetoes the purchase** (veto only — it never proactively picks what to buy).
-- **Faster Vakuu card plays now also applies to the action-queue mode** (r132): previously only the in-place
-  path benefited, so turning on queue mode + speed-up looked ineffective; queue plays now skip the
-  result-pile tweens as well. Also fixes **cards stuck in the play area** after queue-mode plays (r133).
-- **Fixed: post-combat card rewards are no longer left unclaimed** (r134): gold/potion rewards worked, but the
-  **card reward** could stall waiting for you (log: `Card selector unset during test!`); it now auto-claims
-  the leftmost card.
-- **Settings page fully bilingual** (r135): no more Chinese leaking into the English UI; the three Vakuu play
-  options (speed-up / action queue / concurrent) moved from "Other settings" into the "Vakuu autopilot"
-  section (config keys and storage unchanged).
-- **Config key spelling unified** (r140): `wakuu*` keys in the config file are now `vakuu*` (the game's
-  official spelling is Vakuu). **Old keys keep working** and are migrated on save; when both exist, the new
-  key wins.
-
-### New in v1.43 (same settings submenus, saved instantly)
+### In combat: which card, at whom, how fast
 
 - **"Combat Decision Brain"** (inside "Vakuu autopilot", config key `vakuuBrain`, default **Heuristic**)
   decides **which card Vakuu plays and at whom** in combat.
@@ -169,21 +108,48 @@ shopping can optionally be handed to Vakuu via "Auto-buy cards" (below).
   - ⚠ Scoring uses a **rough estimate** (card values + Strength/Dexterity, no Vulnerable/Weak modifiers)
     and has **no cross-turn planning**; switch back to Heuristic anytime if it feels off. All three modes
     only affect in-combat plays — never card picks, events or shops.
+- **Faster Vakuu card plays** (on by default): skips the card-pile animations during Vakuu's automatic
+  plays — measured roughly 3x faster per card, data unchanged. The queue mode and concurrent mode below
+  also benefit (queue-mode plays skip the card's travel animation into its pile).
+- **Vakuu plays via action queue** (on by default): Vakuu's plays enter the game's multiplayer action
+  queue instead of the legacy in-place autoplay, so with multiple Vakuus their plays interleave instead
+  of running strictly one-by-one. Queue plays still skip the trailing wait and the result-pile tweens
+  (the "card flies out of hand" animation cannot be skipped), so they remain a little slower per card
+  than the in-place path.
+- **Concurrent Vakuu plays** (on by default, requires queue mode): multiple Vakuus no longer wait for
+  each other, and when you play a card or end your turn your action jumps the queue immediately
+  (yielded Vakuu plays are simply replayed next round — nothing is lost).
+- **Vakuu view mode** (three modes, default "never follow"): Vakuu no longer steals your camera while
+  autopiloting. "Key moments only" peeks at Vakuu's turn start for about a second and returns;
+  "always follow" restores the old feel. The safety nets that hand control back to you are unaffected.
 
-### Co-op Bots compatibility (new in v1.43, optional)
+### Card picks, events and stats
 
-When the third-party **Co-op Bots** mod (online AI teammates) is installed, this mod coexists with it:
+- **Personal preference recorder** (on by default): records your own card-reward/event choices to
+  `personal_stats.json` (only human decisions; Vakuu's automated picks are excluded; only finished runs count).
+- **Personal-stats decision assist** (off by default): Vakuu prefers your own stats when picking cards/events,
+  falling back to community stats when samples are thin. The "preference tier" cycles
+  Character-first / Volume-first / Character-only. With it enabled, Vakuu also picks event options by your
+  own option pick-rate + win-rate (same policy as card picks) instead of first/last/random.
+- **Personal stat badge** (off by default): shows your own pick/win percentages (XX%) with hover details on
+  card rewards / shop / event buttons; data source has three modes (personal only / personal+community fallback /
+  blended) and the badge corner is selectable (default bottom-left to avoid overlapping community-stat labels).
 
-- **Not installed / not wanted**: zero impact — the mod probes for it and degrades gracefully.
-- **Handing seats to the online bots**: set `coopBotsSeats` in
-  `%APPDATA%\SlayTheSpire2\vakuu_autopilot.json` (comma-separated seat numbers, e.g. `"2,3"`). If a seat is
-  checked for both Vakuu and an online bot, **the online bot wins** and the log prints a WARN.
-- **If you run Co-op Bots, keep this mod enabled**: its own bots rely on our shop-ACK bypass to leave the shop.
-- Known issues (root cause still being investigated, see `TODO.md` BUG-17 / BUG-18): occasionally
-  "an event's last page card-pick cannot advance" and "your card clicks are ignored while Vakuu plays" —
-  diagnostics only so far.
+### Shop automation
 
-### New in v1.45: the four Vakuu features (inside "Vakuu autopilot"; **all off by default**, and they need "Vakuu Form Autopilot (Master Toggle)" on)
+- **Auto-buy cards in shops** (experimental, off): buys cards with ≥20% community win rate while keeping
+  ≥50 gold; "also buy without data" lets mod cards buy on the gold floor alone.
+- **Auto-buy relics** / **auto-buy potions** (off by default, requiring the "Auto-buy cards" master switch):
+  relics/potions have no community ratings, so these only check "affordable + still ≥ 50 gold afterwards";
+  potions additionally require a free potion slot.
+- **Auto card removal** (off by default, same master switch): when the gold floor allows it, Vakuu buys the
+  shop's card-removal service once and removes one card by pick priority (with "smart pick priority" on:
+  Curse > Status > Quest > Strike > basic Defend > the rest).
+- With "Personal-stats decision assist" on and at least 3 finished runs that bought something, relics and
+  potions also consult **your own** win-rate delta (runs where you bought it vs. runs where you did not):
+  a **negative delta vetoes the purchase** (veto only — it never proactively picks what to buy).
+
+### The four Vakuu features (inside "Vakuu autopilot"; **all off by default**, and they need "Vakuu Form Autopilot (Master Toggle)" on)
 
 - **Purify at rest sites** (`purifyVakuu`): rest sites give you (the human) an extra "Purify" option —
   pick a Vakuu in a small "choose player" panel, then the **vanilla card-removal screen** opens to remove up
@@ -216,7 +182,7 @@ When the third-party **Co-op Bots** mod (online AI teammates) is installed, this
   - All three draw 1 card; the toggle takes effect at the **start of the next run**; Vakuu seats never get
     this relic.
 
-### New in v1.46: War God Summon (formerly "Hell God", inside "Vakuu autopilot", **off by default**)
+### War God Summon (inside "Vakuu autopilot", **off by default**; formerly "Hell God")
 
 Turn on **"War God Summon"** (`hellwarGod`; takes effect at the **start of the next run**):
 
@@ -230,64 +196,57 @@ Turn on **"War God Summon"** (`hellwarGod`; takes effect at the **start of the n
     for Common the candidates are **every playable character on your machine**, mod characters included);
   - **【Endless War Gods】** (12 charges, once per combat): fills every free seat, rolling a tier per seat
     (Common / Rare / Epic by default; there's an "may roll Ancient" toggle);
-  - **【Ultimate Nine-Chain】** (requires a charge **cap** of 12, once per combat): summons **9 Ancients** and **permanently** lowers the cap;
+  - **【Ultimate Nine-Chain】** (requires a charge **cap** of 12 and enough charges left this combat, once per combat):
+    summons **9 Ancients** and **permanently** lowers the cap by the number actually summoned;
   - **Revive**: a war god that died stays on the field; its owner can revive it at the start of their turn for the same tier's cost.
 - **A war god is a "temporary player"**: it **plays its own cards** (autopilot), has its own portrait and HP bar, **takes no party slot and gets no combat rewards**;
   it **shares damage** with its owner (intangible on the turn it appears; from the next turn it can tank half and pass it on) and dies with its owner.
+- **War god HP bars and portraits**: a summoned war god is drawn as one extra row `战神·<tier> 75/75` after the summons in
+  the summon panel beside your status strip (the bar tracks HP; dead = greyed out; returns on revive; disappears when combat
+  ends or you leave the run; more than 8 rows collapse into "还有 N 个（已折叠）"); portraits stand **above their own owner**
+  (4 per row, stacked upward, centered by count, clamped to the screen edge), and crowded human portraits are spread apart
+  **only** when too close (moving a portrait **carries its pets along**; after another mod reflows the formation, the next
+  human turn start settles it back).
 - **Preset war gods (v2)**: preset table = `%APPDATA%\SlayTheSpire2\hellwar_presets.json` (our "War God Forge" editor can build it visually);
   the mod **ships 18 presets** (Rare 5 / Epic 5 / Ancient 8) so you don't need to place the file yourself — your own file **overrides same-`id` entries**.
   A preset referencing content **missing on your machine** (character / card / relic) is **skipped as a whole** (named in the log); the rest still work.
-  Decks support per-card upgrades `+` and **enchantments** `[enchant]` / `[enchant:count]` (an unknown enchant is skipped, the card is still given).
+  Decks support per-card upgrades `+` and **enchantments** `[enchant]` / `[enchant:count]` (an unknown enchant is skipped, the card is still given);
+  the **bonus HP may be negative** (= lower max HP, never below 1).
 - **Export content catalog** (for the external editor): the settings page has a one-shot button that writes
   `%APPDATA%\SlayTheSpire2\content_catalog.json` (includes third-party mod content, tagged by source); click it again after installing/removing mods.
 
 ⚠ Two things to know: ① "Auto" per tier = **the first usable preset of that tier** (mark one as its "default" in the editor to pin it);
 ② war gods **never** receive combat rewards — only human seats do.
 
-### Fixes in v1.44 / v1.45 (since v1.43)
+### Co-op Bots compatibility (optional)
 
-- **After a save/load, Vakuu no longer sits idle for the rest of the run** (no plays / no automatic event
-  picks / no auto-claimed rewards) — BUG-22, three layers.
-- **Third-party custom card-pick screens and end-of-turn card transforms no longer soft-lock the fight**
-  (Saya's 【色素细胞】, the pig mod's 【猪猪王】, the "唯我" curse, third-party dream dialogues) —
-  BUG-23 / BUG-25 / BUG-26.
-- **Vakuu's cards no longer become "ghost cards" stuck in your hand, and a card left in the middle of the
-  screen after 【群情激愤】 (Outrage) now disappears properly** — BUG-31 / BUG-32.
-- **The pig mod's card-variable mismatch no longer makes the Vakuu Form relic blink non-stop or skip the
-  turn** — BUG-30.
-- **Your and Vakuu's character portraits no longer swap left/right when playing alongside the third-party
-  NinjaSlayer mod.**
-- **Vakuu is no longer misled at rest sites by third-party rest-site options** (it used to keep healing
-  itself) — BUG-27.
-- Plus a batch of internal refactors (**zero behavior change**) and session-state reset self-checks on
-  run entry/exit.
+When the third-party **Co-op Bots** mod (online AI teammates) is installed, this mod coexists with it:
 
-### Fixes in v1.46 (since v1.45)
-
-- **"End turn doesn't start the enemy turn" = a war god killing the turn loop** (r264/r265): a war god is an "off-structure seat", and vanilla bookkeeping keyed by
-  **player slot index** returns **-1** for it ⇒ an exception blows through `CombatManager`'s turn loop (`turn loop died … the combat is stuck` in the log).
-  That bookkeeping now uses a **separate sequence**, and consumers such as the hovered-model tracker are guarded (log anchor `临时席位`).
-  War gods also get **their own local action queue** (some cards enqueue actions for them — otherwise "local action queue for nonexistent player").
-- **Autopilot "dead cards" and leftovers** (r260~r263): with third-party custom card targets, or when a card's effect throws internally, the autopilot could hold
-  a card with no valid target or break mid-play ⇒ the card art stuck in the play area / "air cards" when merging hands. Such cards are now **given up so you can play them**,
-  leftovers are **cleaned up**, and the "don't let the autopilot play this card this run" list is **per seat** (two war gods used to wipe each other's entries ⇒
-  the same card was re-picked forever and the turn deadlocked).
-- **Reviving a war god is offered even at a full party** (r270): with all 12 seats taken and a war god corpse on the field, the panel now includes the revive option.
-- **Third-party "broken monster" no longer kills the turn loop** (r271/r272): generic guards were added around damage-number visuals and creature-node coordinates.
-- **Two Vakuu auto-enchant rules re-tuned** (r267): vanilla only considered the vanilla card pool and only strike/defend cards; ours now **counts mod card pools** —
-  【Spiral】 = highest cost ≥2 > Power > Strike/Defend (**Strike and Defend rank equally ⇒ random within the tier**); 【Tezcataras Ember】 = highest cost, falling back to Strike.
-- Also: new startup self-check anchors (`预设表已加载` / `内置预设已读取` / per-tier "actually in use" / `[内容目录]`) — check those first when troubleshooting.
+- **Not installed / not wanted**: zero impact — the mod probes for it and degrades gracefully.
+- **Handing seats to the online bots**: set `coopBotsSeats` in
+  `%APPDATA%\SlayTheSpire2\vakuu_autopilot.json` (comma-separated seat numbers, e.g. `"2,3"`). If a seat is
+  checked for both Vakuu and an online bot, **the online bot wins** and the log prints a WARN.
+- **If you run Co-op Bots, keep this mod enabled**: its own bots rely on our shop-ACK bypass to leave the shop.
+- Known issues (root cause still being investigated, see `TODO.md` BUG-17 / BUG-18): occasionally
+  "an event's last page card-pick cannot advance" and "your card clicks are ignored while Vakuu plays" —
+  diagnostics only so far.
 
 ## During a run
 
 - **Switch characters:** `Tab` (next) / `Shift+Tab` (previous). Legacy keys `]` `R` `/` (next) and `[` `T` (previous) still work.
 - Each character owns their deck, hand, energy, gold, potions, relics, and choices. The UI (hand, energy, potion bar, status strip) follows whoever you control.
 - **Combat:** play each character's turn, switching freely; end turn per character.
+- **Turn-start animations:** with many players, "Other settings" offers **"Skip other players' turn-start draw animations"** (off by default) —
+  only the character you are viewing plays its draw animation, the rest resolve instantly (data is unaffected).
 - **Rewards:** loot is generated per character and shown as one combined list, each entry prefixed with its owner (e.g. `[Player 2]`). Claim with the matching character.
 - **Events:** by default each character resolves the event independently — the mod walks you through them one by one. Shared-event votes are auto-completed where the game requires everyone to vote.
 - **Crystal Sphere:** each character pays for and divines on their own turn; revealed rewards (and the Payment Plan curse) belong only to the revealing character. Character switching is locked while a divination is in progress — finish your divinations first, the mod switches automatically.
-- **Rest sites:** each character chooses in sequence (rest, upgrade, etc.).
+- **Rest sites:** each character chooses in sequence (rest, upgrade, etc.). **With 5+ players everyone's portrait and speech bubble show up**
+  (the vanilla scene hard-codes four character containers; they are created per headcount, and layouts with ≤4 players are unchanged).
+- **Treasure rooms:** each character picks their own relic. **With 5~12 players the slots are created per relic count in a grid layout**
+  (the vanilla scene only has four relic slots, so the 5th onward was invisible and unclickable), no longer spilling under the HP bar on the left.
 - **Shops:** purchases and card removal are billed to the character currently in control. The Fake Merchant event (商人？？？) works the same way — each character browses and buys from their own stock with their own gold, and either character can throw the Foul Potion (浑浊药水) at the merchant to start the fight.
+- **Overlay ownership:** with multiple players on one screen, the mod's summon / choice overlays are titled "—— 角色N" so you can tell whose they are.
 - **Map:** picking the next node auto-completes the "everyone must vote" step.
 - **Save & continue:** quit normally; `Multiplayer → Load` resumes the run and auto-readies all local characters.
 
@@ -314,6 +273,7 @@ Shows your backgrounded characters' hands behind and above your active hand, so 
 
 ## Troubleshooting & feedback
 
-- Log file: `%APPDATA%\SlayTheSpire2\logs\godot.log` — mod lines are prefixed `[LocalMultiControl]`.
+- Log file: `%APPDATA%\SlayTheSpire2\logs\godot.log` — mod lines are prefixed `[LocalMultiControl]`, and a batch of
+  diagnostic lines (`[性能探针]` / `[StartupProf]` etc.) is always on; include them when reporting.
 - If something breaks, note the **act, room/screen, and exact steps**, then open a [GitHub issue](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/issues) with the log attached.
-- Known issues under investigation are tracked in [TODO.md](TODO.md).
+- Known issues under investigation are tracked in [TODO.md](TODO.md); per-version changes are in [CHANGELOG.md](CHANGELOG.md).
