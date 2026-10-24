@@ -52,27 +52,15 @@
 > ⚠ 原「BUG-14 已排期」的例外已随 §BUG-14 关单切到归档（2026-10-21，见文末索引）。
 > 同类既有备案：`maintenance-docs\decision-records\瓦库托管优化可行性分析.md` §16.2。
 
-### 待查-1 宝藏房共享选遗物界面：本地席位的手牌图像被**重复添加**（`add hand … twice!`，r246 判读时发现，**纯日志、无行为影响**）
+### 待查-1 宝藏房共享选遗物界面手牌图像重复添加（`add hand … twice!`）—— ✅ **2026-10-24 已修（r318）**
 
-- **现象（marker r246，`logs-archive/godot__20261009-204838__r246.log` L14868）**：
-  ```
-  [ERROR] Tried to add hand for player 76561198422527327 twice!
-     at …NHandImageCollection.AddHand(UInt64 playerId)
-     at …NHandImageCollection.OnInputStateAdded(UInt64 playerId)
-     at …PeerInputSynchronizer.GetOrCreateStateForPlayer(UInt64 playerId)
-     at …PeerInputSynchronizer.SyncLocalScreen(NetScreenType)
-     at …ScreenStateTracker.SetIsInSharedRelicPickingScreen(Boolean)
-     at …NTreasureRoomRelicCollection.AnimOut()
-     at …NTreasureRoomRoom.OpenChest()
-  ```
-- **定性**：发生在**宝藏房**、对象是**真人席位**…327（不是战神；战神没有 peer 输入态）⇒ 与本轮战灵召唤无关。
-  触发链 = 本 mod **切前台时更换本地 `NetContext.NetId`**；该 id 的 peer 输入态当前不存在 ⇒
-  `GetOrCreateStateForPlayer` 新建 ⇒ 触发 `StateAdded` ⇒ `AddHand` 发现手牌图像已存在。
-- **影响**：`AddHand` 的守卫**只 `Log.Error` 然后 `return`**（`NHandImageCollection.cs:83-96`），手牌图像本来就在 ⇒ **无行为影响**；
-  唯一代价是**抬高全局 ERROR 计数**（判读回归时容易误判）。
-- **候选修法**（想修时）：① 本 mod 在宝藏房期间不要切 `LocalContext.NetId`（或切前先 `SyncLocalScreen`）；
-  ② 给 `AddHand` 做一条"同 id 且在树内就不重复加"的前缀补丁（新增 Harmony 目标，需权衡）。
-- **优先级**：低（纯日志）。
+- **根因**：`NHandImageCollection.Initialize` 已给每个席位 `AddHand`，而我们切前台改 `LocalContext.NetId` 会让
+  `PeerInputSynchronizer.GetOrCreateStateForPlayer` 新建同一席位的输入态 ⇒ `StateAdded` ⇒ 再 `AddHand` 一次。
+- **修法**：前缀 `NHandImageCollection.AddHand`，`GetHand(playerId) != null` 时跳过（仅本地多控会话内）；
+  原版"已存在"分支只有一句 `Log.Error`、**什么都不做**（幂等）⇒ 行为不变，只关掉日志噪声
+  （首次命中打 `共享手牌图像已存在，跳过重复添加`）。
+- **复验锚点**：宝藏房共享选遗物界面进出 + 切角色若干次 ⇒ `Tried to add hand for player … twice!` 应为 **0 条**
+  （r246/r260/r288/r295/r298 单局曾 1~3 条）。
 
 ### 待查-3 战神被打**没有音效**（用户 2026-10-10 口径；**先跑探针定性，别直接改**）
 
@@ -125,20 +113,12 @@
   （原版/第三方特效场景的导出粒子槽为 null ⇒ `Restart()` NRE），落在异步 VFX 链上，**纯表现、不影响战斗**
   （该局 `turn loop died` 0、`托管出牌抛异常` 0）。⇒ 这条按同族**一并归为"非我方 + 低优先"**，不单独修。
 
-### 待查-5 休息区"悬停索引越界"WARN 是**误报**（`index=-1` = 没有悬停，被当成越界；r256 判读首现，**纯日志**）
+### 待查-5 休息区「悬停索引越界」WARN 是误报（`index=-1` = 没有悬停）—— ✅ **2026-10-24 已修（r318）**
 
-- **现象（marker r256，`logs-archive/godot__20261010-190410__r256.log`，共 7 条）**：
-  `休息区悬停索引越界，已忽略: player=…, index=-1, options=4`（以及 `options=5`）。
-- **根因**：`Scripts/Patch/RestSitePatch.cs:258` 的判据是 `hoveredOptionIndex.Value >= 0 && < options.Count`，
-  而 `RunManager.Instance.RestSiteSynchronizer.GetHoveredOptionIndex(playerId)` 在**"没有悬停任何选项"**时返回
-  **`-1`**（`null` 才是"没记录"）⇒ `-1` 落进 `else` 分支被打成 WARN。
-- **影响**：**纯日志**（行为正确 —— `option` 保持 `null`，只是 `ShowHoveredRestSiteOption(null)`）。
-  但会污染"异常族期望 0"的判读（本功能上一轮 r254/r255 恰好没进火堆，所以是首次出现）。
-- **修法（一行）**：把 `-1` 显式当作"无悬停"**静默忽略**（只在 `>= options.Count` 时才打 WARN）。
-- **⚠ 归属与纪律**：这是**休息区滚动条/悬停同步**那条线的历史遗留，与战灵召唤无关 ⇒ 按"**跨主题修复单独开分支**"
-  的纪律，**不塞进 `feat/hellwar-god-phase4-survival`**，留待单独一轮清理。
-- **优先级**：低（纯日志）。
-- **登记**：2026-10-10（第八十四段收工块 ②）。
+- **根因**：`RestSiteSynchronizer.GetHoveredOptionIndex` 在"没有悬停任何选项"时返回 **`-1`**（`null` 才是"没记录"），
+  而 `RestSitePatch` 的判据把负数也当越界 ⇒ 每次鼠标移开刷一条 WARN（纯日志，行为本来就对）。
+- **修法**：负数视为"无悬停"**静默忽略**（`option` 保持 `null` = 清掉上一次气泡），只在 `>= options.Count` 时才 WARN。
+- **复验锚点**：火堆里反复悬停/移开选项 ⇒ `休息区悬停索引越界` 应为 **0 条**。
 
 ### 待查-4 「同回合多个战神」时后面的那个可能整场不出牌（inline 路径抢全局闸门 ⇒ 串行；r254 判读发现）—— ✅ **已关单（2026-10-10，r255 判读给出反证）**
 
@@ -165,25 +145,17 @@
 - **优先级**：中低（只在"同场多战神 + 战斗很快结束"时出现；单战神场景无影响）。
 - **登记**：2026-10-10（第八十段收工块 ②）。
 
-### 待查-2 「进入本地多控流程」时游戏删旧多人 run 存档报 `Error deleting path`（**既有行为、非我方引入**，r239/r240 就有）
+### 待查-2 进入本地多控流程时删旧多人 run 存档报 `Error deleting path` —— ✅ **2026-10-24 已修（r318）**
 
-- **现象（marker r247，`logs-archive/godot__20261009-224919__r247.log` L9395 起 4 条）**：
-  ```
-  [ERROR] Error deleting path modded/profile2/saves/current_run_mp.save: Failed
-     at MegaCrit.Sts2.Core.Saves.GodotFileIo.DeleteFile(String path)
-     at MegaCrit.Sts2.Core.Saves.CloudSaveStore.DeleteFile(String path)
-     at MegaCrit.Sts2.Core.Saves.Managers.RunSaveManager.DeleteCurrentMultiplayerRun()
-     at MegaCrit.Sts2.Core.Saves.SaveManager.DeleteCurrentMultiplayerRun_Patch1(SaveManager this)
-     at LocalMultiControl.Scripts.Patch.NMultiplayerHostSubmenuPatch.OnLocalSelfCoopPressed(NMultiplayerHostSubmenu)
-  ```
-- **定性**：栈里的最后一行是**我们**的"进入本地多控流程"入口，它调游戏的
-  `SaveManager.DeleteCurrentMultiplayerRun()` 做清理；`GodotFileIo.DeleteFile` 在**目标文件不存在**
-  （或句柄被占）时只打一条 `Log.Error` 就返回 ⇒ **纯日志、无功能影响**。
-- **跨会话证据**：r239 = 2 条、r240 = 2 条、**r243/r245/r246 = 0 条**、r247 = 4 条
-  ⇒ 只在"存在待删的旧多人 run 存档"时出现，**不是本轮（战灵召唤）引入**。
-- **候选修法**（想清日志时）：在 `OnLocalSelfCoopPressed` 里**先判存在再删**（`FileAccess.FileExists` /
-  `File.Exists` 包一层），或把这条清理挪到"删完再打日志"的位置；⚠ 但它是游戏 API 的行为，**改之前先确认不破坏原版清理语义**。
-- **优先级**：低（纯日志，会抬高全局 ERROR 计数）。
+- **根因**：三个入口（单人多角色 / 每日 / 自定义）都调游戏 `SaveManager.DeleteCurrentMultiplayerRun()`，
+  它**无条件删两个文件**（`current_run_mp.save` + `.backup`），而 `GodotFileIo.DeleteFile` 对不存在的文件
+  会打 `[ERROR] Error deleting path …: Failed` ⇒ 没旧存档时每次进入刷 2~4 条（r239/r240/r247 都见过）。
+- **修法**：新增 `MultiplayerRunSaveCleaner.DeleteIfPresent(reason)`：先看 `SaveManager.HasMultiplayerRunSave`，
+  再反射取 `RunSaveManager.CurrentMultiplayerRunSavePath` + `_saveStore` **逐个文件判存在再删**；
+  反射面任何一步拿不到就**退回游戏原 API**（宁可多一条日志，不漏清存档）。三处调用点已替换。
+- **复验锚点**：从主菜单进本地多控（三个入口各一次）⇒ 应见
+  `历史多人存档本来就不存在，跳过清理（…）` 或 `已清理（…）: 删除 N 个、跳过不存在 M 个`，
+  且 `Error deleting path modded/profile*/saves/current_run_mp.save` 应为 **0 条**。
 
 ### BUG-17 事件末页效果是「牌组选牌」时，非共享事件房间推不动（2026-09-25 第一幕实机发现，**r147 只加了诊断，未定死根因**）
 

@@ -269,7 +269,8 @@ internal static class NMultiplayerHostSubmenuPatch
     {
         LocalMultiControlLogger.Info("进入单人多角色流程。");
         LocalSelfCoopSaveTag.ClearCurrentProfile();
-        SaveManager.Instance.DeleteCurrentMultiplayerRun();
+        // 待查-2：先判存在再删（游戏原 API 对不存在的文件会打 `Error deleting path`）。
+        MultiplayerRunSaveCleaner.DeleteIfPresent("进入单人多角色流程");
         LocalMultiControlLogger.Info("已清理历史多人存档，避免旧格式校验干扰。");
 
         NSubmenuStack? stack = GetStack(submenu);

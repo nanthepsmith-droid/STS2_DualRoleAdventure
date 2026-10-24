@@ -63,7 +63,8 @@ internal static class LocalDailySelfCoopEntry
 
         LocalMultiControlLogger.Info("单人多角色每日挑战入口：改走本地回环开局。");
         LocalSelfCoopSaveTag.ClearCurrentProfile();
-        SaveManager.Instance.DeleteCurrentMultiplayerRun();
+        // 待查-2：先判存在再删（游戏原 API 对不存在的文件会打 `Error deleting path`）。
+        MultiplayerRunSaveCleaner.DeleteIfPresent("进入每日挑战本地多控");
 
         // Daily 页建厅时写死 4 人上限且不可扩容 ⇒ 进页前先把本地席位上限收到 4
         LocalSelfCoopContext.SetLobbyLocalPlayerLimit(LocalLobbySeatPolicy.MaxDailyLocalPlayerCount, "daily-enter");

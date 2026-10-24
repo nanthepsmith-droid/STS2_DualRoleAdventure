@@ -73,6 +73,12 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   ~0.5s 投掷动画 await，其间 `RunManager.CleanUp` 把 `LocalContext.NetId` 置 null ⇒ `.Value` 抛 ⇒
   药水模型留栈顶 ⇒ 后续遗物 hook 的 `PopModel` 错位（`Tried to pop model …`）。
   现在清理期不再开新的用药 + catch 里**只在栈顶是同一实例时**摘除残留 + 异常日志带栈帧。
+- **日志卫生三连**（r318，纯日志、行为零变化 —— 让「异常族期望 0」的判读干净）：
+  ① 宝藏房共享选遗物界面的 `Tried to add hand for player … twice!`（切前台换 NetId 会让原版给同一席位
+  再 `AddHand` 一次；原版那条分支本来就只 `Log.Error` 什么都不做，现在直接跳过）；
+  ② 火堆「悬停索引越界」误报（`index=-1` 是"没悬停"的哨兵，原来每次鼠标移开刷一条 WARN，现在静默）；
+  ③ 进本地多控流程时删旧多人存档的 `Error deleting path …: Failed`（游戏原 API 无条件删两个文件、
+  文件不存在就打 ERROR；现在先判存在再删，反射面不可用则退回原 API）。
 
 ### Changed（口径 / 内部）
 

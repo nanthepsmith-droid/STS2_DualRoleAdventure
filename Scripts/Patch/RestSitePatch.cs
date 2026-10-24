@@ -253,10 +253,14 @@ internal static class NRestSiteRoomHoverGuardPatch
             {
                 option = options[hoveredOptionIndex.Value];
             }
-            else
+            else if (hoveredOptionIndex.Value >= 0)
             {
                 LocalMultiControlLogger.Warn($"休息区悬停索引越界，已忽略: player={playerId}, index={hoveredOptionIndex.Value}, options={options.Count}");
             }
+            // 负数 = 「当前没有悬停任何选项」的哨兵（`RestSiteSynchronizer.GetHoveredOptionIndex`
+            // 的**有值**语义里 -1 就是"鼠标不在任何选项上"，null 才是"没记录"）⇒ 静默保持
+            // option = null（等于把上一次的悬停气泡清掉）。历史上这条被当成越界打 WARN，
+            // 每次鼠标移开都会刷一条，纯噪声、还会污染"异常族期望 0"的判读（待查-5，2026-10-24 修）。
         }
 
         character.ShowHoveredRestSiteOption(option);

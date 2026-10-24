@@ -43,7 +43,8 @@ internal static class LocalCustomSelfCoopEntry
 
         LocalMultiControlLogger.Info("单人多角色自定义模式入口：改走本地回环开局。");
         LocalSelfCoopSaveTag.ClearCurrentProfile();
-        SaveManager.Instance.DeleteCurrentMultiplayerRun();
+        // 待查-2：先判存在再删（游戏原 API 对不存在的文件会打 `Error deleting path`）。
+        MultiplayerRunSaveCleaner.DeleteIfPresent("进入自定义模式本地多控");
 
         ulong primaryPlayerId = LocalSelfCoopContext.ResolvePrimaryPlayerId();
         LocalSelfCoopContext.UseSavedWakuuPlayerIds(Array.Empty<ulong>());

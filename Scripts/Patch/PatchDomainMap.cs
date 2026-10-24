@@ -253,6 +253,8 @@ internal static class PatchDomainMap
             ["NEventRoomOptionButtonPatch"] = PatchDomain.Ui,
             ["NGameInputPatch"] = PatchDomain.Ui,
             ["NHandImageCollectionUpdateVisibilityPatch"] = PatchDomain.Ui,
+            // 待查-1（r318）：宝藏房共享手牌"已存在就不重复加"，把原版那句 `Tried to add hand … twice!` 的纯日志噪声关掉
+            ["NHandImageCollectionDuplicateAddPatch"] = PatchDomain.Ui,
             ["NInputManagerPatch"] = PatchDomain.Ui,
             ["NMerchantInventoryPatch"] = PatchDomain.Ui,
             ["NMultiplayerPlayerIntentHandlerPatch"] = PatchDomain.Ui,
