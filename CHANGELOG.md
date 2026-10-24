@@ -8,7 +8,8 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 > 本轮 = r281 ~ r317（2026-10-17 ~ 10-24）。头牌是**战神血条并入本体玩家面板 + 立绘按绑主归位**（⑱ 关单，r300~r307）、
 > **火堆 / 宝箱房的 5+ 席位适配**（BUG-14 / BUG-33）、一批硬修复（【合体】替打、带战神局读档崩溃、托管出牌死循环、
 > 单人开局黑屏、官方单人页被注入多控 UI）与**补丁目标同名重载**事故的根治（r292）。
-> 兼容补丁侧：`HextechRunesLocalCoopFix` 走到 v1.7.1、退场 2 个补丁 mod。构建 marker `2026-10-24-r318`。
+> 兼容补丁侧：`HextechRunesLocalCoopFix` 走到 v1.7.1、**新增 `YuWanCardLocalCoopFix` v1.0.0**（猪猪 mod 的商店【队友帮付】）、
+> 退场 2 个补丁 mod。构建 marker `2026-10-24-r318`。
 
 ### Added（玩家可见的新增）
 
@@ -32,7 +33,11 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ### Fixed（玩家可见行为修复）
 
-- **【合体】后瓦库不再替真人打出手牌**（r281）：合体改归属撞上瓦库**已入队未执行**的托管出牌 ⇒
+- **商店【队友帮付】在本地多控下能用了**（新补丁 mod `YuWanCardLocalCoopFix` v1.0.0，2026-10-24 实机关单）：
+  猪猪 mod 的这件遗物原本整条链都走原版联机的**定向**网络消息（查金币 → 发请求 → 等响应），
+  而本地多控是单进程回环、定向消息没有对端 ⇒ 点按钮选完队友后**什么都不发生**（不扣钱、不买到东西）。
+  现在只在回环会话里本地接管：直接读本机其他席位的真实金币 → 选完**扣那位席位的钱** → 按猪猪原方式结算货物
+  （失败退回金币）；真实联机一律交回原版。实机锚点：`队友帮付（本地接管）` / `已扣款: payer=…` / `购买完成 purchased=True`。
   执行时原版按当时的 `card.Owner` 记名扣费 ⇒ 真人的手牌被"自己"打掉、还替瓦库付费（身份分裂）。
   修法三层缺一层能复发：搬运期间该席位不许入队（`MergingSeats`）+ 撤掉尚未执行的入队动作并同帧摘在飞登记 +
   逐张复核纯函数 `ShouldTakeOverMergedCard`。

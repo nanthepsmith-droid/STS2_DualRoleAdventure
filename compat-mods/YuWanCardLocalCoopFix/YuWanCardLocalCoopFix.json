@@ -1,0 +1,11 @@
+{
+    "id": "YuWanCardLocalCoopFix",
+    "name": "YuWanCard Local Co-op Fix",
+    "author": "fix",
+    "description": "猪猪 mod（YuWanCard）的【队友帮付】遗物在本地多控（DualRoleAdventure / LocalMultiControl）下点不动：它整条「让别的玩家付钱」链路都靠原版联机的定向网络消息走（QueryAllTeammatesGold → TeammatePayRequestMessage → TeammatePayResponseMessage），而本地多控的网络服务是单进程回环，定向 SendMessage 只是记账日志、没有对端实例会收发 ⇒ 选完队友之后请求发不出去、没有任何确认弹层、购买永远不结算。本补丁只在「回环 NetService（本地多控会话）」里接管该按钮的点击流程：直接列出本机其他席位的真实金币、选完就在本机扣那位席位的钱，再按猪猪自己原来的方式（ignoreCost 购买）结算，不再经过任何网络消息。真实联机一律交回原版。",
+    "version": "1.0.0",
+    "has_pck": false,
+    "has_dll": true,
+    "dependencies": [],
+    "affects_gameplay": true
+}

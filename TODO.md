@@ -1264,7 +1264,7 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
 - **🕐【退场动作·上游自修后】海克斯若自己在 `HextechBurnVisual` 修好骨骼校验**：本地独立补丁
   `D:\Download\pain\HextechBurnVisualFix\` 设 `HBV_DISABLE=1`（或删 `mods\HextechBurnVisualFix\`）即可，
   **不必追版本**；该补丁代码在仓库外，无需改本仓库。
-- **🕐【已排期·用户 2026-10-21 点名，以后做】猪猪 mod（`YuWanCard`）本地多控兼容补丁**：
+- **✅【2026-10-24 关单】猪猪 mod（`YuWanCard`）本地多控兼容补丁**（②【队友帮付】实机通过；①【我全都要】静态判定安全、限张数待拍板）：
   - **需求原话**：「排期以后做一个猪猪 mod（YuWanCard mod）兼容补丁。因为猪猪 mod 有一些功能还不兼容，
     包括遗物【我全都要】可以在卡牌奖励中选择多张牌，虽然现在还没有引发问题但是**瓦库自动抓牌可能会有问题**
     （**其它 mod 也有可能有类似的功能可能有影响**）；【队友帮付】遗物可以在商店让其它玩家付钱，
@@ -1274,14 +1274,38 @@ BuildIdentity 增强（r89）、部署槽唯一性检查（r93）、标准化回
     抓手 = `Scripts/Runtime/LocalWakuuRewardAutoClaim.cs` + `Scripts/Patch/CardRewardPatch.cs`（自动抓牌入口）
     ⇒ 判据要改成"看这一屏**还能不能继续取**"，而不是"取完一张就收口"；**同类第三方功能一律按这个口径兜**
     （用户明确点名"其它 mod 也可能有类似功能"）。
-  - **② 遗物【队友帮付】（商店让其它玩家付钱）**：用户实测**不行**。可疑面 = 本地多控下"其它玩家"是同机
-    伪造席位 ⇒ 大概率卡在 ①`LocalContext.IsMe` 判定 或 ②付费者选择 UI（原版走远端玩家输入）。
-    抓手 = 反编译 YuWanCard 找该遗物的支付链（先看它在商店里点了什么、有没有自己的"选择玩家"弹层）；
-    没有就复用 `LocalWakuuPlayerPicker` 那套"选一个玩家"的弹层。
-  - **先量后猜**：`YUWANCARD-TEAMMATE_PAY` 已经在 r298 局出现过（`logs-archive/godot__20261021-144037__r298.log`
-    L11684，某席位拿到过这件遗物）⇒ 下次进商店买一件东西专门测这条，把日志锚点补齐再动代码。
-  - **载体**：`compat-mods/YuWanCardLocalCoopFix`（新目录，独立 csproj/dll/槽位，符合
-    "compat-mods 只收主 mod ↔ 第三方交互"的口径）；**不排期到当前轮**。
+    **静态结论（2026-10-24，暂不改代码）**：遗物只 override 原版钩子 `ShouldAllowSelectingMoreCardRewards`；
+    原版 `CardReward.OnSelect` 本身是 `while(!endSelection)` 循环，我们的自动领取在**同一次** `SelectUnsynchronized()`
+    里由选择器逐轮作答，`_cards` 取空后 `GetSelectedCardReward` 返回 `card=null` ⇒ `num=null` ⇒ 循环正常收口
+    ⇒ **不会卡在等屏**。唯一的行为差异是"瓦库会把这一屏抓到空"（多选语义本身就允许），是否需要限制张数待用户拍板。
+  - **② 遗物【队友帮付】（商店让其它玩家付钱）：✅ 已落地 v1.0.0 并**实机关单**（2026-10-24，r317 局）**。
+    **根因（反编译 + 回环服务对照钉死）**：整条链都走**定向**网络消息
+    （`QueryAllTeammatesGold` → `SendRequest` → `SendResponse`），而主 mod 的
+    `LocalLoopbackHostGameService.SendMessage<T>(T, ulong)` 只打日志、**不派发** ⇒ 付款者收不到请求、
+    不弹确认、`ProcessPurchase` 永不执行 ⇒ "点了没反应"。另外 `OnPayRequestReceived` / `DeductGoldLocally`
+    都用 `LocalContext.GetMe()`（本地多控下只返回前台那一位）⇒ 消息通了也会判失败/扣错人。
+    **修法**：`compat-mods/YuWanCardLocalCoopFix` 仅在回环会话里前缀接管
+    `TeammatePayShopPatch.OnTeammatePayButtonPressed` —— 复用猪猪自己的「选择队友」弹层（喂本机真实金币）
+    ⇒ 本机 `PlayerCmd.LoseGold` 扣那位席位 ⇒ `entry.OnTryPurchaseWrapper(inventory, ignoreCost:true)` 结算
+    ⇒ 失败退回。全程不发网络消息；真实联机一律交回原版。**不引用第三方 dll**（全反射，改名/缺席只降级）。
+  - **复验结果（2026-10-24，`logs-archive/godot__20261024-140659__r317.log`，用户「应该没问题」）**：
+    `INIT_OK: patched=[TeammatePayShopPatch.OnTeammatePayButtonPressed], missing=[], source=assembly-load:YuWanCard.Content`
+    （补丁在主 mod 之后、猪猪 Content.dll 加载时才挂上，符合"壳 dll + 变体 dll"的预期）；
+    L12002 第一次点（控制角色1、付款席位仅 99G < 188）⇒ 弹层按钮灰 ⇒ 用户取消 ⇒ `玩家取消/超时，未结算`（**未扣钱** ✅）；
+    L12083~12089 第二次（450G）⇒ `requester=…326, cost=188` → `已扣款: payer=…327, 剩余=262G`（450−188=262 ✅）
+    → `奖励-拿遗物归属玩家: context=…326` + `个人记录-商店购买: item=MINIATURE_TENT` → `购买完成 purchased=True` ✅。
+    同局 `[ERROR]` 8 条全为既有第三方/游戏侧（Steam 分支不支持 2 个 mod / Oddmelt 注册 / 存档删除失败 / 某遗物本地化格式串），
+    `turn loop died` 0、`已有其它弹层` 0、`看门狗重启失败` 0。
+  - **第二轮复验（2026-10-24 `logs-archive/godot__20261024-141552__r317.log`，用户「2 发起 1 付钱测了，
+    假商人也测了，一切正常」）**：① **反向成立** —— L11167 `requester=…327, cost=226, 候选=[…326:450G]`
+    ⇒ 扣 …326 → 224G ⇒ 买 `ORRERY` 归 …327；② **假商人（`FAKE_MERCHANT` 事件）双向都过** ——
+    L11276（角色1 付 49G 买 `FAKE_LEES_WAFFLE`，付款席位 99→50）与 L11304（角色2 付 51G 买 `FAKE_MINIATURE_TENT`，
+    224→173），两次都 `purchased=True`、遗物归发起者；③ NetId 已是完整值（截断修复已生效）。
+    同局健康度：`INIT_OK` / `turn loop died` 0 / `[ERROR]` 6 条全为既有第三方侧（Steam 分支不支持 2 个 mod、
+    Oddmelt 脚本注册、某遗物本地化格式串）。
+  - **唯一遗留（不是 bug）**：购买走 `ignoreCost:true` ⇒ `个人记录-商店购买` 的 `gold=0`（钱在付款者那边扣），
+    **猪猪原实现也是这样**；另日志候选 NetId 曾用 `(int)` 截断成 `462261599`（= ...327 的低 32 位）易误判，
+    已改成完整 NetId 并重新部署。
 - **⑱ 战神的血条并进「本体玩家旁边的召唤物血条」面板（A 档；✅ 已落地 r300，⭐ 待实机）**：
   - **需求原话**：「记下来以后把战神的血条放到本体玩家的旁边（用我们之前做的召唤物血条）」（2026-10-21 点名）。
   - **既有载体现状**（`Patch/NMultiplayerPlayerStatePetHpPatch.cs`，r86）：在**多人顶部玩家状态条**
