@@ -237,7 +237,8 @@ When the game updates and the mod breaks:
 |---|---|---|
 | 操作规矩 | `AGENTS.md`（本文件） | 硬规矩 / 门禁 / 提交纪律 |
 | 经验集 | `<home>\.codebuddy\skills\dualroleadventure-development\SKILL.md` + `references/` | 稳定做法与坑、场景路由（**不写日期戳现状**） |
-| 工作项 | 仓库 `TODO.md`（含 §「决策记录跟踪表」） | 待做 → 做到哪 → 关单；**工作项状态的唯一事实源** |
+| 工作项 | 仓库 `TODO.md`（含 §「决策记录跟踪表」） | 待做 → 做到哪 → 关单；**工作项状态的唯一事实源**。⚠ **只放主 mod 自身的事**（`Scripts/` / `compat-mods/` / 门禁 / 发布）——本文件随仓库公开 |
+| 工作项（私有/本机） | `D:\Download\pain\TODO-项目.md`（**仓库外**） | 第四幕协调器（私有实现）、本地私有补丁、开发环境与工具链、不公开的提案（2026-10-24 拆分；理由 = 公开仓库里混入私有事项让人摸不着头脑） |
 | 提案索引 | `D:\Download\pain\maintenance-docs\decision-records\README.md` | 全部提案/方案的清单、定位与状态（**状态类事实的单一来源**）；提案正文里的旧「待拍板/未动工」字样不再作为判据 |
 | **现状** | `D:\Download\pain\开发进度记录.md`（**顶部最新「🔚 本轮收工」块**） | 分支 / marker / 未推送提交数 / 版本 / 部署位 —— **现状唯一事实源**；历史收工块与逐轮记录已归档到 `decision-records/archive/`。**别在别处再写一份现状**（2026-10-04 收敛） |
 | 盘点 | `D:\Download\pain\maintenance-docs\维护现状分析.md` | 结构性全貌（工具链 / mod 集合 / 游戏侧资料 / 缺口），**不定期刷新、不记现状**（会漂移，**不作判据**） |
@@ -247,6 +248,7 @@ When the game updates and the mod breaks:
 1. 新 proposal 落进 `maintenance-docs\decision-records\`（`maintenance-docs\` 无 git，不进仓库）
    → 当天在 `decision-records\README.md` **登记一行**（定位 / 登记日期 / 状态）；
 2. 同时在 `TODO.md` §「决策记录跟踪表」**挂条目**（或明确写「仅调研，不排期」）—— **登记 ≠ 排期、≠ 承诺动工**；
+   **私有 / 不公开的提案**（如第四幕协调器）改挂仓库外 `D:\Download\pain\TODO-项目.md`，**不进仓库 `TODO.md`**；
 3. 状态变化（拍板 / 动工 / 关单 / 不做）**只改上面两处的那一行**，不要往提案正文追加状态；
 4. `SKILL.md` 只在「做法 / 坑」本身变化时才改；**日期戳现状（分支、部署位 marker、未推送提交数、单测条数）
    只进 `D:\Download\pain\开发进度记录.md` 顶部最新「🔚 本轮收工」块**（现状唯一事实源），
