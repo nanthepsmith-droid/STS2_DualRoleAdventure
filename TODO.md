@@ -521,6 +521,16 @@
   `[CombatVictoryHookGuard] INIT_OK: 已接管 Hook.AfterCombatVictory`（启动时一次）与
   `[WARN] [CombatVictoryHookGuard] 第三方 hook 抛异常，已跳过并继续战斗结算: model=…EnchantmentMasterRune…`，
   **紧接着**就是奖励界面 / `Combat state becomes NotInCombat`，不再等几十秒。
+- **第二轮实机（2026-10-24，marker r321）：v1.0.0 没修好** —— 它吞掉了第一个异常（日志有那条 WARN），
+  但**自己随后抛了 NRE**：`NullReferenceException | at Hook.AfterCombatVictory_Patch4(IRunState, ICombatState, CombatRoom)`
+  ← `EndCombatInternal` ← `CheckWinCondition` ← `SawatariWinCheckPatch.Postfix`（NinjaSlayer）。
+  栈顶是**同步帧** ⇒ 出在 `RunTolerantAsync` 的同步段（不在被 try 包住的 listener 调用里）。
+  同时暴露第二个会抛的第三方：`HextechRunes.HextechMayhemModifier.AfterCombatVictory` →
+  `HextechMaxHpScaling.ReapplyScale` → `CreatureCmd.SetMaxHp` → `NHealthBar.RefreshValues` →
+  `MintySpire2.RepositionLabel`（`MintyIncomingDamageText` 节点不存在 ⇒ NRE，本局 19 处栈内提及）。
+  ⇒ **v1.0.1 两条加固**：① **整体 try/catch**（整个方法体任何异常都吞 ⇒ 返回的 Task 永远成功）；
+  ② **先物化 listener 列表**（惰性 `IterateHookListeners` 一次取完并包 try/catch，避免上位 listener
+  把状态搞半损后迭代器自己炸）。**铁律：兜底方法自身绝不允许抛。**
 - **归属**：第三方自身缺陷（单人装同一个 mod 也会触发）⇒ 按口径不进 `compat-mods/`、不随 Release 分发；
   已登记 `mod_registry.json`（带 ⚠ 说明）。上游修好后本补丁可静默保留（没人抛时无副作用）。
 - **优先级**：中（软锁级，但只要持有该遗物 + 有已附魔牌就必现）。

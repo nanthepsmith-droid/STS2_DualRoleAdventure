@@ -93,6 +93,11 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   （多席位托管出牌时那一等是几十秒）。主 mod 侧只做**诊断**（结算失败时打一条点名 ERROR + 前四帧栈，
   **不重试** —— 那张牌状态没变，重试必然再抛）；**根治用仓库外保命补丁 `CombatVictoryHookGuard`**
   （前缀重写 `Hook.AfterCombatVictory`，逐 listener 容错：谁抛就跳过谁、记一条点名 WARN，结算继续）。
+  ⚠ 该补丁 **v1.0.0 实机未生效**（吞掉第一个异常后自身在同步段抛 NRE）⇒ **v1.0.1** 加两条加固：
+  ① 整个方法体整体 try/catch（返回的 Task **永远成功** —— 兜底方法自身绝不允许抛）；
+  ② 先把惰性 `IterateHookListeners` 物化成快照再遍历（避免上位 listener 把状态搞半损后迭代器自己炸）。
+  同轮还暴露第二个会抛的第三方：`HextechRunes.HextechMayhemModifier → HextechMaxHpScaling.ReapplyScale
+  → CreatureCmd.SetMaxHp → NHealthBar.RefreshValues → MintySpire2.RepositionLabel`（节点缺失 NRE）。
 
 ### Changed（口径 / 内部）
 
