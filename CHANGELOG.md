@@ -93,11 +93,15 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   （多席位托管出牌时那一等是几十秒）。主 mod 侧只做**诊断**（结算失败时打一条点名 ERROR + 前四帧栈，
   **不重试** —— 那张牌状态没变，重试必然再抛）；**根治用仓库外保命补丁 `CombatVictoryHookGuard`**
   （前缀重写 `Hook.AfterCombatVictory`，逐 listener 容错：谁抛就跳过谁、记一条点名 WARN，结算继续）。
-  ⚠ 该补丁 **v1.0.0 实机未生效**（吞掉第一个异常后自身在同步段抛 NRE）⇒ **v1.0.1** 加两条加固：
-  ① 整个方法体整体 try/catch（返回的 Task **永远成功** —— 兜底方法自身绝不允许抛）；
-  ② 先把惰性 `IterateHookListeners` 物化成快照再遍历（避免上位 listener 把状态搞半损后迭代器自己炸）。
-  同轮还暴露第二个会抛的第三方：`HextechRunes.HextechMayhemModifier → HextechMaxHpScaling.ReapplyScale
-  → CreatureCmd.SetMaxHp → NHealthBar.RefreshValues → MintySpire2.RepositionLabel`（节点缺失 NRE）。
+  该补丁经 **v1.0.0 → v1.0.8 八轮**收敛（详见其 README），最终形态四层防御：
+  ① 逐 listener 容错（照抄原版两轮遍历，物化快照防迭代器炸）；② 整个方法体整体 try/catch
+  （兜底方法自身绝不允许抛 —— v1.0.0 就栽在这）；③ `Hook.AfterCombatVictory` 的 **HarmonyFinalizer**
+  （盖住同方法上**别人家的 prefix/postfix** —— v1.0.2 实机证明我们 prefix 返回 false 后别人的 postfix 照抛）；
+  ④ 已知必抛的第三方（海克斯 `HextechMayhemModifier`，MintySpire2 血条节点缺失 NRE）**进结算前整家跳过**。
+  另按用户方向做了**精准修复**（v1.0.6）：反编译确认【附魔大师】选牌逻辑本身会"全不可附魔就跳过、选完复核"，
+  唯一漏判是"牌上已有别的附魔"（`CanEnchant` 只看类型/关键字）⇒ postfix `RandomEnchantmentPool.GetLegalEnchantments`
+  把已附魔牌的候选过滤成"仅同类型（原版语义=叠加）"，没有就上层自动重选/跳过 —— 海克斯战后符文全部恢复。
+  实机（12 席 + 11 瓦库一整局 15 场战斗）：`战斗胜利结算被异常打断` **0**，全部正常结算收尾。
 
 ### Changed（口径 / 内部）
 
