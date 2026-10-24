@@ -153,6 +153,24 @@ internal static class WarGodFormationPolicy
         float last = centers[order[count - 1]];
         float requiredSpan = (count - 1) * spacing;
 
+        // ⚠ 人数多到**按 minSpacing 排都装不下**时（2026-10-24 实机：12 个真人战斗，
+        // 原版排 120…2672、间距 232，而可用带只有 120…1800）：
+        // 既不能"拉开"（更装不下），也**不能整组夹取** —— 夹取会把人推出屏幕另一侧，
+        // 而下一帧再进来又会反向夹回去 ⇒ A/B 两态**无限震荡**（每次 tick 挪 12 个立绘 + 各自宠物，
+        // 用户观感「各个玩家站得很开」，同时白白烧帧）。
+        // 这里改成**与输入无关的定值均分**：铺满可用带 ⇒ 幂等（第二次算出同样的落点，不再移动）。
+        float bandWidth = bandRight - bandLeft;
+        if (bandWidth > 0f && requiredSpan > bandWidth)
+        {
+            float step = bandWidth / (count - 1);
+            for (int i = 0; i < count; i++)
+            {
+                result[order[i]] = bandLeft + i * step;
+            }
+
+            return result;
+        }
+
         if (last - first < requiredSpan)
         {
             float middle = (first + last) * 0.5f;

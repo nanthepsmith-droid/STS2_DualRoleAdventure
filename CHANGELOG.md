@@ -9,7 +9,7 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 > **火堆 / 宝箱房的 5+ 席位适配**（BUG-14 / BUG-33）、一批硬修复（【合体】替打、带战神局读档崩溃、托管出牌死循环、
 > 单人开局黑屏、官方单人页被注入多控 UI）与**补丁目标同名重载**事故的根治（r292）。
 > 兼容补丁侧：`HextechRunesLocalCoopFix` 走到 v1.7.1、**新增 `YuWanCardLocalCoopFix` v1.0.0**（猪猪 mod 的商店【队友帮付】）、
-> 退场 2 个补丁 mod。构建 marker `2026-10-24-r318`。
+> 退场 2 个补丁 mod。构建 marker `2026-10-24-r319`。
 
 ### Added（玩家可见的新增）
 
@@ -79,6 +79,10 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   ② 火堆「悬停索引越界」误报（`index=-1` 是"没悬停"的哨兵，原来每次鼠标移开刷一条 WARN，现在静默）；
   ③ 进本地多控流程时删旧多人存档的 `Error deleting path …: Failed`（游戏原 API 无条件删两个文件、
   文件不存在就打 ERROR；现在先判存在再删，反射面不可用则退回原 API）。
+- **人很多时战斗立绘不再"来回抖 / 站得很开"**（r319，2026-10-24 实测 12 个真人）：把真人立绘拉开到
+  最小间距的逻辑里，「整组夹进屏幕」这一句在**人数多到装不下**时会把人推出屏幕另一侧，
+  下一帧又反向夹回去 ⇒ 两个状态之间**每帧震荡**（12 个立绘 + 各自宠物一起挪）。现在人多到按最小间距
+  排不进屏幕时改为**按可用带宽均分**（与输入无关 ⇒ 幂等，不再震荡，也不会有人跑到屏幕外）。
 
 ### Changed（口径 / 内部）
 
@@ -104,7 +108,7 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ### 兼容补丁（随主 Release 附件 `compat-mods-v1.47.zip` 分发）
 
-- **`HextechRunesLocalCoopFix` v1.3.0 → v1.7.1**：
+- **`HextechRunesLocalCoopFix` v1.3.0 → v1.7.2**：
   ① **符文抓率统计 + 瓦库按抓率挑**（落盘 `%APPDATA%\SlayTheSpire2\hextech_rune_stats.json`；
   Laplace 平滑 ⇒ 没数据 = 0.5、并列取最左 ⇒ **没有统计时行为与旧版逐下标一致**；真人偏好也记、瓦库只读）；
   ② **Co-op Bots 合成席位**不再被海克斯当成远端死等（放行判据 + 代答同口径，日志里叫 `Co-op Bots` 席位）；
@@ -112,7 +116,11 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   最烂那槽没次数就换次烂的；参数不一致 / 空 / 读统计抛异常一律不动）；
   ④ **候选卡选取率角标**（v1.7.0：候选按钮左上角 `33% (1/3)`，按 30% / 50% 分档红 / 黄 / 绿，reroll 后立即补）；
   ⑤ `CreateRuneSelectionScreenAsync` 形状基线 10 → 11（海克斯 0.9.8 实际参数个数）+ 把"参数名对不上"的
-  WARN 换成**真的在验参数名**（形状变了但注入名都在 ⇒ 只记 INFO；不在 ⇒ WARN 并列缺失名与实际参数）。
+  WARN 换成**真的在验参数名**（形状变了但注入名都在 ⇒ 只记 INFO；不在 ⇒ WARN 并列缺失名与实际参数）；
+  ⑥ **席位一多，排在最后的瓦库席位也不会掉回手动**（v1.7.2，2026-10-24 实测 12 席 + 11 个瓦库）：
+  符文屏是同时入栈、只能逐席依次作答，每席 ≈2.7~4.5s（1.2s 延迟 + 最多 3 次 reroll + 0.5s 核对），
+  而等待上限写死 40 次（约 24s）⇒ 前 9 席就吃满、最后的角色2/角色3 被交回真人手点
+  （`瓦库符文界面一直没轮到显示 … attempts=40`）。现在按局内席位数放大（基座 24s + 每多一席 8.4s）。
 - **退场 2 个补丁 mod**（r309，游戏内本就禁用、槽位目录已删；源码保留，`build_all_mods.ps1 -Only <Name>` 可重建）：
   `YuWanCardWhiteScarfFix`（猪猪 WhiteScarf 无色卡奖励空池 —— 上游 `YuWanCard` v0.5.12 已自修）、
   `OddmeltGaugeCardRenderFix`（Oddmelt 隐藏输入卡不在卡池 —— 主 mod 早已内置同款 `NCardCreateHiddenCardGuardPatch`）。
@@ -127,7 +135,6 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 - 战斗里偶发的表现层 ERROR（原版 `UPPERCUT` 的重击特效粒子槽空引用、节点池回收提示）=
   原版 / 第三方特效资源问题，不影响战斗与结算；BaseLib 悬停提示折叠越界 = 既存第三方（r134 起就有）。
-- 宝藏房 `Tried to add hand … twice!`（纯日志，无行为影响，只抬高全局 ERROR 计数）。
 
 ## [1.46.0] - 2026-10-16
 

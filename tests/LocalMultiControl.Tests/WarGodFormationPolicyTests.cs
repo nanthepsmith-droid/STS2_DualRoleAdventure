@@ -181,4 +181,67 @@ public class WarGodFormationPolicyTests
         Assert.That(WarGodFormationPolicy.SpreadEvenly(new List<float>(), 232f, 120f, 1800f), Is.Empty);
     }
 
+    // ---- 人数多到装不下（r318，2026-10-24 实机：12 个真人战斗 ⇒ 站位 A/B 两态无限震荡）----
+
+    /// <summary>12 个真人（原版排成 120…2672、间距 232）超出可用带 120…1800 时的落点。</summary>
+    private static List<float> TwelvePlayersOutOfBand()
+    {
+        List<float> centers = new();
+        for (int i = 0; i < 12; i++)
+        {
+            centers.Add(120f + i * 232f);
+        }
+
+        return centers;
+    }
+
+    [Test]
+    public void 人数装不下_全部落在可用带内不推出屏幕()
+    {
+        List<float> result = WarGodFormationPolicy.SpreadEvenly(
+            TwelvePlayersOutOfBand(),
+            WarGodFormationPolicy.DefaultMinPlayerSpacing,
+            120f,
+            1800f);
+
+        Assert.That(result, Has.Count.EqualTo(12));
+        foreach (float value in result)
+        {
+            Assert.That(value, Is.GreaterThanOrEqualTo(120f - 0.01f), "不能把人推到屏幕左侧外");
+            Assert.That(value, Is.LessThanOrEqualTo(1800f + 0.01f), "不能把人推到屏幕右侧外");
+        }
+
+        // 铺满可用带
+        Assert.That(result[0], Is.EqualTo(120f).Within(0.01f));
+        Assert.That(result[11], Is.EqualTo(1800f).Within(0.01f));
+    }
+
+    [Test]
+    public void 人数装不下_第二次调用结果不变_不会来回震荡()
+    {
+        List<float> input = TwelvePlayersOutOfBand();
+        List<float> first = WarGodFormationPolicy.SpreadEvenly(
+            input, WarGodFormationPolicy.DefaultMinPlayerSpacing, 120f, 1800f);
+        List<float> second = WarGodFormationPolicy.SpreadEvenly(
+            first, WarGodFormationPolicy.DefaultMinPlayerSpacing, 120f, 1800f);
+
+        Assert.That(second, Is.EqualTo(first), "装不下时必须幂等，否则每帧在两态之间震荡");
+    }
+
+    [Test]
+    public void 人数刚好装得下_仍按最小间距且不越界()
+    {
+        // 7 人 × 232 = 1392 ≤ 1680 ⇒ 走原逻辑：间距仍是 232、整组夹进带内
+        List<float> centers = new() { 500f, 520f, 540f, 560f, 580f, 600f, 620f };
+        List<float> result = WarGodFormationPolicy.SpreadEvenly(
+            centers, WarGodFormationPolicy.DefaultMinPlayerSpacing, 120f, 1800f);
+
+        Assert.That(result[6] - result[0], Is.EqualTo(6 * 232f).Within(0.01f));
+        foreach (float value in result)
+        {
+            Assert.That(value, Is.GreaterThanOrEqualTo(120f - 0.01f));
+            Assert.That(value, Is.LessThanOrEqualTo(1800f + 0.01f));
+        }
+    }
+
 }

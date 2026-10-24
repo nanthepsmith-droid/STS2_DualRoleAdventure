@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using Godot;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Runs;
 
 namespace HextechRunesLocalCoopFix.Scripts;
 
@@ -53,8 +54,37 @@ internal static class WakuuRuneAutoAnswer
     /// <summary>这一屏还没轮到显示时的重试间隔。</summary>
     private const float RetryDelaySeconds = 0.6f;
 
-    /// <summary>等这一屏露出的最大次数（约 24s；期间真人可能正在操作别的屏）。超了交回真人。</summary>
-    private const int MaxVisibleWaitAttempts = 40;
+    /// <summary>单机/少量席位时的等待基数（<see cref="RetryDelaySeconds"/> × 40 ≈ 24s）。</summary>
+    private const int BaseVisibleWaitAttempts = 40;
+
+    /// <summary>
+    /// 每个**局内席位**额外给的等待次数（× <see cref="RetryDelaySeconds"/> ≈ 8.4s）。
+    ///
+    /// <para><b>为什么要按席位数放大</b>（2026-10-24 实测，12 席 + 11 个瓦库）：所有席位的符文屏是
+    /// **同时入栈**的，只能逐席依次作答，而每一席还要「延迟 1.2s + 可能 reroll 2~3 次（每次 1.2s）+
+    /// 0.5s 核对」≈ 2.7~4.5s ⇒ 前 9 席就吃掉 24s，排在最后的「角色2 / 角色3」必然撞上 40 次上限，
+    /// 被交回真人手点（日志 `瓦库符文界面一直没轮到显示 … attempts=40`）。</para>
+    /// </summary>
+    private const int ExtraVisibleWaitAttemptsPerSeat = 14;
+
+    /// <summary>等这一屏露出的最大次数（基座 24s + 每多一席 8.4s；期间真人可能正在操作别的屏）。</summary>
+    private static int MaxVisibleWaitAttempts
+    {
+        get
+        {
+            int seats = 1;
+            try
+            {
+                seats = RunManager.Instance?.DebugOnlyGetState()?.Players.Count ?? 1;
+            }
+            catch
+            {
+                seats = 1;
+            }
+
+            return BaseVisibleWaitAttempts + Math.Max(0, seats - 1) * ExtraVisibleWaitAttemptsPerSeat;
+        }
+    }
 
     /// <summary>「界面实例 → 归属席位」。键是弱引用（界面被回收即失效）。</summary>
     private static readonly ConditionalWeakTable<GodotObject, ScreenState> Screens = new();
