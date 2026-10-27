@@ -113,6 +113,23 @@
   （原版/第三方特效场景的导出粒子槽为 null ⇒ `Restart()` NRE），落在异步 VFX 链上，**纯表现、不影响战斗**
   （该局 `turn loop died` 0、`托管出牌抛异常` 0）。⇒ 这条按同族**一并归为"非我方 + 低优先"**，不单独修。
 
+### 待查-7 退出到主菜单时 `PlayCardAction … Nullable object must have a value`（**已定性 = r299 同族，不改代码**）
+
+- **现象**（2026-10-26 r321 局 / 2026-10-27 r322 局各 1 次，日志里出现 2~3 行）：
+  `GameAction PlayCardAction card: CARD.FEEL_NO_PAIN … completed with exception: AggregateException
+  (InvalidOperationException: Nullable object must have a value.)`，栈顶是第三方一串 `After(card, Task)` 包装
+  + 原版 `CardModel+<OnPlayWrapper>d__339.MoveNext_Patch3` ← `PlayPowerCardFlyVfx`。
+- **根因**（反编译源码定位）：`OnPlayWrapper` 里的
+  `new BranchingPlayerChoiceContext(this, LocalContext.NetId.Value, …)` —— 本局**正在退出到主菜单**时
+  `RunManager.CleanUp` 已把 `LocalContext.NetId` 置空，而这张能力牌的 `PlayPowerCardFlyVfx` 的 tween
+  await 还没回来 ⇒ 回来时 `.Value` 抛。**与 r299 定过因的"退出期自动用药"是同一族**。
+- **为什么不修**：退出瞬间的收尾，玩家已经不在战斗里；实测**无卡死**（`turn loop died` 0、
+  `战斗胜利结算被异常打断` 0、后续回主菜单/存档写盘正常）。在"出牌链"上再加一道 teardown 闸门
+  只能省掉这条日志，代价是给第三方托管出牌加一处新的时序分支 —— 收益不成比例。
+- **判读口径**：看到它先确认三件事 —— ① 是否发生在**回主菜单/退局前后**；② `turn loop died` 是否为 0；
+  ③ 上方是否有 `Quit` / `Time to main menu`。三条都符合 = 本条（良性），不用再查。
+- **登记**：2026-10-27（第一百五十五段收工块 ④）。
+
 ### 待查-5 休息区「悬停索引越界」WARN 是误报（`index=-1` = 没有悬停）—— ✅ **2026-10-24 已修（r318）**
 
 - **根因**：`RestSiteSynchronizer.GetHoveredOptionIndex` 在"没有悬停任何选项"时返回 **`-1`**（`null` 才是"没记录"），

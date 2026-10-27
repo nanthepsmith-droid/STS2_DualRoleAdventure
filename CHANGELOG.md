@@ -5,11 +5,12 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 ## [Unreleased]（拟 1.47.0，尚未发版）
 
 > **尚未发版**：本节还会继续追加内容，发版时再改成 `## [1.47.0] - 日期`。
-> 本轮 = r281 ~ r317（2026-10-17 ~ 10-24）。头牌是**战神血条并入本体玩家面板 + 立绘按绑主归位**（⑱ 关单，r300~r307）、
-> **火堆 / 宝箱房的 5+ 席位适配**（BUG-14 / BUG-33）、一批硬修复（【合体】替打、带战神局读档崩溃、托管出牌死循环、
-> 单人开局黑屏、官方单人页被注入多控 UI）与**补丁目标同名重载**事故的根治（r292）。
+> 本轮 = r281 ~ r323（2026-10-17 ~ 10-27）。头牌是**战神血条并入本体玩家面板 + 立绘按绑主归位**（⑱ 关单，r300~r307）、
+> **火堆 / 宝箱房的 5+ 席位适配**（BUG-14 / BUG-33）、**12 席全程**（符文代答 / 人多不干预站位 / 胜利结算点名）、
+> 一批硬修复（【合体】替打、带战神局读档崩溃、托管出牌死循环、单人开局黑屏、官方单人页被注入多控 UI）、
+> **补丁目标同名重载**事故的根治（r292）与我们自己的**本地化缺键清零**（r322/r323）。
 > 兼容补丁侧：`HextechRunesLocalCoopFix` 走到 v1.7.1、**新增 `YuWanCardLocalCoopFix` v1.0.0**（猪猪 mod 的商店【队友帮付】）、
-> 退场 2 个补丁 mod。构建 marker `2026-10-24-r321`。
+> 退场 2 个补丁 mod。构建 marker `2026-10-27-r323`。
 
 ### Added（玩家可见的新增）
 
@@ -93,7 +94,8 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   （多席位托管出牌时那一等是几十秒）。主 mod 侧只做**诊断**（结算失败时打一条点名 ERROR + 前四帧栈，
   **不重试** —— 那张牌状态没变，重试必然再抛）；**根治用仓库外保命补丁 `CombatVictoryHookGuard`**
   （前缀重写 `Hook.AfterCombatVictory`，逐 listener 容错：谁抛就跳过谁、记一条点名 WARN，结算继续）。
-  该补丁经 **v1.0.0 → v1.0.8 八轮**收敛（详见其 README），最终形态四层防御：
+  该补丁经 **v1.0.0 → v1.0.10**（详见其 README；v1.0.9 修好"过滤没挂上"的真因 —— 是我们自己的
+  `AssemblyLoad` 监听被 YUI 兜底那一步顺手摘掉，不是"变体 dll 看不见"）收敛，最终形态四层防御：
   ① 逐 listener 容错（照抄原版两轮遍历，物化快照防迭代器炸）；② 整个方法体整体 try/catch
   （兜底方法自身绝不允许抛 —— v1.0.0 就栽在这）；③ `Hook.AfterCombatVictory` 的 **HarmonyFinalizer**
   （盖住同方法上**别人家的 prefix/postfix** —— v1.0.2 实机证明我们 prefix 返回 false 后别人的 postfix 照抛）；
@@ -102,6 +104,14 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   唯一漏判是"牌上已有别的附魔"（`CanEnchant` 只看类型/关键字）⇒ postfix `RandomEnchantmentPool.GetLegalEnchantments`
   把已附魔牌的候选过滤成"仅同类型（原版语义=叠加）"，没有就上层自动重选/跳过 —— 海克斯战后符文全部恢复。
   实机（12 席 + 11 瓦库一整局 15 场战斗）：`战斗胜利结算被异常打断` **0**，全部正常结算收尾。
+- **主菜单「载入历史 / 遗物图鉴」里那两件瓦库遗物的名字不再是乱码串**（r322）：
+  【瓦库形态】/【永久低语耳环】的本地化原来只在 mod 初始化（`LocManager.Instance` 还是 null ⇒ 空转）
+  与"进局"之后注入，而载入历史**没进局就读**；缺键时 BaseLib 的 `GetRawText` 会返回
+  `relics.LOCAL_WAKUU_FORM_RELIC.title` 这种字符串 ⇒ 名字显示错误。现在提前到
+  `LocManager.Initialize` 后置注入（实机：`GetRawText` 缺我们的键 17 条 → **0** 条）。
+- **日志卫生：状态【战灵守卫】补齐 `powers` 表键**（r323）：该状态刻意不可见（可见要给状态建节点、
+  本项目没有 PCK ⇒ 缺图标会刷引擎级 ERROR），所以玩家看不到那串垃圾，本条只是把键补齐、不让
+  "我们的键全在"这个不变量破口（实机 `Key 'HELLWAR_WAR_GOD_GUARD_POWER.title'` 1 条 → **0**）。
 
 ### Changed（口径 / 内部）
 
