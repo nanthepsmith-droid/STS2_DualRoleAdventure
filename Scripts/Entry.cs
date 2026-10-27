@@ -837,7 +837,17 @@ public partial class Entry
     //   ⇒ 主人/战神被挪走而宠物留在旧坐标（宠物脱钩）。⇒ **撤掉 `PositionPlayersAndPets` 的 Postfix**，
     //   回到"只在自己的事件上自愈"（召唤批次结束 + 真人回合开始），并补上 `MoveWithPets`：
     //   挪立绘时**连带平移它名下的宠物**（否则奥斯提这类宠物会落单）。
-    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-24-r321)";
+    // r308~r321（2026-10-22 ~ 10-25，见 CHANGELOG [Unreleased]）：
+    //   战神面板/站位、BUG-14/33、补丁目标重载事故、日志卫生三连、12 席符文代答与站位、胜利结算点名。
+    // r322（2026-10-27，日志卫生）：**瓦库形态 / 永久低语耳环两件遗物的本地化提前注入**。
+    //   ① 现象（2026-10-26 一局 17 条）：`[BaseLib] GetRawText: Key 'LOCAL_WAKUU_FORM_RELIC.title'
+    //      not found in table 'relics'`，且 BaseLib 的 `LocTable.GetRawText` 前缀在缺键时**返回
+    //      `relics.<key>` 这种垃圾串** ⇒ 主菜单「载入历史 / 遗物图鉴」里那两件遗物的名字是错的。
+    //   ② 根因：这两件的注入只在 mod 初始器（`LocManager.Instance` 还是 null ⇒ 空转）与
+    //      `OnRunLaunched`（**已进局**）两处 ⇒ 没进局的界面读不到（「瓦库的爹」/战灵召唤挂在
+    //      `LocManager.Initialize` 后置，所以它们没有这类 WARN，这就是对照证据）。
+    //   ③ 修法 = 新增 `WakuuRelicContentPatch`（同款早期挂点），零行为变化、只补本地化时序。
+    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-27-r322)";
 
     private static Harmony? _harmony;
 

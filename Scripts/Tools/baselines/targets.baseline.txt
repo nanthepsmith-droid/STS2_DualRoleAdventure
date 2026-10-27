@@ -2,8 +2,8 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-10-24 14:39  HEAD=02529ea
-# 统计: patch_classes=206 patch_rows=246 string_targets=211 descriptors=405
+# 生成时间=2026-10-27 14:47  HEAD=6ae0586
+# 统计: patch_classes=207 patch_rows=247 string_targets=211 descriptors=406
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	BgmProbeAudioManagerPatch	NAudioManager	-	no-target
@@ -247,6 +247,7 @@ P	WakuuEventEnchantAutoAnswerPatch	CardSelectCmd	FromDeckForTransformation	nameo
 P	WakuuEventEnchantAutoAnswerPatch	CardSelectCmd	FromDeckForUpgrade	nameof
 P	WakuuEventEnchantAutoAnswerPatch	CardSelectCmd	FromDeckGeneric	nameof
 P	WakuuEventEnchantAutoAnswerPatch	CardSelectCmd	FromHand	nameof
+P	WakuuRelicContentPatch	LocManager	Initialize	nameof
 P	WhisperingEarringPatch	WhisperingEarring	AfterAutoPrePlayPhaseEnteredLate	nameof
 S	accesstools	-	-	method
 S	accesstools	ActChangeSynchronizer	_readyPlayers	field

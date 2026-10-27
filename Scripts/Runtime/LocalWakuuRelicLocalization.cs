@@ -10,6 +10,9 @@ internal static class LocalWakuuRelicLocalization
 {
     private static bool _localeCallbackSubscribed;
 
+    /// <summary>注入成功锚点只打一次（切语言会再注入，但不必再刷）。</summary>
+    private static bool _injectedLogged;
+
     public static void Initialize()
     {
         LocManager? locManager = LocManager.Instance;
@@ -77,6 +80,14 @@ internal static class LocalWakuuRelicLocalization
             };
 
             locManager.GetTable("relics").MergeWith(formEntries);
+
+            // 可核对锚点（r322）：这两件遗物的键以前要等"进局"才注入 ⇒ 主菜单读历史时缺键。
+            if (!_injectedLogged)
+            {
+                _injectedLogged = true;
+                LocalMultiControlLogger.Info(
+                    $"瓦库专用遗物本地化已注入: {starterEntry}, {formEntry}（主菜单载入历史/图鉴也已可用）");
+            }
         }
         catch (Exception exception)
         {

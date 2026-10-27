@@ -225,6 +225,9 @@ internal static class PatchDomainMap
             // 战灵召唤（原 ④「地狱战神」）Phase 1：同款内容层早期挂点（LocManager 就绪后注入遗物/休息处选项本地化、
             // ModelDb.Preload 后打"【地狱耳环】已就绪"锚点）。
             ["HellwarContentPatch"] = PatchDomain.Wakuu,
+            // 瓦库形态 / 永久低语耳环（r322）：同款早期挂点 —— 这两件遗物的本地化原来只在 mod 初始化（空转）
+            // 与"进局"两处注入 ⇒ **没进局**的主菜单「载入历史」读它们时缺键（BaseLib 打 WARN 并返回垃圾串）。
+            ["WakuuRelicContentPatch"] = PatchDomain.Wakuu,
             // 战灵召唤 Phase 3（r249）：让 `LocalContext.GetMe(IPlayerCollection)` 认**临时席位（战神）**——
             // 战神刻意不进 `runState.Players`，而出牌路径上大量 UI/状态刷新会 `GetMe(runState)`，
             // 原实现 `?? throw` ⇒ 战神一出牌就抛（r249 实机：牌打不出去 + 回合卡死，见 references 坑 AE-7）。
