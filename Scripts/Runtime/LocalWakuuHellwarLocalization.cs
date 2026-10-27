@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using LocalMultiControl.Scripts.Models.Powers;
 using LocalMultiControl.Scripts.Models.Relics;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Models;
@@ -15,6 +16,8 @@ namespace LocalMultiControl.Scripts.Runtime;
 /// <item>遗物读 <c>relics</c> 表的 <c>.title</c> / <c>.description</c> / <c>.eventDescription</c> / <c>.flavor</c>；</item>
 /// <item>休息处选项读 <c>rest_site_ui</c> 表的 <c>OPTION_LMC_SPLIT_SPIRIT.name/.description</c>
 ///   （<c>RestSiteOption.Title/Description</c> 是硬拼的 key，表里没有就取不到值 ⇒ 按钮连名字都设不上）。</item>
+/// <item>状态【战灵守卫】读 <c>powers</c> 表的 <c>.title/.description</c>（r322；它**不可见**，
+///   补齐只是为了不让 BaseLib 的启动扫描报缺键）。</item>
 /// </list>
 /// **缺键会让 <c>LocString</c> 抛 <c>LocException</c>** 冒穿渲染（遗物描述页 / 休息区按钮）⇒ 必须注入。
 ///
@@ -29,6 +32,13 @@ internal static class LocalWakuuHellwarLocalization
 
     /// <summary>游戏 <c>rest_site_ui</c> 表（休息区选项标题 / 描述）。</summary>
     internal const string RestSiteTable = "rest_site_ui";
+
+    /// <summary>
+    /// 游戏 <c>powers</c> 表（状态标题 / 描述）。
+    /// r322 补：BaseLib 启动时会扫全部 Power 模型取 <c>.title</c>，缺键就 WARN 并返回垃圾串
+    /// （实机：`Key 'HELLWAR_WAR_GOD_GUARD_POWER.title' not found in table 'powers'`）。
+    /// </summary>
+    internal const string PowersTable = "powers";
 
     /// <summary>
     /// 战神（临时席位）出牌收尾台词在 <c>relics</c> 表里的键（Phase 3 / R11）。
@@ -82,6 +92,13 @@ internal static class LocalWakuuHellwarLocalization
                 [$"{relicEntry}.flavor"] = LocalModText.HellwarEarringFlavor,
                 // Phase 3（R11）：战神出牌收尾台词「唔」（借用 relics 表，避免新增一张表）。
                 [WarGodLineKey] = LocalModText.HellwarWarGodLine,
+            });
+
+            string guardPowerEntry = ModelDb.GetId<HellwarWarGodGuardPower>().Entry;
+            locManager.GetTable(PowersTable).MergeWith(new Dictionary<string, string>
+            {
+                [$"{guardPowerEntry}.title"] = LocalModText.HellwarWarGodGuardPowerTitle,
+                [$"{guardPowerEntry}.description"] = LocalModText.HellwarWarGodGuardPowerDescription,
             });
 
             string optionKeyPrefix = "OPTION_" + HellwarSplitSpiritOption.SplitSpiritOptionId;

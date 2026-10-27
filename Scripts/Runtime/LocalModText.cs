@@ -212,6 +212,20 @@ internal static class LocalModText
     public static string SplitSpiritOptionName => Select("分裂精神", "Split Spirit");
 
     /// <summary>
+    /// 状态【战灵守卫】（R10，挂在绑主身上、**不可见**）的名称。
+    /// 注入 <c>powers</c> 表用：BaseLib 启动时会扫全部 Power 模型取 <c>.title</c>，
+    /// 缺键它就 WARN 并返回 `powers.<key>` 垃圾串（2026-10-27 r322 局 1 条）。
+    /// 本状态 <c>IsVisibleInternal = false</c> ⇒ 战斗中不渲染，这里纯粹是把键补齐。
+    /// </summary>
+    public static string HellwarWarGodGuardPowerTitle => Select("战灵守卫", "War God Guard");
+
+    /// <summary>状态【战灵守卫】的描述（同上，不可见状态，仅补键）。</summary>
+    public static string HellwarWarGodGuardPowerDescription => Select(
+        "你的战神替你承受攻击伤害的一半（另一半直接无效）；战神出场的那一回合不生效。",
+        "Your war god absorbs half of the incoming attack damage (the other half is negated); "
+        + "it does not apply on the turn the war god was summoned.");
+
+    /// <summary>
     /// 【分裂精神】休息区选项描述（注入 rest_site_ui 表 <c>OPTION_LMC_SPLIT_SPIRIT.description</c>）。
     /// <c>{Hp}</c> / <c>{Ratio}</c> 是游戏 LocString 的占位符，由 <see cref="HellwarSplitSpiritOption"/>
     /// 用 <c>Add(...)</c> 填充 —— 所以这里**必须是普通字符串字面量**，不能写成 C# 插值。

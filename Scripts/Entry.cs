@@ -847,7 +847,10 @@ public partial class Entry
     //      `OnRunLaunched`（**已进局**）两处 ⇒ 没进局的界面读不到（「瓦库的爹」/战灵召唤挂在
     //      `LocManager.Initialize` 后置，所以它们没有这类 WARN，这就是对照证据）。
     //   ③ 修法 = 新增 `WakuuRelicContentPatch`（同款早期挂点），零行为变化、只补本地化时序。
-    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-27-r322)";
+    // r323（2026-10-27，同一轮日志卫生）：**状态【战灵守卫】的 `powers` 表键补齐** —— BaseLib 启动扫描
+    //   全部 Power 取 `.title`，我们那条 `HELLWAR_WAR_GOD_GUARD_POWER` 缺键（实机 1 条 WARN + 返回垃圾串）。
+    //   该状态 `IsVisibleInternal = false`（不给它建节点、避免缺图标 ERROR）⇒ 玩家看不见，纯补键。
+    private const string BuildMarker = "Revival v1.46.0 (game v0.111.0, marker=2026-10-27-r323)";
 
     private static Harmony? _harmony;
 
