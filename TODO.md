@@ -495,13 +495,13 @@
 `RunManager.CleanUp` `L12520`，药水已经收尾完了）⇒ r299 的两条新锚点（清理期闸门 / 摘残留）
 **都未触发**，属**防御性修复**：逻辑按"栈顶即自己才弹"设计、正常路径零行为变化，能跑就一直留着。
 
-### 待查-12 12 席规模的「卡」—— ✅ **2026-10-31 关单（r324~r331）**：我方两层 + 缓存自坑已修，剩下一层是第三方
+### 待查-12 12 席规模的「卡」—— ✅ **2026-10-31 关单（r324~r332）**：我方全部修完（采样已归零），剩下的全是第三方
 
 > **结论（一句话）**：`12 席 / 11 瓦库` 本身能跑 **50~60 fps**；「越打越卡」= 第三方 mod 在**每次 hook**
 > 里做全栈回溯之外的重活（`YUICore.YuiRelicTriggerReplay` 每次 hook 写 AsyncLocal + `figure_Saya` /
 > `Koishi` / `newsanguo` 三个 Filter），12 席把这套按"牌数 × 人数"放大 10 倍以上。
 >
-> **我方已修（三层，全部实机验证）**
+> **我方已修（三层 + r332 三处，全部实机验证）**
 > - **r329** `LocalContextThirdPartyIsMePatch`：第三方每问一次 `IsMe` 都做**全栈回溯**（采样显示主线程 63.9%
 >   在 `StackTrace.CaptureStackTrace`）⇒ 改**每帧 2ms 预算** + 调用点方法句柄记忆化 + 探针新槽位。
 > - **r330** `CombatStateListCachePatch`：原版 `Creatures/PlayerCreatures/Players` **每次访问都
@@ -509,6 +509,10 @@
 >   `CreaturesChanged` 事件失效。
 > - **r331** 同上补丁：缓存自身在热路径里调了 Godot icall（`Engine.GetProcessFrames`）⇒ 占主线程 **35.7%**，
 >   改 `Environment.TickCount64` 分桶。
+> - **r332** 同一条链最后三处：① `ModelDb.GetId<T>()` 每次都跑 `Slugify → Regex.Replace`
+>   （采样主线程 **30.2%**）⇒ 瓦库遗物 id 改静态缓存；② `WakuuOwnerSelectorMap.TryGet` 每次 `lock`
+>   （**5.6%**）⇒ 写时复制快照、读零锁零分配；③ 栈回溯提到席位资格判定之前 + 预算窗口换托管时钟。
+>   复采：主线程 `DualRoleAdventurefixed!` **0 条**，用户「纵享丝滑了」。
 >
 > **量出来的事实（判读口径见 skill `references/diagnostics-and-triage.md`）**
 > - 关掉绝大多数 mod：12 席 floor 2→18、13 分钟，fps 中位 **50~60**、帧时 17~21ms、长帧 0、GC 1~4%。
@@ -519,11 +523,20 @@
 >   → Saya.GeneralizedResistanceSuppressionPatch.Filter → Koishi.SealAllRelicPatch.Filter
 >   → newsanguo.AbilitySuppressionPatch.Filter`。
 >
-> **⭐ 下一步（待用户拍板，非我方 bug）**
-> 1. 用户先自测「除 YUI 系列外全部 mod」的流畅度（2026-10-31 约定，下个对话回报）。
-> 2. 若想保留 YUI 系列 ⇒ 需要给 **YUICore 的 `YuiRelicTriggerReplay`** 写一个独立 compat 补丁
->    （去掉 per-call AsyncLocal 写入；它被 YUISpireExpansion / YUICardExpansion 等依赖，风险中等，
->    按 Hextech/NinjaSlayer 的路子：`compat-mods/` 独立 dll、默认关、只在本地多控会话启用）。
+> **⭐ 下一轮任务（用户 2026-10-31 点名，非我方 bug）**：
+> **`古明地恋 Koishi` / `沙耶之歌 figure_Saya` / `新三国 newsanguo` / `YUI 系列` 四家的兼容优化**。
+> 起步口径（按 r332 采样）：
+> 1. 三家各挂一个 `Hook.ModifyKeywordsInCombat` 的 `Filter`（`Koishi.SealAllRelicPatch` /
+>    `figure_Saya.GeneralizedResistanceSuppression` / `newsanguo.AbilitySuppression`），**叠加时每问一次
+>    关键词就把三份全量扫描跑一遍**（`IsInstanceOfClass` 16.3%、三家 Filter 合计 ≈5%）。
+> 2. `YUICore.YuiRelicTriggerReplay.Wrap` 每条 hook 写一次 AsyncLocal（上一段实测主线程 10.7%）。
+> 3. 做法：先反编译四家的 Filter / Replay 入口，判断能否 compat 成「**结果按帧或按版本号缓存**」/
+>    「**只在关键词/遗物集合变化时重算**」；落地按 `compat-mods/` 规矩（独立 dll、**默认关**、只在本地多控会话启用、
+>    随主 Release 出 `compat-mods-v<major>.<minor>.zip`）。
+> 4. 注意：这三家**不是**「第三方自身缺陷」⇒ 属于主 mod ↔ 第三方交互，符合 compat 收录范围；
+>    但**不要**给它们加"缺内容兜底"（2026-10-21 口径）。
+> 5. ⚠ 关 mod 前先确认当前存档没有引用它（否则原版读档校验失败会把存档改名成 `*.VAL.corrupt`，
+>    `tools\restore_corrupt_save.ps1` 可还原）。
 >
 > **遗留未定性（登记，不阻塞）**：`手牌UI与数据存在差异` 1→17、`Couldn't get hand node` 1 条、
 > `finished execution, but was in state Canceled` 17 条（疑为"真人插队撤动作"副作用，r127 口径内但变多了）。
