@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
@@ -98,6 +99,9 @@ public static class Entry
     {
         return $"过滤链闸门 Koishi={State(_koishiInstalled)} Saya={State(_sayaInstalled)} "
             + $"newsanguo={State(_newsanguoInstalled)} YUI={State(_yuiInstalled)}；"
+            + $"接管 Koishi={State(VendorFilterHandover.KoishiTakenOver)} "
+            + $"Saya={State(VendorFilterHandover.SayaTakenOver)} "
+            + $"newsanguo={State(VendorFilterHandover.NewsanguoTakenOver)}；"
             + $"记忆化 Slugify={State(_slugifyMemoInstalled)} RitsuStem={State(_ritsuStemMemoInstalled)} "
             + $"YUIFindType={State(_yuiFindTypeMemoInstalled)}；"
             + $"列表容量={State(_listenerCapacityInstalled)}；"
@@ -239,11 +243,13 @@ public static class Entry
         }
 
         VendorTypes.SealAllPower = powerType;
-        return TryPatchVendorMethod(
+        return TryTakeOverFilterChain(
             patchType,
             "Postfix",
-            nameof(VendorFilterPatches.SkipKoishiSealAll),
-            "Koishi SealAllRelicPatch.Postfix");
+            nameof(VendorFilterHandover.KoishiRelay),
+            "Koishi SealAllRelicPatch.Postfix",
+            "koishi",
+            nameof(VendorFilterPatches.SkipKoishiSealAll));
     }
 
     private static bool TryPatchSaya()
@@ -256,11 +262,13 @@ public static class Entry
         }
 
         VendorTypes.GeneralizedResistancePower = powerType;
-        return TryPatchVendorMethod(
+        return TryTakeOverFilterChain(
             patchType,
             "FilterSuppressedDebuffs",
-            nameof(VendorFilterPatches.SkipSayaGeneralizedResistance),
-            "figure_Saya GeneralizedResistanceSuppressionPatch.FilterSuppressedDebuffs");
+            nameof(VendorFilterHandover.SayaRelay),
+            "figure_Saya GeneralizedResistanceSuppressionPatch.FilterSuppressedDebuffs",
+            "saya",
+            nameof(VendorFilterPatches.SkipSayaGeneralizedResistance));
     }
 
     private static bool TryPatchNewsanguo()
@@ -275,11 +283,13 @@ public static class Entry
 
         VendorTypes.AntiMagicFieldCard = cardType;
         VendorTypes.IronCavalryPower = powerType;
-        return TryPatchVendorMethod(
+        return TryTakeOverFilterChain(
             patchType,
             "Postfix",
-            nameof(VendorFilterPatches.SkipNewsanguoAbilitySuppression),
-            "newsanguo AbilitySuppressionPatch.Postfix");
+            nameof(VendorFilterHandover.NewsanguoRelay),
+            "newsanguo AbilitySuppressionPatch.Postfix",
+            "newsanguo",
+            nameof(VendorFilterPatches.SkipNewsanguoAbilitySuppression));
     }
 
     private static bool TryPatchYui()
@@ -300,6 +310,125 @@ public static class Entry
             nameof(VendorFilterPatches.SkipYuiRelicTriggerReplay),
             "YUICore YuiRelicTriggerReplay.Wrap",
             requiredFirstParamName: "listeners");
+    }
+
+    /// <summary>
+    /// 接管一家过滤链：把对方挂在 <c>CombatState.IterateHookListeners</c> 上的那**一个** postfix 卸下来，
+    /// 换成我们自己的接力 postfix（机制不在场直接返回；在场则反射调用对方原方法，行为完全一致）。
+    ///
+    /// 为什么不能只挂前缀（2026-10-31 同局日志 + 采样）：对方的方法体只有一句
+    /// `__result = Filter(__result)`，**tier-1 被 JIT 内联** ⇒ 前缀只覆盖 tier-0，
+    /// 整局每家只命中一次 `跳过=1`，而 Filter 照样在跑（这三条链占主线程 20~25%）。
+    ///
+    /// 失败一律回退「给对方方法挂前缀」（至少 tier-0 有效），**绝不让对方的过滤效果消失**。
+    /// </summary>
+    private static bool TryTakeOverFilterChain(
+        Type vendorPatchType,
+        string vendorMethodName,
+        string relayMethodName,
+        string label,
+        string key,
+        string fallbackPrefixName)
+    {
+        if (_harmony == null)
+        {
+            return false;
+        }
+
+        MethodInfo? vendor = vendorPatchType.GetMethod(
+            vendorMethodName,
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+        if (vendor == null)
+        {
+            Log.Warn($"{LogPrefix} {label} 的补丁方法名已变（找不到 {vendorMethodName}），跳过该家。");
+            return false;
+        }
+
+        MethodInfo? original = AccessTools.Method(typeof(CombatState), "IterateHookListeners");
+        if (original == null)
+        {
+            Log.Warn($"{LogPrefix} 找不到 CombatState.IterateHookListeners（游戏版本变了）⇒"
+                + $" {label} 保持第三方原行为（只损失性能）。");
+            return false;
+        }
+
+        VendorFilterHandover.RememberVendor(key, vendor);
+
+        MethodInfo? relay = typeof(VendorFilterHandover).GetMethod(
+            relayMethodName,
+            BindingFlags.Static | BindingFlags.Public);
+        if (relay == null)
+        {
+            Log.Warn($"{LogPrefix} 找不到本 mod 的接力方法 {relayMethodName}（保持第三方原行为）。");
+            return false;
+        }
+
+        // ① 卸下对方那一个 postfix（只这一个，不动对方其它补丁）
+        try
+        {
+            _harmony.Unpatch(original, vendor);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"{LogPrefix} 卸下 {label} 的补丁失败（退回前缀兜底，只覆盖 tier-0）: {ex.Message}");
+            return TryPatchVendorPrefix(vendor, fallbackPrefixName, label);
+        }
+
+        // ② 挂上我们的接力；挂不上就把对方补丁原样装回去
+        try
+        {
+            _harmony.Patch(original, postfix: new HarmonyMethod(relay));
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"{LogPrefix} 接管 {label} 失败，正在把对方补丁装回（保持第三方原行为）: {ex.Message}");
+            try
+            {
+                _harmony.Patch(original, postfix: new HarmonyMethod(vendor));
+            }
+            catch (Exception restoreEx)
+            {
+                Log.Warn($"{LogPrefix} 恢复 {label} 失败！该家过滤链现在未生效（玩法可能变化）: {restoreEx.Message}");
+            }
+
+            return false;
+        }
+
+        VendorFilterHandover.MarkTakenOver(key, true);
+        Log.Info($"{LogPrefix} 已接管 {label}：对方补丁已卸下，改由我们的接力 postfix 判定"
+            + "（机制不在场整条跳过；在场反射调用原方法，行为不变）。");
+        return true;
+    }
+
+    /// <summary>兜底：给对方的 patch 方法挂前缀（只覆盖 tier-0）。</summary>
+    private static bool TryPatchVendorPrefix(MethodInfo target, string prefixName, string label)
+    {
+        if (_harmony == null)
+        {
+            return false;
+        }
+
+        MethodInfo? prefix = typeof(VendorFilterPatches).GetMethod(
+            prefixName,
+            BindingFlags.Static | BindingFlags.Public);
+        if (prefix == null)
+        {
+            Log.Warn($"{LogPrefix} 找不到本 mod 的补丁方法 {prefixName}。");
+            return false;
+        }
+
+        try
+        {
+            _harmony.Patch(target, prefix: new HarmonyMethod(prefix));
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"{LogPrefix} 补丁 {label} 失败（保持第三方原行为）: {ex.Message}");
+            return false;
+        }
+
+        Log.Info($"{LogPrefix} 已给 {label} 挂前缀兜底（只覆盖 tier-0）。");
+        return true;
     }
 
     /// <param name="requiredFirstParamName">
@@ -338,23 +467,8 @@ public static class Entry
             }
         }
 
-        MethodInfo? prefix = typeof(VendorFilterPatches).GetMethod(
-            prefixName,
-            BindingFlags.Static | BindingFlags.Public);
-        if (prefix == null)
+        if (!TryPatchVendorPrefix(target, prefixName, label))
         {
-            Log.Warn($"{LogPrefix} 找不到本 mod 的补丁方法 {prefixName}。");
-            return false;
-        }
-
-        try
-        {
-            _harmony.Patch(target, prefix: new HarmonyMethod(prefix));
-        }
-        catch (Exception ex)
-        {
-            // 例：参数名/签名对不上。保持第三方原行为即可，不能把它搞坏。
-            Log.Warn($"{LogPrefix} 补丁 {label} 失败（保持第三方原行为）: {ex.Message}");
             return false;
         }
 

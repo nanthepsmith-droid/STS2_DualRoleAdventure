@@ -4,6 +4,9 @@
 （不属于 `DualRoleAdventure` 主 mod，主仓库行为代码一行不动）。
 
 原名 `HookFilterPerfFix`（v1.0.0 只做过滤链跳过，v1.1.0 扩到热路径纯函数记忆化并改名）。
+**v1.3.0（2026-10-31）**：三家过滤链的闸门从「Harmony 前缀」改成**Unpatch 接管**
+（卸下对方那一个 postfix、换成我们的接力；前缀会被 tier-1 内联绕过，实测等于没装），
+详见 §「v1.3.0 定案」。
 
 ## 现象
 
@@ -96,9 +99,52 @@ Harmony 生成的包裹方法**，一旦内联，调用根本不经过被改写�
   `AbilitySuppressionPatch.Filter` 1.21% —— **闸门说跳过，链子照样在跑**；
 - 而 YUICore 的 `Wrap`（带迭代体的大方法）一跳就归零 —— 对照组干净。
 
-所以：**给第三方的一行包装方法打前缀只能覆盖 tier-0 的少数调用**。要真正摘掉这三条链，只有
-「先卸掉对方的补丁、再以 `[MethodImpl(NoInlining)]` 的自己补丁重新挂上、在场时才回调对方的 `Filter`」，
-收益约 4%，风险是动别人的 Harmony 状态 —— **当前判定：不做**（见 TODO 里的取舍）。
+所以：**给第三方的一行包装方法打前缀只能覆盖 tier-0 的少数调用**。
+
+### v1.3.0 定案：Unpatch 接管（卸下对方那一个 postfix，换成我们的接力）
+
+（2026-10-31 18:01 局，同局日志 + `dotnet-trace` 双向对照：四家闸门各只命中一次 `跳过=1`，
+而采样里三家 `Filter` 照样在跑 —— 前缀确实等于没装。）
+
+**先说走不通的两条路，别再试一遍**：
+
+1. **转译器注入方法体**（改 IL，理论上内联也带着闸门）：本游戏内置的 Harmony（MonoMod 后端）
+   在落带分支的 IL 时直接 `NullReferenceException @ MonoMod.Utils.Cil.CecilILGenerator.Emit(OpCode, Label)`
+   —— 用游戏目录那份 `0Harmony.dll` 写真实单测就能复现（`BranchOperand` 给 `CodeInstruction` 同样在
+   `DynEmit` 里炸）。⇒ **这条路在本版本不可行**，已放弃。
+2. 保留前缀只当兜底：实测等于没装（见上），只在接管失败时留作最后一层。
+
+**最终做法（`Scripts/Patches/VendorFilterHandover.cs`）**：
+
+```
+① _harmony.Unpatch(CombatState.IterateHookListeners, 对方的 postfix 方法)   // 只卸这一个
+② _harmony.Patch(同 original, postfix: 我们的接力)                          // 每次分发先问闸门
+③ 接力内部：机制不在场 → 直接 return（对方什么都不做 = 语义等价）
+            机制在场   → 反射调用对方原方法（object[]{ __result } 回写）⇒ 行为完全一致
+```
+
+- 只接管「拿得到对方方法 + 卸下成功」的家；任何一步失败 ⇒ 退回前缀兜 tier-0，**绝不让对方效果消失**。
+- ② 挂不上时会把对方补丁**原样装回**（宁可慢，不能改玩法）；装回也失败会打 WARN 点明"过滤链现在不生效"。
+- 反射调用只在机制在场时发生（罕见到可以忽略），不在场的常态路径只剩一次闸门判定。
+- 三条边界锁在单测 `tests/LocalMultiControl.Tests/VendorFilterHandoverTests.cs`（用假 original + 假对方 postfix，
+  跑真实 Harmony）：跳过时结果与「从没打过补丁」一致；在场时与「对方补丁仍在」一致；
+  **只卸指定那一个方法**，同 original 上的其它补丁不受影响。
+- 前缀补丁保留（`VendorFilterPatches`）作为兜底；两条路调同一个 `ArmedGates` 判定。
+
+### 这笔账有多大（2026-10-31 18:01 局，主线程 Thread 4184，20s 采样）
+
+| 项 | 自身耗时 | 归属 |
+|---|---|---|
+| `CastHelpers.IsInstanceOfClass` / `IsInstanceOfInterface` | **14.51% / 5.75%** | 其中约 82% 来自三家 Filter 逐 listener 判型 |
+| `IterateHookListeners.MoveNext_Patch1` | **6.78%** | **100%** 由「Koishi ⟵ Saya ⟵ RitsuLib 展开」这条链调起 |
+| `RitsuLib ExpandOwnerHookListeners` / `ConditionalWeakTable` 查+写 | 3.92% / 7.31% | 同一条链的展开与查表 |
+| `Koishi` / `Saya` / `newsanguo` 的 `Filter` 自身 | 1.93% / 1.45% / 1.53% | 被内联绕过的那三家 |
+| `OrderedDictionary.Resize` / `StelemRef` / `ToArray` | 2.90% / 2.41% / 1.23% | 每次分发重建/扩容集合 |
+
+还有一处**重入放大**（`--chain` 抓到）：
+`Hook.ModifyKeywordsInCombat ⟵ newsanguo.Filter ⟵ Koishi.Filter ⟵ Saya.Filter` ——
+每层 Filter 内部又回头问一次关键词/能量 ⇒ 一次查询把全场分发跑 3~4 遍。
+这也是「闸门必须落到方法体」的理由：只要有一层还在跑，它就会再把整条链拽起来一次。
 
 对照口径：判断补丁是否生效**只看自己的锚点**（`已补丁…` / `记忆化首次命中` / `机制在场（原因）`），
 不要用「采样栈里有没有某个帧」—— 过滤器是懒枚举，`Postfix` 只在创建可枚举对象那一刻在栈上。
@@ -115,7 +161,9 @@ Harmony 生成的包裹方法**，一旦内联，调用根本不经过被改写�
 ## 日志锚点
 
 ```
-[HotPathFix] initialized（过滤链闸门 Koishi=已装 Saya=已装 newsanguo=已装 YUI=已装；记忆化 Slugify=已装 RitsuStem=已装 YUIFindType=已装；能力版本监听=已装）。
+[HotPathFix] initialized（过滤链闸门 Koishi=已装 Saya=已装 newsanguo=已装 YUI=已装；接管 Koishi=已装 Saya=已装 newsanguo=已装；记忆化 Slugify=已装 RitsuStem=已装 YUIFindType=已装；列表容量=已装；能力版本监听=已装）。
+[HotPathFix] 已接管 Koishi SealAllRelicPatch.Postfix：对方补丁已卸下，改由我们的接力 postfix 判定（机制不在场整条跳过；在场反射调用原方法，行为不变）。
+[HotPathFix] 已给 <label> 挂前缀兜底（只覆盖 tier-0）。
 [HotPathFix] 已补丁 YUICore YuiRelicTriggerReplay.Wrap（机制不在场时跳过整条过滤链）。
 [HotPathFix] 已补丁 RitsuLib ModContentRegistry.NormalizePublicStem（同参数只算一次）。
 [HotPathFix] RitsuLib NormalizePublicStem 记忆化首次命中 —— 补丁确实生效（此后同类调用不再重算）。
@@ -126,6 +174,8 @@ Harmony 生成的包裹方法**，一旦内联，调用根本不经过被改写�
 
 排查要点：
 - 只有 `initialized` 没有「已补丁 X」⇒ 那家没装 / 类型改名 / 打补丁失败（同轮日志里会有 WARN）；
+- 有「已接管 …：对方补丁已卸下」⇒ **v1.3.0 的接管确实生效**（没有这一行 = 该家还在用前缀，
+  等于仍然会慢；同轮会有「卸下失败 / 接管失败」的 WARN）；
 - 有「记忆化首次命中」⇒ 该记忆化确实在生效（**没有这一行 = 被内联旁路了**）；
 - `机制在场（…）` 会写明原因（能力 / 汉中 / 铁骑 / 遗物接口 / 判不出来），别猜。
 
