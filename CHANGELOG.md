@@ -37,7 +37,7 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ### Performance（兼容补丁侧，r333~r335）
 
-新增 `compat-mods/ThirdPartyHotPathFix`（v1.0.0 → **v1.2.0**，原名 `HookFilterPerfFix`）：12 席规模下
+新增 `compat-mods/ThirdPartyHotPathFix`（v1.0.0 → **v1.3.0**，原名 `HookFilterPerfFix`）：12 席规模下
 **只改性能、不改玩法**的热路径补丁。四条改动，都有采样前后对照：
 
 - **① 空转过滤链跳过**（四家）：`Koishi` / `figure_Saya` / `newsanguo` 挂在 `IterateHookListeners` 的后缀上
@@ -55,7 +55,17 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 - **④ 文档**：`README`（中英）新增「性能：装了内容型第三方 mod 时别开人多的战斗」小节 —— 给出可推广判据
   （给每席位加卡/遗物/能力，或把补丁挂在每帧多次、遍历全场的方法上）、实测数字，并建议这类 mod 下
   **≤4 席**（原版上限）；海克斯符文单列说明「顶破容量」的机制与修复状态。`PLAYER_GUIDE`（中英）
-  同步了席位提醒与「瓦库商店自动买只对切过去的席位生效」。<!-- -->
+  同步了席位提醒与「瓦库商店自动买只对切过去的席位生效」。
+- **⑤ v1.3.0：三家过滤链的闸门改「Unpatch 接管」**。v1.2.0 的前缀补丁挂在三家那一句
+  `__result = Filter(__result)` 的包装方法上，**tier-1 被 JIT 内联** ⇒ 整局每家只命中一次 `跳过=1`、
+  链子照跑（同局日志 + 采样双向对照）；转译器路线在本游戏内置 Harmony（MonoMod 后端）上
+  落带分支的 IL 直接 NRE（用游戏同一份 `0Harmony.dll` 的真实单测复现），也不可行。
+  最终做法：卸下对方挂在 `CombatState.IterateHookListeners` 的那**一个** postfix，换成我们的接力 postfix
+  —— 机制不在场整条跳过，在场反射调用对方原方法（行为完全一致）；任何一步失败都退回原状。
+  实机：三家整场战斗跳过 **612,486 次**、零异常、零玩法变化。
+- ⚠ **诚实的结论（2026-10-31 用户拍板性能线暂停）**：验收局里闸门全程生效，但 fps 仍 4~8 ⇒
+  这条链（约 20~25% 主线程）**不是体感卡顿的主因**，摘掉无感。剩余嫌疑（分配洪水 160~270MB/s /
+  RitsuLib 能力展开链 / 引擎侧）已登记 `TODO.md`，再动工前先采一份 `-Allocation`。补丁无害，保留。<!-- -->
 
 ### Added（玩家可见的新增）
 
