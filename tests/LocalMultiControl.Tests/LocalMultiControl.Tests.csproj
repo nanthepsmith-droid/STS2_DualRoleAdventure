@@ -49,6 +49,17 @@
              Link="Linked\RuneRerollPolicy.cs" />
     <Compile Include="..\..\compat-mods\HextechRunesLocalCoopFix\Scripts\RuneBadgePolicy.cs"
              Link="Linked\RuneBadgePolicy.cs" />
+    <!-- ThirdPartyHotPathFix 的三个纯逻辑件（不依赖 Godot / 游戏类型） -->
+    <Compile Include="..\..\compat-mods\ThirdPartyHotPathFix\Scripts\Gates\CombatSnapshotCache.cs"
+             Link="Linked\CombatSnapshotCache.cs" />
+    <Compile Include="..\..\compat-mods\ThirdPartyHotPathFix\Scripts\Gates\YuiRelicCache.cs"
+             Link="Linked\YuiRelicCache.cs" />
+    <Compile Include="..\..\compat-mods\ThirdPartyHotPathFix\Scripts\Gates\VerdictCounter.cs"
+             Link="Linked\VerdictCounter.cs" />
+    <Compile Include="..\..\compat-mods\ThirdPartyHotPathFix\Scripts\Memo\Memo.cs"
+             Link="Linked\Memo.cs" />
+    <Compile Include="..\..\compat-mods\ThirdPartyHotPathFix\Scripts\Patches\ListenerListCapacityPatch.cs"
+             Link="Linked\ListenerListCapacityPatch.cs" />
     <!-- 游戏程序集：随测试复制到输出目录，供类型加载（不实际调用 Godot 运行时） -->
     <Reference Include="sts2">
       <HintPath>$(Sts2DataDir)/sts2.dll</HintPath>
