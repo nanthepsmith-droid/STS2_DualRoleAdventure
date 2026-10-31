@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
-using Godot;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
 using LocalMultiControl.Scripts.Runtime.PureLogic;
@@ -90,7 +89,17 @@ internal static class LocalContextThirdPartyIsMePatch
     /// </summary>
     private const long WalkBudgetMsPerFrame = 2;
 
-    private static ulong _budgetFrame = ulong.MaxValue;
+    /// <summary>
+    /// r332：预算窗口的宽度（毫秒）。原来用 `Engine.GetProcessFrames()` 做"每帧重置"，
+    /// 但那是**原生 icall**（~1~2µs/次），而本方法每秒被调上万次 ⇒ 光"取帧号"就是几个百分点
+    /// （同款坑：r331 的 `CombatStateListCachePatch.ShouldCache` 因为调 `Engine.GetProcessFrames()`
+    /// 一个人吃掉主线程 35.7%，见 references AE-36）。
+    /// **热路径禁止 Godot icall** ⇒ 换成纯托管的 `Environment.TickCount64` 分桶，
+    /// 15ms ≈ 一帧（60fps），语义等价。
+    /// </summary>
+    private const long BudgetWindowMs = 15;
+
+    private static long _budgetWindowStartMs = long.MinValue;
 
     private static long _walkMsThisFrame;
 
@@ -150,6 +159,24 @@ internal static class LocalContextThirdPartyIsMePatch
             return;
         }
 
+        // r329：这条栈回溯曾经吃掉主线程 63.9%（见 TryResolveThirdPartyCaller 注释）⇒ 加进逐帧探针，
+        // 以后每 5s 的窗口行里直接能看 `第三方IsMe放行=…ms(调用 N)`，不用再采样一次才知道有没有复发。
+        //
+        // r332（2026-10-31 采样）：**顺序调换** —— 栈回溯提到"席位资格"之前。
+        // 理由：原来的顺序是「先查资格（含 `WakuuSelectorRegistry` 查表 + `IsVakuuFormMode` 查遗物），
+        // 再判调用方」，而**原版自己**每秒也会问很多次 `IsMe`；那些调用方在第一步就要白做一遍资格判定
+        // （采样里 `WakuuOwnerSelectorMap.TryGet` 5.6%、`ModelDb.GetId → Slugify → 正则` 30.2% 都是从这个
+        // 顺序里被第三方刷出来的）。先判调用方 ⇒ 原版/我方调用方**一条资格判据都不做**就早退，
+        // 而第三方调用方本来也一定要过资格判定，语义完全不变。
+        long resolveStart = LocalPerfProbe.Begin();
+        bool thirdPartyCaller = TryResolveThirdPartyCaller(out string caller);
+        LocalPerfProbe.End(LocalPerfProbe.Slot.ThirdPartyIsMe, resolveStart);
+
+        if (!thirdPartyCaller)
+        {
+            return;
+        }
+
         bool automatedSeatInPlay = WakuuSelfDrawnChoicePolicy.IsAutomatedSeatInPlay(
             enabled: true,
             singleAdventureMode: true,
@@ -159,17 +186,6 @@ internal static class LocalContextThirdPartyIsMePatch
             vakuuFormMode: LocalWakuuRelicRuntime.IsVakuuFormMode(player),
             hasManagedSelector: WakuuSelectorRegistry.TryGet(player.NetId, out _));
         if (!automatedSeatInPlay)
-        {
-            return;
-        }
-
-        // r329：这条栈回溯曾经吃掉主线程 63.9%（见 TryResolveThirdPartyCaller 注释）⇒ 加进逐帧探针，
-        // 以后每 5s 的窗口行里直接能看 `第三方IsMe放行=…ms(调用 N)`，不用再采样一次才知道有没有复发。
-        long resolveStart = LocalPerfProbe.Begin();
-        bool thirdPartyCaller = TryResolveThirdPartyCaller(out string caller);
-        LocalPerfProbe.End(LocalPerfProbe.Slot.ThirdPartyIsMe, resolveStart);
-
-        if (!thirdPartyCaller)
         {
             return;
         }
@@ -210,11 +226,11 @@ internal static class LocalContextThirdPartyIsMePatch
     {
         caller = "unknown";
 
-        // ① 每帧预算闸：超了就不回溯（维持原判），见 WalkBudgetMsPerFrame。
-        ulong frame = Engine.GetProcessFrames();
-        if (frame != _budgetFrame)
+        // ① 预算窗口闸：超了就不回溯（维持原判），见 WalkBudgetMsPerFrame / BudgetWindowMs。
+        long nowMs = Environment.TickCount64;
+        if (nowMs - _budgetWindowStartMs >= BudgetWindowMs)
         {
-            _budgetFrame = frame;
+            _budgetWindowStartMs = nowMs;
             _walkMsThisFrame = 0L;
         }
 

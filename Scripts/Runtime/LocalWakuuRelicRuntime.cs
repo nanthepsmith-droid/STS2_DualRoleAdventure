@@ -123,14 +123,33 @@ internal static class LocalWakuuRelicRuntime
         public bool AllVakuuSelectors { get; }
     }
 
+    /// <summary>
+    /// r332（2026-10-31 采样）：`ModelDb.GetId&lt;T&gt;()` **每次调用**都会走
+    /// `ModelId.SlugifyCategory` → `StringHelper.Slugify` → `Regex.Replace`（正则执行 + 分配）。
+    ///
+    /// 采样里主线程 **30.2%** 自耗时在 `System.Text.StructListBuilder.GrowAndAdd`（正则内部），
+    /// 调用链 = `CombatState.IterateHookListeners → figure_Saya.Filter → Koishi.Filter
+    /// → PowerModel.get_IsVisible → LocalContext.IsMe → 我们的 IsMe Postfix
+    /// → IsVakuuFormMode → TryGetWakuuFormRelic → ModelDb.GetId → Slugify`。
+    /// 也就是说：第三方**每秒上万次**问 `IsMe`，把一个"类型 → Id"的**编译期常量**放大成了帧时间主项。
+    ///
+    /// 类型与 Id 的映射恒定不变 ⇒ 缓存一次（顺带把第三方给 `ModelDb.GetId` 打的那层 Harmony 补丁
+    /// 从热路径里摘出去，只在初始化时触发一次）。
+    /// ⚠ 以后再有 `ModelDb.GetId&lt;T&gt;()` 出现在"每秒会被调上万次"的判据里，一律先缓存成静态字段。
+    /// </summary>
+    private static readonly ModelId WakuuStarterRelicId = ModelDb.GetId<LocalWakuuStarterRelic>();
+
+    /// <inheritdoc cref="WakuuStarterRelicId"/>
+    private static readonly ModelId WakuuFormRelicId = ModelDb.GetId<LocalWakuuFormRelic>();
+
     public static LocalWakuuStarterRelic? TryGetWakuuRelic(Player player)
     {
-        return player.GetRelicById(ModelDb.GetId<LocalWakuuStarterRelic>()) as LocalWakuuStarterRelic;
+        return player.GetRelicById(WakuuStarterRelicId) as LocalWakuuStarterRelic;
     }
 
     public static LocalWakuuFormRelic? TryGetWakuuFormRelic(Player player)
     {
-        return player.GetRelicById(ModelDb.GetId<LocalWakuuFormRelic>()) as LocalWakuuFormRelic;
+        return player.GetRelicById(WakuuFormRelicId) as LocalWakuuFormRelic;
     }
 
     /// <summary>瓦库接管遗物 = 旧的"永久低语耳环"或新的【瓦库形态】任一。</summary>

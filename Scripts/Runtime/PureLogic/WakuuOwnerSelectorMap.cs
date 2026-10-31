@@ -16,11 +16,24 @@ namespace LocalMultiControl.Scripts.Runtime;
 ///    <see cref="TryGet"/> 取**最内层**（最后登记）那个，与选择器栈的栈顶语义一致；
 /// 2. 释放**按引用**移除，不依赖「自己是否仍是最后一个」——乱序释放也不会误删别人的条目；
 /// 3. 纯内存结构、无游戏类型依赖（泛型承载任意选择器类型），供单测用普通对象驱动。
+///
+/// ⚠ r332（2026-10-31 采样）**读路径必须无锁**：`LocalContext.IsMe` 的放行补丁每被第三方问一次
+/// 就要查一次本表，而 figure_Saya / Koishi / newsanguo 的过滤器链让它**每秒上万次** ⇒
+/// 旧实现每次 `lock` 都进监视器（12 个托管席位并发压栈时还有真实竞争），
+/// 采样里 `TryGet` 一个人占主线程 **5.6%**。现改为**写时复制快照**：
+/// `_snapshot` 是一个不可变字典引用，写操作在锁内构造新字典再整体替换，读操作直接读引用（零锁、零分配）。
+/// 登记/退订只发生在选牌窗口边缘（纳秒级频率），复制成本可忽略。
 /// </summary>
 internal sealed class WakuuOwnerSelectorMap<TSelector> where TSelector : class
 {
-    private readonly object _lock = new();
-    private readonly Dictionary<ulong, List<Entry>> _byOwner = new();
+    /// <summary>只保护"构造新快照并替换"这段写操作；读路径完全不碰它。</summary>
+    private readonly object _writeLock = new();
+
+    /// <summary>
+    /// 不可变快照（写时复制）：字典与其内部的 <see cref="List{T}"/> 一旦发布就**不再修改**，
+    /// 因此读线程拿到的永远是一份自洽视图。
+    /// </summary>
+    private volatile Dictionary<ulong, List<Entry>> _snapshot = new();
 
     private sealed class Entry
     {
@@ -37,30 +50,18 @@ internal sealed class WakuuOwnerSelectorMap<TSelector> where TSelector : class
     {
         get
         {
-            lock (_lock)
+            int total = 0;
+            foreach (List<Entry> list in _snapshot.Values)
             {
-                int total = 0;
-                foreach (List<Entry> list in _byOwner.Values)
-                {
-                    total += list.Count;
-                }
-
-                return total;
+                total += list.Count;
             }
+
+            return total;
         }
     }
 
     /// <summary>被登记的归属者数量（去重后的玩家数）。</summary>
-    public int OwnerCount
-    {
-        get
-        {
-            lock (_lock)
-            {
-                return _byOwner.Count;
-            }
-        }
-    }
+    public int OwnerCount => _snapshot.Count;
 
     /// <summary>
     /// 登记一个归属者的托管选择器，返回的 scope 释放时退订本条（幂等，重复释放无副作用）。
@@ -70,15 +71,22 @@ internal sealed class WakuuOwnerSelectorMap<TSelector> where TSelector : class
         ArgumentNullException.ThrowIfNull(selector);
 
         Entry entry = new(selector);
-        lock (_lock)
+        lock (_writeLock)
         {
-            if (!_byOwner.TryGetValue(ownerId, out List<Entry>? list))
+            Dictionary<ulong, List<Entry>> next = new(_snapshot);
+            if (next.TryGetValue(ownerId, out List<Entry>? existing))
             {
-                list = new List<Entry>();
-                _byOwner[ownerId] = list;
+                List<Entry> grown = new(existing.Count + 1);
+                grown.AddRange(existing);
+                grown.Add(entry);
+                next[ownerId] = grown;
+            }
+            else
+            {
+                next[ownerId] = new List<Entry>(1) { entry };
             }
 
-            list.Add(entry);
+            _snapshot = next;
         }
 
         return new Registration(this, ownerId, entry);
@@ -87,13 +95,11 @@ internal sealed class WakuuOwnerSelectorMap<TSelector> where TSelector : class
     /// <summary>按归属者取其**最内层**（最后登记）的选择器；无登记返回 false。</summary>
     public bool TryGet(ulong ownerId, out TSelector? selector)
     {
-        lock (_lock)
+        Dictionary<ulong, List<Entry>> snapshot = _snapshot;
+        if (snapshot.TryGetValue(ownerId, out List<Entry>? list) && list.Count > 0)
         {
-            if (_byOwner.TryGetValue(ownerId, out List<Entry>? list) && list.Count > 0)
-            {
-                selector = list[list.Count - 1].Selector;
-                return true;
-            }
+            selector = list[list.Count - 1].Selector;
+            return true;
         }
 
         selector = null;
@@ -103,10 +109,7 @@ internal sealed class WakuuOwnerSelectorMap<TSelector> where TSelector : class
     /// <summary>该归属者当前是否有登记。</summary>
     public bool Contains(ulong ownerId)
     {
-        lock (_lock)
-        {
-            return _byOwner.TryGetValue(ownerId, out List<Entry>? list) && list.Count > 0;
-        }
+        return _snapshot.TryGetValue(ownerId, out List<Entry>? list) && list.Count > 0;
     }
 
     /// <summary>
@@ -122,16 +125,13 @@ internal sealed class WakuuOwnerSelectorMap<TSelector> where TSelector : class
             return false;
         }
 
-        lock (_lock)
+        foreach (List<Entry> list in _snapshot.Values)
         {
-            foreach (List<Entry> list in _byOwner.Values)
+            for (int i = 0; i < list.Count; i++)
             {
-                for (int i = 0; i < list.Count; i++)
+                if (ReferenceEquals(list[i].Selector, selector))
                 {
-                    if (ReferenceEquals(list[i].Selector, selector))
-                    {
-                        return true;
-                    }
+                    return true;
                 }
             }
         }
@@ -142,15 +142,16 @@ internal sealed class WakuuOwnerSelectorMap<TSelector> where TSelector : class
     /// <summary>清空整表（运行清理时调用，防止泄漏条目跨局生效）。返回被清掉的条目数。</summary>
     public int Reset()
     {
-        lock (_lock)
+        lock (_writeLock)
         {
+            Dictionary<ulong, List<Entry>> current = _snapshot;
             int cleared = 0;
-            foreach (List<Entry> list in _byOwner.Values)
+            foreach (List<Entry> list in current.Values)
             {
                 cleared += list.Count;
             }
 
-            _byOwner.Clear();
+            _snapshot = new Dictionary<ulong, List<Entry>>();
             return cleared;
         }
     }
@@ -159,14 +160,11 @@ internal sealed class WakuuOwnerSelectorMap<TSelector> where TSelector : class
     public IReadOnlyList<KeyValuePair<ulong, TSelector>> SnapshotTop()
     {
         List<KeyValuePair<ulong, TSelector>> snapshot = new();
-        lock (_lock)
+        foreach (KeyValuePair<ulong, List<Entry>> pair in _snapshot)
         {
-            foreach (KeyValuePair<ulong, List<Entry>> pair in _byOwner)
+            if (pair.Value.Count > 0)
             {
-                if (pair.Value.Count > 0)
-                {
-                    snapshot.Add(new KeyValuePair<ulong, TSelector>(pair.Key, pair.Value[pair.Value.Count - 1].Selector));
-                }
+                snapshot.Add(new KeyValuePair<ulong, TSelector>(pair.Key, pair.Value[pair.Value.Count - 1].Selector));
             }
         }
 
@@ -176,27 +174,49 @@ internal sealed class WakuuOwnerSelectorMap<TSelector> where TSelector : class
 
     private void Unregister(ulong ownerId, Entry entry)
     {
-        lock (_lock)
+        lock (_writeLock)
         {
-            if (!_byOwner.TryGetValue(ownerId, out List<Entry>? list))
+            if (!_snapshot.TryGetValue(ownerId, out List<Entry>? list))
             {
                 return;
             }
 
             // 按引用移除：乱序释放（内层先于外层释放）也能正确定位自己的那一条
+            int index = -1;
             for (int i = list.Count - 1; i >= 0; i--)
             {
                 if (ReferenceEquals(list[i], entry))
                 {
-                    list.RemoveAt(i);
+                    index = i;
                     break;
                 }
             }
 
-            if (list.Count == 0)
+            if (index < 0)
             {
-                _byOwner.Remove(ownerId);
+                return;
             }
+
+            Dictionary<ulong, List<Entry>> next = new(_snapshot);
+            if (list.Count == 1)
+            {
+                next.Remove(ownerId);
+            }
+            else
+            {
+                List<Entry> shrunk = new(list.Count - 1);
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (i != index)
+                    {
+                        shrunk.Add(list[i]);
+                    }
+                }
+
+                next[ownerId] = shrunk;
+            }
+
+            _snapshot = next;
         }
     }
 
