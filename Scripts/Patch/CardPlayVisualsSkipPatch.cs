@@ -46,6 +46,15 @@ internal static class CardPlayVisualsSkipPatch
     {
         try
         {
+            // r324 探针：这一刻 = 动作泵轮到我们入队的那张牌、**执行真正开始**
+            // （在下面所有早退分支之前记，否则 inline 分支/probe 关掉时都记不到）。
+            // 只读时间戳、不改任何状态；判据在方法内部（同一席位 + 同一牌实例）。
+            Player? execOwner = __instance.Owner;
+            if (execOwner != null && LocalWakuuRelicRuntime.HasPendingQueuePlay(execOwner.NetId))
+            {
+                LocalWakuuRelicRuntime.NoteHostedPlayExecutionStarted(__instance, execOwner.NetId);
+            }
+
             // 已经是要跳过（inline AutoPlay 路径 r117 已传 true）⇒ 无需重复判定。
             if (skipCardPileVisuals)
             {

@@ -83,6 +83,28 @@ internal static class LocalMultiControlRuntime
 
     private static readonly Dictionary<ulong, HostedPlayableCacheEntry> _hostedPlayableCache = new();
 
+    /// <summary>
+    /// r326：**本 tick 门里算出来的**「每一席托管还有没有牌可打」，供点击路径复用。
+    ///
+    /// 为什么需要：真人点「结束回合」走的是 <see cref="TryManualEndTurnAutoCloseAllPlayers"/>，
+    /// 它原来对每个本机席位**当场重扫整手牌**（`CanPlay()` → 62 个 mod 的钩子）。12 席实测单次
+    /// **111ms**（2026-10-29 实机：用户「点结束回合特别卡」，探针 `门-手牌扫描 最大=111ms`）。
+    /// 而门（每帧）本来就把同样的结论算了一遍 —— 复用它即可，最多晚 ≤<see cref="TickPlayableMemoFreshMs"/>。
+    /// 语义上安全：这里只决定"要不要顺手替其他席位收口"，真结束回合仍由原版按真实状态判定。
+    /// </summary>
+    private static readonly Dictionary<ulong, bool> _tickPlayableMemo = new();
+
+    private const long TickPlayableMemoFreshMs = 250L;
+
+    /// <summary>
+    /// r326：把"出牌循环在飞"当成"还有牌可打"的最大信任时长。超过就不再用这条捷径（回到真实扫描），
+    /// 避免一条卡住的记账把这一席永远当成"还没打完"而挡住收口。
+    /// </summary>
+    private const long PlayLoopInFlightTrustMs = 60_000L;
+
+    private static long _tickPlayableMemoAtMs;
+    private static int _tickPlayableMemoRound = -1;
+
     private struct HostedPlayableCacheEntry
     {
         public int Round;
@@ -231,6 +253,9 @@ internal static class LocalMultiControlRuntime
         _lastEndTurnReconcileCheckMs = 0L;
         _lastHeavyAutoEndTickMs = 0L;
         _hostedPlayableCache.Clear();
+        _tickPlayableMemo.Clear();
+        _tickPlayableMemoAtMs = 0L;
+        _tickPlayableMemoRound = -1;
         LocalPerfProbe.Reset("run-cleanup");
         LocalMerchantInventoryRuntime.Clear();
         LocalRestSiteSeatBubble.Reset("run-cleanup");
@@ -525,11 +550,27 @@ internal static class LocalMultiControlRuntime
         // 其中约 2/3 是同一 tick 内的重复扫描（每张牌都要 `CanPlay()` → `Hook.ShouldPlay` →
         // `IterateHookListeners()`，后者每次都 `new List(玩家数×50)`）。
         Dictionary<ulong, bool> playableMemo = new();
+        // r326：把本 tick 的结论**落到字段**，让「点结束回合」这条点击路径也能复用（见
+        // TryManualEndTurnAutoCloseAllPlayers）。原来点击那一刻会**当场把整桌手牌重扫一遍**
+        // （每席 `CanPlay()` → 62 个 mod 的 `ShouldPlay` 钩子），12 席实测单次尖峰 **111ms**
+        //（2026-10-29 实机：用户「点结束回合特别卡」；探针 `门-手牌扫描 最大=111ms`）。
+        _tickPlayableMemo.Clear();
+        _tickPlayableMemoRound = combatState.RoundNumber;
+        _tickPlayableMemoAtMs = (long)Time.GetTicksMsec();
         bool HasPlayableCached(Player candidate)
         {
             if (playableMemo.TryGetValue(candidate.NetId, out bool cached))
             {
                 return cached;
+            }
+
+            // r326：**正在飞的那一席不用扫** —— 它此刻一定还有牌可打（正打着），而这也是缓存
+            // 一直失效、整桌重扫的根源。省掉之后每帧扫描从 8~17ms 掉到接近 0（最坏单帧 111ms 的尖峰同源）。
+            if (LocalWakuuRelicRuntime.HasPlayLoopInFlight(candidate.NetId, PlayLoopInFlightTrustMs))
+            {
+                playableMemo[candidate.NetId] = true;
+                _tickPlayableMemo[candidate.NetId] = true;
+                return true;
             }
 
             // r288：跨 tick 复用 —— 只要"回合号 / 能量 / 手牌张数 / 手牌实例哈希"没变且未超 TTL，
@@ -577,6 +618,7 @@ internal static class LocalMultiControlRuntime
             }
 
             playableMemo[candidate.NetId] = computed;
+            _tickPlayableMemo[candidate.NetId] = computed;
             return computed;
         }
 
@@ -651,6 +693,27 @@ internal static class LocalMultiControlRuntime
         }
     }
 
+    /// <summary>
+    /// r326：从「本 tick 门里」的结果里取该席位"托管还有没有牌可打"，供点击路径复用（避免整桌重扫）。
+    /// 只在**同一回合 + ≤<see cref="TickPlayableMemoFreshMs"/>** 内有效；否则返回 false 让调用方现场扫。
+    /// </summary>
+    private static bool TryGetPlayableFromTickMemo(Player player, CombatState combatState, out bool playable)
+    {
+        playable = false;
+        if (_tickPlayableMemoRound != combatState.RoundNumber)
+        {
+            return false;
+        }
+
+        long nowMs = (long)Time.GetTicksMsec();
+        if (nowMs - _tickPlayableMemoAtMs > TickPlayableMemoFreshMs)
+        {
+            return false;
+        }
+
+        return _tickPlayableMemo.TryGetValue(player.NetId, out playable);
+    }
+
     public static bool TryManualEndTurnAutoCloseAllPlayers()
     {
         if (!LocalSelfCoopContext.IsEnabled || !RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)
@@ -703,7 +766,11 @@ internal static class LocalMultiControlRuntime
             // r263：**托管口径**（见 HasHostedPlayableCards）—— 只剩"托管打不了"的牌时必须放行，
             // 否则真人点「结束回合」会被永远挡住（r262 实机现象，日志 16 条"检测到仍有可出牌角色"）。
             // 真人真想手动打那张牌，直接打即可（这条只看"要不要触发全员结束"）。
-            bool hasPlayableCards = LocalWakuuRelicRuntime.HasHostedPlayableCards(player, combatState.RoundNumber);
+            // r326：优先复用**本 tick 门里**算好的结论（12 席整桌重扫一次实测 111ms = 点击卡顿的来源），
+            // 只有该席位这一 tick 没被算过（极少）才现场扫一张。
+            bool hasPlayableCards = TryGetPlayableFromTickMemo(player, combatState, out bool memoPlayable)
+                ? memoPlayable
+                : LocalWakuuRelicRuntime.HasHostedPlayableCards(player, combatState.RoundNumber);
             if (hasPlayableCards)
             {
                 LocalMultiControlLogger.Info($"玩家主动结束回合时检测到仍有可出牌角色，不触发全员结束: round={combatState.RoundNumber}");
@@ -821,6 +888,10 @@ internal static class LocalMultiControlRuntime
         _endTurnReconcileLogCount = 0;
         // r288：手牌可出牌结果的跨 tick 复用缓存是**按战斗**的（RoundNumber 会重置），换战斗必须清。
         _hostedPlayableCache.Clear();
+        // r326：点击路径复用的"本 tick 结论"同样按战斗/回合失效。
+        _tickPlayableMemo.Clear();
+        _tickPlayableMemoAtMs = 0L;
+        _tickPlayableMemoRound = -1;
         LocalMultiControlLogger.Info(
             $"检测到战斗场次切换，重置瓦库自动结束回合状态: combat={combatIdentity}, source={source}");
         LocalWakuuRelicRuntime.ProbeAndRecoverSelectorStack($"combat-switch-{combatIdentity}", allowRecover: true);

@@ -49,8 +49,30 @@ internal static class LocalWakuuRelicRuntime
 
     private const long WatchdogRestartCooldownMs = 300L;
 
+    /// <summary>
+    /// r325：一条"在飞"的看门狗记账最多被信任多久。
+    ///
+    /// **为什么需要**：战斗结束时还停在出牌 await 上的循环**永远不会返回**（`finally` 不执行）
+    /// ⇒ 它的记账键永远留在 <see cref="_watchdogInFlight"/> 里。旧键是 `回合:席位`，而每场战斗
+    /// 的回合号都从 1 重来 ⇒ 新战斗的键直接撞上，那一席**整局不再被调度**（2026-10-28 实机：
+    /// 11 个瓦库里有 8 个从第 3 场战斗起不出牌，`门-看门狗调度统计` 全窗 `watchdog-in-flight`，
+    /// 而它们其实活着、有手牌有能量）。键改成带战斗 ID 后不会再跨战斗撞车，但**同一场战斗内**
+    /// 卡死仍需兜底 —— 超时即视为死循环，放行重试（并 warn 一次）。
+    /// 阈值取 180s：最慢的实测单张 46s、整轮 pass 98s，正常循环不该在飞这么久。
+    /// </summary>
+    private const long WatchdogStuckInFlightMs = 180_000L;
+
     private static readonly Dictionary<string, long> _watchdogLastRunAt = new();
     private static readonly HashSet<string> _watchdogInFlight = new();
+
+    /// <summary>每条在飞记账的**开始时刻**（毫秒），用于 <see cref="WatchdogStuckInFlightMs"/> 超时判定。</summary>
+    private static readonly Dictionary<string, long> _watchdogStartedAtMs = new();
+
+    /// <summary>超时放行过的键（每个键只 warn 一次，避免每帧刷屏）。</summary>
+    private static readonly HashSet<string> _watchdogStuckWarned = new();
+
+    /// <summary>当前记账命名空间（= 战斗 ID；换战斗时整体清账，见 <see cref="HostedWatchdogKey"/>）。</summary>
+    private static int _watchdogNamespace = int.MinValue;
     // r83：托管遗物缺失兜底的去重集合（每个玩家每次运行只 WARN 一次 / 只调度补发一次）。
     private static readonly HashSet<ulong> _takeoverRelicMissingWarned = new();
     private static readonly HashSet<ulong> _takeoverRelicRestoreScheduled = new();
@@ -64,6 +86,16 @@ internal static class LocalWakuuRelicRuntime
     /// <see cref="YieldPendingQueuePlaysToHuman"/> 在真人出牌瞬间撤掉它们（让真人插队）。
     /// </summary>
     private static readonly Dictionary<ulong, PlayCardAction> _pendingQueuePlays = new();
+
+    /// <summary>
+    /// r324 探针：已入队的托管出牌**真正开始执行**的时间戳（key = 玩家 NetId，毫秒）。
+    ///
+    /// 由 `CardPlayVisualsSkipPatch` 在 <c>CardModel.OnPlayWrapper</c> 前缀里回填
+    /// （那一刻 = 动作泵轮到它、执行开始）。配合入队时间戳就能把每张牌拆成
+    /// 「等泵（排队）」与「执行（这张牌本身要跑多少帧）」两段 —— 判读"一回合几十秒"
+    /// 到底是排队问题还是帧率问题，只看这一对数。表是按席位分槽的，天然不会互相覆盖。
+    /// </summary>
+    private static readonly Dictionary<ulong, long> _pendingPlayExecStartMs = new();
     private static readonly FieldInfo? SelectorStackField =
         typeof(CardSelectCmd).GetField("_selectorStack", BindingFlags.NonPublic | BindingFlags.Static);
     private static int _selectorScopeInFlight;
@@ -321,10 +353,17 @@ internal static class LocalWakuuRelicRuntime
         _turnStartIntentAtMs.Clear();
         // 并发出牌档的在飞动作登记表：跨局不留残（正常路径每个动作的 finally 都会摘掉自己）。
         _pendingQueuePlays.Clear();
+        _pendingPlayExecStartMs.Clear();
         // r262：出牌抛异常的"别让托管打"名单按**局**清（换局/读档重新试）。
         _unplayableByHostedCardEntries.Clear();
         // r263：本回合"需要目标却解析不到目标"的分槽名单（按席位）也一起清（战斗内回合号换局后无意义）。
         _missingTargetSkipSlots.Clear();
+        // r325：看门狗记账（在飞/冷却/开始时刻/超时告警去重）按**局**清 —— 换局、读档都从干净状态开始。
+        _watchdogInFlight.Clear();
+        _watchdogLastRunAt.Clear();
+        _watchdogStartedAtMs.Clear();
+        _watchdogStuckWarned.Clear();
+        _watchdogNamespace = int.MinValue;
     }
 
     /// <summary>
@@ -652,10 +691,18 @@ internal static class LocalWakuuRelicRuntime
                         LocalWakuuAutopilotConfig.FastWakuuPlay,
                         LocalSelfCoopContext.IsEnabled,
                         UsesHostedPlayPath(player));
+                    // r324 探针：就地路径（战神）没有队列，只有"执行"一段 —— 单独计时，
+                    // 免得和队列路径的"等泵"混在一起把均值拉偏。
+                    long inlineStart = (long)Time.GetTicksMsec();
                     await CardCmd.AutoPlay(
                         choiceContext, next.Card, next.Target, AutoPlayType.Default,
                         skipXCapture: true,
                         skipCardPileVisuals: skipCardPileVisuals);
+                    long inlineMs = (long)Time.GetTicksMsec() - (long)inlineStart;
+                    LocalPerfProbe.RecordHostedPlay(waitMs: 0L, execMs: inlineMs, queued: false);
+                    LocalMultiControlLogger.Info(
+                        $"瓦库出牌完成（就地）: player={player.NetId}, round={combatState.RoundNumber}, "
+                        + $"card={next.Card.Id.Entry}, 执行={inlineMs}ms");
                     playsSucceeded++;
                 }
 
@@ -1160,6 +1207,8 @@ internal static class LocalWakuuRelicRuntime
         ulong startTick = Time.GetTicksMsec();
         PlayCardAction action = new(card, target);
         _pendingQueuePlays[player.NetId] = action;
+        _pendingPlayExecStartMs.Remove(player.NetId);
+        long execStartTick = 0L;
         try
         {
             RunManager.Instance.ActionQueueSynchronizer.RequestEnqueue(action);
@@ -1188,11 +1237,27 @@ internal static class LocalWakuuRelicRuntime
             {
                 _pendingQueuePlays.Remove(player.NetId);
             }
+
+            // r324：执行起点要**先读再摘**（摘掉了就只剩"总耗时"，判读时看不出是哪一段慢）。
+            if (_pendingPlayExecStartMs.TryGetValue(player.NetId, out long recordedExecStart))
+            {
+                execStartTick = recordedExecStart;
+                _pendingPlayExecStartMs.Remove(player.NetId);
+            }
         }
+
+        // r324：把「总耗时」拆成「等泵 / 执行」—— 等泵 = 排队等前面的动作跑完，执行 = 这张牌自己跑完。
+        // 前者大 ⇒ 并发/调度问题；后者大 ⇒ 帧率问题（每张牌要 N 帧 × 每帧毫秒数）。
+        long doneTick = (long)Time.GetTicksMsec();
+        long enqueueTick = (long)startTick;
+        long waitMs = Math.Max(0L, execStartTick - enqueueTick);
+        long execMs = Math.Max(0L, doneTick - execStartTick);
+        LocalPerfProbe.RecordHostedPlay(waitMs, execMs, queued: true);
 
         LocalMultiControlLogger.Info(
             $"瓦库出牌走动作队列完成（方案 D 实验档）: player={player.NetId}, round={round}, "
-            + $"card={card.Id.Entry}, actionId={action.Id?.ToString() ?? "none"}, ms={Time.GetTicksMsec() - startTick}");
+            + $"card={card.Id.Entry}, actionId={action.Id?.ToString() ?? "none"}, ms={doneTick - enqueueTick}, "
+            + $"等泵={waitMs}ms, 执行={execMs}ms");
 
         // r133 收尾补偿：出牌加速把"玩家手动出牌"分支里那段"把卡牌节点从出牌区收走"的换堆补间
         // 一起跳过了，而原版正是靠那条补间 QueueFree 掉节点 ⇒ 不补偿的话卡面会滞留在出牌区。
@@ -1307,7 +1372,60 @@ internal static class LocalWakuuRelicRuntime
     }
 
     /// <summary>
-    /// 该玩家此刻是否有"**我们替他入队的**出牌动作"没跑完（方案 D 队列路径）。
+    /// 看门狗记账键（r325）：**战斗 ID + 回合 + 席位**，并在检测到换战斗时把上一场的记账整体清掉。
+    ///
+    /// **为什么必须带战斗 ID**：旧键 `回合:席位` 遇上"上一场战斗结束时还卡在 await 里、永不返回的
+    /// 循环"，残键会留在 <see cref="_watchdogInFlight"/>；而下一场战斗的回合号又从 1 重来 ⇒ 键直接撞上
+    /// ⇒ 该席位被 `watchdog-in-flight` 永久挡回、整局不再出牌（2026-10-28 实机：11 个瓦库里 8 个从第
+    /// 3 场战斗起不出牌，它们活着且有手牌有能量）。
+    ///
+    /// 清账放在这里（唯一调度入口）而不是另开"战斗开始"钩子：换战斗后第一次调度顺手清掉即最新，
+    /// 不依赖任何事件时序；这条路径也是"上一场有循环死在 await 里"的唯一可见点，所以顺手打一条 WARN。
+    /// </summary>
+    private static string HostedWatchdogKey(ICombatState combatState, Player player)
+    {
+        int combatId = CombatManager.Instance?.CurrentCombatId?.Value ?? HostedWatchdogKeyPolicy.UnknownCombatId;
+        if (HostedWatchdogKeyPolicy.ShouldResetNamespace(_watchdogNamespace, combatId))
+        {
+            int leaked = _watchdogInFlight.Count;
+            _watchdogInFlight.Clear();
+            _watchdogLastRunAt.Clear();
+            _watchdogStartedAtMs.Clear();
+            _watchdogStuckWarned.Clear();
+            _watchdogNamespace = combatId;
+            if (leaked > 0)
+            {
+                LocalMultiControlLogger.Warn(
+                    $"换战斗，清掉上一场遗留的看门狗记账 {leaked} 条（这些任务不会返回，旧键会挡住新战斗的同一席位）: "
+                    + $"combatId={combatId}");
+            }
+        }
+
+        return HostedWatchdogKeyPolicy.BuildKey(combatId, combatState.RoundNumber, player.NetId);
+    }
+
+    /// <summary>
+    /// r326：该席位的**出牌循环**此刻是否还在飞（且不超过 <paramref name="maxAgeMs"/>）。
+    ///
+    /// 用途：结束回合门每帧都要"扫整桌手牌"判断托管还有没有牌可打，而**正在飞的那一席一定还有牌**
+    /// （它正打着）⇒ 根本不用扫它。出牌期间手牌一直在变、缓存一直失效，这条能省掉绝大部分扫描
+    ///（12 席实测每帧 8~17ms，最坏单帧 111ms = 用户说的"一卡一卡"）。
+    /// <paramref name="maxAgeMs"/> 是安全阀：万一某条记账卡住不返回（r325 已按战斗清账，但同场内仍可能），
+    /// 超过这个时长就不再当"还在飞"，避免它被永远当成"有牌可打"而挡住收口。
+    /// </summary>
+    internal static bool HasPlayLoopInFlight(ulong seatId, long maxAgeMs)
+    {
+        if (_watchdogInFlight.Count == 0)
+        {
+            return false;
+        }
+
+        return HostedWatchdogKeyPolicy.IsSeatInFlight(
+            _watchdogInFlight, _watchdogStartedAtMs, seatId, (long)Time.GetTicksMsec(), maxAgeMs);
+    }
+
+    /// <summary>
+    /// 该玩家此刻是否有"**我们替他入队的**"出牌动作没跑完（方案 D 队列路径）。
     ///
     /// 用途：`CardPlayVisualsSkipPatch`（队列路径出牌加速）要精确区分
     /// 「瓦库自动化出牌」（该加速）与「真人手动替瓦库出牌」（不该加速，观感倒退）。
@@ -1318,6 +1436,29 @@ internal static class LocalWakuuRelicRuntime
     public static bool HasPendingQueuePlay(ulong playerNetId)
     {
         return _pendingQueuePlays.ContainsKey(playerNetId);
+    }
+
+    /// <summary>
+    /// r324 探针：记下「我们替该席位入队的这张牌**此刻真的开始执行**了」（由 `CardModel.OnPlayWrapper`
+    /// 前缀调用，时间戳用于把每张牌拆成「等泵 / 执行」两段）。
+    ///
+    /// 只认**同一个牌实例**：真人手动替瓦库出牌、inline 自动出牌都可能落在同一席位同一时刻，
+    /// 按牌实例比对才不会把别人的执行起点记到队列动作头上。
+    /// 纯记录、不改任何状态；任何异常由调用方（补丁）的 try 兜住。
+    /// </summary>
+    internal static void NoteHostedPlayExecutionStarted(CardModel card, ulong playerNetId)
+    {
+        if (!_pendingQueuePlays.TryGetValue(playerNetId, out PlayCardAction? action))
+        {
+            return;
+        }
+
+        if (!ReferenceEquals(action.NetCombatCard.ToCardModelOrNull(), card))
+        {
+            return;
+        }
+
+        _pendingPlayExecStartMs[playerNetId] = (long)Time.GetTicksMsec();
     }
 
     /// <summary>
@@ -1467,6 +1608,9 @@ internal static class LocalWakuuRelicRuntime
     public static bool TryScheduleWatchdog(Player player, string source, out string reason, bool? knownHasPlayableCards = null)
     {
         reason = "unknown";
+        // r324：把这道"单次最大 456ms"拆成「前置判定 / 启动循环」两段（早退分支由 PhaseScope 自动结算，
+        // 不会漏记）。启动循环那一段里还嵌着「重复手牌扫描」与「大脑决策」，两者各自另有子槽。
+        using LocalPerfProbe.PhaseScope wdPhase = new(LocalPerfProbe.Slot.WdChecks);
         if (Volatile.Read(ref _selectorScopeInFlight) > 0)
         {
             // 并发出牌档（方案 D 第二步）：多瓦库就是要重叠，不能再因为「有作用域在飞」把别人挡回去。
@@ -1545,12 +1689,34 @@ internal static class LocalWakuuRelicRuntime
             return false;
         }
 
-        string key = $"{combatState.RoundNumber}:{player.NetId}";
+        string key = HostedWatchdogKey(combatState, player);
         long nowMs = (long)Time.GetTicksMsec();
         if (_watchdogInFlight.Contains(key))
         {
-            reason = "watchdog-in-flight";
-            return false;
+            // r325：**卡死在出牌里的循环会永久占住这个键**（实测：一场战斗结束时还停在
+            // `await 出牌完成` 的任务，只要永不返回，`finally` 就永不执行）。
+            // 旧实现的键是 `回合:席位` —— 下一场战斗的回合号从 1 重来 ⇒ **键撞上** ⇒
+            // 那一席之后整局都不再被调度（2026-10-28 实机：11 个瓦库里有 8 个从第 3 场战斗
+            // 起彻底不出牌，`门-看门狗调度统计` 全是 `rejected=watchdog-in-flight`）。
+            // 这里给"同一场战斗内的真卡死"留一条超时兜底：超过阈值就当它是死的，放行重试。
+            long startedAtMs = _watchdogStartedAtMs.TryGetValue(key, out long recordedStart) ? recordedStart : 0L;
+            if (!HostedWatchdogKeyPolicy.IsStuckInFlight(startedAtMs, nowMs, WatchdogStuckInFlightMs))
+            {
+                reason = "watchdog-in-flight";
+                return false;
+            }
+
+            long stuckMs = nowMs - startedAtMs;
+
+            if (_watchdogStuckWarned.Add(key))
+            {
+                LocalMultiControlLogger.Warn(
+                    $"瓦库看门狗在飞超时，判定该席的出牌循环已卡死并放行重试: player={player.NetId}, "
+                    + $"round={combatState.RoundNumber}, 已卡={stuckMs}ms（阈值 {WatchdogStuckInFlightMs}ms）, source={source}");
+            }
+
+            _watchdogInFlight.Remove(key);
+            _watchdogStartedAtMs.Remove(key);
         }
 
         if (_watchdogLastRunAt.TryGetValue(key, out long lastRunMs)
@@ -1561,7 +1727,11 @@ internal static class LocalWakuuRelicRuntime
         }
 
         _watchdogLastRunAt[key] = nowMs;
+        _watchdogStartedAtMs[key] = nowMs;
         _watchdogInFlight.Add(key);
+        // r324：`RunWatchdogAsync` 会**同步**跑到第一个 await（决策 + 首张入队都在这一段里）
+        // ⇒ 这一段才是「门-看门狗调度」尖峰的真正候选。
+        wdPhase.Switch(LocalPerfProbe.Slot.WdStartLoop);
         TaskHelper.RunSafely(RunWatchdogAsync(key, relic, player, combatState, source));
         reason = "scheduled";
         return true;
@@ -1607,7 +1777,12 @@ internal static class LocalWakuuRelicRuntime
                 return;
             }
             // r263：托管口径（见 HasHostedPlayableCards）—— 只剩"托管打不了"的牌时不进作用域。
-            if (!HasHostedPlayableCards(player, combatState.RoundNumber))
+            // r324：这道扫描与结束回合门里的那次**重复**（门刚算完、`knownHasPlayableCards` 传了 true，
+            // 但这里没接）⇒ 单独计时，判读时才知道"要不要把已知值传进来"。
+            long rescanStart = LocalPerfProbe.Begin();
+            bool hasPlayable = HasHostedPlayableCards(player, combatState.RoundNumber);
+            LocalPerfProbe.End(LocalPerfProbe.Slot.WdHandRescan, rescanStart);
+            if (!hasPlayable)
             {
                 return;
             }
@@ -1685,6 +1860,9 @@ internal static class LocalWakuuRelicRuntime
         finally
         {
             _watchdogInFlight.Remove(key);
+            // r325：开始时刻与"超时已告警"标记一起摘掉（换战斗时也会整体清，见 HostedWatchdogKey）。
+            _watchdogStartedAtMs.Remove(key);
+            _watchdogStuckWarned.Remove(key);
             if (contextPinned)
             {
                 LocalContext.NetId = previousNetId;
