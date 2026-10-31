@@ -199,6 +199,15 @@ def render(sessions: list[dict]) -> str:
 
 
 def main() -> int:
+    # 本机控制台是 GBK：报告里有 `⚠` 等字符，直接写 stdout 会 UnicodeEncodeError
+    # （2026-10-27 实测：报告生成成功、**输出阶段**才崩，容易被误读成"工具坏了"）。
+    # 与 log_scan.py / log_archive.py 同口径：强制 stdout/stderr 走 UTF-8。
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
+
     ap = argparse.ArgumentParser(description="瓦库出牌路径基准（方案 D 转正判定数据）")
     default_dir = Path(__file__).resolve().parents[3] / "logs-archive"
     ap.add_argument("--logs-dir", default=str(default_dir), help="归档日志目录（默认 pain\\logs-archive）")

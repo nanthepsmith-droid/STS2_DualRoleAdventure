@@ -781,6 +781,12 @@ internal static class LocalWakuuAutopilotConfig
 
     private static void Apply(WakuuConfigData data, bool logChanges)
     {
+        // r327：性能档位切换（加速/队列/并发）要在日志里留锚点，并把性能探针窗口复位 ——
+        // 复测"开加速反而更卡"时才能在同一个局面里拿到干净的切换前后对比。
+        bool fastWakuuPlayBefore = FastWakuuPlay;
+        bool wakuuPlayQueueBefore = WakuuPlayQueue;
+        bool wakuuPlayOverlapBefore = WakuuPlayOverlap;
+
         if (logChanges)
         {
             LocalMultiControlLogger.Info(
@@ -883,6 +889,17 @@ internal static class LocalWakuuAutopilotConfig
 
         // 配置变化 → 大脑缓存失效（下次主循环用新开关值重新创建）。
         WakuuBrainFactory.Reset();
+
+        // r327：性能相关档位（加速 / 队列 / 并发）变化 → 打锚点 + 复位性能窗口（同局 A/B 判读用）。
+        if (fastWakuuPlayBefore != FastWakuuPlay
+            || wakuuPlayQueueBefore != WakuuPlayQueue
+            || wakuuPlayOverlapBefore != WakuuPlayOverlap)
+        {
+            LocalPerfProbe.NotifyConfigChanged(
+                $"fastVakuuPlay={fastWakuuPlayBefore}->{FastWakuuPlay}, "
+                + $"vakuuPlayQueue={wakuuPlayQueueBefore}->{WakuuPlayQueue}, "
+                + $"vakuuPlayOverlap={wakuuPlayOverlapBefore}->{WakuuPlayOverlap}");
+        }
     }
 
     private static void WriteDefault(string path)
