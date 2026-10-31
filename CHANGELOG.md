@@ -30,10 +30,32 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   复采：主线程里我方代码**一帧都不出现**，剩余成本全在第三方 hook 生态与引擎侧。
 - **副作用（内部）**：`帧时间/GC/分配速率/床位/楼层` 等读数进入每 5s 的 `[性能探针]` 日志，
   想查卡顿时可以直接看窗口行；`Scripts/Tools/perf_windows.py` 一条命令出判读表。
-- ⚠ **已知外部因素（不是本 mod）**：`YUICore` 的遗物触发重放会在**每次 hook** 写一次执行上下文，
-  再叠加 `figure_Saya` / `Koishi` / `newsanguo` 的关键词过滤器（三家各自全量扫描，叠加跑三遍），
-  12 席时会把帧时间放大约 10 倍；关掉这四个后同深度地图仍是 50+ fps。
-  （下一轮做这四家的兼容优化，见 TODO §待查-12。）
+- ⚠ **已知外部因素（不是本 mod）**：`YUICore` 的遗物触发重放在**机制在场时**会为每件遗物写两次执行上下文
+  （12 席 ≈ 120 次/分发，实测主线程 **10.7%**）；再叠加 `figure_Saya` / `Koishi` / `newsanguo`
+  在 `CombatState.IterateHookListeners` 上逐 listener 过滤（三家合计 ≈ **9.5%**）。这三条已由兼容补丁
+  `ThirdPartyHotPathFix` 处理（见下方「Performance（兼容补丁侧）」）。
+
+### Performance（兼容补丁侧，r333~r335）
+
+新增 `compat-mods/ThirdPartyHotPathFix`（v1.0.0 → **v1.2.0**，原名 `HookFilterPerfFix`）：12 席规模下
+**只改性能、不改玩法**的热路径补丁。四条改动，都有采样前后对照：
+
+- **① 空转过滤链跳过**（四家）：`Koishi` / `figure_Saya` / `newsanguo` 挂在 `IterateHookListeners` 的后缀上
+  逐 listener 过滤、`YUICore` 的 `YuiRelicTriggerReplay.Wrap` 为每件遗物建 scope 写 `AsyncLocal`。
+  这些链在**机制不在场**时是纯空转 ⇒ 整条跳过。`Wrap` 实测 **10.7% → 0**；三家那一层因为
+  目标只有一句 `__result = Filter(__result)` 会被 **tiered JIT 内联**、只能覆盖部分调用（已在该补丁 README 定性）。
+- **② 热路径纯函数记忆化**：原版 `StringHelper.Slugify`（3 个正则，1.2%）、RitsuLib `NormalizePublicStem`
+  （4 个正则，被 YUI 逐卡调用，**5.2%**）、YUICore `FindType`（每次逐程序集反射，**4.3%**）按入参只算一次，
+  只缓存成功结果、键为 null 不缓存、容量上限 2 万。
+- **③ 放宽 listener 列表初始容量（最大一笔）**：原版 `CombatState/RunState.IterateHookListeners` 写死
+  `new List<AbstractModel>(Players.Count * 50)`（12 席 = 600 槽）。装了**海克斯符文**（符文=遗物）后
+  listener 数越界 ⇒ **每次 hook 分发都扩容复制**，实测 `List<>.set_Capacity` 占主线程 **28.08% / 30.45%**，
+  同配置关掉海克斯只有 0.15% / 0.29%。补丁用 Harmony 转译器把乘数 50 → 100（`HOT_PATH_FIX_LISTENER_CAPACITY`
+  可覆盖），**只改分配大小**；复采 `set_Capacity` 降到 **0.44%**。
+- **④ 文档**：`README`（中英）新增「性能：装了内容型第三方 mod 时别开人多的战斗」小节 —— 给出可推广判据
+  （给每席位加卡/遗物/能力，或把补丁挂在每帧多次、遍历全场的方法上）、实测数字，并建议这类 mod 下
+  **≤4 席**（原版上限）；海克斯符文单列说明「顶破容量」的机制与修复状态。`PLAYER_GUIDE`（中英）
+  同步了席位提醒与「瓦库商店自动买只对切过去的席位生效」。<!-- -->
 
 ### Added（玩家可见的新增）
 

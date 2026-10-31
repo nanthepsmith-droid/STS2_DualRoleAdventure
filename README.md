@@ -25,6 +25,48 @@ See the **[Player Guide](PLAYER_GUIDE.md)** ([简体中文](PLAYER_GUIDE.zh-CN.m
 - Currently built against game version **v0.111.0** (August 2026). When the game patches, expect a short turnaround for a compatibility release — that is this fork's primary job.
 - **Oddmelt**: compatible since v1.33 — a built-in guard skips Oddmelt's hidden Gauge input cards during combat UI rebuilds (previously these broke character switching); no separate fix mod is needed.
 
+### ⚠ Performance: with "content-heavy" third-party mods, **do not run large battles**
+
+Local multi-player cost scales with the number of seats: every seat has its own cards, relics and powers, and
+almost every combat hook (keywords, energy, damage, card picks, …) walks over **all hook listeners of the whole
+fight**. Some third-party mods do per-card / per-relic / per-power work inside that chain, so the cost grows
+multiplicatively with seats.
+
+> **Measured** (12 seats, same machine, same fight, before/after; YUI series enabled in both runs): with
+> **figure_Saya / Koishi / newsanguo** disabled **41–60 fps**; with all three enabled most windows sit at
+> **10–20 fps** (an easy window can reach 35).
+
+**Play these mods with few seats only** (examples, not an exhaustive list):
+
+| mod | what it adds per combat |
+|---|---|
+| **YUI series** (`YUICore` / `YUISpireExpansion`, …) | two `AsyncLocal` writes per relic on **every** hook dispatch (12 seats ≈ 120 relics) |
+| **figure_Saya** (沙耶之歌) | a combat hook that filters every listener for "suppressed visible debuffs" |
+| **Koishi** (古明地恋) | a combat hook that checks `SealAll` for every relic |
+| **newsanguo** (新三国) | a combat hook that checks every power for "Hanzhong / Iron Cavalry" |
+| **Hextech Runes** (`HextechRunes` / `HextechRunesSponsorPack`) | different mechanism: it pushes the whole-fight listener list past vanilla's pre-allocated capacity (`Players.Count * 50`, only 600 slots at 12 seats) ⇒ **a resize + array copy on every dispatch**, measured at **28–30%** of the main thread; **already fixed** by this repo's `ThirdPartyHotPathFix` v1.2.0, see below |
+
+> **About Hextech Runes**: it is not a "walk the whole fight every frame" mod like the four above — runes are relics
+> and its hook implementations return after one or two checks. But **runes push the listener count past vanilla's
+> hard-coded initial capacity** (`new List<AbstractModel>(Players.Count * 50)`, only 600 slots at 12 seats), so every
+> hook dispatch resizes the list: measured `List<>.set_Capacity` at **28.08% / 30.45%** of the main thread, versus
+> **0.15% / 0.29%** with the same setup and Hextech disabled.
+> We **fixed** that: `compat-mods/ThirdPartyHotPathFix` v1.2.0 raises that multiplier (50 → 100, override with
+> `HOT_PATH_FIX_LISTENER_CAPACITY`) — allocation size only, no behaviour change. With it installed Hextech's own
+> overhead is ~2%, so 12 seats should be usable again — **if your machine still struggles, drop to 4 seats as advised above**.
+>
+> This repo also ships a **flow** compat patch for Hextech, `HextechRunesLocalCoopFix` (same `compat-mods-*.zip`),
+> which fixes "seat #2's rune screen cannot be opened ⇒ softlock" in local co-op. It has nothing to do with performance.
+
+General criterion (not just the four above): **if a mod adds cards/relics/powers per seat, or patches
+`CombatState.IterateHookListeners`-style methods that are called many times per frame and iterate the whole
+fight**, frame rate will fall linearly (or worse) with seat count.
+
+**Recommendation: with these mods installed, stay at 4 seats or fewer** (the vanilla multiplayer seat limit) and
+avoid 5–12 seat runs. This is a property of those mods' implementations; this repo **cannot remove their content
+cost** — `compat-mods/ThirdPartyHotPathFix` only strips part of their "idle" overhead when the mechanic is not
+present, it cannot make the content itself cheaper.
+
 ## Installation
 
 **Steam Workshop:** several separate "local multi-control" items exist, each on its own release cadence: the original author's item ([3747538947](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)), [GuyGinat's community continuation](https://steamcommunity.com/sharedfiles/filedetails/?id=3772900244), and [the other authorized fork](https://steamcommunity.com/sharedfiles/filedetails/?id=3810171053) described in the section above. Note: **this repository's builds are distributed only via this repository's Releases** (they are not shipped through any Workshop item).

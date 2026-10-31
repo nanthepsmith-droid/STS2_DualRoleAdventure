@@ -24,6 +24,12 @@ Control 2–12 characters by yourself in Slay the Spire 2's multiplayer mode, on
    - **`+` / `-`** — add/remove local characters (2–12; duplicates allowed)
    - **`Tab` / `Shift+Tab`** — switch which character you're editing
    - Pick a character and ready-up for each slot, then start as usual.
+   - ⚠ **More seats cost more performance**: with third-party "content-heavy" mods installed (YUI series /
+     figure_Saya / Koishi / newsanguo — mods that hook into combat dispatch), a 5–12 seat run may only reach
+     10–20 fps. With those mods, **stay at 4 seats or fewer**; see the *Performance* section of the
+     [README](README.md) for the criterion. Hextech Runes is a different case (it pushes the whole-fight
+     listener list past vanilla's capacity ⇒ a resize on every dispatch) and is **already fixed** by
+     `ThirdPartyHotPathFix` v1.2.0 — with it installed, try 12 seats again.
 
 ### Local Daily Climb
 
@@ -136,6 +142,11 @@ via the configured Vakuu players and re-grants the relic. Turning this off resto
   blended) and the badge corner is selectable (default bottom-left to avoid overlapping community-stat labels).
 
 ### Shop automation
+
+> ⚠ **Only applies to the seat you have switched to**: auto-buying is triggered when the shop UI binds to a
+> character (shops are settled per controlled character). To let a Vakuu seat buy, **switch to it first**
+> (`Tab` / `Shift+Tab`) — then it picks, pays and buys card removal on its own. While you stand on another
+> character it buys nothing. Switch to each Vakuu seat once; **each seat auto-buys only once per shop**.
 
 - **Auto-buy cards in shops** (experimental, off): buys cards with ≥20% community win rate while keeping
   ≥50 gold; "also buy without data" lets mod cards buy on the gold floor alone.
