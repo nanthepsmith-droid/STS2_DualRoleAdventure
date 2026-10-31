@@ -308,6 +308,10 @@ internal static class PatchDomainMap
             // BUG-23 方案 B：只在「我们正在为这一席自动化」的窗口内，让第三方把该席位当同机玩家
             // （原版调用方语义不动 ⇒ 前台视觉那类风险面限制在第三方代码里）
             ["LocalContextThirdPartyIsMePatch"] = PatchDomain.ThirdParty,
+            // r330 性能：CombatState 的 Creatures/PlayerCreatures/Players 原版每次访问都 Concat+ToList，
+            // 而 hook 分发对每个订阅者都取一次 ⇒ 12 席时占满主线程（dotnet-trace 实测 58.6%）。
+            // 做「一帧一缓存 + 生物变动事件失效」，属战斗流程节流 ⇒ Combat 组。
+            ["CombatStateListCachePatch"] = PatchDomain.Combat,
         };
 
     /// <summary>

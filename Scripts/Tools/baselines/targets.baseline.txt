@@ -2,8 +2,8 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-10-27 14:47  HEAD=6ae0586
-# 统计: patch_classes=207 patch_rows=247 string_targets=211 descriptors=406
+# 生成时间=2026-10-30 20:17  HEAD=c34b027
+# 统计: patch_classes=208 patch_rows=248 string_targets=211 descriptors=407
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	BgmProbeAudioManagerPatch	NAudioManager	-	no-target
@@ -51,6 +51,7 @@ P	CombatManagerReadyEnemyTurnPatch	CombatManager	SetReadyToBeginEnemyTurn	nameof
 P	CombatManagerSetupPlayerTurnForegroundPatch	CombatManager	SetupPlayerTurn	string
 P	CombatRoomOfferRoomEndRewardsPatch	CombatRoom	OfferRoomEndRewards	nameof
 P	CombatRoomTemporarySeatRewardPatch	CombatRoom	-	no-target
+P	CombatStateListCachePatch	CombatState	-	no-target
 P	CoopBotsShopAckPatch	-	-	no-target
 P	CreatureCmdKillWinCheckPatch	CreatureCmd	Kill	nameof
 P	CrystalSphereMinigameProceedGuardPatch	NCrystalSphereScreen	OnProceedButtonPressed	string

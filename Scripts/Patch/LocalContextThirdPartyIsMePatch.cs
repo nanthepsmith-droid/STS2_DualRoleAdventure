@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
+using Godot;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
 using LocalMultiControl.Scripts.Runtime.PureLogic;
@@ -45,7 +46,53 @@ internal static class LocalContextThirdPartyIsMePatch
     /// <summary>已打过日志的（调用方, 席位）组合；只用于防刷屏，不参与判定。</summary>
     private static readonly HashSet<string> LoggedCallers = new();
 
+    /// <summary>r329：调用点 → 判定结论（键 = 首个真实帧的 `MethodHandle`）。见 <see cref="TryResolveThirdPartyCaller"/>。</summary>
+    private static readonly Dictionary<IntPtr, CallerVerdict> CallerVerdicts = new();
+
+    private static readonly object CallerVerdictsLock = new();
+
+    /// <summary>一个调用点的判定结论（是否第三方 + 调用方名字）。</summary>
+    private readonly struct CallerVerdict
+    {
+        internal CallerVerdict(bool isThirdParty, string caller)
+        {
+            IsThirdParty = isThirdParty;
+            Caller = caller;
+        }
+
+        internal bool IsThirdParty { get; }
+
+        internal string Caller { get; }
+    }
+
     private const int MaxLoggedCallers = 64;
+
+    /// <summary>
+    /// r329：回溯**最多看几帧再下结论**。原逻辑"见到第一个既不是 `LocalContext` 也不是本补丁的帧就下结论"
+    /// ⇒ 更深的帧本来就不会被用到（真实调用方最多隔 1~2 层包装方法）。这一条只限制**扫描**，不限制捕获成本。
+    /// </summary>
+    private const int MaxFramesToInspect = 6;
+
+    private const int MaxCallerVerdicts = 512;
+
+    /// <summary>
+    /// r329：栈回溯的**每帧时间预算（毫秒）** —— 这条才是真正封顶的那个。
+    ///
+    /// 为什么必须有预算：.NET 9/10 的 `StackTrace` **没有**"只捕获最近 N 帧"的公开构造（本机反射实测：
+    /// 只有 `()/(bool)/(int)/(int,bool)/(Exception…)/(IEnumerable&lt;StackFrame&gt;)`，没有 `frameCount` 重载）
+    /// ⇒ 每次回溯都会把整条栈（本作里是几十帧的 async + Harmony 链）抓完，**单次成本改不动**。
+    /// 唯一能让它不再吃满主线程的办法就是限制每帧最多花多少毫秒。
+    ///
+    /// 超预算时的行为 = **维持原判**（不放行），这是保守方向：
+    ///   * 第三方"要不要弹选牌界面"的查询发生在选牌/事件这类**出牌循环在 await** 的时刻，预算应当是满的；
+    ///   * 被 Saya 的 `GeneralizedResistancePower` / Koishi 的 `SealAllRelicPatch` 这类**每帧功率/遗物查询**
+    ///     刷爆预算时丢掉放行，得到的正是 r109 之前一直正常的原版语义（第三方按"远端玩家"处理）。
+    /// </summary>
+    private const long WalkBudgetMsPerFrame = 2;
+
+    private static ulong _budgetFrame = ulong.MaxValue;
+
+    private static long _walkMsThisFrame;
 
     /// <summary>
     /// 放行口子的**调用方黑名单**（BUG-26，r185）：这些第三方调用方的 `IsMe=true` 本地分支
@@ -116,7 +163,13 @@ internal static class LocalContextThirdPartyIsMePatch
             return;
         }
 
-        if (!TryResolveThirdPartyCaller(out string caller))
+        // r329：这条栈回溯曾经吃掉主线程 63.9%（见 TryResolveThirdPartyCaller 注释）⇒ 加进逐帧探针，
+        // 以后每 5s 的窗口行里直接能看 `第三方IsMe放行=…ms(调用 N)`，不用再采样一次才知道有没有复发。
+        long resolveStart = LocalPerfProbe.Begin();
+        bool thirdPartyCaller = TryResolveThirdPartyCaller(out string caller);
+        LocalPerfProbe.End(LocalPerfProbe.Slot.ThirdPartyIsMe, resolveStart);
+
+        if (!thirdPartyCaller)
         {
             return;
         }
@@ -145,19 +198,43 @@ internal static class LocalContextThirdPartyIsMePatch
     /// 是游戏程序集 / 本 mod ⇒ 返回 false（保持原版语义）。
     /// 跳过 `LocalContext` 自身是为了覆盖 `IsMe(Creature)` / `IsMine(card)` / `ContainsMe(...)` 这些包装方法
     /// （它们内部调本方法，真实调用方在更外层）。
+    ///
+    /// ⚠ r329（2026-10-30）性能修复，**这条是热路径**：
+    /// `dotnet-trace` 采样显示主线程 63.9% 自耗时在 `StackTrace.CaptureStackTrace`，调用方就是本方法 ——
+    /// figure_Saya 的 `GeneralizedResistancePower.IsCountedDebuff`、Koishi 的 `SealAllRelicPatch.Filter`
+    /// 会在每次 `IsMe` 查询时走到这里（12 席 + 一堆功率/遗物时每秒上万次）⇒ 全栈回溯被放大成帧时间主项。
+    /// 两条修法：① 回溯**有界**（只取最近 <see cref="MaxFramesToInspect"/> 帧，语义不变，见该常量）；
+    /// ② 结论按**方法句柄**记忆化（同一个调用点第二次起只花"有界回溯 + 字典命中"）。
     /// </summary>
     private static bool TryResolveThirdPartyCaller(out string caller)
     {
         caller = "unknown";
+
+        // ① 每帧预算闸：超了就不回溯（维持原判），见 WalkBudgetMsPerFrame。
+        ulong frame = Engine.GetProcessFrames();
+        if (frame != _budgetFrame)
+        {
+            _budgetFrame = frame;
+            _walkMsThisFrame = 0L;
+        }
+
+        if (_walkMsThisFrame >= WalkBudgetMsPerFrame)
+        {
+            return false;
+        }
+
+        long walkStart = Stopwatch.GetTimestamp();
         try
         {
             StackTrace trace = new(fNeedFileInfo: false);
             Assembly gameAssembly = typeof(LocalContext).Assembly;
             Assembly ourAssembly = typeof(LocalContextThirdPartyIsMePatch).Assembly;
 
-            for (int i = 0; i < trace.FrameCount; i++)
+            int inspected = 0;
+            for (int i = 0; i < trace.FrameCount && inspected < MaxFramesToInspect; i++)
             {
-                Type? declaringType = trace.GetFrame(i)?.GetMethod()?.DeclaringType;
+                MethodBase? method = trace.GetFrame(i)?.GetMethod();
+                Type? declaringType = method?.DeclaringType;
                 if (declaringType == null)
                 {
                     continue;
@@ -168,22 +245,86 @@ internal static class LocalContextThirdPartyIsMePatch
                     continue;
                 }
 
-                Assembly assembly = declaringType.Assembly;
-                if (assembly == gameAssembly || assembly == ourAssembly)
+                inspected++;
+
+                // 同一个调用点（方法句柄）第二次起不必再比对程序集 / 取类型名。
+                IntPtr key = SafeMethodHandle(method);
+                if (key != IntPtr.Zero && TryGetCachedVerdict(key, out bool cachedThirdParty, out string cachedCaller))
                 {
-                    return false;
+                    caller = cachedCaller;
+                    return cachedThirdParty;
                 }
 
-                caller = declaringType.FullName ?? declaringType.Name;
-                return true;
+                Assembly assembly = declaringType.Assembly;
+                bool thirdParty = assembly != gameAssembly && assembly != ourAssembly;
+                string resolved = declaringType.FullName ?? declaringType.Name;
+                if (key != IntPtr.Zero)
+                {
+                    CacheVerdict(key, thirdParty, resolved);
+                }
+
+                caller = resolved;
+                return thirdParty;
             }
         }
         catch
         {
             // 栈回溯失败 = 无法确认是第三方 ⇒ 保守不放行
         }
+        finally
+        {
+            _walkMsThisFrame += (Stopwatch.GetTimestamp() - walkStart) * 1000L / Stopwatch.Frequency;
+        }
 
         return false;
+    }
+
+    /// <summary>动态方法/泛型实例在某些运行时取句柄会抛 ⇒ 取不到就不做记忆化（只影响速度，不影响判定）。</summary>
+    private static IntPtr SafeMethodHandle(MethodBase? method)
+    {
+        if (method == null)
+        {
+            return IntPtr.Zero;
+        }
+
+        try
+        {
+            return method.MethodHandle.Value;
+        }
+        catch
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    private static bool TryGetCachedVerdict(IntPtr key, out bool thirdParty, out string caller)
+    {
+        lock (CallerVerdictsLock)
+        {
+            if (CallerVerdicts.TryGetValue(key, out CallerVerdict verdict))
+            {
+                thirdParty = verdict.IsThirdParty;
+                caller = verdict.Caller;
+                return true;
+            }
+        }
+
+        thirdParty = false;
+        caller = "unknown";
+        return false;
+    }
+
+    private static void CacheVerdict(IntPtr key, bool thirdParty, string caller)
+    {
+        lock (CallerVerdictsLock)
+        {
+            if (CallerVerdicts.Count >= MaxCallerVerdicts)
+            {
+                return; // 满了就不再记（宁可多回溯，也不无限长）
+            }
+
+            CallerVerdicts[key] = new CallerVerdict(thirdParty, caller);
+        }
     }
 
     private static bool IsDenylistedCaller(string caller)
