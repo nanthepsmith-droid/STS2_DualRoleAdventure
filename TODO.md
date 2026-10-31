@@ -495,26 +495,44 @@
 `RunManager.CleanUp` `L12520`，药水已经收尾完了）⇒ r299 的两条新锚点（清理期闸门 / 摘残留）
 **都未触发**，属**防御性修复**：逻辑按"栈顶即自己才弹"设计、正常路径零行为变化，能跑就一直留着。
 
-### 待查-12 12 席规模的「卡」= 11 个瓦库并发出牌排队 + 渲染规模（2026-10-24 两轮判读，**不是掉帧 bug**）
+### 待查-12 12 席规模的「卡」—— ✅ **2026-10-31 关单（r324~r331）**：我方两层 + 缓存自坑已修，剩下一层是第三方
 
-- **第一轮（marker r318，12 真人 + 11 瓦库）**：fps 均 1.6~2.4、引擎 `process` 64~244ms/帧、节点 29000 / 对象 94400；
-  我方槽位合计 ≈8.6ms/帧（**门-手牌扫描 8.4ms/帧** 最大，其余 <1ms）⇒ 只占引擎帧时间 3~13%。
-- **第二轮（marker r319）**：fps 3.6~33.5、`process` 31~660ms/帧、节点 27300~28300（**稳定，无泄漏**）；
-  同窗口铁证 —— `瓦库并发出牌…inFlight=10~11` + `瓦库出牌走动作队列完成: … **ms=5526**`（一张牌从入队到执行完 5.5s）、
-  `瓦库回合开始→出牌启动延迟: round=1, **delayMs=5038**`（11 席错开启动）。
-  ⇒ **用户感知的"卡"主要是"一回合要等很久"**：11 个瓦库各打 5~10 张 × 动作队列**串行**执行（每次出牌含动画）
-  ⇒ 单回合几十秒；叠加 23 个角色立绘（12 真人 + 11 瓦库）的渲染规模，fps 自然低。
-- **定性**：不是 bug、也不是逐帧回调的开销，是**"11 个瓦库同场"这个规模的固有代价**。
-  可选的加速旋钮：① 用户开实验档 `fastVakuuPlay`（省出牌固定等待）；② 减少同场瓦库数；
-  ③ 真要改代码，方向是「缩短瓦库出牌动画/等待」或「错开启动延迟按席位数自适应」，**都要先拍板**。
-- **我方逐帧侧若还要压**：`门-手牌扫描` 每帧对全部席位扫手牌（每张 `CanPlay() → Hook.ShouldPlay
-  → IterateHookListeners`，后者每次 `new List(玩家数×50)`）；r286 已做**单 tick 内** memo，可再加
-  **跨 tick 缓存 + 手牌版本号/回合号失效**。⚠ 动之前先确认"收口时机"语义（所有席位都没牌 ⇒ 自动结束回合），
-  缓存失效条件写错会变成"有牌也收口"。**收益上限只有 8ms/帧，不解决"等得久"的体感**。
-- **同类噪声（纯第三方，只登记不修）**：`MintySpire2` 的 `MintyIncomingDamageText` 节点找不到
-  （`SummedIncomingDamageRender.RepositionLabel ← CatchBarResize ← RitsuLib 血条 graft`），
-  每条 ERROR 带 ~20 行 C# backtrace 走同步 stderr；本局 6 条，属第三方血条兼容自身缺陷。
-- **优先级**：低（规模问题）。
+> **结论（一句话）**：`12 席 / 11 瓦库` 本身能跑 **50~60 fps**；「越打越卡」= 第三方 mod 在**每次 hook**
+> 里做全栈回溯之外的重活（`YUICore.YuiRelicTriggerReplay` 每次 hook 写 AsyncLocal + `figure_Saya` /
+> `Koishi` / `newsanguo` 三个 Filter），12 席把这套按"牌数 × 人数"放大 10 倍以上。
+>
+> **我方已修（三层，全部实机验证）**
+> - **r329** `LocalContextThirdPartyIsMePatch`：第三方每问一次 `IsMe` 都做**全栈回溯**（采样显示主线程 63.9%
+>   在 `StackTrace.CaptureStackTrace`）⇒ 改**每帧 2ms 预算** + 调用点方法句柄记忆化 + 探针新槽位。
+> - **r330** `CombatStateListCachePatch`：原版 `Creatures/PlayerCreatures/Players` **每次访问都
+>   Concat+ToList**，而 hook 分发对每个订阅者都取一次（采样 58.6% 在 `List.CopyTo`）⇒ 一帧一缓存 +
+>   `CreaturesChanged` 事件失效。
+> - **r331** 同上补丁：缓存自身在热路径里调了 Godot icall（`Engine.GetProcessFrames`）⇒ 占主线程 **35.7%**，
+>   改 `Environment.TickCount64` 分桶。
+>
+> **量出来的事实（判读口径见 skill `references/diagnostics-and-triage.md`）**
+> - 关掉绝大多数 mod：12 席 floor 2→18、13 分钟，fps 中位 **50~60**、帧时 17~21ms、长帧 0、GC 1~4%。
+> - 只加回 `YUICore,figure_Saya,Koishi,newsanguo,YUISpireExpansion,GensokyoSpire,MokouMod,Watcher,
+>   Oddmelt,FlawTheFunction,STS2_Things`：fps 28→10（随楼层继续掉），GC 25~39%，分配 300MB/s。
+> - 再关掉 `YUICore,figure_Saya,Koishi,newsanguo`（其余 11 个留着）：**floor 12~13 仍有 59/40/47 fps**。
+> - 归因链：`Hook.ModifyKeywordsInCombat / AttackIntent.GetTexture → YUICore.YuiRelicTriggerReplay.Wrap
+>   → Saya.GeneralizedResistanceSuppressionPatch.Filter → Koishi.SealAllRelicPatch.Filter
+>   → newsanguo.AbilitySuppressionPatch.Filter`。
+>
+> **⭐ 下一步（待用户拍板，非我方 bug）**
+> 1. 用户先自测「除 YUI 系列外全部 mod」的流畅度（2026-10-31 约定，下个对话回报）。
+> 2. 若想保留 YUI 系列 ⇒ 需要给 **YUICore 的 `YuiRelicTriggerReplay`** 写一个独立 compat 补丁
+>    （去掉 per-call AsyncLocal 写入；它被 YUISpireExpansion / YUICardExpansion 等依赖，风险中等，
+>    按 Hextech/NinjaSlayer 的路子：`compat-mods/` 独立 dll、默认关、只在本地多控会话启用）。
+>
+> **遗留未定性（登记，不阻塞）**：`手牌UI与数据存在差异` 1→17、`Couldn't get hand node` 1 条、
+> `finished execution, but was in state Canceled` 17 条（疑为"真人插队撤动作"副作用，r127 口径内但变多了）。
+>
+> **同类噪声（纯第三方，只登记不修）**：`MintySpire2` 的 `MintyIncomingDamageText` 节点找不到
+> （`SummedIncomingDamageRender.RepositionLabel ← CatchBarResize ← RitsuLib 血条 graft`），每条 ERROR 带 ~20 行栈。
+>
+> 📦 旧的三次结论（r324~r326 的探针读数、"牌慢 vs 帧慢"、solo 对照前的推断）已切到
+> `maintenance-docs\decision-records\archive\TODO-归档（已完成 bug 与功能流水·r96~r226）.md`。
 
 ### 待查-13 「怪打死了不结束战斗」= 第三方胜利 hook 抛异常冒穿结算链 —— ✅ **软锁已解决（2026-10-24，保命补丁 v1.0.8；附魔「重新选」过滤待下一局验证挂载）**
 
