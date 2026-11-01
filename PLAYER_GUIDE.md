@@ -29,7 +29,7 @@ Control 2–12 characters by yourself in Slay the Spire 2's multiplayer mode, on
      10–20 fps. With those mods, **stay at 4 seats or fewer**; see the *Performance* section of the
      [README](README.md) for the criterion. Hextech Runes is a different case (it pushes the whole-fight
      listener list past vanilla's capacity ⇒ a resize on every dispatch) and is **already fixed** by
-     `ThirdPartyHotPathFix` v1.2.0 — with it installed, try 12 seats again.
+     `ThirdPartyHotPathFix` — with it installed, try 12 seats again.
 
 ### Local Daily Climb
 

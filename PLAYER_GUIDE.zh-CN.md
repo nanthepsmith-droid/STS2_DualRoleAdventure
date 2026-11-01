@@ -28,7 +28,7 @@
      时，5~12 席可能只有 10~20 fps——这类 mod 建议 **4 席及以下**玩，原因与判断标准见
      [README 的「性能」小节](README.zh-CN.md)。
      海克斯符文的情况不同（它把全场 listener 列表顶破原版容量 ⇒ 每次分发扩容）：那条**已由**
-     `Compat` 里的 `ThirdPartyHotPathFix` v1.2.0 修掉，装上后 12 席可再试；仍卡再降席位。
+     `Compat` 里的 `ThirdPartyHotPathFix` 修掉，装上后 12 席可再试；仍卡再降席位。
 
 ### 本地的每日挑战局
 

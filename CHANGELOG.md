@@ -2,10 +2,9 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
-## [Unreleased]（拟 1.47.0，尚未发版）
+## [1.47.0] - 2026-11-01
 
-> **尚未发版**：本节还会继续追加内容，发版时再改成 `## [1.47.0] - 日期`。
-> 本轮 = r281 ~ r332（2026-10-17 ~ 10-31）。头牌是**战神血条并入本体玩家面板 + 立绘按绑主归位**（⑱ 关单，r300~r307）、
+> 本轮 = r281 ~ r335（2026-10-17 ~ 10-31）。头牌是**战神血条并入本体玩家面板 + 立绘按绑主归位**（⑱ 关单，r300~r307）、
 > **火堆 / 宝箱房的 5+ 席位适配**（BUG-14 / BUG-33）、**12 席全程**（符文代答 / 人多不干预站位 / 胜利结算点名）、
 > **12 席"越打越卡"根治到我方这一层**（r329~r332，见下方 Performance），
 > 一批硬修复（【合体】替打、带战神局读档崩溃、托管出牌死循环、单人开局黑屏、官方单人页被注入多控 UI）、
