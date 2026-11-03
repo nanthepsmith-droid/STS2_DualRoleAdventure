@@ -42,11 +42,13 @@
       <Private>true</Private>
     </Reference>
     <!-- compat-mods 的纯逻辑用「链接源码」进测试工程（它没有 InternalsVisibleTo，也不该为此改 csproj）：
-         只链接**不依赖 Godot / 游戏类型**的文件，见 RunePickRatePolicy / RuneRerollPolicy。 -->
+         只链接**不依赖 Godot / 游戏类型**的文件，见 RunePickRatePolicy / RuneRerollPolicy / RuneRarityPolicy。 -->
     <Compile Include="..\..\compat-mods\HextechRunesLocalCoopFix\Scripts\RunePickRatePolicy.cs"
              Link="Linked\RunePickRatePolicy.cs" />
     <Compile Include="..\..\compat-mods\HextechRunesLocalCoopFix\Scripts\RuneRerollPolicy.cs"
              Link="Linked\RuneRerollPolicy.cs" />
+    <Compile Include="..\..\compat-mods\HextechRunesLocalCoopFix\Scripts\RuneRarityPolicy.cs"
+             Link="Linked\RuneRarityPolicy.cs" />
     <Compile Include="..\..\compat-mods\HextechRunesLocalCoopFix\Scripts\RuneBadgePolicy.cs"
              Link="Linked\RuneBadgePolicy.cs" />
     <!-- ThirdPartyHotPathFix 的三个纯逻辑件（不依赖 Godot / 游戏类型） -->

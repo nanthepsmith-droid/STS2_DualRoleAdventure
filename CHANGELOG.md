@@ -2,6 +2,23 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
+## [Unreleased]
+
+### 兼容补丁（随下次 Release 的 `compat-mods-<ver>.zip` 分发）
+
+- **`HextechRunesLocalCoopFix` v1.7.2 → v1.8.1：瓦库挑符文改成「稀有度更高者优先」**
+  （用户 2026-10-31 订正：此前「海克斯每次给的 3 个选项稀有度一致」的观察是错的，roll 之后可能出更高档）：
+  - 选择顺序 = **棱彩 > 金 > 银 → 同档按抓率 → 再并列取最左**；稀有度反射读不到（海克斯改名）⇒ 退化成纯抓率，
+    行为与 v1.7.x 逐下标一致（可回归）；
+  - 自主 reroll 补上「**升档机会**」判据：某槽 reroll 后可达档位高于本屏最高档就 roll 它
+    （优先于旧的「三张全烂才 roll」）。可达档位 = 金色 reroll 升一档 / 保底首抽槽用本幕档位；
+    ⚠ **普通 reroll 是同档换牌**（反编译 `HextechRunePoolBuilder.GetRerollRarity` 确认），不算升档机会；
+  - v1.8.1 只补判读锚点（不动选择逻辑）：启动 `符文稀有度反射面: 档位=…, 金色reroll=…, 保底首抽=…, 本幕档位=…`、
+    作答行 `reroll=未触发（…）/已触发（…）`、候选日志（**含真人席位**）带 `档位=[…]`；
+  - **实机（2026-11-03 两轮）**：稀有度反射四项全可读；第 2 轮真实触发 **3 次「全烂」reroll**（逐槽各一次），
+    **每次 reroll 前后档位都是全金**（印证同档结论）；最后一张无数据（未知 0.5 > 0.40）⇒ 停止 roll 并选中它。
+    **⏳「升档 roll」与「混合档位下的稀有度优先」尚未实机命中**（等自然遇到金色 reroll / 保底首抽槽）。
+
 ## [1.47.0] - 2026-11-01
 
 > 本轮 = r281 ~ r335（2026-10-17 ~ 10-31）。头牌是**战神血条并入本体玩家面板 + 立绘按绑主归位**（⑱ 关单，r300~r307）、

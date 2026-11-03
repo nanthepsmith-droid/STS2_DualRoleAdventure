@@ -32,16 +32,21 @@ namespace HextechRunesLocalCoopFix.Scripts;
 ///   符文确认；仍未关 ⇒ WARN 点名并交回真人（下一轮适配的实证锚点）。</item>
 /// </list>
 ///
-/// <para><b>选哪个符文</b>：**按抓率**（v1.3.0，用户 2026-10-11 点名）——
-/// 抓率来自 <see cref="RunePickStats"/>（真人与瓦库的每一屏都记「候选出现过谁 / 选了谁」），
-/// 并列时取最左 ⇒ 没有统计时行为与旧版"取最左"一致。
-/// 稀有度**不能**当判据（用户实测：海克斯每次给的 3 个选项稀有度一致）。
+/// <para><b>选哪个符文</b>（v1.8.0，用户 2026-10-31 订正口径）：
+/// <b>稀有度更高者优先 → 同档按抓率 → 再并列取最左</b>。
+/// 抓率来自 <see cref="RunePickStats"/>（真人与瓦库的每一屏都记「候选出现过谁 / 选了谁」）；
+/// 稀有度来自 <see cref="RuneRarityReader"/>（反射海克斯自己的口径，读不到 ⇒ 退化成纯抓率）。
+/// ⚠ 2026-10-11 曾按"3 个选项稀有度一致"删掉稀有度判据，实测**是错的**（roll 之后可能出更高档）。
 /// 自选池屏（锻造选择：一屏一大堆符文）仍取最左、也不参与统计。</para>
 ///
 /// <para><b>选项很烂时自主 roll</b>（v1.6.0，用户 2026-10-11 点名的第三件）：反编译确认界面有
 /// <c>_rerollButtons</c>（节点名 <c>RerollButton_{slotIndex}</c>，<c>Pressed</c> 连到 <c>OnRerollPressed(slot)</c>；
 /// 次数上限 <c>PlayerRuneRerollLimit</c>，按钮 <c>Disabled</c> 即"这槽用完了"）⇒ 三张候选**全烂**时按最烂那张的
 /// reroll（判据见 <see cref="RuneRerollPolicy"/>；`HRLF_RUNE_REROLL=0` 可关）。</para>
+///
+/// <para><b>v1.8.0：升档机会也算 roll 的理由</b>（用户 2026-10-31「roll 有机会出更高稀有度」）——
+/// 若某槽 reroll 后可达档位高于本屏当前最高档（金色 reroll / 保底首抽槽），即使选项不烂也 roll 它，
+/// 判据见 <see cref="RuneRarityPolicy.ChooseUpgradeSlot"/>（可达档位由 <see cref="RuneRarityReader"/> 算）。</para>
 /// </summary>
 internal static class WakuuRuneAutoAnswer
 {
@@ -144,6 +149,9 @@ internal static class WakuuRuneAutoAnswer
                 + "瓦库席位不会自动作答符文界面（真人点一下即可）。");
             return false;
         }
+
+        // v1.8.0：稀有度反射面（选择顺序 = 稀有度优先 → 抓率；读不到就退化成纯抓率，不影响代答）。
+        RuneRarityReader.Install(screenType);
 
         return true;
     }
@@ -259,18 +267,23 @@ internal static class WakuuRuneAutoAnswer
                 return;
             }
 
+            // v1.8.0：先读每槽稀有度（读不到 = 全未知 ⇒ 后面自动退化成纯抓率）。
+            bool rarityKnown = RuneRarityReader.TryReadRanks(node, options, out int[] rarityRanks);
+
             // v1.6.0：三张候选**全烂**时先自主 reroll（海克斯每张候选各给一次，白给的次数不用白不用）。
+            // v1.8.0：另外「reroll 有机会升档」也算 roll 的理由（金色 reroll / 保底首抽槽）。
             // reroll 会 RebuildCards（旧按钮全失效、还有 1s 点击保护窗重置）⇒ 按一次就重入 TryAnswer 重新读候选。
-            if (!selfPickMode && TryRerollPoorOptions(node, seat, options))
+            string rerollNote = selfPickMode ? "自选池屏不参与" : string.Empty;
+            if (!selfPickMode && TryRerollPoorOptions(node, seat, options, rarityRanks, out rerollNote))
             {
                 Schedule(node, () => TryAnswer(node, seat, visibleAttempt: 1, retry: false), AnswerDelaySeconds);
                 return;
             }
 
-            // 选哪个：**按抓率**（v1.3.0；抓率 = 该符文"出现过/被选过"，来自真人+瓦库的每一屏）。
-            // 并列时取最左 ⇒ 没有统计时行为与旧版"取最左"逐个下标一致。
+            // 选哪个（v1.8.0）：**稀有度更高者优先 → 同档按抓率 → 再并列取最左**。
+            // 没有统计、或稀有度读不到 ⇒ 行为与旧版逐个下标一致（可回归）。
             // 自选池屏（锻造选择：一屏一大堆符文）没有"3 选 1"的语义 ⇒ 仍取最左。
-            int index = selfPickMode ? 0 : ChooseIndexByPickRate(options);
+            int index = selfPickMode ? 0 : ChooseIndexByRarityThenPickRate(options, rarityRanks);
             if (index < 0)
             {
                 index = 0;
@@ -287,9 +300,9 @@ internal static class WakuuRuneAutoAnswer
             {
                 Log.Info($"{Entry.LogPrefix} 瓦库符文界面自动作答: seat={MainModBridge.SeatLabelById(seat)}({seat}), "
                     + $"mode={(selfPickMode ? "自选池" : "符文选择")}, options=[{DescribeOptions(options)}], "
-                    + $"picked={RelicEntry(options, index)}, "
-                    + $"rule={(selfPickMode ? "自选池取最左" : "按抓率")}, 抓率=[{DescribePickRates(options)}], "
-                    + "screen=HextechRuneSelectionScreen");
+                    + $"档位=[{DescribeRanks(rarityRanks)}], picked={RelicEntry(options, index)}, "
+                    + $"rule={(selfPickMode ? "自选池取最左" : rarityKnown ? "稀有度优先→按抓率" : "按抓率（稀有度未读到）")}, "
+                    + $"reroll={rerollNote}, 抓率=[{DescribePickRates(options)}], screen=HextechRuneSelectionScreen");
             }
 
             // 走游戏自己的点击路径（海克斯把 Button.Pressed 连到自己的 OnHolderSelected / SelectSelfPick）：
@@ -512,16 +525,23 @@ internal static class WakuuRuneAutoAnswer
     /// <para>只走 <c>Button.Pressed</c> 信号（海克斯把 `RerollButton_{slot}` 的 Pressed 连到
     /// <c>OnRerollPressed(slot)</c>）；它自己带 `_choiceLocked` / 次数上限 / "新候选与旧相同则不动" 的守卫。</para>
     /// </summary>
-    private static bool TryRerollPoorOptions(Node node, ulong seat, IReadOnlyList<RelicModel> options)
+    private static bool TryRerollPoorOptions(
+        Node node,
+        ulong seat,
+        IReadOnlyList<RelicModel> options,
+        int[] rarityRanks,
+        out string note)
     {
         if (!RerollEnabled || _rerollButtonsField == null)
         {
+            note = RerollEnabled ? "未触发（界面没有 reroll 按钮）" : "已关闭（HRLF_RUNE_REROLL=0）";
             return false;
         }
 
         ScreenState? state = GetState(node);
         if (state == null)
         {
+            note = "未触发（界面状态未登记）";
             return false;
         }
 
@@ -529,7 +549,9 @@ internal static class WakuuRuneAutoAnswer
         ReadList(_rerollButtonsField, node, rerollButtons);
         if (rerollButtons.Count == 0 || rerollButtons.Count != options.Count)
         {
-            return false; // 海克斯没开 reroll（_rerollFunc 为 null 时根本不建按钮）/ 列表没对齐 ⇒ 不干预
+            // 海克斯没开 reroll（_rerollFunc 为 null 时根本不建按钮）/ 列表没对齐 ⇒ 不干预
+            note = "未触发（reroll 按钮未就绪）";
+            return false;
         }
 
         List<string> entries = new(options.Count);
@@ -547,17 +569,38 @@ internal static class WakuuRuneAutoAnswer
                 && !state.RerollAttempted.Contains(i));
         }
 
+        // v1.8.0（第一优先）：reroll 有机会**升档**就 roll 那一槽 —— 即使三张都不"烂"。
+        // 可达档位 = 海克斯自己的口径（金色 reroll 升一档 / 保底首抽槽用本幕档 / 其余保持本档），
+        // 读不到就与当前档一致 ⇒ 这里返回 -1，落到下面的旧判据。
+        RuneRarityReader.TryReadRerollTargets(node, options, rarityRanks, out int[] targets, out string targetNote);
+        int upgradeSlot = RuneRarityPolicy.ChooseUpgradeSlot(rarityRanks, targets, canReroll);
+        if (upgradeSlot >= 0 && GodotObject.IsInstanceValid(rerollButtons[upgradeSlot]))
+        {
+            state.RerollAttempted.Add(upgradeSlot);
+            note = $"已触发（升档 slot={upgradeSlot}: {RuneRarityPolicy.RankName(rarityRanks[upgradeSlot])}→{RuneRarityPolicy.RankName(targets[upgradeSlot])}）";
+            Log.Info($"{Entry.LogPrefix} 瓦库符文选项有升档机会，自主 reroll: seat={MainModBridge.SeatLabelById(seat)}({seat}), "
+                + $"slot={upgradeSlot}, 旧={entries[upgradeSlot]}, 当前档={RuneRarityPolicy.RankName(rarityRanks[upgradeSlot])}, "
+                + $"可达档={RuneRarityPolicy.RankName(targets[upgradeSlot])}（{targetNote}）, "
+                + $"档位=[{DescribeRanks(rarityRanks)}], 抓率=[{DescribePickRates(options)}], screen=HextechRuneSelectionScreen");
+            rerollButtons[upgradeSlot].EmitSignal(BaseButton.SignalName.Pressed);
+            return true;
+        }
+
+        // v1.6.0（兜底）：三张全烂才 roll（每张都有数据且抓率 ≤ 阈值）。
         int slot = RuneRerollPolicy.ChooseSlotToReroll(entries, RunePickStats.Lookup, canReroll, RerollPoorThreshold);
         if (slot < 0)
         {
+            note = $"未触发（无升档机会：{targetNote}；抓率未全烂）";
             return false;
         }
 
         Button target = rerollButtons[slot];
         state.RerollAttempted.Add(slot);
+        note = $"已触发（全烂 slot={slot}）";
         Log.Info($"{Entry.LogPrefix} 瓦库符文选项全烂，自主 reroll: seat={MainModBridge.SeatLabelById(seat)}({seat}), "
             + $"slot={slot}, 旧={entries[slot]}, options=[{DescribeOptions(options)}], "
-            + $"抓率=[{DescribePickRates(options)}], 阈值={RerollPoorThreshold:0.00}, screen=HextechRuneSelectionScreen");
+            + $"档位=[{DescribeRanks(rarityRanks)}], 抓率=[{DescribePickRates(options)}], "
+            + $"阈值={RerollPoorThreshold:0.00}, screen=HextechRuneSelectionScreen");
         target.EmitSignal(BaseButton.SignalName.Pressed);
         return true;
     }
@@ -594,13 +637,13 @@ internal static class WakuuRuneAutoAnswer
     }
 
     // ---- 选哪一个 ---------------------------------------------------------------------------------
-    // 规则 = **按抓率**（v1.3.0，用户 2026-10-11 点名；统计见 RunePickStats / RunePickRatePolicy）。
+    // 规则（v1.8.0，用户 2026-10-31 新口径）= **稀有度更高者优先 → 同档按抓率 → 再并列取最左**。
     //   · 抓率 = picked/offered（Laplace 平滑），真人和瓦库的每一屏都记；瓦库只读。
-    //   · **并列取最左** ⇒ 没有任何统计时行为与旧版"取最左"完全一致。
-    //   · 稀有度不能当判据（用户实测：海克斯每次给的 3 个选项稀有度一致）。
-    // 选项很烂时自主 reroll = v1.6.0（见上方 TryRerollPoorOptions / RuneRerollPolicy）。
+    //   · 稀有度由 RuneRarityReader 反射读（银 < 金 < 棱彩）；读不到 ⇒ 全并列 ⇒ 退化成纯抓率。
+    //   · 没有任何统计时行为与旧版"取最左"完全一致（可回归）。
+    // 自主 reroll = v1.6.0 全烂才 roll + v1.8.0 升档机会（见上方 TryRerollPoorOptions）。
 
-    private static int ChooseIndexByPickRate(IReadOnlyList<RelicModel> options)
+    private static int ChooseIndexByRarityThenPickRate(IReadOnlyList<RelicModel> options, IReadOnlyList<int> rarityRanks)
     {
         List<string> entries = new(options.Count);
         for (int i = 0; i < options.Count; i++)
@@ -608,7 +651,13 @@ internal static class WakuuRuneAutoAnswer
             entries.Add(RelicEntry(options, i));
         }
 
-        return RunePickRatePolicy.ChooseIndex(entries, RunePickStats.Lookup);
+        return RuneRarityPolicy.ChooseIndex(entries, rarityRanks, RunePickStats.Lookup);
+    }
+
+    /// <summary>日志用：每槽档位（`棱彩, 金, ?`）。</summary>
+    private static string DescribeRanks(IReadOnlyList<int> rarityRanks)
+    {
+        return RuneRarityPolicy.DescribeRanks(rarityRanks);
     }
 
     private static string DescribePickRates(IReadOnlyList<RelicModel> options)

@@ -90,6 +90,10 @@ internal static class RunePickStats
                 entries.Add(EntryOf(options[i]));
             }
 
+            // v1.8.0：把档位也打进日志 —— 真人席位的那一屏同样要能看出"三张是不是同档"
+            //（用户 2026-10-31 的观察正是从"roll 前后档位变了"来的）。
+            RuneRarityReader.TryReadRanks(godotObject, options, out int[] rarityRanks);
+
             RecordOffered(entries);
 
             for (int i = 0; i < buttons.Count && i < entries.Count; i++)
@@ -106,7 +110,7 @@ internal static class RunePickStats
             }
 
             Log.Info($"{Entry.LogPrefix} 符文抓率记账（候选）: seat={MainModBridge.SeatLabelById(seat)}({seat}), "
-                + $"options=[{Describe(entries)}], source={source}");
+                + $"options=[{Describe(entries)}], 档位=[{RuneRarityPolicy.DescribeRanks(rarityRanks)}], source={source}");
         }
         catch (Exception exception)
         {
