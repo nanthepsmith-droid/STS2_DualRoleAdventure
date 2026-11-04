@@ -312,6 +312,18 @@ internal sealed class WakuuConfigData
     public bool petHpBadge { get; set; } = true;
 
     /// <summary>
+    /// 玩家状态角标（QOL-3，默认开）：本地多控顶部的「玩家状态条」上，除了召唤物血条，
+    /// 再为每位玩家显示**按本人那份算**的关键计数：
+    /// <list type="bullet">
+    /// <item>污染（<c>TaintedPower</c>）—— 他身上的 debuff，层数 = 攻击加成；</item>
+    /// <item>沙坑（<c>SandpitPower</c>）—— 无厌沙虫身上的 buff，但**每个玩家一份实例**；
+    /// 原版只在 boss 血条下画其中一份，这里按 `Target == 该玩家` 取他自己那一份。</item>
+    /// </list>
+    /// 只做显示，不改变任何玩法判定；0 层不显示。
+    /// </summary>
+    public bool seatStatusBadge { get; set; } = true;
+
+    /// <summary>
     /// 跳过「其他人」的回合开始抽牌演出（改进-1，默认关）。
     /// 本地多控下回合开始会依次把前台切到每个真人玩家、逐个播完自动抽牌动画再切下一个，
     /// 满员（10+ 玩家）时要等很久。开启后回合开始**只保留当前正在看的那位**的演出：

@@ -4,6 +4,7 @@ using MegaCrit.Sts2.Core.Multiplayer.Game;
 using MegaCrit.Sts2.Core.Nodes.Combat;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
 using MegaCrit.Sts2.Core.Runs;
+using LocalMultiControl.Scripts.Patch;
 
 namespace LocalMultiControl.Scripts.Runtime;
 
@@ -46,6 +47,23 @@ internal static class LocalControlSwitchGuard
     {
         if (!LocalSelfCoopContext.IsEnabled || !RunManager.Instance.IsInProgress)
         {
+            return false;
+        }
+
+        // ⚠ 这两道门必须放在「非战斗直接放行」之前：占卜与假商人投掷都发生在**非战斗房间**。
+        // BUG-35（2026-11-04 日志实证）：占卜锁原来只写在「下一个/上一个」两个入口，
+        // 血条旁按钮与右键走的是 TrySwitchTo → SwitchControlledPlayerTo，一条腿被锁、另一条腿敞开
+        // ⇒ 占卜弹层开着也能切走 ⇒ owner 校验抛 `Trying to sync crystal sphere rewards for non-local player`（软锁）。
+        // 这里把「手动切人」的三条入口（按钮 / 右键 / 热键）统一收到同一口径。
+        if (CrystalSphereMirrorRuntime.HasActiveDivinationOverlay())
+        {
+            LocalMultiControlLogger.Info($"占卜小游戏进行中，已忽略切人请求({source})。");
+            return false;
+        }
+
+        if (FoulPotionOnUsePatch.IsThrowInProgress)
+        {
+            LocalMultiControlLogger.Info($"假商人药水投掷结算进行中，已忽略切人请求({source})。");
             return false;
         }
 

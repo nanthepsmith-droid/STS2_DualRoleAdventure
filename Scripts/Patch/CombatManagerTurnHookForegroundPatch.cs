@@ -102,7 +102,24 @@ internal static class CombatManagerSetupPlayerTurnForegroundPatch
         ulong foregroundSeatId = LocalSeatSource.ForegroundSeatId();
         ulong? previousForegroundId = peek && foregroundSeatId != 0UL ? foregroundSeatId : null;
 
-        if (ControlContextAlignment.TryEnsureForegroundForPlayer(player, "turn-start-setup") && peek)
+        if (!ControlContextAlignment.TryEnsureForegroundForPlayer(player, "turn-start-setup"))
+        {
+            return;
+        }
+
+        // BUG-39（2026-11-04）：回合开始是**一整批**逐席位切换（原版"全员同时行动"，
+        // 日志里 `source=turn-start-setup` 会连跳 N 次），最后一个席位成为前台
+        // ⇒ 从第 2 回合起玩家一睁眼看到的是最后一位真人的手牌/视角。
+        // 记一笔"扫描开始前是谁"，等这批扫完（延时窗口内没有新的切换）再还原。
+        if (foregroundSeatId != 0UL && foregroundSeatId != player.NetId)
+        {
+            LocalMultiControlRuntime.NoteTurnStartSweepSwitch(
+                foregroundSeatId,
+                player.NetId,
+                "turn-start-setup");
+        }
+
+        if (peek)
         {
             LocalMultiControlRuntime.ScheduleReturnToForegroundAfterPeek(
                 player.NetId, previousForegroundId, "turn-start-setup");
@@ -117,6 +134,18 @@ internal static class CombatManagerDoTurnEndForegroundPatch
     private static void Prefix(Player player)
     {
         if (player?.Creature == null)
+        {
+            return;
+        }
+
+        // BUG-39（2026-11-04）：回合结束**不再为后台席位抢前台**。
+        // 原版是"全员同时行动"，回合结束会对每一席各调一次 DoTurnEnd/FlushPlayerHand，
+        // 原来这里无差别切前台且切完不还 ⇒ 一回合扫 N 次，扫完停在最后一位（实测日志
+        // `自动切换前台 … source=turn-end-hooks` ×N + `source=turn-end-flush` ×N）。
+        // 回合结束真正需要前台的只有**交互式选牌**（保留手牌等），
+        // 它由 CardSelectForegroundSwitchPatch 在 FromHand/FromHandForDiscard/… 入口**同步**切前台
+        // 并登记选择者；数据类 hook 与"弃掉后台角色的手牌"都不需要前台（后台手牌本来就没建 UI 节点）。
+        if (!LocalSeatSource.CurrentSeats().IsControlled(player.NetId))
         {
             return;
         }
@@ -137,6 +166,12 @@ internal static class CombatManagerFlushPlayerHandForegroundPatch
     private static void Prefix(Player player)
     {
         if (player?.Creature == null)
+        {
+            return;
+        }
+
+        // BUG-39：口径同上（弃牌阶段也不为后台席位抢前台）。
+        if (!LocalSeatSource.CurrentSeats().IsControlled(player.NetId))
         {
             return;
         }

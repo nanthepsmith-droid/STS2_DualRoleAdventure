@@ -46,12 +46,13 @@ internal readonly struct HpBadgeEntry
 /// <summary>血条面板的一行**渲染指令**（`IsOverflow` = 折叠提示行，不画血条）。</summary>
 internal readonly struct HpBadgeRow
 {
-    internal HpBadgeRow(string label, float ratio, bool alive, bool isOverflow)
+    internal HpBadgeRow(string label, float ratio, bool alive, bool isOverflow, bool isStatus = false)
     {
         Label = label ?? string.Empty;
         Ratio = ratio;
         Alive = alive;
         IsOverflow = isOverflow;
+        IsStatus = isStatus;
     }
 
     internal string Label { get; }
@@ -61,6 +62,9 @@ internal readonly struct HpBadgeRow
     internal bool Alive { get; }
 
     internal bool IsOverflow { get; }
+
+    /// <summary>纯文本的「状态角标」行（污染/沙坑）：不画血条，只显示文字。</summary>
+    internal bool IsStatus { get; }
 }
 
 /// <summary>
@@ -107,7 +111,8 @@ internal static class WarGodHpBadgePolicy
     internal static List<HpBadgeRow> BuildRows(
         IReadOnlyList<HpBadgeEntry> pets,
         IReadOnlyList<HpBadgeEntry> warGods,
-        int maxRows = DefaultMaxRows)
+        int maxRows = DefaultMaxRows,
+        IReadOnlyList<string>? statusLabels = null)
     {
         List<HpBadgeEntry> all = new();
         if (pets != null)
@@ -120,30 +125,43 @@ internal static class WarGodHpBadgePolicy
             all.AddRange(warGods);
         }
 
-        List<HpBadgeRow> rows = new(all.Count);
-        if (all.Count == 0)
+        List<HpBadgeRow> rows = new(all.Count + (statusLabels?.Count ?? 0));
+        if (all.Count > 0)
         {
-            return rows;
+            int limit = Math.Max(2, maxRows);
+            bool overflow = all.Count > limit;
+            int shown = overflow ? limit - 1 : all.Count;
+
+            for (int i = 0; i < shown; i++)
+            {
+                HpBadgeEntry entry = all[i];
+                rows.Add(new HpBadgeRow(
+                    $"{entry.Name} {entry.CurrentHp}/{entry.MaxHp}",
+                    entry.Ratio,
+                    entry.Alive,
+                    isOverflow: false));
+            }
+
+            if (overflow)
+            {
+                int hidden = all.Count - shown;
+                rows.Add(new HpBadgeRow($"还有 {hidden} 个（已折叠）", 0f, alive: true, isOverflow: true));
+            }
         }
 
-        int limit = Math.Max(2, maxRows);
-        bool overflow = all.Count > limit;
-        int shown = overflow ? limit - 1 : all.Count;
-
-        for (int i = 0; i < shown; i++)
+        // QOL-3：状态角标（污染/沙坑）追加在最后，纯文本、不参与"血条行数上限"的折叠
+        //（它们比"某只召唤物的血量"更需要一眼看到）。
+        if (statusLabels != null)
         {
-            HpBadgeEntry entry = all[i];
-            rows.Add(new HpBadgeRow(
-                $"{entry.Name} {entry.CurrentHp}/{entry.MaxHp}",
-                entry.Ratio,
-                entry.Alive,
-                isOverflow: false));
-        }
+            foreach (string label in statusLabels)
+            {
+                if (string.IsNullOrWhiteSpace(label))
+                {
+                    continue;
+                }
 
-        if (overflow)
-        {
-            int hidden = all.Count - shown;
-            rows.Add(new HpBadgeRow($"还有 {hidden} 个（已折叠）", 0f, alive: true, isOverflow: true));
+                rows.Add(new HpBadgeRow(label, 0f, alive: true, isOverflow: false, isStatus: true));
+            }
         }
 
         return rows;

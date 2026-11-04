@@ -1129,6 +1129,10 @@ internal static class LocalMultiControlRuntime
         RefreshEventRoomForControlledPlayer(currentControlledPlayerId.Value);
         LocalMerchantInventoryRuntime.RefreshShopRoomForPlayer(currentControlledPlayerId.Value);
         EnsureTreasureCursorVisibleAfterSwitch(source);
+        // BUG-41：实例型 power（无厌沙虫的沙坑等，每个玩家一份实例）的图标可见性
+        // 只在 NPowerContainer.SetCreature 时判一次 ⇒ 切前台后整块重建一次，
+        // 否则 boss 血条下的计数永远停在第一个玩家那份。
+        LocalPowerContainerSeatSync.OnContextApplied(currentControlledPlayerId.Value, source);
         LocalWakuuRelicRuntime.ProbeAndRecoverSelectorStack($"apply-control-after-{source}", allowRecover: true);
         LocalMultiControlLogger.Info($"控制上下文已更新: {previousNetId?.ToString() ?? "null"} -> {currentControlledPlayerId.Value}, source={source}");
         if (source != "run-launched" && !source.StartsWith("wakuu-", StringComparison.Ordinal))
@@ -1196,6 +1200,123 @@ internal static class LocalMultiControlRuntime
         }
 
         return true;
+    }
+
+    /// <summary>BUG-39：回合开始整批切换后还原视角的延时（秒）。</summary>
+    private const double TurnStartSweepRestoreDelaySeconds = 1.2;
+
+    /// <summary>本批回合开始扫描"开始前的前台席位"（只在批次第一次记录，还原后清空）。</summary>
+    private static ulong? _turnStartSweepRestoreTargetId;
+
+    /// <summary>本批最后一次切到的席位（还原时用它判断"用户有没有中途手动切走"）。</summary>
+    private static ulong _turnStartSweepLastSwitchedSeatId;
+
+    /// <summary>批次代数：同一批里又发生切换 ⇒ 旧定时器作废，由最后一次负责还原。</summary>
+    private static int _turnStartSweepGeneration;
+
+    /// <summary>
+    /// BUG-39（2026-11-04）：回合开始是**一整批**逐席位切前台（原版"全员同时行动"，
+    /// `CombatManager.SetupPlayerTurn` 会连续给每个玩家调一次）。
+    /// 逐个切完不还原 ⇒ 最后一个席位成为前台，玩家从第 2 回合起一睁眼看到的是最后一位真人的视角。
+    ///
+    /// 这里在每批扫描开始时记下"扫之前是谁"，延时窗口内没有新的切换就把视角还原回去；
+    /// 用户中途手动切走（前台不再等于本批最后切到的席位）则放弃还原，绝不抢操作。
+    /// 交互式选牌不受影响：`CardSelectForegroundSwitchPatch` 在入口会同步再切一次。
+    /// </summary>
+    internal static void NoteTurnStartSweepSwitch(
+        ulong previousForegroundId,
+        ulong switchedToSeatId,
+        string source)
+    {
+        if (!LocalSelfCoopContext.IsEnabled
+            || !RunManager.Instance.IsInProgress
+            || !CombatManager.Instance.IsInProgress)
+        {
+            return;
+        }
+
+        if (previousForegroundId == 0UL
+            || switchedToSeatId == 0UL
+            || previousForegroundId == switchedToSeatId)
+        {
+            return;
+        }
+
+        if (!LocalSeatSource.IsLocalSeat(previousForegroundId))
+        {
+            return;
+        }
+
+        if (!_turnStartSweepRestoreTargetId.HasValue)
+        {
+            _turnStartSweepRestoreTargetId = previousForegroundId;
+        }
+
+        _turnStartSweepLastSwitchedSeatId = switchedToSeatId;
+        int generation = ++_turnStartSweepGeneration;
+
+        SceneTree? sceneTree = NGame.Instance?.GetTree();
+        if (sceneTree == null)
+        {
+            _turnStartSweepRestoreTargetId = null;
+            return;
+        }
+
+        sceneTree.CreateTimer(TurnStartSweepRestoreDelaySeconds).Timeout += () =>
+        {
+            try
+            {
+                // 同一批又发生过切换 ⇒ 旧定时器作废（由最后那一次负责还原）。
+                if (generation != _turnStartSweepGeneration)
+                {
+                    return;
+                }
+
+                ulong? target = _turnStartSweepRestoreTargetId;
+                _turnStartSweepRestoreTargetId = null;
+                if (!target.HasValue)
+                {
+                    return;
+                }
+
+                if (!LocalSelfCoopContext.IsEnabled
+                    || !RunManager.Instance.IsInProgress
+                    || !CombatManager.Instance.IsInProgress)
+                {
+                    return;
+                }
+
+                if (!LocalSeatSource.IsLocalSeat(target.Value))
+                {
+                    return;
+                }
+
+                ulong current = LocalSeatSource.ForegroundSeatId();
+                // 用户已经手动切走（前台不再等于本批最后切到的席位）⇒ 不抢视角。
+                if (current != _turnStartSweepLastSwitchedSeatId || current == target.Value)
+                {
+                    return;
+                }
+
+                NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+                if (combatUi != null)
+                {
+                    NPlayerHand hand = combatUi.Hand;
+                    if (hand.InCardPlay || hand.IsInCardSelection || (NTargetManager.Instance?.IsInSelection ?? false))
+                    {
+                        return;
+                    }
+                }
+
+                LocalMultiControlLogger.Info(
+                    $"回合开始批量切前台已结束，还原到原视角: {current} -> {target.Value}, source={source}");
+                SwitchControlledPlayerTo(target.Value, $"turn-start-sweep-restore-{source}");
+            }
+            catch (Exception exception)
+            {
+                LocalMultiControlLogger.Warn($"回合开始还原视角失败: {exception.Message}");
+            }
+        };
     }
 
     /// <summary>「仅关键节点」peek 后自动切回原视角的延时（秒）。</summary>

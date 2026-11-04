@@ -1,0 +1,11 @@
+{
+    "id": "HoldYourTurnLocalCoopFix",
+    "name": "HoldYourTurn Local Co-op Fix",
+    "author": "fix",
+    "description": "「别急着结束回合！」（HoldYourTurn）与本地多控（DualRoleAdventure / LocalMultiControl）并用时，第二个真人的结束回合按钮永久是灰的、点了没反应：它在战斗开始时只挑第一个「本机玩家」绑定（`TurnHolder.OnCombatSetUp` 里 `LocalContext.IsMe(player)` → `_player = player; break;`），此后所有门禁（`CanPressTurnEnd` / `NEndTurnButton.RefreshEnabled` 的 Postfix / `CallReleaseLogic` 的 Prefix）都只认那一位 ⇒ 轮到别人时恒为 false，按钮被再次禁用、点击被静默吞掉。本补丁只在本地多控回环会话里、且「当前前台席位 ≠ 它绑定的那一位」时，让 `CanPressTurnEnd` 直接返回 true（放行原版/主 mod 判定）；绑定席位自己仍保留它「加成后 1.5s 内防误点」的保护。真实联机 / 单人一律交回原版。",
+    "version": "1.0.0",
+    "has_pck": false,
+    "has_dll": true,
+    "dependencies": [],
+    "affects_gameplay": true
+}

@@ -173,6 +173,8 @@ internal static class PatchDomainMap
             ["FoulPotionOnUsePatch"] = PatchDomain.Combat,
             ["LavaRockPatch"] = PatchDomain.Combat,
             ["NCombatRoomPatch"] = PatchDomain.Combat,
+            // BUG-42（2026-11-04）：战斗中重排时把「谁是 me」钉回开局那一席，避免两人立绘左右对调
+            ["NCombatRoomPositionSeatPinPatch"] = PatchDomain.Combat,
             ["NCombatRoomReadyForegroundPatch"] = PatchDomain.Combat,
             ["NEndTurnButtonPatch"] = PatchDomain.Combat,
             ["PaelsWingPatch"] = PatchDomain.Combat,

@@ -34,6 +34,7 @@
     { "name": "HextechRunesLocalCoopFix", "enabled": true, "note": "主仓库 compat-mods/ 托管（2026-10-05 迁入）；同仓托管、独立 csproj/dll/槽位" },
     { "name": "YuWanCardLocalCoopFix", "enabled": true, "note": "主仓库 compat-mods/ 托管（2026-10-24 新建）；猪猪 mod【队友帮付】在本地多控下无法结算（定向回环消息无对端）⇒ 接管为本地扣款 + ignoreCost 结算" },
     { "name": "ThirdPartyHotPathFix", "enabled": true, "note": "主仓库 compat-mods/ 托管（2026-10-31 新建，原 HookFilterPerfFix）；① 过滤链空转：机制不在场时跳过 YUICore Wrap（AsyncLocal 10.7%）与 Koishi/Saya/newsanguo 三家 IterateHookListeners 后缀过滤（≈9.5%）→ ② 热路径纯函数记忆化：原版 Slugify(1.2%) / RitsuLib NormalizePublicStem(5.2%) / YUICore FindType(4.3%)" },
+    { "name": "HoldYourTurnLocalCoopFix", "enabled": true, "note": "主仓库 compat-mods/ 托管（2026-11-04 新建）；「别急着结束回合！」(HoldYourTurn) 在战斗开始时只绑第一个本机席位 ⇒ 第二人结束回合按钮永久灰、点击被吞；本补丁只在本地多控里对非绑定席位放行 CanPressTurnEnd" },
     { "name": "HextechBurnVisualFix", "enabled": true, "note": "⚠ 本地专用补丁（源码在仓库外 D:\\Download\\pain\\HextechBurnVisualFix\\，不进 git、不随 Release 分发）：海克斯燃烧视觉每帧读已释放 Spine 骨骼 ⇒ 1fps 的止损；上游自修后设 HBV_DISABLE=1 即可关闭" },
     { "name": "CombatVictoryHookGuard", "enabled": true, "note": "⚠ 本地专用补丁（源码在仓库外 D:\\Download\\pain\\CombatVictoryHookGuard\\，不进 git、不随 Release 分发）：战斗胜利结算链逐 listener 容错 —— 第三方遗物 AfterCombatVictory 抛异常会冒穿 EndCombatInternal ⇒ 「怪死了战斗不结束」（实机案例 HextechRunesSponsorPack【附魔大师】）" }
   ]

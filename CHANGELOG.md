@@ -4,8 +4,44 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+### Fixed（玩家上报，r334~r336；均已实机通过）
+
+- **占卜期间仍能切人 ⇒ 软锁（BUG-35）**：占卜锁原来只写在「下一个 / 上一个」两个入口，血条旁按钮与右键
+  走的是「指定席位」那条路 ⇒ 占卜弹层开着也能切走，结算时抛
+  `Trying to sync crystal sphere rewards for non-local player`。现在「占卜中 / 假商人投掷中禁止**手动**切人」
+  统一收在 `LocalControlSwitchGuard.CanSwitchNow`（自动切换——奖励展示 / 事件自动切人 / PROCEED 守卫——
+  不受影响）。锚点：`占卜小游戏进行中，已忽略切人请求(player-state-button)`。
+- **回合结束把每个真人都切一遍前台 ⇒ 回合开始视角漂到最后一位（BUG-39）**：回合结束
+  （`DoTurnEnd` / `FlushPlayerHand`）不再为后台席位抢前台（交互式选牌本就由选牌入口同步切）；
+  回合开始仍逐席位播抽牌，但**整批扫完 1.2s 后还原到扫描前的席位**（用户中途手动切走则放弃）。
+  锚点：`回合开始批量切前台已结束，还原到原视角: X -> Y`。
+- **无厌沙虫的「沙坑」计数永远显示第一个玩家（BUG-41）**：`SandpitPower` 是**每玩家一份**的实例型 power，
+  而 `NPowerContainer` 只在加图标时按 `LocalContext.IsMe` 判一次可见性 ⇒ 切前台不重建就永远停在第一份
+  （tooltip 是悬停现算的，所以出现"悬停对、血条下错"）。现在前台席位真的变了就重建各 creature 的
+  power 容器（只读、即时、不碰数据）。锚点：`敌方/我方 power 图标已按当前前台重建: seat=…`。
+- **战斗中两人立绘左右对调（BUG-42）**：原版 `PositionPlayersAndPets` 的唯一排序键是 `LocalContext.IsMe`
+  （"我"走 `Insert(0)`），战斗中途会重调它的只有第三方布局补丁（忍者杀手 reflow：任何友方单位增删都触发）
+  ⇒ 重排那一刻 POV 停在谁身上，谁就被摆到最右。现在记住本场战斗**开局布局那一席**，重排期间临时钉回、
+  `HarmonyFinalizer` 还原；**不移动任何节点**，第三方对宠物/召唤物的有意布局照旧。
+  ⚠ 实现细节：场次身份用 `RunState.CurrentRoom` 而**不是** `CombatManager.DebugOnlyGetState()`——
+  开战布局那一刻战斗态还是 null（首版 r335 就栽在这，把已漂移的 POV 当成了基准）。
+  锚点：`立绘站位：已记住本场战斗的开局布局席位: seat=…`、`战斗中重排已按开局席位固定`。
+
+### Added
+
+- **顶部玩家状态条：「污染 / 沙坑」角标**（QOL-3，开关 `seatStatusBadge` **默认开**）：按**本人那一份**取
+  （污染 = 他身上的 `TaintedPower`；沙坑 = 敌方 `SandpitPower` 里 `Target == 他` 的实例），0 层不显示，
+  纯文本行追加在召唤物/战神血条之后。
+
 ### 兼容补丁（随下次 Release 的 `compat-mods-<ver>.zip` 分发）
 
+- **新增 `HoldYourTurnLocalCoopFix` v1.0.0：「别急着结束回合！」（工坊 `3810229386`）在本地多控下第二人无法结束回合**。
+  它在战斗开始时只挑**第一个**「本机玩家」绑定（`TurnHolder.OnCombatSetUp` 里 `LocalContext.IsMe(player)` →
+  `_player = player; break;`），此后 `CanPressTurnEnd` / 按钮刷新后缀 / 点击前缀全只认那一席
+  ⇒ 第二人按钮恒灰、点击被**静默吞掉**。补丁只在本地多控回环会话里、且「当前前台席位 ≠ 它绑定的那一席」时
+  让 `CanPressTurnEnd` 返回 `true`（放行原版 + 主 mod 判定）；绑定席位保留它「加成后 1.5s 防误点」。
+  不改它的 `_player` 绑定（那套 `Subscriptions` / `_gainSequence` 台账按单席设计，改绑会错乱）。
+  锚点：`[HoldYourTurnLocalCoopFix] INIT_OK`、`HoldYourTurn 兼容：非绑定席位放行结束回合(foreground=…, bound=…)`。
 - **`HextechRunesLocalCoopFix` v1.7.2 → v1.8.1：瓦库挑符文改成「稀有度更高者优先」**
   （用户 2026-10-31 订正：此前「海克斯每次给的 3 个选项稀有度一致」的观察是错的，roll 之后可能出更高档）：
   - 选择顺序 = **棱彩 > 金 > 银 → 同档按抓率 → 再并列取最左**；稀有度反射读不到（海克斯改名）⇒ 退化成纯抓率，

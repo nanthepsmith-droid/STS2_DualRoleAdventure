@@ -6,6 +6,8 @@ using LocalMultiControl.Scripts.Runtime;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Powers;
 using MegaCrit.Sts2.Core.Nodes.Combat;
 using MegaCrit.Sts2.Core.Nodes.Multiplayer;
 using MegaCrit.Sts2.Core.Runs;
@@ -167,10 +169,18 @@ internal static partial class LocalPlayerPetHpBadgeUi
                 return;
             }
 
-            // 数据源：召唤物（r86 既有）+ 绑主=本人的在册战神（⑱）。行规划在纯逻辑里做（可单测）。
+            // 数据源：召唤物（r86 既有）+ 绑主=本人的在册战神（⑱）+ 席位状态角标（QOL-3）。
+            // 行规划在纯逻辑里做（可单测）。
             List<HpBadgeEntry> petEntries = BuildPetEntries(player.PlayerCombatState?.Pets);
             List<HpBadgeEntry> warGodEntries = BuildWarGodEntries(player);
-            List<HpBadgeRow> specs = WarGodHpBadgePolicy.BuildRows(petEntries, warGodEntries);
+            List<string> statusLabels = LocalWakuuAutopilotConfig.SeatStatusBadge
+                ? BuildStatusLabels(player)
+                : new List<string>();
+            List<HpBadgeRow> specs = WarGodHpBadgePolicy.BuildRows(
+                petEntries,
+                warGodEntries,
+                WarGodHpBadgePolicy.DefaultMaxRows,
+                statusLabels);
 
             if (specs.Count == 0)
             {
@@ -203,8 +213,8 @@ internal static partial class LocalPlayerPetHpBadgeUi
                 _loggedLayoutDiag = true;
                 LocalMultiControlLogger.Info(
                     $"召唤物/战神血条：player={player.NetId}, pets={petEntries.Count}, 战神={warGodEntries.Count}, "
-                    + $"行数={_rows.Count}, stateRect={_state!.GetGlobalRect()}, hpRect={hpRect}, "
-                    + $"panel={_panel.Position}（仅首帧）");
+                    + $"状态={statusLabels.Count}, 行数={_rows.Count}, stateRect={_state!.GetGlobalRect()}, "
+                    + $"hpRect={hpRect}, panel={_panel.Position}（仅首帧）");
             }
 
             for (int i = 0; i < _rows.Count && i < specs.Count; i++)
@@ -303,24 +313,81 @@ internal static partial class LocalPlayerPetHpBadgeUi
             return entries;
         }
 
+        /// <summary>
+        /// QOL-3：该玩家**自己那一份**的「污染 / 沙坑」层数。
+        /// <list type="bullet">
+        /// <item>污染 = 他身上的 <c>TaintedPower</c>（debuff，层数 = 攻击加成）；</item>
+        /// <item>沙坑 = 敌方 creature 上 <c>Target == 他</c> 的那份 <c>SandpitPower</c> 实例
+        /// （每玩家一份，绝不能读"当前前台那份" —— 那正是 BUG-41 修掉的显示错人）。</item>
+        /// </list>
+        /// 都只读数据；读不到按 0 处理（不抛、不刷日志）。
+        /// </summary>
+        private static List<string> BuildStatusLabels(Player player)
+        {
+            int tainted = 0;
+            int sandpit = 0;
+
+            try
+            {
+                tainted = player.Creature?.GetPowerAmount<TaintedPower>() ?? 0;
+            }
+            catch (Exception)
+            {
+                tainted = 0;
+            }
+
+            try
+            {
+                CombatState? combatState = CombatManager.Instance.DebugOnlyGetState();
+                if (combatState != null && player.Creature != null)
+                {
+                    foreach (Creature creature in combatState.Creatures)
+                    {
+                        if (creature == null || creature.IsPlayer)
+                        {
+                            continue;
+                        }
+
+                        foreach (PowerModel power in creature.Powers)
+                        {
+                            if (power is SandpitPower sandpitPower && sandpitPower.Target == player.Creature)
+                            {
+                                sandpit += sandpitPower.Amount;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                sandpit = 0;
+            }
+
+            return SeatStatusBadgePolicy.BuildLabels(tainted, sandpit);
+        }
+
         /// <summary>把一行数据刷到面板控件上（数值每帧更新，行控件复用避免频繁建删）。</summary>
         private static void UpdateRow(PetHpRow row, HpBadgeRow spec)
         {
             row.Label.Text = spec.Label;
 
+            // 折叠提示行与 QOL-3 的状态角标都只有文字，不画血条。
+            bool textOnly = spec.IsOverflow || spec.IsStatus;
             float innerWidth = Mathf.Max(0f, RowWidth - FgInsetX * 2f);
             float innerHeight = Mathf.Max(0f, RowHeight - FgInsetY * 2f);
-            float ratio = spec.IsOverflow ? 0f : Mathf.Clamp(spec.Ratio, 0f, 1f);
+            float ratio = textOnly ? 0f : Mathf.Clamp(spec.Ratio, 0f, 1f);
             row.Fg.Size = new Vector2(innerWidth * ratio, innerHeight);
-            row.Fg.Visible = !spec.IsOverflow && spec.Alive && ratio > 0f;
+            row.Fg.Visible = !textOnly && spec.Alive && ratio > 0f;
             row.Fg.Color = spec.Alive ? new Color(0.85f, 0.22f, 0.2f, 0.95f) : new Color(0.4f, 0.4f, 0.4f, 0.9f);
             row.Label.AddThemeColorOverride(
                 "font_color",
                 !spec.Alive
                     ? new Color(0.72f, 0.72f, 0.72f)
-                    : spec.IsOverflow
-                        ? new Color(0.78f, 0.78f, 0.78f)
-                        : new Color(1f, 0.96f, 0.88f));
+                    : spec.IsStatus
+                        ? new Color(1f, 0.86f, 0.45f)
+                        : spec.IsOverflow
+                            ? new Color(0.78f, 0.78f, 0.78f)
+                            : new Color(1f, 0.96f, 0.88f));
         }
 
         private static NHealthBar? ResolveHealthBar(NMultiplayerPlayerState state)

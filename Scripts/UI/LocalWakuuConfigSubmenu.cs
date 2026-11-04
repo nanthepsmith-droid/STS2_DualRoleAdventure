@@ -599,6 +599,13 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.PetHpBadge,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("petHpBadge", value));
         AddToggleRow(column,
+            LocalModText.Select("玩家状态角标（污染/沙坑）", "Seat Status Badge (Tainted / Sandpit)"),
+            LocalModText.Select(
+                "默认开。本地多控时，顶部每个玩家的状态条旁再显示该玩家自己的「污染」与「沙坑」层数（0 层不显示）。污染是他身上的 debuff；沙坑是无厌沙虫身上的 buff，但每个玩家各算一份——这里按「属于本人那一份」取值，与切到该玩家后 tooltip 上的数字一致。只做显示，不改变玩法。",
+                "On by default. In local multi-control, each top player bar also shows that player's own Tainted and Sandpit stacks (hidden at 0). Tainted is a debuff on them; Sandpit is a buff on The Insatiable, but every player has their own instance — this reads the one belonging to that player, matching the tooltip after switching to them. Display only."),
+            () => LocalWakuuAutopilotConfig.SeatStatusBadge,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("seatStatusBadge", value));
+        AddToggleRow(column,
             LocalModText.Select("跳过他人回合开始抽牌演出", "Skip Other Players' Turn-Start Draw Animations"),
             LocalModText.Select(
                 "默认关。本地多控下每回合开始会依次把前台切到每个真人玩家、逐个播完自动抽牌动画才轮到下一个，10 人以上时要等很久。开启后回合开始只保留「当前正在看的那位」的抽牌演出，其他人的回合开始不再切前台——原版对非本地玩家的抽牌本来就不做动画（只走数据），所以他们的抽牌瞬时生效，之后切到该角色时会立刻看到完整手牌。",

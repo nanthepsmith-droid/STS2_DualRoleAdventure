@@ -850,7 +850,7 @@ public partial class Entry
     // r323（2026-10-27，同一轮日志卫生）：**状态【战灵守卫】的 `powers` 表键补齐** —— BaseLib 启动扫描
     //   全部 Power 取 `.title`，我们那条 `HELLWAR_WAR_GOD_GUARD_POWER` 缺键（实机 1 条 WARN + 返回垃圾串）。
     //   该状态 `IsVisibleInternal = false`（不给它建节点、避免缺图标 ERROR）⇒ 玩家看不见，纯补键。
-    private const string BuildMarker = "Revival v1.47.0 (game v0.111.0, marker=2026-11-01-r333)";
+    private const string BuildMarker = "Revival v1.47.0 (game v0.111.0, marker=2026-11-04-r336)";
 
     private static Harmony? _harmony;
 
@@ -936,6 +936,9 @@ public partial class Entry
         "MegaCrit.Sts2.Core.Models.Relics.WhisperingEarring.AfterAutoPrePlayPhaseEnteredLate",
         // 纯 UI：结束回合按钮重评
         "MegaCrit.Sts2.Core.Nodes.Combat.NEndTurnButton.CallReleaseLogic",
+        // BUG-42（2026-11-04）：战斗中重排时把「谁是 me」钉回开局那一席
+        // （缺了 → 第三方布局补丁每次 reflow 都会按当前 POV 重算 ⇒ 两人立绘左右对调）
+        "MegaCrit.Sts2.Core.Nodes.Rooms.NCombatRoom.PositionPlayersAndPets",
         // 瓦库：事件附魔自动作答（FromDeckForEnchantment 有三个重载，补丁钉的是
         // (IReadOnlyList<CardModel>, EnchantmentModel, int, CardSelectorPrefs) 那个）
         "MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromDeckForEnchantment/4",

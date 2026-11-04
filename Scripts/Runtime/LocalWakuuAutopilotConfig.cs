@@ -247,6 +247,13 @@ internal static class LocalWakuuAutopilotConfig
     public static bool PetHpBadge { get; private set; } = true;
 
     /// <summary>
+    /// 玩家状态角标（QOL-3，默认开）：顶部玩家状态条上显示该玩家的「污染 / 沙坑」层数，
+    /// 都按**本人那一份**取值（沙坑是 boss 身上的实例型 power，每个玩家一份）。
+    /// 只做显示，不改变任何玩法判定。
+    /// </summary>
+    public static bool SeatStatusBadge { get; private set; } = true;
+
+    /// <summary>
     /// 跳过「其他人」的回合开始抽牌演出（改进-1，默认关）：
     /// 回合开始只保留当前前台玩家的抽牌演出，其余玩家不切前台（其抽牌按原版规则瞬时生效）。
     /// </summary>
@@ -379,6 +386,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.shopAssistBuyRemoval): data.shopAssistBuyRemoval = value; break;
                     case nameof(WakuuConfigData.statBadge): data.statBadge = value; break;
                     case nameof(WakuuConfigData.petHpBadge): data.petHpBadge = value; break;
+                    case nameof(WakuuConfigData.seatStatusBadge): data.seatStatusBadge = value; break;
                     case nameof(WakuuConfigData.skipTurnStartDrawAnim): data.skipTurnStartDrawAnim = value; break;
                     case nameof(WakuuConfigData.fastVakuuPlay): data.fastVakuuPlay = value; break;
                     case nameof(WakuuConfigData.vakuuPlayQueue): data.vakuuPlayQueue = value; break;
@@ -804,7 +812,7 @@ internal static class LocalWakuuAutopilotConfig
                 + $"shopAssist={data.shopAssist}, shopAssistBuyNoData={data.shopAssistBuyNoData}, "
                 + $"shopAssistBuyRelics={data.shopAssistBuyRelics}, shopAssistBuyPotions={data.shopAssistBuyPotions}, "
                 + $"shopAssistBuyRemoval={data.shopAssistBuyRemoval}, "
-                + $"statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, fastVakuuPlay={data.fastVakuuPlay}, vakuuPlayQueue={data.vakuuPlayQueue}, vakuuPlayOverlap={data.vakuuPlayOverlap}, vakuuViewMode={WakuuViewModes.Normalize(data.vakuuViewMode)}, "
+                + $"statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, seatStatusBadge={data.seatStatusBadge}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, fastVakuuPlay={data.fastVakuuPlay}, vakuuPlayQueue={data.vakuuPlayQueue}, vakuuPlayOverlap={data.vakuuPlayOverlap}, vakuuViewMode={WakuuViewModes.Normalize(data.vakuuViewMode)}, "
                 + $"personalTier={NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier}, "
                 + $"purifyVakuu={data.purifyVakuu}, uniteVakuu={data.uniteVakuu}, "
                 + $"refineVakuu={data.refineVakuu}, "
@@ -875,6 +883,7 @@ internal static class LocalWakuuAutopilotConfig
         StatBadgeCorner = WakuuStatBadgeCorner.Normalize(data.statBadgeCorner);
         StatBadgeSource = WakuuStatBadgeSource.Normalize(data.statBadgeSource);
         PetHpBadge = data.petHpBadge;
+        SeatStatusBadge = data.seatStatusBadge;
         SkipTurnStartDrawAnim = data.skipTurnStartDrawAnim;
         FastWakuuPlay = data.fastVakuuPlay;
         WakuuPlayQueue = data.vakuuPlayQueue;
