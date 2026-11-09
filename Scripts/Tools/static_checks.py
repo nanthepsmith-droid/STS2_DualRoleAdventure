@@ -20,10 +20,14 @@
      新增 / 消失都报 WARN 并列出明细 —— 这样**在不需要游戏安装的 CI 上**也能看到
      "这个改动动了哪些运行期目标"（游戏更新断档 / 静默改名最容易从这里暴露）。
      基线文件 `Scripts/Tools/baselines/targets.baseline.txt`；**缺失 = FAIL**（不允许跳过即绿）。
-  S8 源码编码卫生：`.cs` / `.ps1` / `.py` 必须是**合法 UTF-8**，且**不得出现「UTF-8 字节被当 GBK 解码」
+  S8 源码编码 / 换行卫生：`.cs` / `.ps1` / `.py` 必须是**合法 UTF-8**，且**不得出现「UTF-8 字节被当 GBK 解码」
     产生的乱码串**（判据 = 片段 GBK→UTF-8 严格往返可还原 + 还原结果字符白名单 ⇒ 误报率极低）。
     背景：`LocalSelfCoopContext.cs` 曾有 10 处此类乱码日志串 —— 能编译、能跑，但实机日志里就是乱码，
     日志锚点**无法 grep**（我们的排查全靠锚点计数），属"看起来没事、实则毁掉诊断能力"的坑。
+    换行另半边：`.gitattributes` 声明了 `eol=lf` 的文本类型（`.cs` / `.json` / `.md` / `.py` …）
+    工作区**不得出现 CRLF** —— 2026-10-11 一次清掉 67 个 CRLF 文本文件，写文件工具默认产 CRLF 会跨轮累积；
+    `.ps1` / `.bat` / `.cmd` 在 `.gitattributes` 里显式是 `eol=crlf`，因此**不在此列**。
+    修法：`python Scripts/Tools/normalize_eol.py --repo .`（`--dry-run` 只看不改）。
   S9 官方入口劫持：游戏官方联机入口（`NMultiplayerHostSubmenu.StartHost` 与三个 `On*Pressed`）
     **不得**被 mod 的前缀 `return false` 接管 —— 那等于砍掉玩家的原版联机每日/自定义/标准入口
     （Custom 自 2026-03-25、Daily 在 r156 都这么干过，2026-09-27 用户点名要求"零劫持"）。
@@ -301,6 +305,11 @@ def check_target_baseline(repo: Path) -> Check:
 # 源码编码卫生：排除产物与**反编译参考树**（src/ sts2src/ 是只读参考，不属我们的源码）
 ENCODING_SKIP_DIRS = SKIP_DIRS | {"src", "sts2src", "release", ".vs"}
 ENCODING_MAX_WINDOW = 60  # 单个乱码片段的最大字符数（够覆盖日志串；再长会拖慢滑窗）
+# 编码 / 乱码检查范围（`RE_ARTIFACT` 之外的源码与脚本；`.ps1` 含 BOM 也已按 UTF-8 读）
+ENCODING_EXTS = {".cs", ".ps1", ".py"}
+# 换行卫生：只查 `.gitattributes` 里声明 `eol=lf` 的类型（`.ps1` / `.bat` / `.cmd` 是显式 `eol=crlf`，不查）
+EOL_LF_EXTS = {".cs", ".csproj", ".sln", ".json", ".md", ".cfg", ".godot",
+               ".py", ".txt", ".props", ".targets", ".yml", ".yaml"}
 
 
 def _restore_gbk_mojibake(frag: str):
@@ -367,30 +376,51 @@ def find_mojibake_segments(line: str):
 
 
 def check_source_encoding(repo: Path) -> Check:
-    name = "源码编码（非法 UTF-8 / GBK 误解码乱码）"
-    bad_utf8, bad_mojibake, checked = [], [], 0
-    for pattern in ("*.cs", "*.ps1", "*.py"):
-        for p in sorted(repo.rglob(pattern)):
-            if any(part in ENCODING_SKIP_DIRS for part in p.parts) or not p.is_file():
-                continue
-            checked += 1
-            rel = str(p.relative_to(repo)).replace("\\", "/")
-            try:
-                text = p.read_text(encoding="utf-8")
-            except UnicodeDecodeError as exc:
-                bad_utf8.append(f"{rel}（{exc.reason} @ byte {exc.start}）")
-                continue
-            for lineno, line in enumerate(text.splitlines(), 1):
-                for frag, restored in find_mojibake_segments(line):
-                    bad_mojibake.append(f"{rel}:{lineno}: {frag} -> {restored}")
+    name = "源码编码/换行（非法 UTF-8 / GBK 乱码 / CRLF）"
+    bad_utf8, bad_mojibake, bad_eol = [], [], []
+    scanned = {"encoding": 0, "eol": 0}
+    for p in sorted(repo.rglob("*")):
+        suffix = p.suffix.lower()
+        if suffix not in ENCODING_EXTS and suffix not in EOL_LF_EXTS:
+            continue
+        if any(part in ENCODING_SKIP_DIRS for part in p.parts) or not p.is_file():
+            continue
+        rel = str(p.relative_to(repo)).replace("\\", "/")
+        raw = p.read_bytes()
+        if suffix in EOL_LF_EXTS:
+            scanned["eol"] += 1
+            crlf_count = raw.count(b"\r\n")
+            if crlf_count:
+                bad_eol.append(f"{rel}（{crlf_count} 处 CRLF，`.gitattributes` 声明 eol=lf）")
+        if suffix not in ENCODING_EXTS:
+            continue
+        scanned["encoding"] += 1
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            bad_utf8.append(f"{rel}（{exc.reason} @ byte {exc.start}）")
+            continue
+        for lineno, line in enumerate(text.splitlines(), 1):
+            for frag, restored in find_mojibake_segments(line):
+                bad_mojibake.append(f"{rel}:{lineno}: {frag} -> {restored}")
 
-    info = {"checked": checked, "invalid_utf8": bad_utf8, "mojibake": bad_mojibake}
-    if bad_utf8 or bad_mojibake:
+    info = {"encoding_checked": scanned["encoding"], "eol_checked": scanned["eol"],
+            "invalid_utf8": bad_utf8, "mojibake": bad_mojibake, "crlf": bad_eol}
+    problems = []
+    if bad_utf8:
+        problems.append(f"{len(bad_utf8)} 个非法 UTF-8 文件")
+    if bad_mojibake:
+        problems.append(f"{len(bad_mojibake)} 处 GBK 误解码乱码（按 `->` 右侧还原成正确中文）")
+    if bad_eol:
+        problems.append(f"{len(bad_eol)} 个文件含 CRLF（跑 "
+                        "`python Scripts/Tools/normalize_eol.py --repo .` 规范化）")
+    if problems:
         return Check("S8", name, FAIL,
-                     f"{len(bad_utf8)} 个非法 UTF-8 文件 / {len(bad_mojibake)} 处 GBK 误解码乱码"
-                     "（乱码会让实机日志锚点无法 grep；按 `->` 右侧还原成正确中文）",
-                     {"files": bad_utf8 + bad_mojibake})
-    return Check("S8", name, PASS, f"{checked} 个源码/脚本：UTF-8 合法、无 GBK 误解码乱码", info)
+                     " / ".join(problems) + "（乱码会让实机日志锚点无法 grep；CRLF 会跨轮累积成假 diff）",
+                     {"files": bad_utf8 + bad_mojibake + bad_eol})
+    return Check("S8", name, PASS,
+                 f"{scanned['encoding']} 个源码/脚本：UTF-8 合法、无 GBK 误解码乱码；"
+                 f"{scanned['eol']} 个文本文件换行符符合 .gitattributes", info)
 
 
 # ------------------------------------------------------------------ S9
@@ -551,7 +581,7 @@ CHECKS = (
     ("S5", "csproj 源码隔离", check_source_isolation),
     ("S6", "BuildMarker 身份", check_build_marker),
     ("S7", "运行期目标基线（新增/消失可见）", check_target_baseline),
-    ("S8", "源码编码（非法 UTF-8 / GBK 误解码乱码）", check_source_encoding),
+    ("S8", "源码编码/换行（非法 UTF-8 / GBK 乱码 / CRLF）", check_source_encoding),
     ("S9", "官方入口劫持（官方联机入口必须保持原版）", check_official_entry_hijack),
     ("S10", "大厅访问点判空（_lobby 可能为 null）", check_lobby_null_guard),
 )

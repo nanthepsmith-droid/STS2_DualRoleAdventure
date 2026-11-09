@@ -302,7 +302,10 @@ Notes:
 - **离线静态层（唯一能在托管 CI 上跑的门禁）**：`python Scripts/Tools/static_checks.py --repo .`
   —— 产物/反编译源码入库、`.ps1` 编码（含中文必须 UTF-8 BOM）、三处元数据 `version` 一致、
   补丁类级 `[HarmonyPatch]`（`patch_coverage` 口径，方法级-only 必须为 0）、csproj 源码隔离、
-  `Entry.cs` `BuildMarker`、**运行期目标基线比对**、**源码编码卫生（S8：非法 UTF-8 / GBK 误解码乱码）**。
+  `Entry.cs` `BuildMarker`、**运行期目标基线比对**、**源码编码/换行卫生（S8：非法 UTF-8 / GBK 误解码乱码 /
+  `.gitattributes` 声明 `eol=lf` 的文件不得有 CRLF）**。
+  S8 判 FAIL 时跑 `python Scripts/Tools/normalize_eol.py --repo .` 一键规范化（`--dry-run` 只看不改）；
+  ⚠ 换行变化会改变 dll 字节 ⇒ 规范化要排在**最后一次构建之前**。
   由 `.github/workflows/static-checks.yml` 在 push / PR 上执行。
   **门禁 1~5/7/10 需要本机游戏安装，不要指望 CI 跑它们。**
 - **改动过运行期目标（补丁类 / 字符串与反射目标）后**：静态层会打 WARN 并列出"新增/消失"明细 ——
