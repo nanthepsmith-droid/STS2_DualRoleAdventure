@@ -293,6 +293,22 @@ When the game updates and the mod breaks:
    其他文档（`维护现状分析.md`、memory、`TODO.md` 段首）要提就**指向它**，不复制第二份 ——
    此前四处各写一份，每轮收工要写 4 遍，且必然漂移。
 
+### 8.2 用户说「收工」时做什么（五件套，2026-10-24 起；2026-11-10 补上 CHANGELOG）
+
+**循环期间不做**（改代码 → 构建 → 回报，别顺手写文档，否则卡活且结论反复时要回改）；
+**用户说「收工」时一次性做完五件**：
+
+1. `D:\Download\pain\开发进度记录.md` 顶部**新收工块**（现状唯一事实源）；
+2. 把**最旧那段**收工块切到 `maintenance-docs\decision-records\archive\`，原位留一行 📦 索引
+   （本文件只留最近 3 段）；
+3. **`CHANGELOG.md` 的 `[Unreleased]` 补这一轮的玩家可见变化**（按功能分组、写清锚点/开关/影响面）——
+   **别攒到发版前补**（2026-11-10 用户明确要求：那时要回翻十几轮提交才能想起玩家看到的是什么）；
+   纯内部改动（工具 / 门禁 / 基线 / 重构）**不写**，在收工块里注明"零玩法改动"即可；
+4. `TODO.md` 状态回写（做完的打勾压行、未覆盖场景留一行、已关单段落按 §8.1 第 5 条切归档）；
+5. skill `references/` / `AGENTS.md` 沉淀 + memory（坑、教训、口径变化）。
+
+例外：**诊断锚点 / 代码注释 / 补丁自身 README** 属于代码，照常随时写。
+
 ## 9. Hard gates (run before every deploy)
 
 The goal is a single verdict, not a pile of logs. Every gate below must report PASS;

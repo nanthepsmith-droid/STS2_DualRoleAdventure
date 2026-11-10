@@ -31,22 +31,20 @@
 
 ---
 
-## ⏰ 更新日准备（**2026-11-13 游戏本体更新，含新模式：单人 + 多人**）—— 下个对话先做这 3 件
+## ⏰ 更新日（**2026-11-13 游戏本体更新，含新模式：单人 + 多人**）—— 准备已做完，等当天实机
 
 > 口径（2026-11-10 拍板）：**更新前不开新功能线**，只做零风险保险 + 演练，把功能留给更新之后。
 > 顺序与判据见 `AGENTS.md` §5；工具 `Scripts/Tools/game_update_prep.ps1`（`-Snapshot` / `-Verify`）
-> + `regenerate_src.ps1`。基线已就绪：`Scripts/Tools/baselines/game-version-baseline.json`（0.111.0）、
-> 旧 dll/存档归档在 `D:\Download\pain\game-archives\v0.111.0\`（齐全）。
+> + `regenerate_src.ps1`。基线已就绪：`Scripts/Tools/baselines/game-version-baseline.json`
+> （v0.111.0 / `marker r345` / `head 9324d0c`）；旧 dll 与存档归档在 `D:\Download\pain\game-archives\v0.111.0\`
+> （含 `DualRoleAdventure-2026-11-10-r345.dll`，适配期出问题可拿它做 A/B）。
 
-1. **push master**（2026-11-10 收工时领先 origin 13 笔）—— 更新日若本地构建被打坏，远端有完整回滚点。
-   ⚠ 代理口径见 memory：gitconfig 里的 7890 已停用，必须命令行覆盖 12000；**git 侧 TLS 握手常抖 ⇒ 连试 2~4 次**，
-   curl 经同一代理一次就通，别把 git 的失败当成代理挂了。
-2. **刷新基线的 repo 侧字段**：`.\Scripts\Tools\game_update_prep.ps1 -Snapshot -NoArchive`
-   （不重拷 dll / 不重备份存档）。当前 json 记的是 `marker r336` / `head 39818ea`，实际已到 `r345` / `d3df9cb`
-   —— 差 9 轮，事后归因会错。
-3. **演练更新日脚本链**（不碰游戏文件，确认工具没坏）：
-   `.\Scripts\Tools\game_update_prep.ps1 -Verify`（现在应全绿：版本一致、`string_stale=0`）
-   → `.\Scripts\Tools\regenerate_src.ps1 -CheckOnly` → `.\Scripts\Tools\preflight.ps1`（离线层）。
+**更新前 3 件准备 —— ✅ 2026-11-10 全部做完**（详见 `开发进度记录.md` 第一百六十六段）：
+
+1. ~~push master~~ ⇒ 远端已同步（`8e6c5e6` + 其后的 docs 提交），有完整回滚点；
+2. ~~刷新基线 repo 侧字段~~ ⇒ `-Snapshot -NoArchive` 重跑：`marker r336 → r345`、`head 39818ea → 9324d0c`；
+3. ~~演练更新日脚本链~~ ⇒ `-Verify` / `regenerate_src -CheckOnly` / `preflight`（离线）/ `preflight -Build -Deploy -Lint`
+   全部按预期跑通（6 PASS / 2 SKIP，单测 1457 全过）。
 
 **更新日当天，实机只判这 4 项**（顺序别乱）：
 
