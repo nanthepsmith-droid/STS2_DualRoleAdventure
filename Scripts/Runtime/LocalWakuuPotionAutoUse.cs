@@ -2,17 +2,21 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Entities.Potions;
+using MegaCrit.Sts2.Core.Entities.Relics;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Characters;
 using MegaCrit.Sts2.Core.Models.Potions;
 using MegaCrit.Sts2.Core.Models.Powers;
+using MegaCrit.Sts2.Core.Models.Relics;
 using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
@@ -31,7 +35,11 @@ namespace LocalMultiControl.Scripts.Runtime;
 /// - 污浊药水绝不自动使用（全场伤害含自己），只在商人处自动投掷（LocalWakuuMerchantFoulThrow）；
 /// - 果汁另有"到手立刻喝"链路（PotionProcuredAutoDrinkPatch），战斗中由规则表随时补喝；
 /// - mod 药水（非游戏命名空间）：普通战斗随机回合消耗（预掷 1~3 回合）；
-/// - 未收录的原版药水保守跳过。
+/// - 未收录的原版药水保守跳过；
+/// - **遗物驱动腾栏**（2026-11-10）：白兽雕像 / 娇嫩蕨草 / 石化蟾蜍 让"空药水栏"本身有收益
+///   ⇒ 规则表跑完仍缺空栏时，按稀有度从低到高用掉（纯逻辑见 <see cref="WakuuPotionDumpPolicy"/>）。
+///   **Common 档直接喝；Uncommon/Rare 档必须先过它自己那条规则的判定**（相位/首回合/条件/昏眩照旧），
+///   只把战斗范围放宽成 AnyCombat（精英/Boss 专用 → 普通怪也用），见 `DumpPotionsForRelicAsync`。
 /// </summary>
 internal static class LocalWakuuPotionAutoUse
 {
@@ -87,6 +95,9 @@ internal static class LocalWakuuPotionAutoUse
 
     /// <summary>mod 药水的随机回合计划：药水实例 → (战斗状态引用, 预定回合)。</summary>
     private static readonly Dictionary<object, (object Combat, int Round)> _modPotionPlan = new();
+
+    /// <summary>「腾栏无可用稀有度」提示的去重键：(玩家, 战斗) → 上次打过的药水栏签名。</summary>
+    private static readonly Dictionary<(ulong NetId, object Combat), string> _dumpSkipLogged = new();
 
     // ------------------------------------------------------------------
     // 规则表（2026-08-26 用户逐药拍板，见 pain\原版药水一览表.md）
@@ -442,53 +453,332 @@ internal static class LocalWakuuPotionAutoUse
                 continue; // 未收录原版药水保守跳过
             }
 
-            Creature? target = ResolveTarget(rule, potion, ctx);
-            if (!potion.IsValidTarget(target))
+            await UsePotionAsync(potion, rule, ctx, player, choiceContext, reason, phase);
+        }
+
+        // 遗物驱动腾栏：规则表全部评估完、仍然缺空栏时才动手（避免和规则表抢同一瓶药）
+        await DumpPotionsForRelicAsync(player, choiceContext, ctx, phase);
+    }
+
+    /// <summary>
+    /// 用掉一瓶药水（成功 true；目标非法 / 抛异常 false）。
+    /// 规则表路径与「遗物腾栏」路径共用，日志格式保持原样（<paramref name="reason"/> 区分来源）。
+    /// </summary>
+    private static async Task<bool> UsePotionAsync(
+        PotionModel potion,
+        PotionRule? rule,
+        PotionRuleContext ctx,
+        Player player,
+        PlayerChoiceContext choiceContext,
+        string reason,
+        WakuuPotionPhase phase)
+    {
+        Creature? target = ResolveTarget(rule, potion, ctx);
+        if (!potion.IsValidTarget(target))
+        {
+            LocalMultiControlLogger.Warn(
+                $"瓦库自动用药跳过（目标非法）: player={player.NetId}, potion={potion.Id.Entry}, "
+                + $"targetType={potion.TargetType}, reason={reason}");
+            return false;
+        }
+
+        try
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库自动用药: player={player.NetId}, round={ctx.Round}, phase={phase}, "
+                + $"potion={potion.Id.Entry}, reason={reason}, target={target?.LogName ?? "无"}");
+
+            if (rule?.DiscardInsteadOfUse == true)
+            {
+                await PotionCmd.Discard(potion);
+            }
+            else
+            {
+                using (PushSelectorFor(rule, ctx))
+                {
+                    await potion.OnUseWrapper(choiceContext, target);
+                }
+            }
+
+            return true;
+        }
+        catch (Exception exception)
+        {
+            // §待查-11：异常路径上原版不会执行 PopModel ⇒ 先把「还在栈顶的我」摘掉，
+            // 再判断这次异常要不要按故障上报（清理期 = 预期中止，见 WakuuTeardownPolicy）。
+            int popped = RepairChoiceContextStack(choiceContext, potion);
+            string repair = popped > 0 ? $"，已摘除残留药水模型 {popped} 层" : string.Empty;
+            string detail = PotionUseAbortPolicy.DescribeException(exception);
+
+            // 单瓶失败不影响后续药水与出牌流程；若药水已被移除则不会重复喝
+            if (LocalWakuuRelicRuntime.IsRunTeardown())
+            {
+                LocalMultiControlLogger.Info(
+                    $"瓦库自动用药在运行清理期中止（预期内，跳过该瓶）: potion={potion.Id.Entry}{repair}, error={detail}");
+            }
+            else
             {
                 LocalMultiControlLogger.Warn(
-                    $"瓦库自动用药跳过（目标非法）: player={player.NetId}, potion={potion.Id.Entry}, targetType={potion.TargetType}");
+                    $"瓦库自动用药异常（跳过该瓶）: potion={potion.Id.Entry}{repair}, error={detail}");
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 遗物驱动的「腾栏」：白兽雕像 / 娇嫩蕨草 / 石化蟾蜍 三件遗物会让"空药水栏"本身产生价值，
+    /// 因此这里**忽略规则表条件**，按稀有度从低到高把药水用掉（口径见 <see cref="WakuuPotionDumpPolicy"/>）。
+    ///
+    /// 只在规则表跑完仍缺空栏时才动手；每瓶成功用掉就重新数一次空栏，够了立即停。
+    /// </summary>
+    private static async Task DumpPotionsForRelicAsync(
+        Player player,
+        PlayerChoiceContext choiceContext,
+        PotionRuleContext ctx,
+        WakuuPotionPhase phase)
+    {
+        WakuuPotionDumpPlan plan = BuildDumpPlan(player);
+        if (!plan.IsActive || !player.CanUseOrRemovePotions)
+        {
+            return;
+        }
+
+        int maxSlots = player.MaxPotionCount;
+        int neededSlots = WakuuPotionDumpPolicy.ResolveNeededSlots(plan, maxSlots);
+        int openSlots = CountOpenPotionSlots(player);
+        if (!WakuuPotionDumpPolicy.NeedsDump(plan, openSlots, neededSlots))
+        {
+            return;
+        }
+
+        // 候选 = 稀有度在允许档内、可主动使用、且不会把栏位重新填满的药水。
+        // 排除项：污浊药水（全场伤害，从不自动用）、混沌药水（会把空栏重新填满，和腾栏目标相反）、
+        //        自动生效类（瓶中精灵 Usage=Automatic，无法主动使用）。
+        //
+        // 2026-11-10 用户口径修订（"无视环境喝药有点没用"）：
+        // - **Common 档**：直接喝（它本来就不值钱，留着占栏更亏）；
+        // - **Uncommon / Rare 档**：必须先通过它自己那条规则的判定（相位 / 首回合 / 附加条件 / 昏眩），
+        //   但**战斗范围放宽到 AnyCombat** —— 也就是"原来只在精英/Boss 用的，现在普通小怪也用"；
+        //   规则表里没收录的药水不腾（避免把好东西盲喝掉）。
+        List<(int Slot, int Rank, PotionRule? Rule)> candidates = new();
+        Dictionary<int, PotionModel> bySlot = new();
+        int skippedByCondition = 0;
+        bool stunned = ctx.Owner.Creature?.HasPower<RingingPower>() ?? false;
+        int slotIndex = -1;
+        foreach (PotionModel? slot in player.PotionSlots)
+        {
+            slotIndex++;
+            if (slot == null)
+            {
                 continue;
             }
 
-            try
+            if (slot is FoulPotion or EntropicBrew)
+            {
+                continue;
+            }
+
+            if (slot.Usage is PotionUsage.Automatic or PotionUsage.None)
+            {
+                continue;
+            }
+
+            WakuuPotionRarity rarity = MapDumpRarity(slot);
+            int rank = WakuuPotionDumpPolicy.RankOf(plan, rarity);
+            if (rank <= 0)
+            {
+                continue;
+            }
+
+            // 规则命中后**必须把 rule 一路带到执行处**：它带着目标策略（HumanFirst / AllyCharacter）与
+            // 定向选牌器。r341 实机踩到过：这里只留了规则名、执行时传 null ⇒ 复制药水按 AnyPlayer
+            // 兜底给了瓦库自己（应该优先真人）。
+            PotionRule? matchedRule = null;
+            if (rarity != WakuuPotionRarity.Common)
+            {
+                PotionRule? rule = Rules.FirstOrDefault((r) => SafeMatch(r.Match, slot));
+                if (rule == null)
+                {
+                    skippedByCondition++; // 未收录原版药水 / mod 药水：不盲喝
+                    continue;
+                }
+
+                bool conditionMet = rule.Condition == null || SafeCondition(rule.Condition, ctx);
+                if (!WakuuPotionDecision.ShouldUseRule(
+                        rule.Phases,
+                        WakuuPotionFightScope.AnyCombat, // 放宽战斗范围：普通小怪也用
+                        rule.FirstRoundOnly,
+                        rule.Condition != null,
+                        conditionMet,
+                        rule.SkipWhenStunned,
+                        stunned,
+                        phase,
+                        ctx.Round,
+                        ctx.HardFight,
+                        ctx.BossFight))
+                {
+                    skippedByCondition++;
+                    continue;
+                }
+
+                matchedRule = rule;
+            }
+
+            candidates.Add((slotIndex, rank, matchedRule));
+            bySlot[slotIndex] = slot;
+        }
+
+        if (candidates.Count == 0)
+        {
+            // 去重：蕨草要"尽量腾空"，但栏里只剩 Rare 时永远腾不动 ⇒ 每个评估点都会走到这里。
+            // 同一场战斗 + 同一条药水栏只提示一次，否则一局刷几十条（实测 r337 单局 22 条）。
+            string skipBar = DescribeBar(player);
+            if (ShouldLogDumpSkip(player.NetId, ctx.CombatState, plan.CauseName + "|" + skipBar))
             {
                 LocalMultiControlLogger.Info(
-                    $"瓦库自动用药: player={player.NetId}, round={ctx.Round}, phase={phase}, "
-                    + $"potion={potion.Id.Entry}, reason={reason}, target={target?.LogName ?? "无"}");
-
-                if (rule?.DiscardInsteadOfUse == true)
-                {
-                    await PotionCmd.Discard(potion);
-                }
-                else
-                {
-                    using (PushSelectorFor(rule, ctx))
-                    {
-                        await potion.OnUseWrapper(choiceContext, target);
-                    }
-                }
+                    $"瓦库药水腾栏跳过（没有可用到的稀有度）: player={player.NetId}, cause={plan.CauseName}, "
+                    + $"need={neededSlots}, open={openSlots}, 条件未满足={skippedByCondition}, bar={skipBar}");
             }
-            catch (Exception exception)
-            {
-                // §待查-11：异常路径上原版不会执行 PopModel ⇒ 先把「还在栈顶的我」摘掉，
-                // 再判断这次异常要不要按故障上报（清理期 = 预期中止，见 WakuuTeardownPolicy）。
-                int popped = RepairChoiceContextStack(choiceContext, potion);
-                string repair = popped > 0 ? $"，已摘除残留药水模型 {popped} 层" : string.Empty;
-                string detail = PotionUseAbortPolicy.DescribeException(exception);
 
-                // 单瓶失败不影响后续药水与出牌流程；若药水已被移除则不会重复喝
-                if (LocalWakuuRelicRuntime.IsRunTeardown())
-                {
-                    LocalMultiControlLogger.Info(
-                        $"瓦库自动用药在运行清理期中止（预期内，跳过该瓶）: potion={potion.Id.Entry}{repair}, error={detail}");
-                }
-                else
-                {
-                    LocalMultiControlLogger.Warn(
-                        $"瓦库自动用药异常（跳过该瓶）: potion={potion.Id.Entry}{repair}, error={detail}");
-                }
+            return;
+        }
+
+        Dictionary<int, PotionRule?> ruleBySlot = new();
+        List<(int Slot, int Rank)> order = new(candidates.Count);
+        foreach ((int slot, int rank, PotionRule? rule) in candidates)
+        {
+            order.Add((slot, rank));
+            ruleBySlot[slot] = rule;
+        }
+
+        StringBuilder dumped = new();
+        foreach (int slot in WakuuPotionDumpPolicy.OrderCandidates(order))
+        {
+            if (CountOpenPotionSlots(player) >= neededSlots)
+            {
+                break;
+            }
+
+            if (LocalWakuuRelicRuntime.IsRunTeardown())
+            {
+                LocalMultiControlLogger.Info(
+                    $"瓦库药水腾栏中止（运行已进入清理期）: player={player.NetId}, cause={plan.CauseName}");
+                return;
+            }
+
+            if (!bySlot.TryGetValue(slot, out PotionModel? potion) || !player.Potions.Contains(potion))
+            {
+                continue; // 已在本轮前面被规则表用掉
+            }
+
+            PotionRule? rule = ruleBySlot.TryGetValue(slot, out PotionRule? matched) ? matched : null;
+            string reason = rule == null
+                ? $"腾栏({plan.CauseName})"
+                : $"腾栏({plan.CauseName}·{rule.Name})";
+            // ⚠ 必须把 rule 传下去：目标策略（HumanFirst / AllyCharacter）与定向选牌器都在里面，
+            // 传 null 会让复制药水/超巨化落回 AnyPlayer ⇒ 给瓦库自己（r341 实机踩到）。
+            if (await UsePotionAsync(potion, rule, ctx, player, choiceContext, reason, phase))
+            {
+                dumped.Append(dumped.Length > 0 ? "," : string.Empty).Append(potion.Id.Entry);
             }
         }
+
+        LocalMultiControlLogger.Info(
+            $"瓦库药水腾栏: player={player.NetId}, cause={plan.CauseName}, need={neededSlots}, "
+            + $"openBefore={openSlots}, openAfter={CountOpenPotionSlots(player)}, 条件未满足={skippedByCondition}, "
+            + $"dumped=[{dumped}], bar={DescribeBar(player)}");
+    }
+
+    /// <summary>
+    /// 「腾栏无可用稀有度」提示是否值得打：同一场战斗 + 同一条药水栏签名只打一次。
+    /// 上限 64 条时整体清空（跨局残留一次性回收，不需要精确失效）。
+    /// </summary>
+    private static bool ShouldLogDumpSkip(ulong netId, object combat, string signature)
+    {
+        (ulong, object) key = (netId, combat);
+        if (_dumpSkipLogged.TryGetValue(key, out string? last) && last == signature)
+        {
+            return false;
+        }
+
+        if (_dumpSkipLogged.Count > 64)
+        {
+            _dumpSkipLogged.Clear();
+        }
+
+        _dumpSkipLogged[key] = signature;
+        return true;
+    }
+
+    /// <summary>玩家身上的三件遗物 ⇒ 腾栏计划。</summary>
+    private static WakuuPotionDumpPlan BuildDumpPlan(Player player)
+    {
+        bool whiteBeastStatue = false;
+        bool delicateFrond = false;
+        bool petrifiedToad = false;
+        foreach (RelicModel relic in player.Relics)
+        {
+            // 用 is 链而不是多次 Any：遗物数量少，但这里每回合都会被调用
+            if (relic is DelicateFrond)
+            {
+                delicateFrond = true;
+            }
+            else if (relic is WhiteBeastStatue)
+            {
+                whiteBeastStatue = true;
+            }
+            else if (relic is PetrifiedToad)
+            {
+                petrifiedToad = true;
+            }
+        }
+
+        return WakuuPotionDumpPolicy.Resolve(whiteBeastStatue, delicateFrond, petrifiedToad);
+    }
+
+    /// <summary>空药水栏数量（`PotionSlots` 里为 null 的槽）。</summary>
+    private static int CountOpenPotionSlots(Player player)
+    {
+        int open = 0;
+        foreach (PotionModel? slot in player.PotionSlots)
+        {
+            if (slot == null)
+            {
+                open++;
+            }
+        }
+
+        return open;
+    }
+
+    /// <summary>药水栏快照（日志用）：`1:COMMON_RARITY=Common,2:-`。</summary>
+    private static string DescribeBar(Player player)
+    {
+        StringBuilder text = new();
+        int index = -1;
+        foreach (PotionModel? slot in player.PotionSlots)
+        {
+            index++;
+            string entry = slot == null ? "-" : $"{slot.Id.Entry}={MapDumpRarity(slot)}";
+            text.Append(index == 0 ? string.Empty : ",").Append(entry);
+        }
+
+        return text.ToString();
+    }
+
+    /// <summary>游戏稀有度 → 纯逻辑枚举（显式映射：游戏新增档位会落到 None，不会静默串档）。</summary>
+    private static WakuuPotionRarity MapDumpRarity(PotionModel potion)
+    {
+        return potion.Rarity switch
+        {
+            PotionRarity.Common => WakuuPotionRarity.Common,
+            PotionRarity.Uncommon => WakuuPotionRarity.Uncommon,
+            PotionRarity.Rare => WakuuPotionRarity.Rare,
+            PotionRarity.Event => WakuuPotionRarity.Event,
+            PotionRarity.Token => WakuuPotionRarity.Token,
+            _ => WakuuPotionRarity.None,
+        };
     }
 
     /// <summary>
