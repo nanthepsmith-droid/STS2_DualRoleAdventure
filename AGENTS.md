@@ -174,6 +174,30 @@ The mod set is **dynamic** — never hand-maintain a repo list in the script:
 
 ## 5. Game-patch adaptation playbook
 
+**更新日顺序（一条命令当台账，别跳步）**：
+
+```
+# 0) 更新**前**（越早越好）：记基线 + 归档旧 sts2.dll/0Harmony/GodotSharp + 备份存档 zip
+.\Scripts\Tools\game_update_prep.ps1 -Snapshot
+
+# 1) 更新后立刻对账（版本/哈希/Harmony/GodotSharp 是否变、补丁目标是否还在、字符串目标 STALE 数）
+.\Scripts\Tools\game_update_prep.ps1 -Verify        # 此时 sts2src 还是旧版，脚本会标注"仅供参考"
+.\Scripts\Tools\regenerate_src.ps1                  # 2) 重生成反编译源（几分钟）
+.\Scripts\Tools\game_update_prep.ps1 -Verify        # 3) 再跑一次，字符串核对才准
+dotnet build LocalMultiControl.csproj -c Release    # 4) 编译错误 = 成员改名/被删
+.\Scripts\Tools\preflight.ps1 -Deploy                # 5) 全套门禁 + 部署 + 字节校验
+```
+
+- 为什么先 `-Snapshot`：没有基线时，"目标消失"到底是游戏改的还是我们上一轮改坏的**无法归因**；
+  `Scripts/Tools/baselines/game-version-baseline.json` 要**随提交进 git**（更新前那笔）。
+- 旧 dll 归档在 `D:\Download\pain\game-archives\<version>\`（仓库外、不进 git）：需要 diff 新旧反编译树时
+  拿它再跑一次 ilspycmd 即可。存档 zip 也在同目录（历史上更新/关内容 mod 曾把存档改名成 `*.VAL.corrupt`）。
+- 版本号**只认 `<game>\release_info.json`**（`sts2.dll` 的 AssemblyVersion 恒为 `0.1.0.0`）。
+- 本机 ilspycmd 现为 **11.0.0.9375**（脚本 `-InstallIlspy` 的默认版本是 9.1.0.7988）；反编译失败时先换版本试。
+- 第三方 / `compat-mods` 侧：更新后开局跑一局，用
+  `python Scripts\Tools\log_parser.py <godot.log> --init-status` 确认主 mod 与各 compat 都是 `INIT_OK`
+  （第三方自身不适配 0.112 **不在我们修复范围内**；我们只需要确认"我们的补丁没被上游改动搞失效"）。
+
 When the game updates and the mod breaks:
 
 1. Regenerate the decompiled reference source in one command
