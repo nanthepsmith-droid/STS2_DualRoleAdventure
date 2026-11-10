@@ -20,6 +20,7 @@ using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Powers;
 using MegaCrit.Sts2.Core.Models.Relics;
 using MegaCrit.Sts2.Core.Nodes.Cards;
 using MegaCrit.Sts2.Core.Nodes.Combat;
@@ -473,6 +474,16 @@ internal static class LocalWakuuRelicRuntime
         {
             _modEndExemptionLogged.Remove(key);
         }
+
+        foreach (string key in _missingEnemiesLogged.Where((key) => !key.StartsWith(prefix, StringComparison.Ordinal)).ToList())
+        {
+            _missingEnemiesLogged.Remove(key);
+        }
+
+        foreach (string key in _intangibleRoundLogged.Where((key) => !key.StartsWith(prefix, StringComparison.Ordinal)).ToList())
+        {
+            _intangibleRoundLogged.Remove(key);
+        }
     }
 
     /// <summary>
@@ -593,6 +604,7 @@ internal static class LocalWakuuRelicRuntime
                 // 任务 2.2：出牌循环改为向瓦库大脑要"下一步"（默认 HeuristicWakuuBrain =
                 // 原「第一张可打牌 + ResolveTarget」逻辑原样搬移，行为零变化）。
                 IWakuuCombatBrain brain = WakuuBrainFactory.Create();
+                LogIntangibleRoundOnce(player, combatState);
                 for (cardsPlayed = 0; cardsPlayed < maxCardsThisTurn; cardsPlayed++)
                 {
                     if (TryGetAutoplayUnsafeReason(combatState, player, out string unsafeReason))
@@ -909,6 +921,127 @@ internal static class LocalWakuuRelicRuntime
     };
 
     /// <summary>
+    /// 这张牌是否**必须场上有敌人**才有意义（AnyEnemy / AllEnemies / RandomEnemy）。
+    ///
+    /// 2026-11-10 用户口径：存在"没有敌人可以攻击"的窗口 —— 最典型是【实验体】被打死后、复活前
+    /// （`HittableEnemies` 为空）。这时敌方目标牌打出去只会空转（原版会随机取目标、取不到就进堆），
+    /// 托管应当把它们当成"现在打不了"，去做格挡/铺能力/抽牌。
+    /// </summary>
+    private static bool RequiresEnemyPresence(CardModel card) => card.TargetType switch
+    {
+        TargetType.AnyEnemy => true,
+        TargetType.AllEnemies => true,
+        TargetType.RandomEnemy => true,
+        _ => false,
+    };
+
+    /// <summary>当前有没有"能打的敌人"；战斗中状态读不到时按"有"处理（保守，不擅自禁用出牌）。</summary>
+    private static bool HasHittableEnemies(ICombatState? combatState)
+    {
+        if (combatState == null)
+        {
+            return true;
+        }
+
+        try
+        {
+            foreach (Creature? enemy in combatState.HittableEnemies)
+            {
+                if (enemy != null && enemy.IsAlive)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// 「场上没有敌人 ⇒ 这张敌方目标牌现在打不了」——托管口径的一处扩展。
+    ///
+    /// 必须同时接进 `<see cref="ResolveAutoplayHand"/>`（喂大脑的候选集）与
+    /// `<see cref="HasHostedPlayableCards"/>`（看门狗 / 战神收口 / 真人结束回合门）：
+    /// 两处不同口径就会出现 r262 那类"托管没牌可打、收口却说还有牌"的死锁。
+    /// </summary>
+    private static bool IsBlockedByMissingEnemies(Player player, int round, CardModel card)
+    {
+        if (!RequiresEnemyPresence(card))
+        {
+            return false;
+        }
+
+        if (HasHittableEnemies(player.Creature?.CombatState))
+        {
+            return false;
+        }
+
+        string key = $"{round}:{player.NetId}";
+        if (_missingEnemiesLogged.Add(key))
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库出牌跳过「敌方目标牌」（当前场上没有可攻击的敌人）: player={player.NetId}, round={round}, "
+                + $"card={card.Id.Entry}, targetType={card.TargetType}（有敌人后自动恢复）");
+        }
+
+        return true;
+    }
+
+    /// <summary>「场上没有敌人」提示的去重（键 = `回合:席位`，随回合推进清理）。</summary>
+    private static readonly HashSet<string> _missingEnemiesLogged = new();
+
+    /// <summary>「敌方全部无实体」提示的去重（键 = `回合:席位`，随回合推进清理）。</summary>
+    private static readonly HashSet<string> _intangibleRoundLogged = new();
+
+    /// <summary>
+    /// 本回合敌方**全部**处于【无实体】（`IntangiblePower`：受到的伤害被压成 1）时打一条锚点。
+    ///
+    /// 为什么在出牌循环里打（而不是大脑里）：`IWakuuCombatBrain` 约定"快路径无副作用"，
+    /// 日志属于副作用 —— 与"评分出牌"锚点同一处理方式。判读时靠它解释"这回合为什么在铺格挡/能力"。
+    /// </summary>
+    private static void LogIntangibleRoundOnce(Player player, ICombatState combatState)
+    {
+        bool any = false;
+        try
+        {
+            foreach (Creature? enemy in combatState.HittableEnemies)
+            {
+                if (enemy == null || !enemy.IsAlive)
+                {
+                    continue;
+                }
+
+                any = true;
+                if (enemy.GetPowerAmount<IntangiblePower>() <= 0)
+                {
+                    return; // 还有能正常掉血的敌人 ⇒ 不算"全部无实体"
+                }
+            }
+        }
+        catch
+        {
+            return;
+        }
+
+        if (!any)
+        {
+            return;
+        }
+
+        string key = $"{combatState.RoundNumber}:{player.NetId}";
+        if (_intangibleRoundLogged.Add(key))
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库出牌：敌方全部处于【无实体】（伤害恒为 1），本回合优先非攻击牌: "
+                + $"player={player.NetId}, round={combatState.RoundNumber}");
+        }
+    }
+
+    /// <summary>
     /// 出牌异常之后的**残影收尾**（r263）：把那张牌滞留在**出牌区**（PlayContainer / 出牌队列）的卡面节点收掉，
     /// 并延后一次手牌 UI 重建 —— 因为"出牌链半途断掉"时那张牌的手牌 holder 已经被摘走、数据却还留在手牌堆，
     /// 手牌 UI 就会少一个 holder（之后统计/合体按数据搬走它时表现为**没 holder 的"空气牌"**）。
@@ -1043,7 +1176,9 @@ internal static class LocalWakuuRelicRuntime
 
         foreach (CardModel card in handPile.Cards)
         {
-            if (card.CanPlay() && !IsExcludedFromHostedPlay(player.NetId, round, card))
+            if (card.CanPlay()
+                && !IsExcludedFromHostedPlay(player.NetId, round, card)
+                && !IsBlockedByMissingEnemies(player, round, card))
             {
                 return true;
             }
@@ -1080,6 +1215,15 @@ internal static class LocalWakuuRelicRuntime
         {
             cards = cards
                 .Where((candidate) => !IsExcludedFromHostedPlay(wakuu.NetId, round, candidate))
+                .ToList();
+        }
+
+        // 2026-11-10：场上没有敌人（如实验体复活前）时，敌方目标牌一律不喂给大脑
+        // —— 与 HasHostedPlayableCards 同一口径，否则会出现"托管没牌、收口说还有牌"。
+        if (cards.Count > 0 && !HasHittableEnemies(wakuu.Creature?.CombatState))
+        {
+            cards = cards
+                .Where((candidate) => !IsBlockedByMissingEnemies(wakuu, round, candidate))
                 .ToList();
         }
 

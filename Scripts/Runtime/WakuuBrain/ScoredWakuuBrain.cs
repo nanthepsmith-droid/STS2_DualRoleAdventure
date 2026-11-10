@@ -58,25 +58,27 @@ internal sealed class ScoredWakuuBrain : IWakuuCombatBrain
             // 只打 `[瓦库评价]` 诊断日志；刻意只在评分档接入，保证默认（启发式）档日志逐字不变。
             WakuuKnowledgeSampler.ObserveHand(ctx.Hand, ctx.Wakuu, "scored-brain");
 
+            WakuuScoreSituation situation = DescribeSituation(ctx);
+
             List<WakuuScoreInput> inputs = new(playable.Count);
             foreach (CardModel card in playable)
             {
-                inputs.Add(Describe(card, ctx));
+                inputs.Add(Describe(card, ctx, situation.AllEnemiesIntangible));
             }
-
-            WakuuScoreSituation situation = DescribeSituation(ctx);
             int index = WakuuCardScoring.PickBestIndex(inputs, situation);
             if (index >= 0 && index < playable.Count)
             {
                 CardModel card = playable[index];
                 int score = WakuuCardScoring.Score(inputs[index], situation);
+                // 无实体时在锚点尾标 `:intangible` —— 判读"这轮为什么优先格挡/能力"时不用再猜
+                string intangibleTag = situation.AllEnemiesIntangible ? ":intangible" : string.Empty;
                 action = new WakuuPlannedAction(
                     WakuuActionKind.PlayCard,
                     card,
                     ResolveTarget(card, ctx),
                     null,
                     0,
-                    $"scored:score={score}:{card.Id}",
+                    $"scored:score={score}:{card.Id}{intangibleTag}",
                     confident: true);
                 return true;
             }
@@ -185,6 +187,22 @@ internal sealed class ScoredWakuuBrain : IWakuuCombatBrain
         // 致死线：预估来袭伤害足以打穿「当前血 + 格挡」（0 血即死，所以用 >=）。
         bool lethal = incoming > 0 && incoming >= hp + self.Block;
 
+        // 无实体（2026-11-10 用户口径）：敌人受到的伤害被压成 1/段 ⇒ 攻击牌几乎无效。
+        // 只有「全部可打击敌人都无实体」才成立（部分无实体时还能打别的目标）。
+        bool allIntangible = false;
+        if (enemies.Count > 0)
+        {
+            allIntangible = true;
+            foreach (Creature enemy in enemies)
+            {
+                if (!IsIntangible(enemy))
+                {
+                    allIntangible = false;
+                    break;
+                }
+            }
+        }
+
         return new WakuuScoreSituation(
             playerHp: hp,
             playerMaxHp: self.MaxHp,
@@ -192,10 +210,24 @@ internal sealed class ScoredWakuuBrain : IWakuuCombatBrain
             turnNumber: ctx.TurnNumber,
             enemyCount: enemies.Count,
             weakestEnemyEffectiveHp: weakestEffectiveHp,
-            lethalDanger: lethal);
+            lethalDanger: lethal,
+            allEnemiesIntangible: allIntangible);
     }
 
-    private static WakuuScoreInput Describe(CardModel card, in WakuuDecisionContext ctx)
+    /// <summary>该生物是否处于【无实体】（伤害被压成 1）。读不到能力一律按"没有"处理（保守）。</summary>
+    private static bool IsIntangible(Creature creature)
+    {
+        try
+        {
+            return creature.GetPowerAmount<IntangiblePower>() > 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static WakuuScoreInput Describe(CardModel card, in WakuuDecisionContext ctx, bool enemiesIntangible)
     {
         WakuuScoreKeywords keywords = WakuuScoreKeywords.None;
         IReadOnlySet<CardKeyword> applied = card.Keywords;
@@ -221,7 +253,7 @@ internal sealed class ScoredWakuuBrain : IWakuuCombatBrain
             gainsBlock: card.GainsBlock,
             keywords: keywords,
             targetKind: MapTargetKind(card.TargetType),
-            estimatedDamage: EstimateDamage(card, ctx.Wakuu),
+            estimatedDamage: EstimateDamage(card, ctx.Wakuu, enemiesIntangible),
             estimatedBlock: EstimateBlock(card, ctx.Wakuu));
     }
 
@@ -255,7 +287,7 @@ internal sealed class ScoredWakuuBrain : IWakuuCombatBrain
     /// 对单个目标的粗估伤害 = (卡面伤害含附魔 + 力量) × 段数（§18.2.7 连击按总伤害估值）。
     /// 没有 Damage 变量（纯功能牌 / 计算型伤害）按 0 处理 —— 计算型伤害（CalculatedDamage）本期不解析。
     /// </summary>
-    private static int EstimateDamage(CardModel card, Player owner)
+    private static int EstimateDamage(CardModel card, Player owner, bool enemiesIntangible)
     {
         // ⚠ 一律走 WakuuCardVarReader：`DynamicVars.Damage` / `.Repeat` 是硬转型访问器
         // （游戏内部 `(DamageVar)_vars["Damage"]` / `(RepeatVar)_vars["Repeat"]`），
@@ -267,10 +299,17 @@ internal sealed class ScoredWakuuBrain : IWakuuCombatBrain
             return 0;
         }
 
-        int strength = owner.Creature.GetPowerAmount<StrengthPower>();
         int hits = WakuuVarMath.RepeatOrDefault(
             WakuuCardVarReader.TryReadInt(card, "Repeat", out int repeat),
             repeat);
+
+        // 无实体：命中伤害恒为 1/段 ⇒ 力量/数值全部不再放大（多段至少还能打 hits 点）。
+        if (enemiesIntangible)
+        {
+            return Math.Max(0, hits);
+        }
+
+        int strength = owner.Creature.GetPowerAmount<StrengthPower>();
         return WakuuVarMath.EstimateAttackDamage(perHit, strength, hits);
     }
 
@@ -320,12 +359,18 @@ internal sealed class ScoredWakuuBrain : IWakuuCombatBrain
         }
 
         List<int> effective = new(enemies.Count);
+        bool allIntangible = true;
         foreach (Creature enemy in enemies)
         {
             effective.Add(Math.Max(0, enemy.CurrentHp - enemy.Block));
+            if (!IsIntangible(enemy))
+            {
+                allIntangible = false;
+            }
         }
 
-        int index = WakuuTargetPicking.PickEnemyIndex(effective, EstimateDamage(card, ctx.Wakuu));
+        // 无实体时"能击杀"的判断也要按 1 点/段算，否则会把打不死的目标当补刀目标
+        int index = WakuuTargetPicking.PickEnemyIndex(effective, EstimateDamage(card, ctx.Wakuu, allIntangible));
         return index >= 0 && index < enemies.Count ? enemies[index] : enemies[0];
     }
 

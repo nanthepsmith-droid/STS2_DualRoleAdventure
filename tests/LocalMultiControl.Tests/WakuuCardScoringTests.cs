@@ -32,7 +32,11 @@ public class WakuuCardScoringTests
     }
 
     /// <summary>平静局面：满血、2 回合、单敌、无击杀窗口、无致死线。</summary>
-    private static WakuuScoreSituation Calm(int energy = 3, int enemyCount = 1, int weakestEffectiveHp = -1)
+    private static WakuuScoreSituation Calm(
+        int energy = 3,
+        int enemyCount = 1,
+        int weakestEffectiveHp = -1,
+        bool intangible = false)
     {
         return new WakuuScoreSituation(
             playerHp: 80,
@@ -41,7 +45,8 @@ public class WakuuCardScoringTests
             turnNumber: 2,
             enemyCount: enemyCount,
             weakestEnemyEffectiveHp: weakestEffectiveHp,
-            lethalDanger: false);
+            lethalDanger: false,
+            allEnemiesIntangible: intangible);
     }
 
     [Test]
@@ -311,5 +316,68 @@ public class WakuuCardScoringTests
             Assert.That(small, Is.EqualTo(35 + 30 + 5));
             Assert.That(huge, Is.EqualTo(35 + 30 + 20), "格挡量加分封顶 20");
         });
+    }
+
+    // ------------------------------------------------------------------
+    // 无实体（Intangible）：敌方受到的伤害被压成 1/段（2026-11-10 用户口径）
+    // ------------------------------------------------------------------
+
+    [Test]
+    public void 无实体时_攻击牌让位给技能牌()
+    {
+        WakuuScoreInput attack = Card(kind: WakuuScoreCardKind.Attack, cost: 1, damage: 20);
+        WakuuScoreInput skill = Card(kind: WakuuScoreCardKind.Skill, cost: 1);
+
+        int attackNormal = WakuuCardScoring.Score(attack, Calm());
+        int attackIntangible = WakuuCardScoring.Score(attack, Calm(intangible: true));
+        int skillIntangible = WakuuCardScoring.Score(skill, Calm(intangible: true));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(attackIntangible, Is.LessThan(attackNormal), "无实体时攻击牌应当掉分");
+            Assert.That(attackIntangible, Is.LessThan(skillIntangible), "掉到不如技能牌（优先格挡/抽牌）");
+        });
+    }
+
+    [Test]
+    public void 无实体时_不再因击杀窗口给攻击牌加成()
+    {
+        // 寻常 10 点：普通局面拿 +20 窗口 + +40 击杀；无实体时按 1 点算，既无窗口也不补刀
+        WakuuScoreInput attack = Card(kind: WakuuScoreCardKind.Attack, cost: 1, damage: 10);
+
+        int normal = WakuuCardScoring.Score(attack, Calm(weakestEffectiveHp: 10));
+        int intangible = WakuuCardScoring.Score(attack, Calm(weakestEffectiveHp: 10, intangible: true));
+
+        // 普通 = 30+5 +20 窗口 +40 击杀 = 95；无实体 = 30+5 +40 补刀 -25 = 50
+        // （纯逻辑只看标量：运行层会把 estDamage 压成 1/段，那时连 +40 也拿不到）
+        Assert.That(normal - intangible, Is.EqualTo(45), "无实体时失去 +20 窗口，另吃 -25 惩罚");
+    }
+
+    [Test]
+    public void 无实体时_补刀仍然保留价值()
+    {
+        // 敌人只剩 1 点有效血 & 这张牌（无实体下）刚好打 1 点 ⇒ 仍给 +40 补刀
+        WakuuScoreInput attack = Card(kind: WakuuScoreCardKind.Attack, cost: 1, damage: 1);
+        WakuuScoreInput plain = Card(kind: WakuuScoreCardKind.Attack, cost: 1, damage: 0);
+
+        int lethalBlow = WakuuCardScoring.Score(attack, Calm(weakestEffectiveHp: 1, intangible: true));
+        int noBlow = WakuuCardScoring.Score(plain, Calm(weakestEffectiveHp: 1, intangible: true));
+
+        Assert.That(lethalBlow - noBlow, Is.EqualTo(40), "能补刀就还是 +40，只是不再有 +20 窗口");
+    }
+
+    [Test]
+    public void 无实体时_防御牌依然优先()
+    {
+        WakuuScoreSituation dangerous = new(
+            playerHp: 10, playerMaxHp: 80, energy: 3, turnNumber: 2,
+            enemyCount: 1, weakestEnemyEffectiveHp: 30, lethalDanger: true, allEnemiesIntangible: true);
+
+        int block = WakuuCardScoring.Score(
+            Card(kind: WakuuScoreCardKind.Skill, cost: 1, gainsBlock: true, block: 12), dangerous);
+        int attack = WakuuCardScoring.Score(
+            Card(kind: WakuuScoreCardKind.Attack, cost: 1, damage: 30), dangerous);
+
+        Assert.That(block, Is.GreaterThan(attack));
     }
 }

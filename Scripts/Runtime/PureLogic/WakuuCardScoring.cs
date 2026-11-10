@@ -103,7 +103,8 @@ internal readonly struct WakuuScoreSituation
         int turnNumber,
         int enemyCount,
         int weakestEnemyEffectiveHp,
-        bool lethalDanger)
+        bool lethalDanger,
+        bool allEnemiesIntangible = false)
     {
         PlayerHp = playerHp;
         PlayerMaxHp = playerMaxHp;
@@ -112,6 +113,7 @@ internal readonly struct WakuuScoreSituation
         EnemyCount = enemyCount;
         WeakestEnemyEffectiveHp = weakestEnemyEffectiveHp;
         LethalDanger = lethalDanger;
+        AllEnemiesIntangible = allEnemiesIntangible;
     }
 
     public int PlayerHp { get; }
@@ -134,6 +136,12 @@ internal readonly struct WakuuScoreSituation
     /// 由 <c>LocalWakuuThreatEstimate</c> 的意图求和给出；估不到伤害时恒 false（保守，不乱加防御分）。
     /// </summary>
     public bool LethalDanger { get; }
+
+    /// <summary>
+    /// 所有可打击敌人都处于【无实体】（`IntangiblePower`，受到的伤害被压成 1）—— 攻击牌这时几乎只值 1 点，
+    /// 应当优先格挡 / 铺能力 / 抽牌（2026-11-10 用户口径）。
+    /// </summary>
+    public bool AllEnemiesIntangible { get; }
 }
 
 /// <summary>
@@ -223,14 +231,31 @@ internal static class WakuuCardScoring
         }
 
         // 攻击优先：有可击杀窗口时。
+        // 无实体（Intangible）例外：敌方受到的伤害被压成 1，攻击牌不构成"输出窗口"，
+        // 只保留"这一下能补刀"的价值，其余一律让位给格挡/能力/抽牌。
         bool killWindow = situation.WeakestEnemyEffectiveHp >= 0;
         if (killWindow && card.Kind == WakuuScoreCardKind.Attack)
         {
-            mod += 20;
-            if (card.EstimatedDamage >= situation.WeakestEnemyEffectiveHp)
+            if (situation.AllEnemiesIntangible)
             {
-                mod += 40; // 能击杀：消除一个威胁源，最高优先级（非致死线时）
+                if (card.EstimatedDamage >= situation.WeakestEnemyEffectiveHp)
+                {
+                    mod += 40; // 补刀：1 点也能收掉残血敌人
+                }
             }
+            else
+            {
+                mod += 20;
+                if (card.EstimatedDamage >= situation.WeakestEnemyEffectiveHp)
+                {
+                    mod += 40; // 能击杀：消除一个威胁源，最高优先级（非致死线时）
+                }
+            }
+        }
+
+        if (situation.AllEnemiesIntangible && card.Kind == WakuuScoreCardKind.Attack)
+        {
+            mod -= 25; // 打不出伤害的攻击牌：把基础分（30）压到不如技能牌
         }
 
         // 第一回合：能力牌额外加分（早铺永久增益）。

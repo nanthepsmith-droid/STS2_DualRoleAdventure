@@ -5,6 +5,7 @@ using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Powers;
 
 namespace LocalMultiControl.Scripts.Runtime;
 
@@ -22,7 +23,12 @@ internal sealed class HeuristicWakuuBrain : IWakuuCombatBrain
     public bool TryDecideNext(in WakuuDecisionContext ctx, out WakuuPlannedAction action)
     {
         // 原逻辑：PileType.Hand.GetPile(owner).Cards.FirstOrDefault(candidate => candidate.CanPlay())
-        CardModel? card = ctx.Hand.FirstOrDefault((candidate) => candidate.CanPlay());
+        // 2026-11-10：敌方全部【无实体】（伤害被压成 1/段）时，攻击牌几乎只值 1 点
+        // ⇒ 先找非攻击牌（格挡/铺能力/抽牌），没有才回到"最左可打牌"。除此之外行为零变化。
+        CardModel? card = AllHittableEnemiesIntangible(ctx.Combat)
+            ? ctx.Hand.FirstOrDefault((candidate) => candidate.CanPlay() && candidate.Type != CardType.Attack)
+              ?? ctx.Hand.FirstOrDefault((candidate) => candidate.CanPlay())
+            : ctx.Hand.FirstOrDefault((candidate) => candidate.CanPlay());
         if (card != null)
         {
             Creature? target = ResolveTarget(card, ctx.Combat, ctx.Wakuu);
@@ -63,6 +69,37 @@ internal sealed class HeuristicWakuuBrain : IWakuuCombatBrain
 
     public void OnCombatEnd()
     {
+    }
+
+    /// <summary>
+    /// 所有可打击敌人是否都处于【无实体】（`IntangiblePower`，受到的伤害压成 1）。
+    /// 空场返回 false（空场不靠这条判断，敌方目标牌另有"没有敌人"口径）。
+    /// </summary>
+    private static bool AllHittableEnemiesIntangible(ICombatState combatState)
+    {
+        try
+        {
+            bool any = false;
+            foreach (Creature? enemy in combatState.HittableEnemies)
+            {
+                if (enemy == null || !enemy.IsAlive)
+                {
+                    continue;
+                }
+
+                any = true;
+                if (enemy.GetPowerAmount<IntangiblePower>() <= 0)
+                {
+                    return false;
+                }
+            }
+
+            return any;
+        }
+        catch
+        {
+            return false; // 读不到就当"没有无实体"，保持既有行为
+        }
     }
 
     /// <summary>
