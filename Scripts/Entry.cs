@@ -850,7 +850,7 @@ public partial class Entry
     // r323（2026-10-27，同一轮日志卫生）：**状态【战灵守卫】的 `powers` 表键补齐** —— BaseLib 启动扫描
     //   全部 Power 取 `.title`，我们那条 `HELLWAR_WAR_GOD_GUARD_POWER` 缺键（实机 1 条 WARN + 返回垃圾串）。
     //   该状态 `IsVisibleInternal = false`（不给它建节点、避免缺图标 ERROR）⇒ 玩家看不见，纯补键。
-    private const string BuildMarker = "Revival v1.47.0 (game v0.111.0, marker=2026-11-04-r336)";
+    private const string BuildMarker = "Revival v1.47.0 (game v0.111.0, marker=2026-11-10-r342)";
 
     private static Harmony? _harmony;
 

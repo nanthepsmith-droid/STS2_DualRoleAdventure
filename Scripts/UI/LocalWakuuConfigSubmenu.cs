@@ -183,15 +183,15 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         AddToggleRow(column,
             LocalModText.Select("瓦库出牌走动作队列（默认开）", "Vakuu Plays via Action Queue (default ON)"),
             LocalModText.Select(
-                "**默认开**（2026-09-26 由实验档转正，依据见方案 §12.15）：开启后瓦库出牌不再用模组内联的自动出牌，而是像真人/远端玩家那样「把出牌动作排进自己的动作队列」（原版多人模式的同一条路径），换来多人模式的真实语义——某个瓦库在等自己的选牌时不挡住其他瓦库与真人。代价是三条刻意接受的语义变化：① 瓦库的出牌不再按「自动出牌」处理（虚无形态、佩尔之眼、不歇之巅等对自动出牌有特判的牌会开始把瓦库出牌算进去）；② 需要指定目标的牌若当刻解析不到目标，牌会留在手里（旧行为是打出去进弃牌堆）；③ 队列路径的演出比内联自动出牌略多（原版 PlayCardAction 自己没带跳过动画的参数，模组靠前缀补丁补上），**但仍然吃上面的「瓦库出牌加速」**：开着加速时队列出牌同样会跳过收尾固定等待与结算堆补间（约省 0.15~0.3 秒/张），只是「牌从手牌飞出」那段真人分支动画省不掉，所以仍比内联路径稍慢一点。关掉「瓦库出牌加速」即恢复完整演出。关闭本项即恢复既有行为；遇到任何异常请关掉本项并保留 godot.log。",
-                "**On by default** (promoted from experimental on 2026-09-26; see plan §12.15): Vakuu plays no longer use the mod's inline auto-play; they enqueue plays into their own action queue like humans/remote players (the vanilla multiplayer path), gaining true multiplayer semantics — a Vakuu waiting on its own pick no longer blocks other Vakuu or humans. Three accepted trade-offs: 1) plays are no longer treated as \"auto-play\" (cards with special auto-play checks such as Void Form, Perr's Eye, Unresting Summit start counting Vakuu plays); 2) a targeted card stays in hand if no target resolves right now (old behavior played it into the discard); 3) the queue path shows slightly more animation than inline plays (vanilla PlayCardAction has no skip-anim flag; the mod adds one via a Prefix), but it **still benefits from \"Fast Vakuu Plays\" above**: it skips the settle wait and discard-pile tween (~0.15-0.3s/card); only the \"card flying out of hand\" human-branch animation remains, so it's slightly slower than the inline path. Turn off \"Fast Vakuu Plays\" to restore full animation. Turning this off restores prior behavior; if anything looks wrong, turn it off and keep godot.log."),
+                "默认开（2026-09-26 由实验档转正，依据见方案 §12.15）：开启后瓦库出牌不再用模组内联的自动出牌，而是像真人/远端玩家那样「把出牌动作排进自己的动作队列」（原版多人模式的同一条路径），换来多人模式的真实语义——某个瓦库在等自己的选牌时不挡住其他瓦库与真人。代价是三条刻意接受的语义变化：① 瓦库的出牌不再按「自动出牌」处理（虚无形态、佩尔之眼、不歇之巅等对自动出牌有特判的牌会开始把瓦库出牌算进去）；② 需要指定目标的牌若当刻解析不到目标，牌会留在手里（旧行为是打出去进弃牌堆）；③ 队列路径的演出比内联自动出牌略多（原版 PlayCardAction 自己没带跳过动画的参数，模组靠前缀补丁补上），但仍然吃上面的「瓦库出牌加速」：开着加速时队列出牌同样会跳过收尾固定等待与结算堆补间（约省 0.15~0.3 秒/张），只是「牌从手牌飞出」那段真人分支动画省不掉，所以仍比内联路径稍慢一点。关掉「瓦库出牌加速」即恢复完整演出。关闭本项即恢复既有行为；遇到任何异常请关掉本项并保留 godot.log。",
+                "On by default (promoted from experimental on 2026-09-26; see plan §12.15): Vakuu plays no longer use the mod's inline auto-play; they enqueue plays into their own action queue like humans/remote players (the vanilla multiplayer path), gaining true multiplayer semantics — a Vakuu waiting on its own pick no longer blocks other Vakuu or humans. Three accepted trade-offs: 1) plays are no longer treated as \"auto-play\" (cards with special auto-play checks such as Void Form, Perr's Eye, Unresting Summit start counting Vakuu plays); 2) a targeted card stays in hand if no target resolves right now (old behavior played it into the discard); 3) the queue path shows slightly more animation than inline plays (vanilla PlayCardAction has no skip-anim flag; the mod adds one via a Prefix), but it still benefits from \"Fast Vakuu Plays\" above: it skips the settle wait and discard-pile tween (~0.15-0.3s/card); only the \"card flying out of hand\" human-branch animation remains, so it's slightly slower than the inline path. Turn off \"Fast Vakuu Plays\" to restore full animation. Turning this off restores prior behavior; if anything looks wrong, turn it off and keep godot.log."),
             () => LocalWakuuAutopilotConfig.WakuuPlayQueue,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("vakuuPlayQueue", value));
         AddToggleRow(column,
             LocalModText.Select("瓦库并发出牌（不互相等，默认开）", "Vakuu Concurrent Plays (No Mutual Waiting; default ON)"),
             LocalModText.Select(
-                "**默认开**（2026-09-26 转正：1 真人 + 3 瓦库实测启动延迟增量中位 14ms，8 个多瓦库回合无一达到秒级）。**必须先开上面那项「瓦库出牌走动作队列」才生效**。这是上一项实验档的第二步（最终目标）：开启后多个瓦库不再排队等「全局出牌闸门」，一个瓦库在等自己的选牌时，其他瓦库与真人照常出牌（原版多人模式的真实语义）。代价：① 瓦库出牌期间不再把「当前玩家」钉在瓦库身上（出牌改由游戏动作泵执行、归属按角色分发），所以瓦库出牌的**前台视觉演出会更少**（更接近后台托管，伤害与效果照常）；② 视角档位设成「全程跟随」时，多个瓦库可能来回抢视角（建议配合默认的「不跟随」使用）。只想稳就先别开；遇到任何异常请关掉本项并保留 godot.log。",
-                "**On by default** (promoted 2026-09-26; 3-Vakuu measured start-latency spread: 14 ms median; see plan §12.15). **Requires \"Vakuu Plays via Action Queue\" above**. This is the second step of that experiment (end goal): multiple Vakuu no longer queue on the \"global play gate\" — a Vakuu waiting on its own pick no longer holds up other Vakuu or humans (true multiplayer semantics). Costs: 1) Vakuu plays no longer pin the \"current player\" to the Vakuu (plays run on the game action pump, attribution by character), so Vakuu plays have **less foreground visual flair** (closer to background autopilot; damage/effects work as normal); 2) with \"Always Follow\" camera, multiple Vakuu may fight over the camera (best used with the default \"Never\"). If you want stability first, leave it off; if anything looks wrong, turn it off and keep godot.log."),
+                "默认开（2026-09-26 转正：1 真人 + 3 瓦库实测启动延迟增量中位 14ms，8 个多瓦库回合无一达到秒级）。必须先开上面那项「瓦库出牌走动作队列」才生效。这是上一项实验档的第二步（最终目标）：开启后多个瓦库不再排队等「全局出牌闸门」，一个瓦库在等自己的选牌时，其他瓦库与真人照常出牌（原版多人模式的真实语义）。代价：① 瓦库出牌期间不再把「当前玩家」钉在瓦库身上（出牌改由游戏动作泵执行、归属按角色分发），所以瓦库出牌的前台视觉演出会更少（更接近后台托管，伤害与效果照常）；② 视角档位设成「全程跟随」时，多个瓦库可能来回抢视角（建议配合默认的「不跟随」使用）。只想稳就先别开；遇到任何异常请关掉本项并保留 godot.log。",
+                "On by default (promoted 2026-09-26; 3-Vakuu measured start-latency spread: 14 ms median; see plan §12.15). Requires \"Vakuu Plays via Action Queue\" above. This is the second step of that experiment (end goal): multiple Vakuu no longer queue on the \"global play gate\" — a Vakuu waiting on its own pick no longer holds up other Vakuu or humans (true multiplayer semantics). Costs: 1) Vakuu plays no longer pin the \"current player\" to the Vakuu (plays run on the game action pump, attribution by character), so Vakuu plays have less foreground visual flair (closer to background autopilot; damage/effects work as normal); 2) with \"Always Follow\" camera, multiple Vakuu may fight over the camera (best used with the default \"Never\"). If you want stability first, leave it off; if anything looks wrong, turn it off and keep godot.log."),
             () => LocalWakuuAutopilotConfig.WakuuPlayOverlap,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("vakuuPlayOverlap", value));
         AddToggleRow(column,
@@ -204,13 +204,13 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         column.AddChild(CreateViewModeRow(
             LocalModText.Select("瓦库托管视角", "Vakuu View Mode"),
             LocalModText.Select(
-                "本档位细化「后台托管」的跟随程度，默认不跟随。**不跟随**：瓦库全程不抢视角，只保留两处防软锁兜底（作用域外需要你自己操作的选牌、安全网超时救援）；**仅关键节点**：瓦库回合开始时跳过去看一眼（看到轮到谁、抽了什么），约 1 秒后自动切回你自己，日常出牌不跟随；**全程跟随**：回合开始/结束、Hook 入队、瓦库出牌前都切过去（约等于关闭「后台托管」的观感）。仅当上方「后台托管（不切前台）」开启时生效。",
-                "Finer control over \"Background Autopilot\" above (default: Never). **Never**: Vakuu never takes the camera, except two softlock guards (out-of-scope card picks that need you, and the safety-net timeout rescue); **Key Moments Only**: at Vakuu turn start, peek at that character (see whose turn it is and what's drawn), auto-switch back in ~1s; daily plays don't follow; **Always Follow**: switch over at turn start/end, hook enqueue, and before each Vakuu play (~like turning \"Background Autopilot\" off). Only effective when \"Background Autopilot (No Camera Switch)\" is on.")));
+                "本档位细化「后台托管」的跟随程度，默认不跟随。不跟随：瓦库全程不抢视角，只保留两处防软锁兜底（作用域外需要你自己操作的选牌、安全网超时救援）；仅关键节点：瓦库回合开始时跳过去看一眼（看到轮到谁、抽了什么），约 1 秒后自动切回你自己，日常出牌不跟随；全程跟随：回合开始/结束、Hook 入队、瓦库出牌前都切过去（约等于关闭「后台托管」的观感）。仅当上方「后台托管（不切前台）」开启时生效。",
+                "Finer control over \"Background Autopilot\" above (default: Never). Never: Vakuu never takes the camera, except two softlock guards (out-of-scope card picks that need you, and the safety-net timeout rescue); Key Moments Only: at Vakuu turn start, peek at that character (see whose turn it is and what's drawn), auto-switch back in ~1s; daily plays don't follow; Always Follow: switch over at turn start/end, hook enqueue, and before each Vakuu play (~like turning \"Background Autopilot\" off). Only effective when \"Background Autopilot (No Camera Switch)\" is on.")));
         column.AddChild(CreateBrainModeRow(
             LocalModText.Select("战斗决策大脑", "Combat Decision Brain"),
             LocalModText.Select(
-                "瓦库战斗里「打哪张牌 / 打谁」怎么决定，默认**启发式**。**启发式**：取手牌最左的那张可打牌（模组一直以来的行为，最稳、可预期）。**评分**：给每张可打牌打分再挑最高的一张——能力牌/0 费/能击杀敌人/该补格挡的牌会被优先；手牌里有牌可打时**最后才打 X 费牌**（把 X 值攒到最大）；需要指定敌人时**优先能击杀的目标，否则打有效血量最低的敌人**（集火），队友增益优先给真人。⚠ 评分用的是「卡面数值 + 力量/敏捷」的粗估（不含易伤/虚弱等额外修正），且本期没有跨回合计划；体感不对随时切回「启发式」。**自动探测**：留给将来的外部求解器（现在未装时等同启发式）。三者都**不影响**选牌/事件/商店等其它决策链。",
-                "How Vakuu decides \"which card to play / at whom\" in combat. Default is **Heuristic**. **Heuristic**: play the leftmost playable card (the mod's long-standing behavior; most stable and predictable). **Scored**: score every playable card and take the best — Powers / 0-cost / lethal-on-an-enemy / needed-block cards rank higher; X-cost cards are played **last** while any other playable card remains (to maximize X); for single-enemy cards it **prefers a killable target, otherwise the enemy with the lowest effective HP** (focus fire) and gives ally buffs to human players first. ⚠ Scoring uses a rough estimate (card values + Strength/Dexterity, no Vulnerable/Weak modifiers) and has no cross-turn planning; switch back to Heuristic anytime if it feels off. **Auto**: reserved for a future external solver (currently identical to Heuristic). None of these affect card picks / events / shops.")));
+                "瓦库战斗里「打哪张牌 / 打谁」怎么决定，默认启发式。启发式：取手牌最左的那张可打牌（模组一直以来的行为，最稳、可预期）。评分：给每张可打牌打分再挑最高的一张——能力牌/0 费/能击杀敌人/该补格挡的牌会被优先；手牌里有牌可打时最后才打 X 费牌（把 X 值攒到最大）；需要指定敌人时优先能击杀的目标，否则打有效血量最低的敌人（集火），队友增益优先给真人。⚠ 评分用的是「卡面数值 + 力量/敏捷」的粗估（不含易伤/虚弱等额外修正），且本期没有跨回合计划；体感不对随时切回「启发式」。自动探测：留给将来的外部求解器（现在未装时等同启发式）。三者都不影响选牌/事件/商店等其它决策链。",
+                "How Vakuu decides \"which card to play / at whom\" in combat. Default is Heuristic. Heuristic: play the leftmost playable card (the mod's long-standing behavior; most stable and predictable). Scored: score every playable card and take the best — Powers / 0-cost / lethal-on-an-enemy / needed-block cards rank higher; X-cost cards are played last while any other playable card remains (to maximize X); for single-enemy cards it prefers a killable target, otherwise the enemy with the lowest effective HP (focus fire) and gives ally buffs to human players first. ⚠ Scoring uses a rough estimate (card values + Strength/Dexterity, no Vulnerable/Weak modifiers) and has no cross-turn planning; switch back to Heuristic anytime if it feels off. Auto: reserved for a future external solver (currently identical to Heuristic). None of these affect card picks / events / shops.")));
         AddToggleRow(column,
             LocalModText.Select("压制原版低语耳环", "Suppress Vanilla Earring"),
             LocalModText.Select(
@@ -268,8 +268,8 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         column.AddChild(CreateCycleRow(
             LocalModText.Select("炼化 · 卡牌张数上限", "Refine · Card Limit"),
             LocalModText.Select(
-                "炼化时最多能从目标瓦库卡组里拿走几张牌。三档循环：不限（可拿全部）→ 20 张 → 5 张。默认不限。**可以一张都不选**（直接确认即继续；想中止炼化请在「选目标 / 选遗物 / 选药水」三步里取消）。仅影响已开启的「火堆炼化」。",
-                "How many cards you may take from the target Vakuu's deck when refining. Cycles: Unlimited (all) → 20 → 5. Default Unlimited. **You may take none** (just confirm to continue; to abort the refine, cancel one of the target / relic / potion steps). Only affects \"Refine at Rest Sites\" when enabled."),
+                "炼化时最多能从目标瓦库卡组里拿走几张牌。三档循环：不限（可拿全部）→ 20 张 → 5 张。默认不限。可以一张都不选（直接确认即继续；想中止炼化请在「选目标 / 选遗物 / 选药水」三步里取消）。仅影响已开启的「火堆炼化」。",
+                "How many cards you may take from the target Vakuu's deck when refining. Cycles: Unlimited (all) → 20 → 5. Default Unlimited. You may take none (just confirm to continue; to abort the refine, cancel one of the target / relic / potion steps). Only affects \"Refine at Rest Sites\" when enabled."),
             "refineCardLimit",
             () => LocalWakuuAutopilotConfig.RefineCardLimit,
             NextRefineCardLimit,
@@ -277,8 +277,8 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         column.AddChild(CreateCycleRow(
             LocalModText.Select("炼化 · 遗物件数上限", "Refine · Relic Limit"),
             LocalModText.Select(
-                "炼化时最多能从目标瓦库身上拿走几件遗物。四档循环：不限（可全拿）→ 5 件 → 3 件 → 1 件。**默认不限** —— 只让拿 1 件的话炼化收益太低（不如让瓦库活着）。仅影响已开启的「火堆炼化」；关掉上面的「收编瓦库的牌与遗物」则根本不碰遗物。",
-                "How many relics you may take from the target Vakuu when refining. Cycles: Unlimited (all) → 5 → 3 → 1. **Unlimited by default** — capping it at 1 makes refining too weak to be worth it (you'd rather keep the Vakuu alive). Only affects \"Refine at Rest Sites\" when enabled; turning off \"Take the Vakuu's Cards & Relics\" above leaves relics untouched entirely."),
+                "炼化时最多能从目标瓦库身上拿走几件遗物。四档循环：不限（可全拿）→ 5 件 → 3 件 → 1 件。默认不限 —— 只让拿 1 件的话炼化收益太低（不如让瓦库活着）。仅影响已开启的「火堆炼化」；关掉上面的「收编瓦库的牌与遗物」则根本不碰遗物。",
+                "How many relics you may take from the target Vakuu when refining. Cycles: Unlimited (all) → 5 → 3 → 1. Unlimited by default — capping it at 1 makes refining too weak to be worth it (you'd rather keep the Vakuu alive). Only affects \"Refine at Rest Sites\" when enabled; turning off \"Take the Vakuu's Cards & Relics\" above leaves relics untouched entirely."),
             "refineRelicLimit",
             () => LocalWakuuAutopilotConfig.RefineRelicLimit,
             NextRefineRelicLimit,
@@ -286,36 +286,36 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         AddToggleRow(column,
             LocalModText.Select("炼化时收编瓦库的牌与遗物（默认开）", "Refine · Take the Vakuu's Cards & Relics (default ON)"),
             LocalModText.Select(
-                "**默认开**（= 当前行为）。开启后炼化会先让你从目标瓦库的卡组自选若干张牌、再自选 1 件遗物，收编到自己名下。**关掉**则炼化只按下方比例收编它的血量与血上限、然后把它炼掉，瓦库的卡组与遗物**原样留在它身上** —— 给「日后把瓦库复活」留活路（不然核心牌被拿走，复活也白复活）。",
-                "**On by default** (= current behavior). When on, refining lets you take cards from the target Vakuu's deck and 1 relic into your own name. When off, refining only absorbs its HP/Max HP at the ratio below and melts it down — the Vakuu's deck and relics stay on it untouched, leaving a future revival viable (its key cards won't have been taken)."),
+                "默认开（= 当前行为）。开启后炼化会先让你从目标瓦库的卡组自选若干张牌、再自选 1 件遗物，收编到自己名下。关掉则炼化只按下方比例收编它的血量与血上限、然后把它炼掉，瓦库的卡组与遗物原样留在它身上 —— 给「日后把瓦库复活」留活路（不然核心牌被拿走，复活也白复活）。",
+                "On by default (= current behavior). When on, refining lets you take cards from the target Vakuu's deck and 1 relic into your own name. When off, refining only absorbs its HP/Max HP at the ratio below and melts it down — the Vakuu's deck and relics stay on it untouched, leaving a future revival viable (its key cards won't have been taken)."),
             () => LocalWakuuAutopilotConfig.RefineTakeVakuuAssets,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("refineTakeVakuuAssets", value));
         AddToggleRow(column,
             LocalModText.Select("炼化时收编瓦库的药水（默认开）", "Refine · Take the Vakuu's Potions (default ON)"),
             LocalModText.Select(
-                "**默认开**。开启后炼化流程里多一步：把目标瓦库的药水全列出来**任你挑几瓶拿**（多选，上限 = 你自己药水栏的空位数，与『战斗奖励拿药水』同一口径：没空位就拿不了；弹层标题下会显示 `已选 x/N`），确认后**没拿的那些也一并移除**。若有一步都拿不了（自己没空位 / 瓦库没药水）则整步跳过、**也不动它的药水**；确认时一瓶都不拿同样**不动**它的药水。关掉则不碰药水。",
-                "**On by default.** Adds a step to refining: all of the target Vakuu's potions are listed and you pick **as many as you want** (multi-select; the cap is your free potion slots, same rule as taking a potion as a combat reward — a full belt can't take any; the panel shows `selected x/N`). Confirming **also removes the ones you didn't take**. If the step can't run at all (no free slot / the Vakuu has no potions) it is skipped and its potions are **left alone**; confirming with nothing selected also leaves them alone. When off, potions are untouched."),
+                "默认开。开启后炼化流程里多一步：把目标瓦库的药水全列出来任你挑几瓶拿（多选，上限 = 你自己药水栏的空位数，与『战斗奖励拿药水』同一口径：没空位就拿不了；弹层标题下会显示 已选 x/N），确认后没拿的那些也一并移除。若有一步都拿不了（自己没空位 / 瓦库没药水）则整步跳过、也不动它的药水；确认时一瓶都不拿同样不动它的药水。关掉则不碰药水。",
+                "On by default. Adds a step to refining: all of the target Vakuu's potions are listed and you pick as many as you want (multi-select; the cap is your free potion slots, same rule as taking a potion as a combat reward — a full belt can't take any; the panel shows selected x/N). Confirming also removes the ones you didn't take. If the step can't run at all (no free slot / the Vakuu has no potions) it is skipped and its potions are left alone; confirming with nothing selected also leaves them alone. When off, potions are untouched."),
             () => LocalWakuuAutopilotConfig.RefineTakeVakuuPotions,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("refineTakeVakuuPotions", value));
         AddToggleRow(column,
             LocalModText.Select("瓦库的爹（瓦库四功能）", "Vakuu's Daddy (Wakuu Feature)"),
             LocalModText.Select(
-                "默认关。开启后**开局给你的真人席位发一件遗物【瓦库的爹】**：每场战斗开始时获得【我挡】【你攻】【合体】各一张（0 费技能牌）。【我挡】选一个队友，本回合它受到的攻击伤害改由你承受、但你只承受一半（你的格挡照常生效）；【你攻】选一个敌人，本回合瓦库优先攻击它；【合体】选一个瓦库，它的手牌与能量归你，本回合你抽牌/弃牌在双方的抽牌堆与弃牌堆之间随机。三张牌都抽 1 张牌、升级加「保留」；不会通过任何奖励/商店入口出现。瓦库席位不发这件遗物。开关在**下一局开局**时生效。",
+                "默认关。开启后开局给你的真人席位发一件遗物【瓦库的爹】：每场战斗开始时获得【我挡】【你攻】【合体】各一张（0 费技能牌）。【我挡】选一个队友，本回合它受到的攻击伤害改由你承受、但你只承受一半（你的格挡照常生效）；【你攻】选一个敌人，本回合瓦库优先攻击它；【合体】选一个瓦库，它的手牌与能量归你，本回合你抽牌/弃牌在双方的抽牌堆与弃牌堆之间随机。三张牌都抽 1 张牌、升级加「保留」；不会通过任何奖励/商店入口出现。瓦库席位不发这件遗物。开关在下一局开局时生效。",
                 "Off by default. When on, your human seats begin the run with the relic Vakuu's Daddy: each combat starts with one 【I Block】, 【You Attack】 and 【Merge】 in hand (0-cost skills). 【I Block】: choose an ally — attack damage it takes this turn is redirected to you, halved (your own Block still applies). 【You Attack】: choose an enemy — every Vakuu prioritizes attacking it this turn. 【Merge】: choose a Vakuu — its hand and energy become yours, and this turn your draws/discards randomly use either side's draw/discard piles. All three draw 1 card and gain Retain when upgraded; they never appear in rewards or shops. Vakuu seats don't get this relic. Takes effect at the start of the next run."),
             () => LocalWakuuAutopilotConfig.VakuuDaddy,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("vakuuDaddy", value));
         AddToggleRow(column,
             LocalModText.Select("战灵召唤（原「地狱战神」，瓦库四功能）", "War God Summon (formerly Hell God)"),
             LocalModText.Select(
-                "默认关。开启后**开局给你的真人席位发一件遗物【地狱耳环】**：休息处多出一条【分裂精神】选项（按下方档位扣当前血量）为它 **+1 计数**。**每场战斗的每个回合开始**可以花计数**召唤「战神」（临时玩家）**：四档单点（普通 1 / 罕见 2 / 稀有 3 / 先古 4 计数，各带自己的预设卡组与遗物）+ 两个大招 ——【无尽战神】（12 计数，一次把空位补满、逐位随机开档）与【终极九连环】（**上限**满 12 才能开，固定 9 个先古，**永久**扣计数上限）。战神**会自己出牌**（托管）、有独立立绘与血条，战死会留场、绑主可在自己回合开始花同档计数**复活**；它们**不占队伍席位、也不拿战斗奖励**。已消耗的计数在本场战斗结束后自动补满。瓦库席位不发这件遗物。开关在**下一局开局**时生效。",
-                "Off by default. When on, your human seats begin the run with the relic Hell Earring and rest sites gain a Split Spirit option (HP cost per the option below) that adds **1 charge** to it. At the **start of every combat turn** you may spend charges to **summon a \"war god\" (a temporary player)**: four single tiers (Common 1 / Rare 2 / Epic 3 / Ancient 4 charges, each with its own preset deck and relics) plus two ultimates — 【Endless War Gods】 (12 charges, fills every free seat, rolls a tier per seat) and 【Ultimate Nine-Chain】 (needs a **cap** of 12, summons 9 Ancients, and **permanently** lowers your charge cap). War gods **play their own cards** (autopilot), have their own portrait and HP bar, stay on the field when they die, and their owner can **revive** them for the same tier's cost at the start of their turn; they **don't take a party slot and get no combat rewards**. Spent charges refill after combat. Vakuu seats don't get this relic. Takes effect at the start of the next run."),
+                "默认关。开启后开局给你的真人席位发一件遗物【地狱耳环】：休息处多出一条【分裂精神】选项（按下方档位扣当前血量）为它 +1 计数。每场战斗的每个回合开始可以花计数召唤「战神」（临时玩家）：四档单点（普通 1 / 罕见 2 / 稀有 3 / 先古 4 计数，各带自己的预设卡组与遗物）+ 两个大招 ——【无尽战神】（12 计数，一次把空位补满、逐位随机开档）与【终极九连环】（上限满 12 才能开，固定 9 个先古，永久扣计数上限）。战神会自己出牌（托管）、有独立立绘与血条，战死会留场、绑主可在自己回合开始花同档计数复活；它们不占队伍席位、也不拿战斗奖励。已消耗的计数在本场战斗结束后自动补满。瓦库席位不发这件遗物。开关在下一局开局时生效。",
+                "Off by default. When on, your human seats begin the run with the relic Hell Earring and rest sites gain a Split Spirit option (HP cost per the option below) that adds 1 charge to it. At the start of every combat turn you may spend charges to summon a \"war god\" (a temporary player): four single tiers (Common 1 / Rare 2 / Epic 3 / Ancient 4 charges, each with its own preset deck and relics) plus two ultimates — 【Endless War Gods】 (12 charges, fills every free seat, rolls a tier per seat) and 【Ultimate Nine-Chain】 (needs a cap of 12, summons 9 Ancients, and permanently lowers your charge cap). War gods play their own cards (autopilot), have their own portrait and HP bar, stay on the field when they die, and their owner can revive them for the same tier's cost at the start of their turn; they don't take a party slot and get no combat rewards. Spent charges refill after combat. Vakuu seats don't get this relic. Takes effect at the start of the next run."),
             () => LocalWakuuAutopilotConfig.HellwarGod,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("hellwarGod", value));
         column.AddChild(CreateCycleRow(
             LocalModText.Select("战灵召唤 · 【分裂精神】扣血档位", "War God Summon · Split Spirit HP Cost"),
             LocalModText.Select(
-                "【分裂精神】每次消耗当前血量的百分比（基数是**当前血量**，向下取整，且**不会把人扣死**——最低留 1 点）。四档循环：**不扣血（0%）** → 10% → 15%（默认）→ 20%。仅影响已开启的「战灵召唤」。",
-                "How much of your current HP Split Spirit spends each use (based on **current HP**, rounded down, and it never kills you — at least 1 HP is left). Cycles: **No cost (0%)** → 10% → 15% (default) → 20%. Only affects \"War God Summon\" when enabled."),
+                "【分裂精神】每次消耗当前血量的百分比（基数是当前血量，向下取整，且不会把人扣死——最低留 1 点）。四档循环：不扣血（0%） → 10% → 15%（默认）→ 20%。仅影响已开启的「战灵召唤」。",
+                "How much of your current HP Split Spirit spends each use (based on current HP, rounded down, and it never kills you — at least 1 HP is left). Cycles: No cost (0%) → 10% → 15% (default) → 20%. Only affects \"War God Summon\" when enabled."),
             "hellwarSplitHpRatio",
             () => LocalWakuuAutopilotConfig.HellwarSplitHpRatio,
             NextHellwarSplitHpRatio,
@@ -323,22 +323,22 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         AddToggleRow(column,
             LocalModText.Select("战灵召唤 · 【分裂精神】不占用整次休息（默认开）", "War God Summon · Split Spirit Doesn't Use the Whole Rest (default ON)"),
             LocalModText.Select(
-                "**默认开**。开启后用完【分裂精神】**还能继续休息 / 锻造**（等同原版【迷你帐篷】的「多选一次」）。**关掉**则它按原版规则**占用整次休息**（用完就离店）。仅影响已开启的「战灵召唤」。",
-                "**On by default.** When on, using Split Spirit still lets you rest / smith afterwards (like the vanilla Miniature Tent's extra pick). When off, it follows the vanilla rule and **uses up the whole rest** (you leave right after). Only affects \"War God Summon\" when enabled."),
+                "默认开。开启后用完【分裂精神】还能继续休息 / 锻造（等同原版【迷你帐篷】的「多选一次」）。关掉则它按原版规则占用整次休息（用完就离店）。仅影响已开启的「战灵召唤」。",
+                "On by default. When on, using Split Spirit still lets you rest / smith afterwards (like the vanilla Miniature Tent's extra pick). When off, it follows the vanilla rule and uses up the whole rest (you leave right after). Only affects \"War God Summon\" when enabled."),
             () => LocalWakuuAutopilotConfig.HellwarSplitFree,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("hellwarSplitFree", value));
         AddToggleRow(column,
             LocalModText.Select("战灵召唤 · 每进入新的一幕自动获得计数（默认关）", "War God Summon · Gain Charges Each New Act (default OFF)"),
             LocalModText.Select(
-                "**默认关**。开启后**每进入新的一幕**（含第 1 幕）自动给【地狱耳环】加一次计数（数量见下方档位）。用途：只靠休息处【分裂精神】攒不出后续大招的量。**同一幕只会发一次**（存档里记了已发到哪一幕 ⇒ 读档续局不会补发、也不会重复发）。仅影响已开启的「战灵召唤」。",
-                "**Off by default.** When on, entering **each new act** (including act 1) automatically adds charges to the Hell Earring (amount below). Purpose: Split Spirit alone can't fund the later big summons. **Each act grants only once** (the save records the last act rewarded, so reloading mid-act never re-grants or double-grants). Only affects \"War God Summon\" when enabled."),
+                "默认关。开启后每进入新的一幕（含第 1 幕）自动给【地狱耳环】加一次计数（数量见下方档位）。用途：只靠休息处【分裂精神】攒不出后续大招的量。同一幕只会发一次（存档里记了已发到哪一幕 ⇒ 读档续局不会补发、也不会重复发）。仅影响已开启的「战灵召唤」。",
+                "Off by default. When on, entering each new act (including act 1) automatically adds charges to the Hell Earring (amount below). Purpose: Split Spirit alone can't fund the later big summons. Each act grants only once (the save records the last act rewarded, so reloading mid-act never re-grants or double-grants). Only affects \"War God Summon\" when enabled."),
             () => LocalWakuuAutopilotConfig.HellwarActGain,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("hellwarActGain", value));
         column.AddChild(CreateCycleRow(
             LocalModText.Select("战灵召唤 · 每幕自动获得的计数数量", "War God Summon · Charges per Act"),
             LocalModText.Select(
-                "进入每一幕时自动获得几个计数。三档循环：1 个 → **2 个（默认）** → 3 个。仅影响已开启的「战灵召唤 · 每进入新的一幕自动获得计数」。",
-                "How many charges each new act grants. Cycles: 1 → **2 (default)** → 3. Only affects \"War God Summon · Gain Charges Each New Act\" when enabled."),
+                "进入每一幕时自动获得几个计数。三档循环：1 个 → 2 个（默认） → 3 个。仅影响已开启的「战灵召唤 · 每进入新的一幕自动获得计数」。",
+                "How many charges each new act grants. Cycles: 1 → 2 (default) → 3. Only affects \"War God Summon · Gain Charges Each New Act\" when enabled."),
             "hellwarActGainAmount",
             () => LocalWakuuAutopilotConfig.HellwarActGainAmount,
             NextHellwarActGainAmount,
@@ -348,61 +348,61 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
                 "战灵召唤 · 【无尽战神】可能开出先古（默认关）",
                 "War God Summon · Endless War Gods may roll Ancient (default OFF)"),
             LocalModText.Select(
-                "**默认关**。开启后【无尽战神】的随机池加入【先古】档 —— 原本只有 普通 / 罕见 / 稀有（先古是【终极九连环】的专属）。**只影响【无尽战神】**；四档单点召唤与【九连环】不变。",
-                "**Off by default.** When on, the 【Endless War Gods】 random pool includes the 【Ancient】 tier — by default it only rolls Common / Rare / Epic (Ancient is exclusive to 【Ultimate Nine-Chain】). **Affects 【Endless War Gods】 only**; single-tier summons and 【Nine-Chain】 are unchanged."),
+                "默认关。开启后【无尽战神】的随机池加入【先古】档 —— 原本只有 普通 / 罕见 / 稀有（先古是【终极九连环】的专属）。只影响【无尽战神】；四档单点召唤与【九连环】不变。",
+                "Off by default. When on, the 【Endless War Gods】 random pool includes the 【Ancient】 tier — by default it only rolls Common / Rare / Epic (Ancient is exclusive to 【Ultimate Nine-Chain】). Affects 【Endless War Gods】 only; single-tier summons and 【Nine-Chain】 are unchanged."),
             () => LocalWakuuAutopilotConfig.HellwarEndlessAncient,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("hellwarEndlessAncient", value));
         AddInfoRow(column,
             LocalModText.Select("战灵召唤 · 战神的预设卡组（改配置文件）", "War God Summon · War God Preset Decks (edit the config file)"),
             LocalModText.Select(
-                "**只在配置文件里改**（设置页不做输入框）：`%APPDATA%\\SlayTheSpire2\\vakuu_autopilot.json` 的四个键 —— "
-                + "`hellwarDeckCommon`（普通档：默认**空** = 用你本人角色的初始卡组）/ `hellwarDeckRare`（罕见=静默猎手皮）/ "
-                + "`hellwarDeckEpic`（稀有=铁甲战士皮）/ `hellwarDeckAncient`（先古=摄政王皮，【终极九连环】也是这一档）。"
-                + "**留空 = 用内置默认**（每档 14 张、已按「托管 AI 好驾驭」挑过：罕见=毒+格挡+敏捷 / 稀有=易伤+力量+大格挡 / 先古=攒星+花星）。"
-                + "写法：逗号/分号/换行分隔的卡牌 id（游戏里的 `ModelId.Entry`，如 `BASH`、`DEMON_FORM`），"
-                + "`CARD.` 前缀可省、大小写不敏感；末尾加 `+` = 这一张**单独升级**（贴着写，别加空格）；写几遍就是几张。"
-                + "末尾加 `[附魔]` = 这一张带某个**附魔**（如 `BASH[SHARP]`、`BASH+[SHARP:3]`；不写数量 = 1，"
-                + "`+` 与 `[附魔]` 顺序随便）—— 认不出 / 这张牌不能带时**只跳过附魔、卡照给**（日志锚点 `①d 预设附魔`）。"
-                + "⚠ 认不出的 id 会被**跳过并在日志里打 WARN**（不崩、不阻塞召唤）；一条都没认出来就回落角色初始卡组。"
-                + "日志里那句 `①a 预设卡组已替换` 会打印**内置默认卡组的完整文本**，复制过来改最省事。",
-                "**Config file only** (no input box in this page): the four keys in `%APPDATA%\\SlayTheSpire2\\vakuu_autopilot.json` — "
-                + "`hellwarDeckCommon` (default **empty** = your own character's starting deck) / `hellwarDeckRare` (Silent skin) / "
-                + "`hellwarDeckEpic` (Ironclad skin) / `hellwarDeckAncient` (Regent skin; 【Ultimate Nine-Chain】uses this tier too). "
-                + "**Empty = built-in default** (14 cards per tier, hand-picked to be AI-friendly). "
-                + "Format: card ids separated by comma / semicolon / newline (the game's `ModelId.Entry`, e.g. `BASH`, `DEMON_FORM`); "
-                + "the `CARD.` prefix is optional and case-insensitive; a trailing `+` marks that single card as upgraded (no space before it); "
-                + "write an id N times for N copies. A trailing `[enchantment]` gives that card an enchantment "
-                + "(e.g. `BASH[SHARP]`, `BASH+[SHARP:3]`; no amount means 1; `+` and `[...]` may be in either order) — "
-                + "if it's unknown or the card can't take it, **only the enchantment is skipped** and the card is still given "
-                + "(log anchor `①d 预设附魔`). ⚠ Unknown ids are skipped with a WARN log (never blocks the summon). "
-                + "The log line `①a 预设卡组已替换` prints the built-in deck as ready-to-copy config text."));
+                "只在配置文件里改（设置页不做输入框）：%APPDATA%\\SlayTheSpire2\\vakuu_autopilot.json 的四个键 —— "
+                + "hellwarDeckCommon（普通档：默认空 = 用你本人角色的初始卡组）/ hellwarDeckRare（罕见=静默猎手皮）/ "
+                + "hellwarDeckEpic（稀有=铁甲战士皮）/ hellwarDeckAncient（先古=摄政王皮，【终极九连环】也是这一档）。"
+                + "留空 = 用内置默认（每档 14 张、已按「托管 AI 好驾驭」挑过：罕见=毒+格挡+敏捷 / 稀有=易伤+力量+大格挡 / 先古=攒星+花星）。"
+                + "写法：逗号/分号/换行分隔的卡牌 id（游戏里的 ModelId.Entry，如 BASH、DEMON_FORM），"
+                + "CARD. 前缀可省、大小写不敏感；末尾加 + = 这一张单独升级（贴着写，别加空格）；写几遍就是几张。"
+                + "末尾加 [附魔] = 这一张带某个附魔（如 BASH[SHARP]、BASH+[SHARP:3]；不写数量 = 1，"
+                + "+ 与 [附魔] 顺序随便）—— 认不出 / 这张牌不能带时只跳过附魔、卡照给（日志锚点 ①d 预设附魔）。"
+                + "⚠ 认不出的 id 会被跳过并在日志里打 WARN（不崩、不阻塞召唤）；一条都没认出来就回落角色初始卡组。"
+                + "日志里那句 ①a 预设卡组已替换 会打印内置默认卡组的完整文本，复制过来改最省事。",
+                "Config file only (no input box in this page): the four keys in %APPDATA%\\SlayTheSpire2\\vakuu_autopilot.json — "
+                + "hellwarDeckCommon (default empty = your own character's starting deck) / hellwarDeckRare (Silent skin) / "
+                + "hellwarDeckEpic (Ironclad skin) / hellwarDeckAncient (Regent skin; 【Ultimate Nine-Chain】uses this tier too). "
+                + "Empty = built-in default (14 cards per tier, hand-picked to be AI-friendly). "
+                + "Format: card ids separated by comma / semicolon / newline (the game's ModelId.Entry, e.g. BASH, DEMON_FORM); "
+                + "the CARD. prefix is optional and case-insensitive; a trailing + marks that single card as upgraded (no space before it); "
+                + "write an id N times for N copies. A trailing [enchantment] gives that card an enchantment "
+                + "(e.g. BASH[SHARP], BASH+[SHARP:3]; no amount means 1; + and [...] may be in either order) — "
+                + "if it's unknown or the card can't take it, only the enchantment is skipped and the card is still given "
+                + "(log anchor ①d 预设附魔). ⚠ Unknown ids are skipped with a WARN log (never blocks the summon). "
+                + "The log line ①a 预设卡组已替换 prints the built-in deck as ready-to-copy config text."));
         column.AddChild(CreateExportContentCatalogRow(
             LocalModText.Select(
                 "战灵召唤 · 导出内容目录（给预设构筑器用）",
                 "War God Summon · Export Content Catalog (for the preset builder)"),
             LocalModText.Select(
-                "点一下把**本机的全部卡牌 / 遗物 / 角色**导出成 "
-                + "`%APPDATA%\\SlayTheSpire2\\content_catalog.json`（含你装的**第三方 mod 内容**，会逐条标注来源 mod）—— "
-                + "外部「预设构筑器」读它来列卡 / 图 / 中英文名，**不吃游戏源码、也不联网**。"
-                + "**装 / 卸 mod 或游戏更新后要重新点一次**（文件里记了导出时间与游戏版本，方便自查新旧）。"
-                + "只读操作，不改游戏任何状态；台账看日志锚点 `[内容目录]`（条数 + 路径）。",
-                "Click to export **every card / relic / character of this machine** to "
-                + "`%APPDATA%\\SlayTheSpire2\\content_catalog.json` (includes **third-party mod content**, each row tagged with its source mod). "
-                + "The external \"preset builder\" reads it for the card list / art / localized names — **it never parses game source and never goes online**. "
-                + "**Click again after installing or removing mods, or after a game update** (the file records the export time and game version so you can tell how old it is). "
-                + "Read-only: it changes no game state. Check the log anchor `[内容目录]` for counts + path.")));
+                "点一下把本机的全部卡牌 / 遗物 / 角色导出成 "
+                + "%APPDATA%\\SlayTheSpire2\\content_catalog.json（含你装的第三方 mod 内容，会逐条标注来源 mod）—— "
+                + "外部「预设构筑器」读它来列卡 / 图 / 中英文名，不吃游戏源码、也不联网。"
+                + "装 / 卸 mod 或游戏更新后要重新点一次（文件里记了导出时间与游戏版本，方便自查新旧）。"
+                + "只读操作，不改游戏任何状态；台账看日志锚点 [内容目录]（条数 + 路径）。",
+                "Click to export every card / relic / character of this machine to "
+                + "%APPDATA%\\SlayTheSpire2\\content_catalog.json (includes third-party mod content, each row tagged with its source mod). "
+                + "The external \"preset builder\" reads it for the card list / art / localized names — it never parses game source and never goes online. "
+                + "Click again after installing or removing mods, or after a game update (the file records the export time and game version so you can tell how old it is). "
+                + "Read-only: it changes no game state. Check the log anchor [内容目录] for counts + path.")));
         AddToggleRow(column,
             LocalModText.RestSiteOptionScrollTitle,
             LocalModText.Select(
-                "**默认开**。休息处选项变多时会横向溢出屏幕（我们自己注入的净化 / 炼化 / 分裂精神，加上其它 mod 的选项，5 个以上就会挤出屏幕两端、点不到）。开启后把选项容器包进可**拖动 / 滚轮**的横向滚动条；**只在你真的溢出的房间**才启用，选项少时与原版完全一致。⚠ **可能与其它 mod 的同类功能重合**（别人也在改这块布局）—— 若发现界面对拼或异常，关掉这个开关即可。",
-                "**On by default.** With many rest-site options the row overflows the screen (our Purify / Refine / Split Spirit plus other mods' options; 5+ pushes the end buttons off-screen and unreachable). When on, the option container is wrapped in a draggable / wheel-scrollable horizontal scrollbar — **only in rooms that actually overflow**, so few options look exactly like vanilla. ⚠ May conflict with another mod doing the same thing; turn this off if the layout looks wrong."),
+                "默认开。休息处选项变多时会横向溢出屏幕（我们自己注入的净化 / 炼化 / 分裂精神，加上其它 mod 的选项，5 个以上就会挤出屏幕两端、点不到）。开启后把选项容器包进可拖动 / 滚轮的横向滚动条；只在你真的溢出的房间才启用，选项少时与原版完全一致。⚠ 可能与其它 mod 的同类功能重合（别人也在改这块布局）—— 若发现界面对拼或异常，关掉这个开关即可。",
+                "On by default. With many rest-site options the row overflows the screen (our Purify / Refine / Split Spirit plus other mods' options; 5+ pushes the end buttons off-screen and unreachable). When on, the option container is wrapped in a draggable / wheel-scrollable horizontal scrollbar — only in rooms that actually overflow, so few options look exactly like vanilla. ⚠ May conflict with another mod doing the same thing; turn this off if the layout looks wrong."),
             () => LocalWakuuAutopilotConfig.RestSiteOptionScroll,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("restSiteOptionScroll", value));
         AddToggleRow(column,
             LocalModText.Select("战斗中自动用药水", "Auto-Use Potions in Combat"),
             LocalModText.Select(
-                "默认关。按药水规则表逐药自动使用：血液/再生低血自用；果汁到手即喝；混沌药水填空位；力量等增益与火焰等攻击类精英/Boss战首回合；格挡/免伤类回合结束前按敌方意图伤害兜底；能量/迅捷/异蛇剩能量补牌；灰水/赌徒等定向消耗坏牌；故障机器人/储君/亡灵契约师/铁甲战士专属药水自动给对应队友，复制/超巨化优先给真人；污浊药水只在商人投掷；mod 药水普通战斗随机回合消耗。",
-                "Off by default. Uses the potion rule table per potion: Blood/Regrowth self-use at low HP; Juice drank as soon as acquired; Chaos fills an empty slot; Strength-type buffs and Fire-type attacks on elite/boss fight first turns; Block/mitigation as a turn-end fallback based on enemy intent damage; Energy/Celerity/Isonade draw cards with leftover energy; Greywater/Gambler discard bad cards on purpose; class potions for Defect/Haveankh/Necrobinder/Ironclad auto-given to the matching teammate, Duplication/Gigantification to humans first; Dirty Water only thrown at the merchant; mod potions consumed on random turns in normal combat."),
+                "默认关。按药水规则表逐药自动使用：血液/再生低血自用；果汁到手即喝；混沌药水填空位；力量等增益与火焰等攻击类精英/Boss战首回合；格挡/免伤类回合结束前按敌方意图伤害兜底；能量/迅捷/异蛇剩能量补牌；灰水/赌徒等定向消耗坏牌；故障机器人/储君/亡灵契约师/铁甲战士专属药水自动给对应队友，复制/超巨化优先给真人；污浊药水只在商人投掷；mod 药水普通战斗随机回合消耗。\n\n另外，身上有【白兽雕像】/【娇嫩蕨草】/【石化蟾蜍】时，会忽略条件、按稀有度从低到高额外用掉药水来腾空药水栏：白兽雕像=留出 1 个空栏（战斗结束必定掉药水）；娇嫩蕨草=尽量清空 uncommon/common（战斗开始会填满空栏）；石化蟾蜍=只用 common 留出 1 个空栏（战斗开始发一瓶药水石头）。Event / 药水石头 / 瓶中精灵等自动生效药水不参与。",
+                "Off by default. Uses the potion rule table per potion: Blood/Regrowth self-use at low HP; Juice drank as soon as acquired; Chaos fills an empty slot; Strength-type buffs and Fire-type attacks on elite/boss fight first turns; Block/mitigation as a turn-end fallback based on enemy intent damage; Energy/Celerity/Isonade draw cards with leftover energy; Greywater/Gambler discard bad cards on purpose; class potions for Defect/Haveankh/Necrobinder/Ironclad auto-given to the matching teammate, Duplication/Gigantification to humans first; Dirty Water only thrown at the merchant; mod potions consumed on random turns in normal combat.\n\nWith White Beast Statue / Delicate Frond / Petrified Toad, extra potions are used regardless of their conditions, lowest rarity first, to free up potion slots: Statue = keep 1 slot open (guaranteed potion drop after combat); Frond = dump as many uncommon/common as possible (it refills empty slots at combat start); Toad = common only, keep 1 slot open (it grants a potion-shaped rock at combat start). Event-rarity, the rock, and auto-trigger potions (e.g. Fairy in a Bottle) are never dumped."),
             () => LocalWakuuAutopilotConfig.AutoUsePotions,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("autoUsePotions", value));
         AddToggleRow(column,
@@ -622,13 +622,13 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         column.AddChild(CreateStatBadgeSourceRow(
             LocalModText.Select("统计角标数据来源", "Stats Badge Data Source"),
             LocalModText.Select(
-                "角标百分比怎么算（**始终只显示一个数字**）：**仅个人**=只用你自己打出的统计；**个人+社区兜底**=该卡没有个人记录时才用皮皮军师的社区抓取率补足；**融合**=个人与社区按伪计数加权合成一个抓取率（个人样本越多越主导，个人 5 次以上即与社区平手以上）。社区数据来自皮皮军师（SkadaHelper）的数据接口；未装或查无数据时退回个人统计/0%。",
-                "How the badge percentage is computed (**always one number**): **Personal Only** = your own stats only; **Personal + Community Fallback** = only when there's no personal record for the card, fill in SkadaHelper's community take-rate; **Blended** = personal & community weighted by pseudo-counts into one rate (more personal samples dominate; 5+ personal samples already tie or exceed the community). Community data comes from SkadaHelper's interface; if it's not installed or there's no data, falls back to personal stats / 0%.")));
+                "角标百分比怎么算（始终只显示一个数字）：仅个人=只用你自己打出的统计；个人+社区兜底=该卡没有个人记录时才用皮皮军师的社区抓取率补足；融合=个人与社区按伪计数加权合成一个抓取率（个人样本越多越主导，个人 5 次以上即与社区平手以上）。社区数据来自皮皮军师（SkadaHelper）的数据接口；未装或查无数据时退回个人统计/0%。",
+                "How the badge percentage is computed (always one number): Personal Only = your own stats only; Personal + Community Fallback = only when there's no personal record for the card, fill in SkadaHelper's community take-rate; Blended = personal & community weighted by pseudo-counts into one rate (more personal samples dominate; 5+ personal samples already tie or exceed the community). Community data comes from SkadaHelper's interface; if it's not installed or there's no data, falls back to personal stats / 0%.")));
         column.AddChild(CreateStatBadgeCornerRow(
             LocalModText.Select("自有统计角标位置", "Own Stats Badge Corner"),
             LocalModText.Select(
-                "角标挂在目标（卡/事件选项）的哪个角，点右侧按钮在 左下 → 右下 → 右上 → 左上 之间循环。默认 **左下**——皮皮军师（SkadaHelper）会自己把社区统计标签画在卡的右侧，放右下会与它重叠并被本 mod 的顶层叠加盖住；若你想让两者挨在一起显示，可切到「右上/左上」自行比较。",
-                "Which corner the badge sits on (cards / event options); click the button on the right to cycle Bottom-Left → Bottom-Right → Top-Right → Top-Left. Default **Bottom-Left** — SkadaHelper draws its own community label on the card's right side, so Bottom-Right would overlap and be covered by this mod's top-layer overlay; if you want them side by side, try \"Top-Right / Top-Left\".")));
+                "角标挂在目标（卡/事件选项）的哪个角，点右侧按钮在 左下 → 右下 → 右上 → 左上 之间循环。默认 左下——皮皮军师（SkadaHelper）会自己把社区统计标签画在卡的右侧，放右下会与它重叠并被本 mod 的顶层叠加盖住；若你想让两者挨在一起显示，可切到「右上/左上」自行比较。",
+                "Which corner the badge sits on (cards / event options); click the button on the right to cycle Bottom-Left → Bottom-Right → Top-Right → Top-Left. Default Bottom-Left — SkadaHelper draws its own community label on the card's right side, so Bottom-Right would overlap and be covered by this mod's top-layer overlay; if you want them side by side, try \"Top-Right / Top-Left\".")));
     }
 
     /// <summary>
