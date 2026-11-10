@@ -41,6 +41,10 @@ namespace LocalMultiControl.Scripts.Runtime;
 /// ⚠ **同一家商店只采购一次**（<see cref="_handled"/> 按 (room, player) 去重，用户 2026-09-18 拍板接受）：
 /// 买完再用控制台加钱不会补买；真实游戏里金币只会在商店界面**之外**变化，不存在该场景。
 ///
+/// **采购顺序**（2026-11-10 用户口径，<see cref="WakuuShopOrderPolicy"/>）：
+/// 牌组有诅咒且删牌买得起 ⇒ 先删诅咒；牌组 ≥40 张且店里没有胜率 ≥0.35 的强卡 ⇒ 先遗物、再删牌；
+/// 其余保持「卡 → 遗物 → 药水 → 删牌」。实际顺序每店打一条 `瓦库商店采购顺序: …`。
+///
 /// 与污浊药水投掷（LocalWakuuMerchantFoulThrow）同入口体系但独立触发时机：库存打开才买。
 /// 为什么开库存触发而不是进房触发：合并屏/多控下只有切到该角色的商店视图，其库存才会被
 /// Initialize——即"瓦库到店要消费"的可见时机，避免后台凭空花钱。
@@ -125,10 +129,52 @@ internal static class LocalWakuuMerchantAuto
             _purchaseOwnerId.Value = player.NetId;
             try
             {
-                await TryAutoBuyCardsAsync(player, inventory);
-                await TryAutoBuyRelicsAsync(player, inventory);
-                await TryAutoBuyPotionsAsync(player, inventory);
-                await TryAutoBuyRemovalAsync(player, inventory);
+                // 2026-11-10：顺序不再固定，按牌组状况排（见 WakuuShopOrderPolicy）
+                int deckSize = CountDeckCards(player, null);
+                int curseCount = CountDeckCards(player, CardType.Curse);
+                bool hasGoodCard = HasGoodCardCandidate(player, inventory, out string? bestCardId, out double bestCardWinRate);
+                bool removalAffordable = IsRemovalAffordable(player, inventory);
+                IReadOnlyList<WakuuShopStep> order = WakuuShopOrderPolicy.Decide(
+                    deckSize, curseCount, hasGoodCard, removalAffordable);
+
+                // 2026-11-10 用户反馈「大卡组还是不删牌」：卡组已很厚时**先把删牌钱扣出来**，
+                // 否则买卡会把金币花到只剩保底线，删牌永远执行不到（实测 r339：买了 6 张卡花 388，
+                // 金币从 450 掉到 62 < 75 ⇒ 删牌跳过）。预留只在"大卡组 + 删得起"时生效。
+                int removalReserve = 0;
+                if (deckSize >= WakuuShopOrderPolicy.BigDeckThreshold
+                    && removalAffordable
+                    && inventory.CardRemovalEntry != null)
+                {
+                    removalReserve = SafeCost(inventory.CardRemovalEntry);
+                }
+
+                LocalMultiControlLogger.Info(
+                    $"瓦库商店采购顺序: player={player.NetId}, 卡组={deckSize}, 诅咒={curseCount}, "
+                    + $"店里有好牌={hasGoodCard}(胜率≥{WakuuShopOrderPolicy.GoodCardWinRate}"
+                    + (hasGoodCard ? $"，最好={bestCardId}@{bestCardWinRate:F2}" : string.Empty) + "), "
+                    + $"删牌可用={removalAffordable}, 预留删牌金={removalReserve}, "
+                    + $"金币={player.Gold}, 顺序=[{string.Join(",", order)}]");
+
+                int reserve = removalReserve;
+                foreach (WakuuShopStep step in order)
+                {
+                    switch (step)
+                    {
+                        case WakuuShopStep.Cards:
+                            await TryAutoBuyCardsAsync(player, inventory, reserve);
+                            break;
+                        case WakuuShopStep.Relics:
+                            await TryAutoBuyRelicsAsync(player, inventory, reserve);
+                            break;
+                        case WakuuShopStep.Potions:
+                            await TryAutoBuyPotionsAsync(player, inventory, reserve);
+                            break;
+                        case WakuuShopStep.Removal:
+                            await TryAutoBuyRemovalAsync(player, inventory);
+                            reserve = 0; // 删牌已执行（或已尝试）：后面的步骤可以用全部余额
+                            break;
+                    }
+                }
             }
             finally
             {
@@ -145,7 +191,7 @@ internal static class LocalWakuuMerchantAuto
         }
     }
 
-    private static async Task TryAutoBuyCardsAsync(Player player, MerchantInventory inventory)
+    private static async Task TryAutoBuyCardsAsync(Player player, MerchantInventory inventory, int reserve)
     {
         string characterId = player.Character?.Id?.Entry?.ToUpperInvariant() ?? string.Empty;
         List<MerchantCardEntry> entries = inventory.CardEntries.ToList();
@@ -175,7 +221,7 @@ internal static class LocalWakuuMerchantAuto
 
         List<WakuuMerchantCardCandidate> candidates = plan.Select((p) => p.Candidate).ToList();
         bool buyNoData = LocalWakuuAutopilotConfig.ShopAssistBuyNoData;
-        List<int> picks = WakuuMerchantPicking.SelectCardBuys(candidates, player.Gold, buyNoData: buyNoData);
+        List<int> picks = WakuuMerchantPicking.SelectCardBuys(candidates, player.Gold - reserve, buyNoData: buyNoData);
         if (picks.Count == 0)
         {
             // 带上金币与最便宜候选价：不买的原因通常是「付完就跌破保底」，没有这两个数字事后无法判断
@@ -184,7 +230,7 @@ internal static class LocalWakuuMerchantAuto
                 : candidates.Min((c) => c.Price);
             LocalMultiControlLogger.Info(
                 $"瓦库商店自动买卡: 无符合条件候选，不买。player={player.NetId}, buyNoData={buyNoData}, "
-                + $"候选={candidates.Count}, 金币={player.Gold}, 最便宜={cheapest}, "
+                + $"候选={candidates.Count}, 金币={player.Gold}(可用{player.Gold - reserve}), 最便宜={cheapest}, "
                 + $"有数据门槛胜率≥{WakuuMerchantPicking.DefaultMinBuyWinRate}, 保留≥{WakuuMerchantPicking.DefaultGoldFloor}金");
             return;
         }
@@ -247,7 +293,7 @@ internal static class LocalWakuuMerchantAuto
     /// 遗物获得触发的选牌（如 YUI 灵草丹的变化）由 <see cref="LocalWakuuRelicEffectAutoChoice"/>
     /// 在非战斗期照常自动作答，不需要额外门禁。
     /// </summary>
-    private static async Task TryAutoBuyRelicsAsync(Player player, MerchantInventory inventory)
+    private static async Task TryAutoBuyRelicsAsync(Player player, MerchantInventory inventory, int reserve)
     {
         if (!LocalWakuuAutopilotConfig.ShopAssistBuyRelics)
         {
@@ -275,13 +321,13 @@ internal static class LocalWakuuMerchantAuto
 
         (List<WakuuMerchantPricedItem> candidates, long personalMinSample) = BuildPricedCandidates(plan);
         List<int> picks = WakuuMerchantPicking.SelectPricedBuys(
-            candidates, player.Gold, personalMinSample: personalMinSample);
+            candidates, player.Gold - reserve, personalMinSample: personalMinSample);
         if (picks.Count == 0)
         {
             int cheapest = candidates.Count == 0 ? 0 : candidates.Min((c) => c.Price);
             LocalMultiControlLogger.Info(
                 $"瓦库商店自动买遗物: 无符合条件候选，不买。player={player.NetId}, "
-                + $"候选={candidates.Count}, 金币={player.Gold}, 最便宜={cheapest}, "
+                + $"候选={candidates.Count}, 金币={player.Gold}(可用{player.Gold - reserve}), 最便宜={cheapest}, "
                 + $"保留≥{WakuuMerchantPicking.DefaultGoldFloor}金, "
                 + DescribePersonalStats(candidates, personalMinSample));
             return;
@@ -339,7 +385,7 @@ internal static class LocalWakuuMerchantAuto
     /// 但先判一层可以避免"白试一次 + 打一条没有意义的失败日志"；每买一瓶后再判一次
     /// （买第 2 瓶时栏位可能刚好满了）。
     /// </summary>
-    private static async Task TryAutoBuyPotionsAsync(Player player, MerchantInventory inventory)
+    private static async Task TryAutoBuyPotionsAsync(Player player, MerchantInventory inventory, int reserve)
     {
         if (!LocalWakuuAutopilotConfig.ShopAssistBuyPotions)
         {
@@ -374,13 +420,13 @@ internal static class LocalWakuuMerchantAuto
 
         (List<WakuuMerchantPricedItem> candidates, long personalMinSample) = BuildPricedCandidates(plan);
         List<int> picks = WakuuMerchantPicking.SelectPricedBuys(
-            candidates, player.Gold, personalMinSample: personalMinSample);
+            candidates, player.Gold - reserve, personalMinSample: personalMinSample);
         if (picks.Count == 0)
         {
             int cheapest = candidates.Count == 0 ? 0 : candidates.Min((c) => c.Price);
             LocalMultiControlLogger.Info(
                 $"瓦库商店自动买药水: 无符合条件候选，不买。player={player.NetId}, "
-                + $"候选={candidates.Count}, 金币={player.Gold}, 最便宜={cheapest}, "
+                + $"候选={candidates.Count}, 金币={player.Gold}(可用{player.Gold - reserve}), 最便宜={cheapest}, "
                 + $"保留≥{WakuuMerchantPicking.DefaultGoldFloor}金, "
                 + DescribePersonalStats(candidates, personalMinSample));
             return;
@@ -576,6 +622,94 @@ internal static class LocalWakuuMerchantAuto
         int withSignal = candidates.Count((c) => c.Signal.HasValue);
         int vetoed = candidates.Count((c) => WakuuMerchantPicking.IsPersonalStatsVeto(c.Signal, personalMinSample));
         return $"个人统计样本={withSignal}/{candidates.Count}, 否决={vetoed}, 门槛={personalMinSample}局";
+    }
+
+    /// <summary>
+    /// 牌组张数（<paramref name="type"/> 为 null 时统计全部）。读不到牌组一律返回 0
+    /// —— 采购顺序是"锦上添花"，不能因为它读失败就把整店采购卡住。
+    /// </summary>
+    private static int CountDeckCards(Player player, CardType? type)
+    {
+        try
+        {
+            CardPile? deck = player.Deck;
+            if (deck == null)
+            {
+                return 0;
+            }
+
+            int count = 0;
+            foreach (CardModel card in deck.Cards)
+            {
+                if (card == null)
+                {
+                    continue;
+                }
+
+                if (type == null || card.Type == type)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"读取牌组张数失败（按 0 处理）: player={player.NetId}, error={exception.Message}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// 店里是否有"很好的牌"（社区胜率 ≥ <see cref="WakuuShopOrderPolicy.GoodCardWinRate"/>）。
+    /// 没有统计数据的卡（多为 mod 卡）**不算**很好 —— 这正是"大卡组先买遗物"的判据输入。
+    /// </summary>
+    private static bool HasGoodCardCandidate(
+        Player player,
+        MerchantInventory inventory,
+        out string? bestCardId,
+        out double bestCardWinRate)
+    {
+        bestCardId = null;
+        bestCardWinRate = 0.0;
+        string characterId = player.Character?.Id?.Entry?.ToUpperInvariant() ?? string.Empty;
+        foreach (MerchantCardEntry entry in inventory.CardEntries)
+        {
+            CardModel? card = entry.CreationResult?.Card;
+            if (card?.Id == null || card is MegaCrit.Sts2.Core.Models.Cards.Null)
+            {
+                continue;
+            }
+
+            double? winRate = WakuuSkadaAdapter.TryGetCardSignal(characterId, card.Id.Entry)?.WinRateHeld;
+            if (!winRate.HasValue)
+            {
+                continue;
+            }
+
+            // 记下最高的那张：判读"好牌门槛是否合理"时，光看 True/False 猜不出来（2026-11-10）。
+            if (winRate.Value > bestCardWinRate)
+            {
+                bestCardWinRate = winRate.Value;
+                bestCardId = card.Id.Entry;
+            }
+        }
+
+        return bestCardId != null && bestCardWinRate >= WakuuShopOrderPolicy.GoodCardWinRate;
+    }
+
+    /// <summary>删牌服务现在能不能买（未使用 + 价格有效 + 付完仍保留金币保底）。</summary>
+    private static bool IsRemovalAffordable(Player player, MerchantInventory inventory)
+    {
+        MerchantCardRemovalEntry? entry = inventory.CardRemovalEntry;
+        if (entry == null || entry.Used)
+        {
+            return false;
+        }
+
+        int cost = SafeCost(entry);
+        return cost > 0 && cost <= player.Gold - WakuuMerchantPicking.DefaultGoldFloor;
     }
 
     private static int SafeCost(MerchantEntry entry)
