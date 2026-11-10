@@ -31,6 +31,39 @@
 
 ---
 
+## ⏰ 更新日准备（**2026-11-13 游戏本体更新，含新模式：单人 + 多人**）—— 下个对话先做这 3 件
+
+> 口径（2026-11-10 拍板）：**更新前不开新功能线**，只做零风险保险 + 演练，把功能留给更新之后。
+> 顺序与判据见 `AGENTS.md` §5；工具 `Scripts/Tools/game_update_prep.ps1`（`-Snapshot` / `-Verify`）
+> + `regenerate_src.ps1`。基线已就绪：`Scripts/Tools/baselines/game-version-baseline.json`（0.111.0）、
+> 旧 dll/存档归档在 `D:\Download\pain\game-archives\v0.111.0\`（齐全）。
+
+1. **push master**（2026-11-10 收工时领先 origin 13 笔）—— 更新日若本地构建被打坏，远端有完整回滚点。
+   ⚠ 代理口径见 memory：gitconfig 里的 7890 已停用，必须命令行覆盖 12000；**git 侧 TLS 握手常抖 ⇒ 连试 2~4 次**，
+   curl 经同一代理一次就通，别把 git 的失败当成代理挂了。
+2. **刷新基线的 repo 侧字段**：`.\Scripts\Tools\game_update_prep.ps1 -Snapshot -NoArchive`
+   （不重拷 dll / 不重备份存档）。当前 json 记的是 `marker r336` / `head 39818ea`，实际已到 `r345` / `d3df9cb`
+   —— 差 9 轮，事后归因会错。
+3. **演练更新日脚本链**（不碰游戏文件，确认工具没坏）：
+   `.\Scripts\Tools\game_update_prep.ps1 -Verify`（现在应全绿：版本一致、`string_stale=0`）
+   → `.\Scripts\Tools\regenerate_src.ps1 -CheckOnly` → `.\Scripts\Tools\preflight.ps1`（离线层）。
+
+**更新日当天，实机只判这 4 项**（顺序别乱）：
+
+1. `INIT_OK` + `PATCH_RESULT critical=25/25 optional=20/20`（不齐 → 先 `LMC_INIT_STRICT=0` 保命，再逐个补丁修）；
+2. **我们的入口**能进：锚点 `单人多角色…入口：改走本地回环开局` / `每日挑战大厅本地人数已同步`；
+3. **官方 标准 / 每日 / 自定义 三入口保持原版**（S9 只是静态门禁，必须手点一次）；
+4. **新模式两个入口**各点一次：看 `联机菜单卡片已重排: count=?`（**4 → 5 就说明官方加了卡**，确认我们那张卡没跑飞、
+   小按钮没重叠）+ 期望"栈顶为本项目的 `NullReferenceException` = 0"（S10 那族：`lobby?.X`，`_Process` 里每帧跑）。
+
+⚠ **可能被动摇的地基**（更新后先读 release notes 再下结论，别提前猜）：
+`StartRunLobby` / 回环 `NetService` / 伪席位（我们整套本地多控的前提）、大厅页类型白名单
+（`TryGetLobbyScreen` 里写死 `NCharacterSelectScreen / NCustomRunScreen / NDailyRunScreen`）、
+存档 `current_run_mp.save`（读档自动化那条线）。若官方「单人模式」能吃 AI 队友 / 多角色，
+"单人多角色"的定位需要重新评估（**待拍板**）。
+
+---
+
 ## 瓦库托管：诅咒/状态牌处置（2026-11-10 r343~r345）—— ✅ 已关单，未覆盖场景待观察
 
 > 实现与实机判读见 `开发进度记录.md` 第一百六十五段；玩法可见的变化见 `CHANGELOG.md` `[Unreleased]`。
