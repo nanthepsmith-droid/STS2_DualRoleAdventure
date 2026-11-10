@@ -1243,10 +1243,209 @@ internal static class LocalWakuuRelicRuntime
                     + $"card={card.Id.Entry}, cardOwner={card.Owner?.NetId.ToString() ?? "null"}, handCount={cards.Count}");
             }
 
-            return cards.Where(candidate => candidate.Owner == wakuu).ToList();
+            return ApplyHazardPlayOrder(wakuu, round, cards.Where(candidate => candidate.Owner == wakuu).ToList());
         }
 
-        return cards;
+        return ApplyHazardPlayOrder(wakuu, round, cards);
+    }
+
+    /// <summary>
+    /// 诅咒/状态牌的**出牌次序**（2026-11-10 用户口径「瓦库托管要处理诅咒牌和状态牌」，方案 B 三档）。
+    ///
+    /// 判定本体在纯逻辑 <see cref="WakuuHazardPlayPolicy"/>（可单测），这里只负责"读游戏信号 + 重排候选集"：
+    /// <list type="bullet">
+    /// <item><b>保命档</b>（留手里会掉血/会去世，或有沙坑倒计时）：只要**现在能打**就独占本轮候选
+    ///   —— 拖到最后一旦能量被打空或回合被熔断，就真的掉血/去世；</item>
+    /// <item><b>兜底档</b>（其它可打出的诅咒/状态牌）：排在所有普通牌之后，先打普通牌
+    ///   （给消耗/弃牌效果留机会把它清掉），不占能量硬预留；</item>
+    /// <item><b>普通牌</b>：原顺序不变。</item>
+    /// </list>
+    ///
+    /// ⚠ 本方法**只影响"喂给大脑的候选集"**，不改 <see cref="HasHostedPlayableCards"/> 的答案 ——
+    /// 两处口径不一致就会出现 r262 那类"托管不打牌、收口却说还有牌"的死锁。
+    /// </summary>
+    private static IReadOnlyList<CardModel> ApplyHazardPlayOrder(Player wakuu, int round, IReadOnlyList<CardModel> cards)
+    {
+        if (cards.Count == 0)
+        {
+            return cards;
+        }
+
+        var entries = new WakuuHandTierEntry[cards.Count];
+        for (int i = 0; i < cards.Count; i++)
+        {
+            WakuuHandHazardTier tier = ClassifyHandHazardTier(cards[i], wakuu);
+            // 只有保命档关心"现在能不能打"（决定要不要抢占这一轮），其余档不调 CanPlay（省一次判定）。
+            entries[i] = new WakuuHandTierEntry(
+                tier,
+                tier == WakuuHandHazardTier.Survival && SafeCanPlay(cards[i]));
+        }
+
+        IReadOnlyList<int>? order = WakuuHazardPlayPolicy.ResolvePlayOrder(entries);
+        if (order == null)
+        {
+            return cards; // 全是普通牌：零拷贝复用原列表，行为与旧版逐字相同
+        }
+
+        var ordered = new List<CardModel>(order.Count);
+        foreach (int index in order)
+        {
+            ordered.Add(cards[index]);
+        }
+
+        LogHazardPlayOrderOnce(wakuu, round, cards, entries, ordered);
+        return ordered;
+    }
+
+    /// <summary>
+    /// 单张手牌分档：先看是不是诅咒/状态牌（快速路径），再看游戏自带的
+    /// `HasTurnEndInHandEffect`（原版 `TOXIC`/`BECKON`/`DOUBT` 这类"留手里有回合结束效果"的牌都覆写它，
+    /// 第三方 mod 的"不打出就去世"诅咒只要按同一惯例实现也能被认出来）。
+    ///
+    /// 狂乱逃离（`FRANTIC_ESCAPE`）是唯一需要名单的：它没有回合结束效果，危险来自
+    /// `SandpitPower` 倒计时（归零时 `AfterRemoved` 直接 `Kill(force:true)` 把整队吞掉），
+    /// 所以判据写成"名单内 + 自己被沙坑抓 + 倒计时已经不多"（阈值见
+    /// <see cref="WakuuHazardPlayPolicy.SandpitUrgentTurns"/>：计数多时归兜底档省能量，计数少时才救命）。
+    /// </summary>
+    private static WakuuHandHazardTier ClassifyHandHazardTier(CardModel card, Player wakuu)
+    {
+        if (card.Type is not (CardType.Curse or CardType.Status))
+        {
+            return WakuuHandHazardTier.Normal;
+        }
+
+        bool survivalListed = string.Equals(card.Id.Entry, WakuuHazardPlayPolicy.FranticEscapeId, StringComparison.Ordinal);
+        return WakuuHazardPlayPolicy.Classify(
+            isCurseOrStatus: true,
+            hasTurnEndInHandEffect: SafeHasTurnEndInHandEffect(card),
+            isSurvivalListed: survivalListed,
+            survivalConditionMet: survivalListed
+                && WakuuHazardPlayPolicy.IsSandpitUrgent(GetSandpitTurnsRemaining(wakuu)));
+    }
+
+    /// <summary>`CanPlay()` 对第三方卡可能抛（卡内逻辑），托管这边一律按"打不了"处理。</summary>
+    private static bool SafeCanPlay(CardModel card)
+    {
+        try
+        {
+            return card.CanPlay();
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool SafeHasTurnEndInHandEffect(CardModel card)
+    {
+        try
+        {
+            return card.HasTurnEndInHandEffect;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 自己被【沙坑】抓的**剩余计数**（`SandpitPower.Amount`：每敌方回合开始 -1，归零即刻被吞）。
+    /// 没被抓 ⇒ 0。
+    ///
+    /// ⚠ r343 实机踩过的坑：**这个 Power 挂在敌人身上，不是玩家身上**。
+    /// `TheInsatiable` 的施加方式是把 `sandpitPower.Target = 玩家` 之后
+    /// `PowerCmd.Apply(..., base.Creature /* 沙虫自己 */, 4m, ...)` ⇒
+    /// 问 `player.Creature.GetPowerAmount<SandpitPower>()` 永远是 0，
+    /// 于是狂乱逃离整整一局都落在兜底档（r343 日志 `保命=[]` 全程为空）。
+    /// 正确判据：扫**敌人**身上的 `SandpitPower`，看它的 `Target` 是不是我。
+    /// 该 Power 是 `InstanceType.Instanced`（每个被抓的人一份），取最小的那份（最危险）。
+    /// </summary>
+    private static int GetSandpitTurnsRemaining(Player player)
+    {
+        try
+        {
+            Creature? me = player.Creature;
+            ICombatState? combatState = me?.CombatState;
+            if (me == null || combatState == null)
+            {
+                return 0;
+            }
+
+            int remaining = 0;
+            foreach (Creature? enemy in combatState.Enemies)
+            {
+                if (enemy == null)
+                {
+                    continue;
+                }
+
+                foreach (var power in enemy.Powers)
+                {
+                    if (power is SandpitPower sandpit
+                        && sandpit.Amount > 0
+                        && ReferenceEquals(sandpit.Target, me)
+                        && (remaining == 0 || sandpit.Amount < remaining))
+                    {
+                        remaining = sandpit.Amount;
+                    }
+                }
+            }
+
+            return remaining;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>手牌分档日志去重（键 = 席位 + 回合 + 分档摘要）。</summary>
+    private static ulong _hazardOrderLogPlayerId;
+    private static int _hazardOrderLogRound = -1;
+    private static string? _hazardOrderLogSummary;
+
+    private static void LogHazardPlayOrderOnce(
+        Player wakuu,
+        int round,
+        IReadOnlyList<CardModel> cards,
+        WakuuHandTierEntry[] entries,
+        IReadOnlyList<CardModel> ordered)
+    {
+        var survival = new List<string>();
+        var deferred = new List<string>();
+        for (int i = 0; i < entries.Length; i++)
+        {
+            switch (entries[i].Tier)
+            {
+                case WakuuHandHazardTier.Survival:
+                    survival.Add(entries[i].CanPlay ? cards[i].Id.Entry : cards[i].Id.Entry + "(打不动)");
+                    break;
+                case WakuuHandHazardTier.Deferred:
+                    deferred.Add(cards[i].Id.Entry);
+                    break;
+            }
+        }
+
+        bool prioritizeSurvival = WakuuHazardPlayPolicy.ShouldPrioritizeSurvival(entries);
+        // 沙坑判据的自证字段：计数 > 阈值时狂乱逃离会落在兜底档，没这个数字很难分辨"判对了"还是"又没读到"。
+        int sandpitTurns = GetSandpitTurnsRemaining(wakuu);
+        string sandpitText = sandpitTurns > 0
+            ? $", 沙坑剩余={sandpitTurns}(≤{WakuuHazardPlayPolicy.SandpitUrgentTurns} 才按保命档)"
+            : string.Empty;
+        string summary = $"prioritize={prioritizeSurvival}, 保命=[{string.Join("/", survival)}], 兜底=[{string.Join("/", deferred)}]{sandpitText}";
+        if (_hazardOrderLogPlayerId == wakuu.NetId && _hazardOrderLogRound == round && _hazardOrderLogSummary == summary)
+        {
+            return;
+        }
+
+        _hazardOrderLogPlayerId = wakuu.NetId;
+        _hazardOrderLogRound = round;
+        _hazardOrderLogSummary = summary;
+        LocalMultiControlLogger.Info(
+            (prioritizeSurvival
+                ? "瓦库手牌分档：保命档优先（本轮候选只留保命牌）: "
+                : "瓦库手牌分档：兜底档延后（先打普通牌，最后才打诅咒/状态牌）: ")
+            + $"player={wakuu.NetId}, round={round}, {summary}, 候选={ordered.Count}/{cards.Count}");
     }
 
     /// <summary>「补登记网络卡牌 id 失败」的日志去重（只用于防刷屏，不参与判定）。</summary>
