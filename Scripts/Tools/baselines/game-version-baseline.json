@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-11-10 12:31:06",
+  "recorded_at": "2026-11-10 21:11:50",
   "game": {
     "version": "v0.111.0",
     "commit": "41cef1ea",
@@ -13,9 +13,9 @@
     "godotsharp": "4.5.1.0"
   },
   "repo": {
-    "marker": "2026-11-04-r336",
+    "marker": "2026-11-10-r345",
     "version": "1.47.0",
-    "head": "39818ea",
+    "head": "9324d0c",
     "patch_classes": 209,
     "patch_rows": 249,
     "semantic_descriptors": 408,
@@ -23,6 +23,6 @@
     "string_stale": 0,
     "targets_baseline_sha256": "0A1B7F69481424168143F3CD3A355AD25E0DA6816733C0D898B6A7AFC930E572"
   },
-  "own_dll_sha256": "227A56CF13F50E640AA3987DE6485383527994872454FCFCE8B9B25797635539",
+  "own_dll_sha256": "562252EF68156E0B7A50C6B51E352AE26C68ADC392BE47768B59F8CA592EE627",
   "archive": "D:\\Download\\pain\\game-archives\\v0.111.0"
 }

@@ -202,6 +202,15 @@ if ($Snapshot) {
                 Write-Warn2 "未找到存档目录 $savesRoot，跳过存档备份。"
             }
         }
+    } elseif (Test-Path -LiteralPath $baselinePath) {
+        # -NoArchive 只刷新事实（marker/HEAD/计数）：沿用上一次记下的归档路径，
+        # 别把它抹成 null —— 更新日要靠它找回旧 sts2.dll 与我方旧 dll 做 A/B。
+        try {
+            $prevBaseline = Get-Content -LiteralPath $baselinePath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($prevBaseline.archive) { $archivePath = [string]$prevBaseline.archive }
+        } catch {
+            Write-Warn2 "读取上一次基线失败（归档路径将记为 null）：$($_.Exception.Message)"
+        }
     }
 
     $baseline = [ordered]@{
@@ -271,7 +280,7 @@ if ($SkipTests) {
         -c Release -p:RequireGameInstall=true 2>&1
     $testOk = ($LASTEXITCODE -eq 0)
     $failedNames = ($testOut | Select-String -Pattern '^\s*(失败|Failed)\s+(\S+)' | ForEach-Object { $_.Line.Trim() } | Select-Object -First 12)
-    Add-Row "单测（1416 条，含目标存在性）" "全绿" ($(if ($testOk) { "全绿" } else { "有失败" })) ($(if ($testOk) { "PASS" } else { "FAIL -> 看下方明细" }))
+    Add-Row "单测（含目标存在性/程序集兼容）" "全绿" ($(if ($testOk) { "全绿" } else { "有失败" })) ($(if ($testOk) { "PASS" } else { "FAIL -> 看下方明细" }))
     if (-not $testOk) {
         $testOut | Select-Object -Last 25 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkYellow }
         if ($failedNames) { Write-Host "    失败用例（前 12）：" ; $failedNames | ForEach-Object { Write-Host "      $_" } }
