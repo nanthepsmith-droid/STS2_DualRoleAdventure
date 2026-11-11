@@ -3138,6 +3138,103 @@ internal static class LocalMultiControlRuntime
         }
     }
 
+    private static long _lastCombatUiVisibilityCheckMs;
+
+    private static string _lastCombatUiSignature = string.Empty;
+
+    private const long CombatUiVisibilityCheckIntervalMs = 500L;
+
+    /// <summary>
+    /// 战斗 UI 可见性**探针 + 最小自愈**（2026-11-11）。
+    ///
+    /// <para>实测症状（用户 2026-11-11，`logs-archive\godot__20261111-203138__r345.log`）：瓦库在回合开始自动喝了
+    /// 第三方【烟雾弹】（`STS2_AI_A_CARD_POTION_SMOKE_BOMB`）⇒ 原版 `CreatureCmd.Escape` 把该角色移出战斗
+    /// （立绘从左侧走出、手牌数据 0 张），随后**手牌 / 抽牌堆 / 弃牌堆 / 结束回合按钮一起消失，且切到哪个角色都不回来**。</para>
+    ///
+    /// <para>为什么先探针：日志只能证明"数据层已空、前台仍钉在离场角色"（`受控位=角色1` 一直持续），
+    /// 但四个 UI 同时消失有两种可能 —— ① 整块 <c>NCombatUi.Visible=false</c>（`Deactivate()` 那一步）；
+    /// ② 各子节点被 `AnimOut()` 移到屏幕外。2026-11-11 二次实测给出了答案：**整块/抽牌堆/弃牌堆/结束回合都正常，
+    /// 只有 <c>NPlayerHand.Visible=false</c>，而且所有席位的手牌都看不见、新抽的牌也立刻消失**。
+    /// 所以自愈两条都保留（整块被隐藏 / 手牌节点被隐藏），其余一律只记录。</para>
+    /// </summary>
+    public static void ProbeAndHealCombatUiVisibility(string source)
+    {
+        try
+        {
+            if (!LocalSelfCoopContext.IsEnabled || !RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)
+            {
+                return;
+            }
+
+            long nowMs = (long)Time.GetTicksMsec();
+            if (nowMs - _lastCombatUiVisibilityCheckMs < CombatUiVisibilityCheckIntervalMs)
+            {
+                return;
+            }
+
+            _lastCombatUiVisibilityCheckMs = nowMs;
+
+            NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+            if (combatUi == null || !GodotObject.IsInstanceValid(combatUi))
+            {
+                return;
+            }
+
+            ulong foreground = LocalSeatSource.ForegroundSeatId();
+            CombatState? combatState = TryGetCombatState(combatUi);
+            bool uiHidden = !combatUi.Visible;
+            bool handHidden = !combatUi.Hand.Visible;
+
+            string Describe()
+                => $"整块Visible={combatUi.Visible}, Hand.Visible={combatUi.Hand.Visible}, Hand.Y={combatUi.Hand.Position.Y:F1}, "
+                   + $"Hand.Alpha={combatUi.Hand.Modulate.A:F2}, "
+                   + $"抽牌堆.Visible={combatUi.DrawPile.Visible}, Y={combatUi.DrawPile.Position.Y:F1}, "
+                   + $"弃牌堆.Visible={combatUi.DiscardPile.Visible}, "
+                   + $"结束回合.Visible={combatUi.EndTurnButton.Visible}, Y={combatUi.EndTurnButton.Position.Y:F1}, "
+                   + $"前台={foreground}, LocalContext.NetId={LocalContext.NetId?.ToString() ?? "null"}";
+
+            // 只在前台角色真的还在战斗里时才动手（离场/死亡的席位没有手牌，显示与否都无意义）。
+            Player? foregroundPlayer = foreground == 0UL || combatState == null
+                ? null
+                : combatState.GetPlayer(foreground);
+            bool foregroundInCombat = foregroundPlayer?.Creature != null
+                && foregroundPlayer.Creature.IsAlive
+                && combatState != null
+                && combatState.ContainsCreature(foregroundPlayer.Creature);
+
+            // 自愈只有两条，其余一律只记录：
+            // ① 整块被隐藏；② 手牌节点被隐藏（2026-11-11 二次实测：烟雾弹逃跑后**所有玩家**的手牌都看不见，
+            //    新抽的牌也立刻消失 ⇒ 是 `NPlayerHand.Visible=false` 且没人恢复，不是残留节点问题）。
+            string healedNote = string.Empty;
+            if (uiHidden && foreground != 0UL && combatState != null)
+            {
+                combatUi.Visible = true;
+                healedNote += "整块被隐藏 ⇒ 已重新显示; ";
+            }
+
+            if (handHidden && foregroundInCombat)
+            {
+                combatUi.Hand.Visible = true;
+                healedNote += "手牌节点被隐藏 ⇒ 已重新显示; ";
+            }
+
+            bool healed = healedNote.Length > 0;
+            string signature = Describe();
+            if (!healed && signature == _lastCombatUiSignature)
+            {
+                return;
+            }
+
+            _lastCombatUiSignature = signature;
+            LocalMultiControlLogger.Info(
+                $"[战斗UI探针] {signature}{(healed ? ", " + healedNote.TrimEnd() : string.Empty)}, source={source}");
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"战斗UI可见性探针失败: {exception.Message}");
+        }
+    }
+
     /// <summary>手牌变换结束后排一次顺序自愈（下一帧执行，等原版视觉分支先落定）。</summary>
     public static void ScheduleReconcileDisplayedHandOrder(string source)
     {

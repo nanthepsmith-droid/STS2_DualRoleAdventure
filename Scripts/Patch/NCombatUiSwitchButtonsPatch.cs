@@ -349,5 +349,11 @@ internal sealed partial class LocalCombatSwitchTracker : Node
         long handStart = LocalPerfProbe.Begin();
         LocalMultiControlRuntime.ReconcileDisplayedHandOrder("combat-tick");
         LocalPerfProbe.End(LocalPerfProbe.Slot.HandOrderReconcile, handStart);
+
+        // 2026-11-11：角色逃跑（烟雾弹等）后「手牌/抽牌堆/弃牌堆/结束回合」一起消失的探针 + 最小自愈。
+        // 内部 500ms 节流、只在状态变化或真的做了自愈时打日志（避免刷屏）。
+        long uiVisStart = LocalPerfProbe.Begin();
+        LocalMultiControlRuntime.ProbeAndHealCombatUiVisibility("combat-tick");
+        LocalPerfProbe.End(LocalPerfProbe.Slot.HandOrderReconcile, uiVisStart);
     }
 }
