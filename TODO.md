@@ -90,6 +90,46 @@
 
 ---
 
+## 瓦库托管：变化牌处置（2026-11-11 口径已定）—— ⏳ 待开工（排在更新日之后）
+
+> 用户原话（2026-11-11）：「现在瓦库托管对于变化卡牌处理都是一样的吗？我的想法是变化成同角色的随机牌按照原先的处理，
+> 变化成特定的一张牌（比如储君的仆从系列牌）则按照消耗处理。」
+
+**现状（2026-11-11 核对代码，非推测）**：
+
+- 出牌侧**没有任何"这张牌是怎么来的"判据**：`LocalWakuuRelicRuntime.ResolveAutoplayHand` → `WakuuHazardPlayPolicy`
+  （只分 保命档 / 兜底档 / 普通牌）→ 大脑按**卡自身属性**打分 ⇒ 变化来的牌与奖励 / 商店 / 生成的牌走同一条路，
+  **处理完全一致**；
+- 唯一与"变化"相关的代码是 BUG-29 的**视觉归属**（`AutomatedSeatTransformVisualPolicy` / `CardTransformNetIdPolicy` /
+  `AutomatedSeatTransformVisualGate`），不参与任何出牌决策；
+- 变化的**选牌**侧（变掉哪张）已有 `smartPick` 表：优先变打击/防御、避开诅咒/状态/任务 —— 与"变成什么"无关；
+- ⚠ 卡自身关键词**已经在评分里**：`WakuuCardScoring` 对 `Exhaust` 扣 5（"谨慎打"）、`Ethereal` +10、`Retain` -8；
+  而储君仆从三张（`MINION_STRIKE` / `MINION_DIVE_BOMB` / `MINION_SACRIFICE`）本身就是
+  `CardRarity.Token` + `CardKeyword.Exhaust` + `CardTag.Minion` ⇒ **已经在吃那 -5**。
+
+**口径（2026-11-11 用户拍板，已定）**：变化成**固定的一张牌**（如储君仆从 `MINION_*`）时，这张牌**约等于已经被消耗**
+⇒ **直接套用瓦库托管对"消耗牌"的既有优先级**，不另造评分；变化成**同角色随机牌**则维持原有处理（不打任何特殊标记）。
+
+**判据（游戏侧已核实，不用卡名名单、也不用反推稀有度）**：
+
+- `CardTransformation.Replacement != null` ⇔ "变化成特定的一张牌"（`CardCmd.TransformTo<T>` / `Transform(original, replacement)`）；
+  `Replacement == null` ⇔ 随机 ⇒ 默认池 = `original.Pool`（**同角色**），且 `CardFactory.GetFilteredTransformationOptions`
+  把候选稀有度过滤在 Common / Uncommon / Rare 三档（`:193-200`）⇒ **随机变化永远不会产出 `CardRarity.Token`**。
+- 落地位置：在现有变换链（`CardTransformNetIdPinPatch` 旁边）加一处记录 —— `Replacement != null` 的**结果牌实例**进集合；
+  出牌打分侧对集合内的牌 OR 上 `Exhaust` 位（`ScoredWakuuBrain.BuildKeywords` → `WakuuScoreKeywords`、
+  `WakuuEffectExtractor.MapKeywords` → `WakuuCardKeywords`）⇒ "消耗牌优先级"天然统一（评分 −5、知识层 `risk+0.15`/`deckControl+0.1`），
+  不用在第二处再抄一遍口径。
+- 兜底（可选）：`CardRarity.Token` + `CardTag.Minion` 的结果牌也按消耗算，防止第三方用 `ReplacementOptions`（限定池）绕开 `Replacement == null` 的判定。
+
+**动手前还要定的两件小事**：
+
+1. 生命周期与清理：集合按 `CardModel` 实例引用记，换战斗 / 换局 / 牌被消耗后要清（否则实例复用会误判）；
+2. 是否连带影响"变化选哪张"（`smartPick` 的 transform 表）—— 按本口径**不影响**：那边选的是"变掉哪张"，与"变成什么"无关。
+
+**排期**：按 2026-11-10「更新前不开新功能线」的拍板，排到 **2026-11-13 游戏更新之后**；开工时先切分支。
+
+---
+
 ## 性能线：待拍板的两条（2026-10-31 收工后登记）
 
 > ⛔ **2026-10-31 用户拍板：性能线暂停（先不搞）**。决定性证据（`godot__20261031-183349__r332.log`）：
