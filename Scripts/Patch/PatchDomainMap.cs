@@ -72,6 +72,7 @@ internal static class PatchDomainMap
             ["EventSynchronizerBeginEventPatch"] = PatchDomain.Core,
             ["EventSynchronizerPatch"] = PatchDomain.Core,
             ["EventSynchronizerChooseOptionForEventPatch"] = PatchDomain.Core,
+            ["TheArchitectSharedEventPatch"] = PatchDomain.Core,
             ["MapSelectionSynchronizerPatch"] = PatchDomain.Core,
             ["ActChangeSynchronizerPatch"] = PatchDomain.Core,
             ["RestSiteSynchronizerBeginRestSitePatch"] = PatchDomain.Core,
