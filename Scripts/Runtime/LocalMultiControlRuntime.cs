@@ -468,6 +468,122 @@ internal static class LocalMultiControlRuntime
         }
     }
 
+    private static long _lastDepartedForegroundCheckMs;
+
+    private const long DepartedForegroundCheckIntervalMs = 400L;
+
+    private static string _lastDepartedForegroundNotice = string.Empty;
+
+    /// <summary>
+    /// 前台席位「已离场 / 已死亡」时，自动把前台交给仍在战斗的本地席位（2026-11-12，r348）。
+    ///
+    /// <para>为什么必须做：角色被【烟雾弹】之类效果 `CreatureCmd.Escape` 移出战斗后，
+    /// `LocalContext` 的"我是谁"仍钉着它 ⇒ ① 界面停在离场角色的空手牌上；
+    /// ② 战斗结算时原版 `CombatManager.EndCombatInternal` 调 `LocalContext.GetMe(combatState)`
+    /// 直接抛 `InvalidOperationException: Local player not found in combat`
+    /// （实测 `logs-archive\godot__20261111-210157__r347.log` L11378/L11386）⇒ 胜利结算被打断、
+    /// 看门狗一路 `invalid-combat-state`、只能 ESC 重启房间。</para>
+    ///
+    /// <para>判据只问数据层"这个席位还在不在战斗里"（`ContainsCreature` + `IsAlive`）：
+    /// 逃跑与死亡在原版都会把 Creature 从 `CombatState` 摘掉，一条判据同时覆盖两种。</para>
+    /// </summary>
+    public static void SwitchAwayFromDepartedForeground(string source)
+    {
+        try
+        {
+            if (!LocalSelfCoopContext.IsEnabled
+                || !RunManager.Instance.IsInProgress
+                || !CombatManager.Instance.IsInProgress)
+            {
+                return;
+            }
+
+            long nowMs = (long)Time.GetTicksMsec();
+            if (nowMs - _lastDepartedForegroundCheckMs < DepartedForegroundCheckIntervalMs)
+            {
+                return;
+            }
+
+            _lastDepartedForegroundCheckMs = nowMs;
+
+            // 占卜小游戏开着时切人会软锁（见 SwitchNextControlledPlayer 的同款注释）。
+            if (CrystalSphereMirrorRuntime.HasActiveDivinationOverlay())
+            {
+                return;
+            }
+
+            NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+            CombatState? combatState = combatUi == null ? null : TryGetCombatState(combatUi);
+            if (combatState == null)
+            {
+                return;
+            }
+
+            ulong foreground = LocalSeatSource.ForegroundSeatId();
+            if (foreground == 0UL)
+            {
+                return;
+            }
+
+            Player? current = combatState.GetPlayer(foreground);
+            if (current == null)
+            {
+                // 不在 `Players` 里（战神等临时席位）⇒ 不归这条管。
+                return;
+            }
+
+            bool departed = current.Creature == null
+                || !current.Creature.IsAlive
+                || !combatState.ContainsCreature(current.Creature);
+            if (!departed)
+            {
+                return;
+            }
+
+            IReadOnlyList<ulong> locals = LocalSelfCoopContext.LocalPlayerIds;
+            ulong candidate = 0UL;
+            foreach (ulong seatId in locals)
+            {
+                if (seatId == foreground)
+                {
+                    continue;
+                }
+
+                Player? player = combatState.GetPlayer(seatId);
+                if (player?.Creature != null
+                    && player.Creature.IsAlive
+                    && combatState.ContainsCreature(player.Creature))
+                {
+                    candidate = seatId;
+                    break;
+                }
+            }
+
+            if (candidate == 0UL)
+            {
+                string notice = $"foreground={foreground}";
+                if (notice != _lastDepartedForegroundNotice)
+                {
+                    _lastDepartedForegroundNotice = notice;
+                    LocalMultiControlLogger.Warn(
+                        $"前台席位已离场，但没有可接手的本地席位（全部离场/死亡）: {notice}, source={source}");
+                }
+
+                return;
+            }
+
+            _lastDepartedForegroundNotice = string.Empty;
+            LocalMultiControlLogger.Info(
+                $"前台席位已离场（逃跑/死亡）⇒ 自动切到仍在战斗的席位: {foreground} -> {candidate}, source={source}");
+            // 切人会重建战斗 UI（重活），排到下一帧执行，别压在这一帧的 _Process 里。
+            Callable.From(() => SwitchControlledPlayerTo(candidate, "foreground-departed:" + source)).CallDeferred();
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"前台离场自动切人失败: {exception.Message}");
+        }
+    }
+
     public static void TryRunPendingEventAutoSwitch(string source)
     {
         if (!LocalSelfCoopContext.TryConsumePendingEventAutoSwitch())

@@ -350,6 +350,12 @@ internal sealed partial class LocalCombatSwitchTracker : Node
         LocalMultiControlRuntime.ReconcileDisplayedHandOrder("combat-tick");
         LocalPerfProbe.End(LocalPerfProbe.Slot.HandOrderReconcile, handStart);
 
+        // 2026-11-12（r348）：前台席位逃跑/死亡后，把前台交给仍在战斗的本地席位 ——
+        // 否则原版结算 `LocalContext.GetMe(combatState)` 会抛 "Local player not found in combat"。
+        long departedStart = LocalPerfProbe.Begin();
+        LocalMultiControlRuntime.SwitchAwayFromDepartedForeground("combat-tick");
+        LocalPerfProbe.End(LocalPerfProbe.Slot.HandOrderReconcile, departedStart);
+
         // 2026-11-11：角色逃跑（烟雾弹等）后「手牌/抽牌堆/弃牌堆/结束回合」一起消失的探针 + 最小自愈。
         // 内部 500ms 节流、只在状态变化或真的做了自愈时打日志（避免刷屏）。
         long uiVisStart = LocalPerfProbe.Begin();
