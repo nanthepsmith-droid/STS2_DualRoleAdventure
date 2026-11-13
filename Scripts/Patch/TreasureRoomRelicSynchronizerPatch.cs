@@ -158,9 +158,18 @@ internal static class TreasureRoomRelicSynchronizerPatch
 
     private static void InvokeRelicsAwarded(TreasureRoomRelicSynchronizer synchronizer, List<RelicPickingResult> results)
     {
-        Action<List<RelicPickingResult>>? callback =
-            AccessTools.Field(typeof(TreasureRoomRelicSynchronizer), "RelicsAwarded")?.GetValue(synchronizer) as Action<List<RelicPickingResult>>;
-        callback?.Invoke(results);
+        // ⚠ 0.113 起事件签名是 Action<List<RelicPickingResult>, bool>（第二参数 = 本次是否结束）；
+        // 老写法按单参数取 ⇒ 永远取到 null ⇒ 溢出结算"静默不发放"（r352 顺手订正）。
+        Action<List<RelicPickingResult>, bool>? callback =
+            AccessTools.Field(typeof(TreasureRoomRelicSynchronizer), "RelicsAwarded")?.GetValue(synchronizer)
+                as Action<List<RelicPickingResult>, bool>;
+        callback?.Invoke(results, arg2: true);
+    }
+
+    /// <summary>让「宝箱结算后自动切人」这一次不要触发（结算即关房间，切人没有意义）。</summary>
+    internal static void SkipAutoSwitchOnceFor(TreasureRoomRelicSynchronizer synchronizer)
+    {
+        SkipAutoSwitchOnce.Add(synchronizer);
     }
 
     internal static void SetOverflowPlan(TreasureRoomRelicSynchronizer synchronizer, OverflowCopyPlan plan)

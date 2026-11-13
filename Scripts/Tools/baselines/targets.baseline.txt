@@ -2,12 +2,14 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-11-13 18:44  HEAD=1824cb5
-# 统计: patch_classes=215 patch_rows=255 string_targets=215 descriptors=418
+# 生成时间=2026-11-13 20:33  HEAD=f2efc35
+# 统计: patch_classes=225 patch_rows=265 string_targets=231 descriptors=438
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	BgmProbeAudioManagerPatch	NAudioManager	-	no-target
 P	BgmProbeRunMusicPatch	NRunMusicController	-	no-target
+P	BlitzTreasureDoublePickPatch	TreasureRoomRelicSynchronizer	OnPicked	nameof
+P	BlitzTreasurePoolTopUpPatch	TreasureRoomRelicSynchronizer	BeginRelicPicking	nameof
 P	CardManualPlayContextPatch	CardModel	EnqueueManualPlay	string
 P	CardPileAddForegroundContextPinPatch	CardPileCmd	Add	nameof
 P	CardPileHandVisualOwnerGuardPatch	CardPileCmd	CreateCardNodeAndUpdateVisuals	string
@@ -94,6 +96,10 @@ P	MainMenuStackRegisterWakuuConfigSubmenuPatch	NMainMenuSubmenuStack	GetSubmenuT
 P	MapSelectionSynchronizerPatch	MapSelectionSynchronizer	PlayerVotedForMapCoord	nameof
 P	MerchantRoomEnterFoulThrowPatch	MerchantRoom	EnterInternal	string
 P	MoveToMapCoordRestSiteCompletionPatch	MoveToMapCoordAction	ExecuteAction	string
+P	NBlitzEmbarkGuardPatch	NBlitzScreen	OnEmbarkPressed	string
+P	NBlitzScreenLocalSeatsClosePatch	NBlitzScreen	OnSubmenuClosed	nameof
+P	NBlitzScreenLocalSeatsOpenPatch	NBlitzScreen	OnSubmenuOpened	nameof
+P	NBlitzScreenLocalSeatsProcessPatch	NBlitzScreen	_Process	nameof
 P	NCardCreateHiddenCardGuardPatch	NCard	Create	nameof
 P	NCardPlayQueueActionEnqueuedGuardPatch	NCardPlayQueue	OnActionEnqueued	string
 P	NCardPlayQueueOnActionEnqueuedFailSafePatch	NCardPlayQueue	OnActionEnqueued	string
@@ -136,6 +142,10 @@ P	NDailyRunLocalCountButtonsProcessPatch	NDailyRunScreen	_Process	nameof
 P	NDailyRunScreenLocalPlayersClosePatch	NDailyRunScreen	OnSubmenuClosed	nameof
 P	NDailyRunScreenLocalPlayersOpenPatch	NDailyRunScreen	OnSubmenuOpened	nameof
 P	NDailyRunScreenLocalPlayersProcessPatch	NDailyRunScreen	_Process	nameof
+P	NDreadEmbarkGuardPatch	NDreadScreen	OnEmbarkPressed	string
+P	NDreadScreenLocalSeatsClosePatch	NDreadScreen	OnSubmenuClosed	nameof
+P	NDreadScreenLocalSeatsOpenPatch	NDreadScreen	OnSubmenuOpened	nameof
+P	NDreadScreenLocalSeatsProcessPatch	NDreadScreen	_Process	nameof
 P	NEndTurnButtonLifecyclePatch	CombatManager	AfterAllPlayersReadyToBeginEnemyTurn	string
 P	NEndTurnButtonLifecyclePatch	NCombatUi	Activate	string
 P	NEndTurnButtonLifecyclePatch	NEndTurnButton	OnAboutToSwitchToEnemyTurn	string
@@ -286,6 +296,8 @@ S	accesstools	MegaCrit.Sts2.Core.Multiplayer.Game.RestSiteSynchronizer	-	method
 S	accesstools	MerchantEntry	_player	field
 S	accesstools	ModManager	-	method
 S	accesstools	NAudioManager	_audioNode	field
+S	accesstools	NBlitzScreen	_charButtonContainer	field
+S	accesstools	NBlitzScreen	_selectedButton	field
 S	accesstools	NCharacterSelectButton	RefreshState	method
 S	accesstools	NCharacterSelectButton	_delegate	field
 S	accesstools	NCharacterSelectButton	_isSelected	field
@@ -300,6 +312,8 @@ S	accesstools	NDailyRunScreen	InitializeDisplay	method
 S	accesstools	NDailyRunScreen	SetupLobbyParams	method
 S	accesstools	NDailyRunScreen	_lobby	field
 S	accesstools	NDailyRunScreen	_remotePlayerContainer	field
+S	accesstools	NDreadScreen	_charButtonContainer	field
+S	accesstools	NDreadScreen	_selectedButton	field
 S	accesstools	NEndTurnButton	_combatState	field
 S	accesstools	NEndTurnButton	_state	field
 S	accesstools	NEventRoom	_event	field
@@ -343,6 +357,7 @@ S	accesstools	NRunMusicController	_currentTrack	field
 S	accesstools	NRunMusicController	_failedTrack	field
 S	accesstools	NRunMusicController	_runState	field
 S	accesstools	NSubmenu	_stack	field
+S	accesstools	NTreasureRoomRelicCollection	_holdersInUse	field
 S	accesstools	PacketReader	ReadInt	method
 S	accesstools	PacketWriter	WriteInt	method
 S	accesstools	PeerInputSynchronizer	GetStateForPlayer	method
@@ -359,7 +374,10 @@ S	accesstools	StartupProfilerPatch	Prefix	method
 S	accesstools	TreasureRoomRelicSynchronizer	EndRelicVoting	method
 S	accesstools	TreasureRoomRelicSynchronizer	RelicsAwarded	field
 S	accesstools	TreasureRoomRelicSynchronizer	VotesChanged	field
+S	accesstools	TreasureRoomRelicSynchronizer	_predictedVote	field
+S	accesstools	TreasureRoomRelicSynchronizer	_rng	field
 S	accesstools	TreasureRoomRelicSynchronizer	_runState	field
+S	accesstools	TreasureRoomRelicSynchronizer	_sharedGrabBag	field
 S	accesstools	TreasureRoomRelicSynchronizer	_votes	field
 S	getmember	-	Clear	method
 S	harmony	ActionQueueSynchronizer	EnqueueHookAction	method
@@ -381,6 +399,7 @@ S	harmony	EventSynchronizer	ChooseOptionForEvent	method
 S	harmony	FoulPotion	OnUse	method
 S	harmony	MerchantRoom	EnterInternal	method
 S	harmony	MoveToMapCoordAction	ExecuteAction	method
+S	harmony	NBlitzScreen	OnEmbarkPressed	method
 S	harmony	NCardPlayQueue	OnActionEnqueued	method
 S	harmony	NCardRewardSelectionScreen	RefreshOptions	method
 S	harmony	NCharacterSelectButton	OnPress	method
@@ -392,6 +411,7 @@ S	harmony	NCreature	get_VfxSpawnPosition	method
 S	harmony	NCrystalSphereScreen	OnProceedButtonPressed	method
 S	harmony	NCustomRunScreen	OnEmbarkPressed	method
 S	harmony	NDailyRunScreen	OnEmbarkPressed	method
+S	harmony	NDreadScreen	OnEmbarkPressed	method
 S	harmony	NEndTurnButton	CallReleaseLogic	method
 S	harmony	NEndTurnButton	OnAboutToSwitchToEnemyTurn	method
 S	harmony	NEndTurnButton	OnTurnStarted	method

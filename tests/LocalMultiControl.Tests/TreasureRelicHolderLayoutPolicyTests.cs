@@ -50,12 +50,32 @@ public class TreasureRelicHolderLayoutPolicyTests
     }
 
     [Test]
-    public void 只有超过四格才需要补建()
+    public void 只有超过原版六套布局才需要补建()
     {
+        // 0.113：treasure_room.tscn 自带 Layout1..Layout6（1~6 格），<= 6 一律交给原版。
+        Assert.That(TreasureRelicHolderLayoutPolicy.VanillaLayoutCount, Is.EqualTo(6));
         Assert.That(TreasureRelicHolderLayoutPolicy.NeedsBackfill(4), Is.False);
-        Assert.That(TreasureRelicHolderLayoutPolicy.NeedsBackfill(5), Is.True);
+        Assert.That(TreasureRelicHolderLayoutPolicy.NeedsBackfill(6), Is.False);
+        Assert.That(TreasureRelicHolderLayoutPolicy.NeedsBackfill(7), Is.True, "第 7 件起没有匹配布局 ⇒ 必须自己建");
         Assert.That(TreasureRelicHolderLayoutPolicy.NeedsBackfill(12), Is.True);
-        Assert.That(TreasureRelicHolderLayoutPolicy.NeedsBackfill(13), Is.False, "超过席位上限不接（走原版 4 格 + 复制兜底）");
+        Assert.That(TreasureRelicHolderLayoutPolicy.NeedsBackfill(24), Is.True, "12 席 × 每人 2 件的最坏情况也要能排");
+    }
+
+    [TestCase(13)]
+    [TestCase(16)]
+    [TestCase(24)]
+    public void 超过十二格时整体缩小仍落在面板内(int relicCount)
+    {
+        IReadOnlyList<TreasureRelicHolderPlacement> placements = TreasureRelicHolderLayoutPolicy.Compute(relicCount);
+
+        Assert.That(placements, Has.Count.EqualTo(relicCount));
+        foreach (TreasureRelicHolderPlacement placement in placements)
+        {
+            Assert.That(Math.Abs(placement.CenterX), Is.LessThanOrEqualTo(340f), $"x={placement.CenterX}");
+            Assert.That(Math.Abs(placement.CenterY), Is.LessThanOrEqualTo(240f), $"y={placement.CenterY}");
+            Assert.That(placement.Scale, Is.LessThanOrEqualTo(TreasureRelicHolderLayoutPolicy.BackfillScale));
+            Assert.That(placement.Scale, Is.GreaterThan(0f));
+        }
     }
 
     [TestCase(5)]

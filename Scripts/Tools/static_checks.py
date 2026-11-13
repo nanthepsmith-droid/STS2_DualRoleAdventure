@@ -261,7 +261,9 @@ def write_baseline(repo: Path, desc, stats) -> Path:
     ] + desc
     p = repo / BASELINE_REL
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # ⚠ 必须显式 newline="\n"：Windows 上 `write_text` 默认把 `\n` 翻译成 CRLF，
+    # 而 `.gitattributes` 声明了 eol=lf ⇒ 刷新基线后 S8 会直接判 FAIL（2026-11-13 r351 踩到）。
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     return p
 
 

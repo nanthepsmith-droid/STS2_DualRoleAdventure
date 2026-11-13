@@ -10,115 +10,146 @@ using MegaCrit.Sts2.Core.Runs;
 namespace LocalMultiControl.Scripts.Runtime;
 
 /// <summary>
-/// 宝箱**遗物格**补齐（12 人扩展）：原版 `treasure_room.tscn` 里只硬编码了
-/// `MultiplayerRelicHolder1..4` 四个格子，而遗物数量 = 玩家数量
-/// （`TreasureRoomRelicSynchronizer.BeginRelicPicking` 里每个玩家各生成一个），
-/// `InitializeRelics` 又只遍历 `_multiplayerHolders` ⇒ 第 5 个遗物起根本没有节点
-/// （看不见、点不到；`DefaultFocusedControl` 的 `_holdersInUse[slotIndex]` 还会越界）。
+/// 宝箱**遗物格布局**补齐（12 人扩展 / 极速模式每人 2 件）。
 ///
-/// <para>在 `NTreasureRoomRelicCollection.InitializeRelics` 的 **Prefix** 里：遗物数 &gt; 4 时补建缺的
-/// 格子（同构实例 = `scenes/ui/treasure_relic_holder.tscn`）并按
-/// <see cref="TreasureRelicHolderLayoutPolicy"/> 重排；4 个及以内**一个值都不动**（原版布局回归契约）。</para>
+/// <para><b>0.113 的原版机制（r350 适配后确认）</b>：`treasure_room.tscn` 里
+/// `RelicCollection/Container` 下固定有 `Layout1..Layout6` 六套布局（各含 1~6 个 `NTreasureRoomRelicHolder`）。
+/// `NTreasureRoomRelicCollection.InitializeRelics` 只做一件事：
+/// `for (i &lt; _holderLayouts.Count) { i == currentRelics.Count - 1 ? 显示 : 隐藏 }`，
+/// 再遍历被显示那套的格子初始化遗物 ⇒ **遗物数 &gt; 6 时一套都不匹配**，`_holdersInUse` 为空：
+/// 一件也看不见、点不到，`DefaultFocusedControl` 返回 null ⇒ 宝箱房间卡住。</para>
 ///
-/// <para>失败只 WARN：退回"只有 4 个格子"的老状态（此时投票仍能推进 —— 所有人只能投 0~3 号，
-/// 由原版 RPS + 安慰奖收口），不会卡死。</para>
+/// <para>r351 之前的实现补的是 `_multiplayerHolders`（0.112 及更早的字段），0.113 已经没有了 ⇒
+/// 12 人局 / 极速模式（每人 2 件）一直在"遗物放不下"。现在改成：`InitializeRelics` 的 **Prefix** 里，
+/// 遗物数 &gt; 6 时按 <see cref="TreasureRelicHolderLayoutPolicy"/> 建一套自己的布局（含 count 个格子），
+/// 并把它塞进 `_holderLayouts[count - 1]` —— 正好是原版挑布局的那一格。</para>
+///
+/// <para>失败只 WARN：退回"原版 6 格"（此时 7+ 件会没人能选，但房间仍可用右下角「跳过」推进）。</para>
 /// </summary>
 internal static class TreasureRelicHoldersRuntime
 {
     private const string HolderSceneInnerPath = "ui/treasure_relic_holder";
     private const string HolderContainerPath = "Container";
-    private const string HolderNamePrefix = "MultiplayerRelicHolder";
+    private const string OurLayoutNamePrefix = "LocalRelicLayout";
 
-    /// <summary>按当前遗物数量补齐并重排宝箱遗物格。幂等（重复调用只是重设同样的值）。</summary>
-    internal static void EnsureHoldersForCurrentRelics(NTreasureRoomRelicCollection collection)
+    private static readonly System.Reflection.FieldInfo? HolderLayoutsField =
+        AccessTools.Field(typeof(NTreasureRoomRelicCollection), "_holderLayouts");
+
+    private static readonly System.Reflection.FieldInfo? RelicContainerField =
+        AccessTools.Field(typeof(NTreasureRoomRelicCollection), "_relicContainer");
+
+    /// <summary>按当前遗物数量准备一套能放下它们的布局。幂等（同一数量复用已建好的那套）。</summary>
+    internal static void EnsureLayoutForCurrentRelics(NTreasureRoomRelicCollection collection)
     {
         try
         {
-            IReadOnlyList<MegaCrit.Sts2.Core.Models.RelicModel>? relics =
-                RunManager.Instance.TreasureRoomRelicSynchronizer.CurrentRelics;
-            int relicCount = relics?.Count ?? 0;
+            int relicCount = RunManager.Instance.TreasureRoomRelicSynchronizer.CurrentRelics?.Count ?? 0;
             if (!TreasureRelicHolderLayoutPolicy.NeedsBackfill(relicCount))
             {
                 return;
             }
 
-            if (AccessTools.Field(typeof(NTreasureRoomRelicCollection), "_multiplayerHolders")?.GetValue(collection)
-                is not List<NTreasureRoomRelicHolder> holders)
+            if (HolderLayoutsField?.GetValue(collection) is not List<Control> layouts)
             {
-                LocalMultiControlLogger.Warn($"宝箱遗物格补齐跳过：拿不到 _multiplayerHolders 字段。relics={relicCount}");
+                LocalMultiControlLogger.Warn($"宝箱遗物布局补齐跳过：拿不到 _holderLayouts 字段。relics={relicCount}");
                 return;
             }
 
             Control? container = collection.GetNodeOrNull<Control>(HolderContainerPath)
-                ?? AccessTools.Field(typeof(NTreasureRoomRelicCollection), "_relicContainer")?.GetValue(collection) as Control;
+                ?? RelicContainerField?.GetValue(collection) as Control;
             if (container == null)
             {
-                LocalMultiControlLogger.Warn($"宝箱遗物格补齐跳过：找不到 {HolderContainerPath} 节点。relics={relicCount}");
+                LocalMultiControlLogger.Warn($"宝箱遗物布局补齐跳过：找不到 {HolderContainerPath} 节点。relics={relicCount}");
                 return;
             }
 
-            SeedVanillaHolders(collection, container, holders);
-
-            int created = 0;
-            while (holders.Count < relicCount)
+            int layoutIndex = relicCount - 1;
+            if (layouts.Count > layoutIndex
+                && layouts[layoutIndex] != null
+                && GodotObject.IsInstanceValid(layouts[layoutIndex])
+                && CountHolders(layouts[layoutIndex]) == relicCount)
             {
-                NTreasureRoomRelicHolder holder = SceneHelper.Instantiate<NTreasureRoomRelicHolder>(HolderSceneInnerPath);
-                holder.Name = $"{HolderNamePrefix}{holders.Count + 1}";
-                holder.Visible = false;
-                holder.AnchorLeft = 0.5f;
-                holder.AnchorTop = 0.5f;
-                holder.AnchorRight = 0.5f;
-                holder.AnchorBottom = 0.5f;
-                container.AddChildSafely(holder);
-                holders.Add(holder);
-                created++;
+                return;
             }
 
-            IReadOnlyList<TreasureRelicHolderPlacement> placements = TreasureRelicHolderLayoutPolicy.Compute(holders.Count);
-            for (int i = 0; i < holders.Count && i < placements.Count; i++)
+            Control layout = EnsureOurLayout(container, relicCount);
+            while (layouts.Count < layoutIndex)
             {
-                ApplyPlacement(holders[i], placements[i]);
+                // 中间位次（极少见：一次跳好几个结果数）用隐藏的空气布局占位 —— 原版只认下标。
+                layouts.Add(CreatePlaceholder(container, layouts.Count));
+            }
+
+            if (layouts.Count == layoutIndex)
+            {
+                layouts.Add(layout);
+            }
+            else
+            {
+                layouts[layoutIndex] = layout;
             }
 
             LocalMultiControlLogger.Info(
-                $"宝箱遗物格已补齐（12 人扩展）: relics={relicCount}, 原版格={TreasureRelicHolderLayoutPolicy.VanillaHolderCount}, " +
-                $"新建={created}, 总格数={holders.Count}, 列数上限={TreasureRelicHolderLayoutPolicy.MaxColumns}, " +
-                $"列距={TreasureRelicHolderLayoutPolicy.GridPitchX}, 行距={TreasureRelicHolderLayoutPolicy.GridPitchY}, " +
-                $"scale={TreasureRelicHolderLayoutPolicy.BackfillScale}");
+                $"宝箱遗物布局已补齐（0.113 布局制）: relics={relicCount}, "
+                + $"原版布局上限={TreasureRelicHolderLayoutPolicy.VanillaLayoutCount}, "
+                + $"插入位次={layoutIndex}, 格数={relicCount}, scale={TreasureRelicHolderLayoutPolicy.Compute(relicCount)[0].Scale:0.00}");
         }
         catch (Exception exception)
         {
             LocalMultiControlLogger.Warn(
-                $"宝箱遗物格补齐失败（退回原版 4 格，投票仍可推进）: {exception.GetType().Name}: {exception.Message}");
+                $"宝箱遗物布局补齐失败（退回原版 6 格，可用「跳过」推进）: {exception.GetType().Name}: {exception.Message}");
         }
     }
 
-    /// <summary>
-    /// 把场景里已有的 `MultiplayerRelicHolder1..4` 认领进 `_multiplayerHolders`
-    /// （正常时机该列表已由 `_Ready` 填好；这里只兜"列表为空/部分缺失"的情况）。
-    /// </summary>
-    private static void SeedVanillaHolders(
-        NTreasureRoomRelicCollection collection,
-        Control container,
-        List<NTreasureRoomRelicHolder> holders)
+    private static Control EnsureOurLayout(Control container, int relicCount)
     {
-        if (holders.Count > 0)
+        string name = $"{OurLayoutNamePrefix}{relicCount}";
+        if (container.GetNodeOrNull<Control>(name) is { } cached && CountHolders(cached) == relicCount)
         {
-            return;
+            return cached;
         }
 
-        // 0.113：原版删掉了 `SingleplayerRelicHolder`（改为每玩家一份 `_holderLayouts` → `HoldersInUse`）。
-        // 这里改成"跳过已经被 original 列表认领的格子"，语义仍是"只认领还没登记的 vanilla 格"。
-        IReadOnlyList<NTreasureRoomRelicHolder> inUse = collection.HoldersInUse;
-        foreach (NTreasureRoomRelicHolder candidate in container.GetChildren().OfType<NTreasureRoomRelicHolder>())
+        Control layout = new()
         {
-            if (inUse.Contains(candidate) || !GodotObject.IsInstanceValid(candidate))
-            {
-                continue;
-            }
+            Name = name,
+            Visible = false,
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        layout.SetAnchorsPreset(Control.LayoutPreset.FullRect);
 
-            holders.Add(candidate);
+        IReadOnlyList<TreasureRelicHolderPlacement> placements = TreasureRelicHolderLayoutPolicy.Compute(relicCount);
+        for (int i = 0; i < placements.Count; i++)
+        {
+            NTreasureRoomRelicHolder holder = SceneHelper.Instantiate<NTreasureRoomRelicHolder>(HolderSceneInnerPath);
+            holder.Name = (i + 1).ToString();
+            holder.Visible = true;
+            holder.AnchorLeft = 0.5f;
+            holder.AnchorTop = 0.5f;
+            holder.AnchorRight = 0.5f;
+            holder.AnchorBottom = 0.5f;
+            ApplyPlacement(holder, placements[i]);
+            layout.AddChildSafely(holder);
         }
+
+        container.AddChildSafely(layout);
+        return layout;
+    }
+
+    private static Control CreatePlaceholder(Control container, int index)
+    {
+        Control placeholder = new()
+        {
+            Name = $"{OurLayoutNamePrefix}Filler{index}",
+            Visible = false,
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        placeholder.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        container.AddChildSafely(placeholder);
+        return placeholder;
+    }
+
+    private static int CountHolders(Control layout)
+    {
+        return layout.GetChildren().OfType<NTreasureRoomRelicHolder>().Count();
     }
 
     private static void ApplyPlacement(NTreasureRoomRelicHolder holder, TreasureRelicHolderPlacement placement)

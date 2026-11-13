@@ -23,10 +23,13 @@ internal readonly record struct TreasureRelicHolderPlacement(
 /// <summary>
 /// 宝箱「遗物格数量 / 摆位」的**纯逻辑**判据（宝箱 12 人扩展）。
 ///
-/// <para><b>根因</b>：原版 <c>treasure_room.tscn</c> 里只有 <c>MultiplayerRelicHolder1..4</c> 四个格
-/// （场景硬编码，和休息区 `Character_1..4` 同一种形态）。`NTreasureRoomRelicCollection.InitializeRelics`
-/// 只遍历 `_multiplayerHolders` ⇒ **第 5 个遗物起根本没有节点**：既看不见也点不到，
-/// 于是 12 人只能抢前 4 个（连 `DefaultFocusedControl` 的 `_holdersInUse[slotIndex]` 也会越界）。</para>
+/// <para><b>根因（0.113 起改版）</b>：原版 <c>treasure_room.tscn</c> 的
+/// <c>RelicCollection/Container</c> 下有 <c>Layout1..Layout6</c> 六套布局（各 1~6 个格子），
+/// <c>InitializeRelics</c> 按 `currentRelics.Count - 1` **选一套**并只显示那套 ⇒
+/// **第 7 个遗物起一套都不匹配**：`_holdersInUse` 为空、一件也看不见点不到
+/// （`DefaultFocusedControl` 直接返回 null ⇒ 房间卡在"选遗物"里）。
+/// 12 人局（12 件遗物）与极速模式（每人 2 件）都会越界 ⇒ 由 <c>TreasureRelicHoldersRuntime</c>
+/// 在 0.113 的**布局制**下补一套自己排的布局。</para>
 ///
 /// <para><b>布局口径（用户 2026-10-21 第二轮反馈后定稿）</b>：第一版排成"两排 × 6 列"，横向铺到 ±750，
 /// **最左边那几件压到玩家状态条底下点不到** ⇒ 改成**方阵**：列数 = <c>ceil(sqrt(n))</c>（上限 4），
@@ -37,11 +40,21 @@ internal readonly record struct TreasureRelicHolderPlacement(
 /// </summary>
 internal static class TreasureRelicHolderLayoutPolicy
 {
-    /// <summary>原版场景里写死的遗物格数量（`MultiplayerRelicHolder1..4`）。</summary>
+    /// <summary>bench（4 格布局）里写死的遗物格数量 —— 见 <see cref="Vanilla"/>。</summary>
     internal const int VanillaHolderCount = 4;
 
-    /// <summary>本 mod 的席位上限（本地多控最多 12 人）⇒ 最多需要 12 个格子。</summary>
-    internal const int MaxHolderCount = 12;
+    /// <summary>
+    /// 0.113 原版**能显示**的最大遗物数：`treasure_room.tscn` 里 `RelicCollection/Container` 下有
+    /// `Layout1..Layout6` 六套布局（各含 1~6 个格子），`InitializeRelics` 按 `currentRelics.Count - 1`
+    /// 选其中一套 ⇒ 超过 6 个遗物**一套都不匹配**，`_holdersInUse` 为空、一件也点不到（12 人局旧实现已踩）。
+    /// </summary>
+    internal const int VanillaLayoutCount = 6;
+
+    /// <summary>
+    /// 宝箱遗物数的**最坏情况**：本 mod 席位上限 12 人 × 极速「每人 2 件」= 24。
+    /// 只作口径说明（不再用来截断遗物池，见 r353）。
+    /// </summary>
+    internal const int MaxHolderCount = 24;
 
     /// <summary>一个格子的逻辑边长（原版 offset 差：136）。</summary>
     internal const float HolderSize = 136f;
@@ -70,12 +83,18 @@ internal static class TreasureRelicHolderLayoutPolicy
     /// <summary>原版四个格子的摆位（只读，供回归对照）。</summary>
     internal static IReadOnlyList<TreasureRelicHolderPlacement> VanillaPlacements => Vanilla;
 
-    /// <summary>需不需要补建格子：5~12 个遗物才需要（4 个及以内一律不动原版布局）。</summary>
-    internal static bool NeedsBackfill(int relicCount) => relicCount > VanillaHolderCount && relicCount <= MaxHolderCount;
+    /// <summary>
+    /// 需不需要自己建一套布局：**超过 <see cref="VanillaLayoutCount"/>（6）才需要**。
+    /// 0.113 原版自带 1~6 格六套布局，<= 6 一律不碰（保持原版布局回归契约）。
+    /// </summary>
+    internal static bool NeedsBackfill(int relicCount) => relicCount > VanillaLayoutCount;
 
     /// <summary>
     /// 算出 <paramref name="relicCount"/> 个格子的摆位。
     /// 4 个及以内返回原版原值；超过 4 个按上面的方阵口径铺开。
+    ///
+    /// ⚠ 调用点只在「0.113 原版布局不够用」（&gt; 6）时才用它建格子，5/6 走原版 `Layout5/6`；
+    /// 13~24（12 席 × 每人 2 件的最坏情况）按行数等比缩，保证整块仍落在原版面板内。
     /// </summary>
     internal static IReadOnlyList<TreasureRelicHolderPlacement> Compute(int relicCount)
     {
@@ -94,6 +113,12 @@ internal static class TreasureRelicHolderLayoutPolicy
         int columns = Math.Min(MaxColumns, (int)Math.Ceiling(Math.Sqrt(relicCount)));
         int rows = (int)Math.Ceiling(relicCount / (double)columns);
 
+        // 行数超过原版口径（3 行 = ±190）时整体等比缩小，否则大数量会把格子顶出面板。
+        float shrink = Math.Min(1f, 3f / rows);
+        float pitchX = GridPitchX * shrink;
+        float pitchY = GridPitchY * shrink;
+        float scale = BackfillScale * shrink;
+
         // 每行平均分（7 ⇒ 3/2/2 而不是 4/3/0），避免出现"只剩一个遗物孤零零挂在最后一行"。
         int basePerRow = relicCount / rows;
         int extra = relicCount % rows;
@@ -103,18 +128,18 @@ internal static class TreasureRelicHolderLayoutPolicy
         for (int row = 0; row < rows; row++)
         {
             int inThisRow = basePerRow + (row < extra ? 1 : 0);
-            float centerY = (row - (rows - 1) * 0.5f) * GridPitchY;
-            float half = HolderSize * 0.5f * BackfillScale;
+            float centerY = (row - (rows - 1) * 0.5f) * pitchY;
+            float half = HolderSize * 0.5f * scale;
             for (int column = 0; column < inThisRow; column++)
             {
-                float centerX = (column - (inThisRow - 1) * 0.5f) * GridPitchX;
+                float centerX = (column - (inThisRow - 1) * 0.5f) * pitchX;
                 placements[seat] = new TreasureRelicHolderPlacement(
                     seat,
                     centerX - half,
                     centerY - half,
                     centerX + half,
                     centerY + half,
-                    BackfillScale);
+                    scale);
                 seat++;
             }
         }

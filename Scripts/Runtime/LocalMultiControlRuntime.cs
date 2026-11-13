@@ -274,6 +274,8 @@ internal static class LocalMultiControlRuntime
         _tickPlayableMemoRound = -1;
         LocalPerfProbe.Reset("run-cleanup");
         LocalMerchantInventoryRuntime.Clear();
+        // r352 极速宝箱「每人 2 件」的两阶段投票状态（挂在 synchronizer 实例上，退局必须清）。
+        LocalMultiControl.Scripts.Patch.BlitzTreasureDoublePickRuntime.Reset("run-cleanup");
         LocalRestSiteSeatBubble.Reset("run-cleanup");
         // 瓦库四功能 · 我们联合：「本场战斗已发动」的记忆与流程中的防重入标记（R5 生命周期契约）。
         LocalWakuuUniteRuntime.ResetForRun("run-cleanup");

@@ -5,9 +5,9 @@ using MegaCrit.Sts2.Core.Nodes.Screens.TreasureRoomRelic;
 namespace LocalMultiControl.Scripts.Patch;
 
 /// <summary>
-/// 宝箱遗物格补齐（12 人扩展）：必须在 `InitializeRelics` **之前**补好 `_multiplayerHolders`，
-/// 否则原版那个 `for (i &lt; _multiplayerHolders.Count)` 只会上 4 个格子 ⇒ 第 5 个遗物起看不见也点不到。
-/// 4 个及以内一律不碰（原版布局回归契约），细节见 <see cref="TreasureRelicHoldersRuntime"/>。
+/// 宝箱遗物格补齐（12 人扩展 / 极速模式每人 2 件）：必须在 `InitializeRelics` **之前**把能放下
+/// 当前遗物数的那套布局准备好（0.113 是 `Layout1..6` 布局制，按 `relics-1` 挑一套 ⇒ 7 件起没有可用布局）。
+/// 6 件及以内一律不碰（原版布局回归契约），细节见 <see cref="TreasureRelicHoldersRuntime"/>。
 /// </summary>
 [HarmonyPatch(typeof(NTreasureRoomRelicCollection), nameof(NTreasureRoomRelicCollection.InitializeRelics))]
 internal static class NTreasureRoomRelicCollectionHoldersPatch
@@ -20,6 +20,6 @@ internal static class NTreasureRoomRelicCollectionHoldersPatch
             return;
         }
 
-        TreasureRelicHoldersRuntime.EnsureHoldersForCurrentRelics(__instance);
+        TreasureRelicHoldersRuntime.EnsureLayoutForCurrentRelics(__instance);
     }
 }
