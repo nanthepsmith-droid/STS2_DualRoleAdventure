@@ -504,8 +504,8 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         AddToggleRow(column,
             LocalModText.Select("商店自动删牌", "Auto Card Removal at Shop"),
             LocalModText.Select(
-                "默认关。需「商店自动买卡（总开关）」开启。金币保底允许时就替瓦库买一次删牌服务并自动挑一张删掉：开「智能选牌优先级」时按删牌优先级挑（诅咒 > 状态 > 任务 > 打击 > 基础防御 > 其余），否则按「战斗内选牌策略」。",
-                "Off by default; requires the \"Auto-Buy at Shop\" master switch. Buys the card-removal service once (when the gold floor allows) and auto-picks a card: with \"Smart Pick Priority\" on it follows the removal priority (Curse > Status > Quest > Strike > Defend > rest), otherwise the in-combat card-pick strategy."),
+                "默认关。需「商店自动买卡（总开关）」开启。金币保底允许时就替瓦库买一次删牌服务并自动挑一张删掉：开「智能选牌优先级」时按删牌优先级挑（诅咒 > 状态 > 打击 > 基础防御 > 其余 > 任务牌），否则按「战斗内选牌策略」。",
+                "Off by default; requires the \"Auto-Buy at Shop\" master switch. Buys the card-removal service once (when the gold floor allows) and auto-picks a card: with \"Smart Pick Priority\" on it follows the removal priority (Curse > Status > Strike > Defend > rest > Quest), otherwise the in-combat card-pick strategy."),
             () => LocalWakuuAutopilotConfig.ShopAssistBuyRemoval,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("shopAssistBuyRemoval", value));
         column.AddChild(CreateStrategyRow(

@@ -234,7 +234,7 @@ internal static class WakuuEventEnchantAutoAnswerPatch
     /// <summary>
     /// 牌库删除选牌（FromDeckForRemoval 专用入口，FieldOfManSizedHoles / DoorsOfLightAndDark /
     /// LuminousChoir / Wellspring / 商店删牌 / 各删牌遗物等全部走这里）。
-    /// 拦截后按 smartPick 的"删除优先级表"作答（优先删 诅咒→状态→任务→打击→防御）。
+    /// 拦截后按 smartPick 的"删除优先级表"作答（优先删 诅咒→状态→打击→防御→其余；**任务牌最后**）。
     /// </summary>
     [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromDeckForRemoval), new[]
     {
