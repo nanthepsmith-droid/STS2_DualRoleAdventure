@@ -11,6 +11,8 @@ using MegaCrit.Sts2.Core.Nodes.Multiplayer;
 using MegaCrit.Sts2.Core.Nodes.Screens.DailyRun;
 using MegaCrit.Sts2.Core.Nodes.Screens.CustomRun;
 using MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect;
+using MegaCrit.Sts2.Core.Nodes.Screens.Dread;
+using MegaCrit.Sts2.Core.Nodes.Screens.Blitz;
 using MegaCrit.Sts2.Core.Runs;
 
 namespace LocalMultiControl.Scripts.Patch;
@@ -409,7 +411,12 @@ internal static class LocalRemoteLobbyPlayerSwitchUi
             // Daily 页也认（r156 修正）：每日大厅同样有 %RemotePlayerContainer（NRemoteLobbyPlayer），
             // 但其父链上没有 NCharacterSelectScreen / NCustomRunScreen —— 之前不在白名单里，
             // 导致每日页既不显示「切换编辑席位」按钮也不显示「瓦库托管」勾选框。
-            if (current is NCharacterSelectScreen || current is NCustomRunScreen || current is NDailyRunScreen)
+            // r351：0.113 两个新模式（恐惧 / 闪电战）是独立页面类型，同样要认。
+            if (current is NCharacterSelectScreen
+                || current is NCustomRunScreen
+                || current is NDailyRunScreen
+                || current is NDreadScreen
+                || current is NBlitzScreen)
             {
                 return current;
             }

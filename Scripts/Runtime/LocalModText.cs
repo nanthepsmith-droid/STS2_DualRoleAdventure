@@ -43,6 +43,25 @@ internal static class LocalModText
         "已进入本地多角色每日挑战：按 +/- 调整人数（2~4）",
         "Local daily run enabled: use +/- to set player count (2-4)");
 
+    /// <summary>联机菜单「单人多角色」卡片下方的小按钮：本地多角色恐惧模式（官方恐惧入口保持原样）。</summary>
+    public static string LocalDreadSelfCoopButton => Select("本地·恐惧", "Local Dread Run");
+
+    /// <summary>联机菜单「单人多角色」卡片下方的小按钮：本地多角色闪电战（官方闪电战入口保持原样）。</summary>
+    public static string LocalBlitzSelfCoopButton => Select("本地·闪电战", "Local Blitz Run");
+
+    public static string EnteredDreadSelfCoopHint => Select(
+        "已进入本地多角色恐惧模式：按 +/- 调整人数",
+        "Local Dread run enabled: use +/- to set player count");
+
+    public static string EnteredBlitzSelfCoopHint => Select(
+        "已进入本地多角色闪电战：按 +/- 调整人数",
+        "Local Blitz run enabled: use +/- to set player count");
+
+    /// <summary>极速模式宝箱第二阶段（每人第二件遗物）的提示。</summary>
+    public static string BlitzTreasureSecondPick => Select(
+        "宝箱第二轮：每人再选一件遗物",
+        "Chest round 2: everyone picks one more relic");
+
     public static string GhostHandsOn => Select(
         "队友手牌已显示（Ctrl+方向键 调整位置，F8 关闭）",
         "Teammate hands shown (Ctrl+Arrows to move, F8 to hide)");

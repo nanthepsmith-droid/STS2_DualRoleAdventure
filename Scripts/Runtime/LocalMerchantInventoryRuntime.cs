@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
+using MegaCrit.Sts2.Core.Assets;
 using MegaCrit.Sts2.Core.Entities.Merchant;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
 using MegaCrit.Sts2.Core.Rooms;
@@ -83,9 +86,12 @@ internal static class LocalMerchantInventoryRuntime
 
         if (runState.GameMode == GameMode.Blitz)
         {
-            // 0.113：Blitz 商店是另一套界面（NBlitzMerchantRoom + 背景资源），本地多控暂不重建界面，
-            // 仍按前台玩家的库存显示（本函数的用途只是"切人后把界面切到该角色的库存"）。
-            LocalMultiControlLogger.Info($"Blitz 商店不重建界面（按前台玩家库存显示）: player={playerId}");
+            // 0.113：Blitz 商店是另一套界面（NBlitzMerchantRoom + 背景资源），库存里只有 `BlitzEntries`
+            // （每人 3 次选择）。界面的 `Inventory.Initialize(...)` 只允许调用一次、且 `_Ready` 时按
+            // 「进店时的前台」`GetLocalInventory()` 绑定 ⇒ 切席位只能整块换节点（与普通商店同一手法），
+            // 否则第二个角色看到的是前一个人的 3 次选择。换节点前先把这个角色条目用到的资源预载一遍
+            // （不同玩家的 Blitz 条目类型可能不同，缺预载会在 `NBlitzMerchantSlot` 取图标时抛）。
+            TaskHelper.RunSafely(RebuildBlitzShopAsync(runState, playerId, inventory));
             return;
         }
 
@@ -98,6 +104,35 @@ internal static class LocalMerchantInventoryRuntime
 
         NRun.Instance?.SetCurrentRoom(refreshedRoomNode);
         LocalMultiControlLogger.Info($"商店界面已切换到当前角色库存: player={playerId}");
+    }
+
+    private static async Task RebuildBlitzShopAsync(RunState runState, ulong playerId, MerchantInventory inventory)
+    {
+        try
+        {
+            BackgroundAssets backgroundAssets = runState.Act.GenerateBackgroundAssets(
+                NCombatRoom.GenerateBackgroundRngForCurrentPoint(runState));
+            await PreloadManager.LoadRoomBlitzMerchantAssets(backgroundAssets, inventory.BlitzEntries);
+            if (!RunManager.Instance.IsInProgress || runState.CurrentRoom is not MerchantRoom)
+            {
+                return;
+            }
+
+            NBlitzMerchantRoom? refreshedRoomNode = NBlitzMerchantRoom.Create(runState.Players, backgroundAssets);
+            if (refreshedRoomNode == null)
+            {
+                return;
+            }
+
+            NRun.Instance?.SetCurrentRoom(refreshedRoomNode);
+            LocalMultiControlLogger.Info($"Blitz 商店界面已切换到当前角色库存: player={playerId}");
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn(
+                $"Blitz 商店界面切换失败(保持当前界面): player={playerId}, "
+                + $"error={exception.GetType().Name}: {exception.Message}");
+        }
     }
 
     private static MerchantInventory BuildDualPoolInventory(Player player)

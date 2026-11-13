@@ -84,6 +84,9 @@ internal static class PatchDomainMap
             ["RestSiteSynchronizerChooseLocalOptionPatch"] = PatchDomain.Core,
             ["TreasureRoomRelicSynchronizerPatch"] = PatchDomain.Core,
             ["TreasureRoomRelicSynchronizerBeginPatch"] = PatchDomain.Core,
+            // r352 极速模式宝箱「每人 2 件」：池子补齐 + 两阶段投票后一次性派发
+            ["BlitzTreasureDoublePickPatch"] = PatchDomain.Core,
+            ["BlitzTreasurePoolTopUpPatch"] = PatchDomain.Core,
             ["OneOffSynchronizerSpoilsMapPatch"] = PatchDomain.Core,
             ["RewardsSetSynchronizerSelectLocalRewardPatch"] = PatchDomain.Core,
             ["SynchronizationOwnershipLogPatch"] = PatchDomain.Core,
@@ -159,6 +162,16 @@ internal static class PatchDomainMap
             ["NDailyRunScreenLocalPlayersProcessPatch"] = PatchDomain.Lobby,
             ["NDailyRunScreenLocalPlayersClosePatch"] = PatchDomain.Lobby,
             ["NDailyRunEmbarkGuardPatch"] = PatchDomain.Lobby,
+            // 0.113 两个新模式（Dread 恐惧 / Blitz 闪电战）的本地多控接入（r351）：
+            // 官方入口保持原样，本机多角色改由联机菜单注入的「本地·恐惧 / 本地·闪电战」小按钮进入。
+            ["NDreadScreenLocalSeatsOpenPatch"] = PatchDomain.Lobby,
+            ["NDreadScreenLocalSeatsProcessPatch"] = PatchDomain.Lobby,
+            ["NDreadScreenLocalSeatsClosePatch"] = PatchDomain.Lobby,
+            ["NDreadEmbarkGuardPatch"] = PatchDomain.Lobby,
+            ["NBlitzScreenLocalSeatsOpenPatch"] = PatchDomain.Lobby,
+            ["NBlitzScreenLocalSeatsProcessPatch"] = PatchDomain.Lobby,
+            ["NBlitzScreenLocalSeatsClosePatch"] = PatchDomain.Lobby,
+            ["NBlitzEmbarkGuardPatch"] = PatchDomain.Lobby,
 
             // ============ Combat：战斗流程 ============
             ["CardManualPlayContextPatch"] = PatchDomain.Combat,

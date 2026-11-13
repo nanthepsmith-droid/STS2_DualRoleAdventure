@@ -20,12 +20,14 @@ namespace LocalMultiControl.Scripts.Patch;
 /// 联机菜单入口注入（r158 定型：**零劫持**）。
 ///
 /// 结构：
-/// - 一行大卡 = 官方「标准 / 每日 / 自定义」三张 + 我们的「单人多角色」一张（排在最左）；
-/// - 该行下方居中挂一行小按钮：`本地·自定义模式` / `本地·每日挑战` —— 分别调用
-///   <see cref="LocalCustomSelfCoopEntry"/> / <see cref="LocalDailySelfCoopEntry"/>。
+/// - 一行大卡 = 官方「标准 / 每日 / 闪电战 / 恐惧 / 自定义」五张（0.113 起；未解锁的会被原版隐藏）
+///   + 我们的「单人多角色」一张（排在最左）；
+/// - 该行下方居中挂一行小按钮：`本地·自定义模式` / `本地·每日挑战` / `本地·恐惧` / `本地·闪电战` ——
+///   分别调用 <see cref="LocalCustomSelfCoopEntry"/> / <see cref="LocalDailySelfCoopEntry"/> /
+///   <see cref="LocalDreadSelfCoopEntry"/> / <see cref="LocalBlitzSelfCoopEntry"/>。
 ///
 /// 为什么改成这样（2026-09-27 用户反馈「装了我们这个 mod 就不能玩原版联机每日/自定义」）：
-/// 官方三张卡全部保持原版行为（点官方「每日挑战」= 原版多人联机每日；点官方「自定义」= 原版自定义多人），
+/// 官方五张卡全部保持原版行为（点官方「每日挑战」= 原版多人联机每日；点官方「恐惧」= 原版恐惧多人），
 /// 本机多角色只从我们自己的卡片/小按钮进 —— mod 与官方联机**并存**，不再"接管"任何官方入口。
 /// </summary>
 [HarmonyPatch(typeof(NMultiplayerHostSubmenu), nameof(NMultiplayerHostSubmenu._Ready))]
@@ -35,7 +37,18 @@ internal static class NMultiplayerHostSubmenuPatch
     internal const string ModePanelName = "LocalSelfCoopModePanel";
     internal const string CustomModeButtonName = "LocalSelfCoopCustomButton";
     internal const string DailyModeButtonName = "LocalSelfCoopDailyButton";
+    internal const string DreadModeButtonName = "LocalSelfCoopDreadButton";
+    internal const string BlitzModeButtonName = "LocalSelfCoopBlitzButton";
     internal const string TrackerName = "LocalSelfCoopModeTracker";
+
+    /// <summary>小按钮条的排列顺序（未解锁的模式按钮会被隐藏，排列时跳过）。</summary>
+    private static readonly string[] ModeButtonNames =
+    {
+        CustomModeButtonName,
+        DailyModeButtonName,
+        DreadModeButtonName,
+        BlitzModeButtonName
+    };
 
     private const float CardGap = 26f;
     private const float MinCardGap = 6f;
@@ -126,6 +139,7 @@ internal static class NMultiplayerHostSubmenuPatch
         if (container != null)
         {
             EnsureModeButtons(submenu, container, allCards);
+            SyncModeButtonVisibility(submenu, container);
         }
     }
 
@@ -166,9 +180,12 @@ internal static class NMultiplayerHostSubmenuPatch
     }
 
     /// <summary>
-    /// 卡片行下方的小按钮条：`本地·自定义模式` / `本地·每日挑战`。
+    /// 卡片行下方的小按钮条：`本地·自定义模式` / `本地·每日挑战` / `本地·恐惧` / `本地·闪电战`。
     /// 位置由 <see cref="LocalSelfCoopMenuButtonsTracker"/> 每帧跟随卡片行（居中 + 贴底），
     /// 这样即使官方容器重排卡片也不会错位。
+    ///
+    /// 恐惧 / 闪电战两个新模式的按钮**跟随官方卡片的「可见 + 可用」状态**（见
+    /// <see cref="SyncModeButtonVisibility"/>）：官方没解锁时我们不抢先开一条绕过解锁的入口。
     /// </summary>
     private static void EnsureModeButtons(NMultiplayerHostSubmenu submenu, Control container, List<NSubmenuButton> allCards)
     {
@@ -197,15 +214,78 @@ internal static class NMultiplayerHostSubmenuPatch
             Callable.From<NClickableControl>((_) => LocalDailySelfCoopEntry.Enter(submenu)));
         panel.AddChildSafely(dailyButton);
 
-        customButton.Position = Vector2.Zero;
-        dailyButton.Position = new Vector2(ModeButtonSize.X + ModeButtonGap, 0f);
+        LocalSimpleTextButton dreadButton = CreateModeButton(DreadModeButtonName, LocalModText.LocalDreadSelfCoopButton);
+        dreadButton.Connect(NClickableControl.SignalName.Released,
+            Callable.From<NClickableControl>((_) => LocalDreadSelfCoopEntry.Enter(submenu)));
+        panel.AddChildSafely(dreadButton);
+
+        LocalSimpleTextButton blitzButton = CreateModeButton(BlitzModeButtonName, LocalModText.LocalBlitzSelfCoopButton);
+        blitzButton.Connect(NClickableControl.SignalName.Released,
+            Callable.From<NClickableControl>((_) => LocalBlitzSelfCoopEntry.Enter(submenu)));
+        panel.AddChildSafely(blitzButton);
+
+        LayoutModeButtons(panel);
         container.AddChildSafely(panel);
 
         LocalSelfCoopMenuButtonsTracker tracker = new() { Name = TrackerName };
         tracker.Initialize(container, panel, allCards, ModeButtonGap, ModePanelGapBelowCards);
         container.AddChildSafely(tracker);
 
-        LocalMultiControlLogger.Info("联机菜单已注入本地多角色模式按钮：本地·自定义模式 / 本地·每日挑战。");
+        LocalMultiControlLogger.Info(
+            "联机菜单已注入本地多角色模式按钮：本地·自定义模式 / 本地·每日挑战 / 本地·恐惧 / 本地·闪电战。");
+    }
+
+    /// <summary>
+    /// 新模式两个按钮的可见性 = 官方对应卡片的「可见 + 可用」（0.113：恐惧未解锁时官方卡 `Visible=false`，
+    /// 闪电战未解锁时只是 `SetEnabled(false)`）。隐藏后重排一次，避免留空位。
+    /// </summary>
+    private static void SyncModeButtonVisibility(NMultiplayerHostSubmenu submenu, Control container)
+    {
+        Control? panel = container.GetNodeOrNull<Control>(ModePanelName);
+        if (panel == null)
+        {
+            return;
+        }
+
+        SetModeButtonVisible(panel, DreadModeButtonName, IsOfficialEntryAvailable(submenu, "DreadButton"));
+        SetModeButtonVisible(panel, BlitzModeButtonName, IsOfficialEntryAvailable(submenu, "BlitzButton"));
+        LayoutModeButtons(panel);
+    }
+
+    private static bool IsOfficialEntryAvailable(Node root, string name)
+    {
+        NSubmenuButton? button = FindButton(root, name);
+        return button != null && GodotObject.IsInstanceValid(button) && button.Visible && button.IsEnabled;
+    }
+
+    private static void SetModeButtonVisible(Control panel, string name, bool visible)
+    {
+        if (panel.GetNodeOrNull<LocalSimpleTextButton>(name) is not { } button)
+        {
+            return;
+        }
+
+        if (button.Visible != visible)
+        {
+            button.Visible = visible;
+            LocalMultiControlLogger.Info($"本地多角色模式按钮可见性已同步: name={name}, visible={visible}");
+        }
+    }
+
+    /// <summary>按「当前可见」的小按钮从左到右排一遍（先隐藏后重排即可消掉空位）。</summary>
+    private static void LayoutModeButtons(Control panel)
+    {
+        float x = 0f;
+        foreach (string name in ModeButtonNames)
+        {
+            if (panel.GetNodeOrNull<LocalSimpleTextButton>(name) is not { } button || !button.Visible)
+            {
+                continue;
+            }
+
+            button.Position = new Vector2(x, 0f);
+            x += ModeButtonSize.X + ModeButtonGap;
+        }
     }
 
     private static LocalSimpleTextButton CreateModeButton(string name, string text)
@@ -438,14 +518,46 @@ internal sealed partial class LocalSelfCoopMenuButtonsTracker : Node
             return;
         }
 
-        float panelWidth = _panel.Size.X;
+        float panelWidth = ResolvePanelWidth();
         if (panelWidth <= 1f)
         {
-            panelWidth = 220f * 2f + _buttonGap;
+            return;
         }
 
         float centerX = (minX + maxX) * 0.5f;
         _panel.Position = new Vector2(centerX - panelWidth * 0.5f, maxBottom + _gapBelowCards);
+    }
+
+    /// <summary>
+    /// 面板实际宽度 = 可见小按钮宽度之和 + 间隙（面板本身是裸 <see cref="Control"/>，不会跟着子节点自适应）。
+    /// 0.113 起小按钮可能只有 2~4 个（新的两个模式未解锁时隐藏），所以必须**按当前可见集合**算。
+    /// </summary>
+    private float ResolvePanelWidth()
+    {
+        if (_panel == null || !GodotObject.IsInstanceValid(_panel))
+        {
+            return 0f;
+        }
+
+        float width = 0f;
+        int visibleCount = 0;
+        foreach (Node child in _panel.GetChildren())
+        {
+            if (child is not Control control || !control.Visible)
+            {
+                continue;
+            }
+
+            width += control.Size.X;
+            visibleCount++;
+        }
+
+        if (visibleCount > 0)
+        {
+            return width + _buttonGap * (visibleCount - 1);
+        }
+
+        return _panel.Size.X;
     }
 }
 
