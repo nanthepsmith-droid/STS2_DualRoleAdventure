@@ -46,7 +46,8 @@ public class PriorityPickingTests
     }
 
     // ---------------------------------------------------------------
-    // Remove（消耗/删除）：Curse > Status > Quest > Strike > 基础防御 > 其余
+    // Remove（消耗/删除）：Curse > Status > Strike > 基础防御 > 其余 > Quest
+    // （r353 用户口径：瓦库「尽量不删任务牌」⇒ 任务牌从第三位挪到**最后**）
     // ---------------------------------------------------------------
 
     [Test]
@@ -77,7 +78,20 @@ public class PriorityPickingTests
         };
 
         List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Remove, kinds);
-        Assert.That(ranked, Is.EqualTo(new[] { 1, 2, 5, 4, 3, 0 }));
+        Assert.That(ranked, Is.EqualTo(new[] { 1, 2, 4, 3, 0, 5 }));
+    }
+
+    [Test]
+    public void Remove_任务牌排到最后_有普通牌时绝不先删任务牌()
+    {
+        List<WakuuCardKind> kinds = new()
+        {
+            K("NEOW_QUEST", QST),        // Quest → 最低
+            K("FLAME_BARRIER", SKL),     // Other
+        };
+
+        List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Remove, kinds);
+        Assert.That(ranked, Is.EqualTo(new[] { 1, 0 }), "先删普通牌，任务牌最后才动");
     }
 
     [Test]

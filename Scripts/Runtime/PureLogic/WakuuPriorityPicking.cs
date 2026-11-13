@@ -210,14 +210,16 @@ internal static class WakuuPriorityPicking
     {
         return scenario switch
         {
-            // 消耗/删除：坏牌优先被删（奇巧是正面牌，不优先消耗）
+            // 消耗/删除：坏牌优先被删（奇巧是正面牌，不优先消耗）。
+            // r353（用户口径「瓦库尽量不删任务牌」）：任务牌排到**最后**（0 < 其余 1）——
+            // 删除/消耗是不可逆的，任务牌删掉可能断掉线索，宁可先删一张普通牌。
             WakuuPickScenario.Remove => kind switch
             {
                 WakuuCardKind.Curse => 6,
                 WakuuCardKind.Status => 5,
-                WakuuCardKind.Quest => 4,
                 WakuuCardKind.BasicStrike => 3,
                 WakuuCardKind.BasicDefend => 2,
+                WakuuCardKind.Quest => 0,
                 _ => 1,
             },
 
