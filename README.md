@@ -10,6 +10,7 @@ A **Slay the Spire 2** mod that turns the official online multiplayer into a *lo
 
 - Local multiplayer party of 2–12 characters, started from the normal multiplayer menu (`Multiplayer → Host → Local Multi-Control`)
 - **Local multi-character Daily Climb** (v1.43): via the "Local Daily Run" button below the multiplayer card row — up to 4 seats, characters assigned from the date, never uploads to the Daily leaderboard
+- **Local multi-character Dread / Blitz** (v1.48): via the "Local Dread Run" / "Local Blitz Run" buttons below the card row; Blitz chests hand out two relics per player across two picking rounds, and shops are per character
 - **Co-op Bots compatibility** (v1.43, optional): coexists with the online-AI-teammates mod; choose which seats the online bots take
 - Instant character switching in and out of combat: `Tab` / `Shift+Tab` (legacy `[` `]` `R` `T` `/` still work)
 - Per-character everything: decks, energy, gold, potions, relics, event choices, reward claims
@@ -22,7 +23,7 @@ See the **[Player Guide](PLAYER_GUIDE.md)** ([简体中文](PLAYER_GUIDE.zh-CN.m
 
 ## Compatibility
 
-- Currently built against game version **v0.111.0** (August 2026). When the game patches, expect a short turnaround for a compatibility release — that is this fork's primary job.
+- Currently built against game version **v0.113.0** (November 2026). When the game patches, expect a short turnaround for a compatibility release — that is this fork's primary job.
 - **Oddmelt**: compatible since v1.33 — a built-in guard skips Oddmelt's hidden Gauge input cards during combat UI rebuilds (previously these broke character switching); no separate fix mod is needed.
 
 ### ⚠ Performance: with "content-heavy" third-party mods, **do not run large battles**

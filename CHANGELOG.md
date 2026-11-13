@@ -2,7 +2,9 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
-## [Unreleased]
+## [1.48.0] - 2026-11-13
+
+> ⚠ **这一版只支持游戏 0.113.0**（0.111 / 0.112 请继续用 v1.47.0）。
 
 ### 本地多角色：恐惧 / 闪电战 两个新模式（r351~r353；2026-11-13）
 

@@ -13,13 +13,15 @@ Control 2–12 characters by yourself in Slay the Spire 2's multiplayer mode, on
 
 ## Starting a run
 
-1. Main menu → **Multiplayer → Host**. This page has 4 cards: **Local Multi-Control (单人多角色)** /
-   Standard / Daily / Custom. The last three are the **official online modes** and still work exactly as
-   vanilla when the mod is installed (the mod coexists — it never takes over an official entry).
-2. Three ways to start a local multi-character run:
+1. Main menu → **Multiplayer → Host**. This page shows **our card plus the five official ones** (Standard /
+   Daily / Blitz / Dread / Custom). The official cards are the **vanilla online modes** and still work exactly
+   as before when the mod is installed (the mod coexists — it never takes over an official entry).
+2. Five ways to start a local multi-character run:
    - **"Local Multi-Control" (单人多角色) card** — a normal local run (2–12 characters);
    - **"Local Custom Run" (本地·自定义模式) small button** below the card row — local run with seeds and custom rules;
-   - **"Local Daily Run" (本地·每日挑战) small button** — local multi-character Daily Climb (max 4 seats, see below).
+   - **"Local Daily Run" (本地·每日挑战) small button** — local multi-character Daily Climb (max 4 seats, see below);
+   - **"Local Dread Run" (本地·恐惧) / "Local Blitz Run" (本地·闪电战) small buttons** — local multi-character
+     runs of the two new modes (see below; these buttons only appear once the official mode is unlocked).
 3. In character select:
    - **`+` / `-`** — add/remove local characters (2–12; duplicates allowed)
    - **`Tab` / `Shift+Tab`** — switch which character you're editing
@@ -45,6 +47,20 @@ vanilla online flow):
 - **Works online and offline** — online it uses the game's time server; offline it falls back to local
   time (entering takes a little longer, which is normal).
 - The Daily screen supports Vakuu hosting checkboxes, the `-/+` player-count panel and seat switching.
+
+### Local Dread / Blitz runs
+
+Enter via the **"Local Dread Run" (本地·恐惧) / "Local Blitz Run" (本地·闪电战)** buttons under the card row
+(the official "Dread" / "Blitz" cards above them keep the vanilla flow):
+
+- **Up to 12 seats**, same as a normal local run; both screens have the `-/+` panel, seat switching and Vakuu
+  hosting checkboxes.
+- **Characters are picked by hand** (multiplayer Dread forbids random/rotating characters; Blitz allows Random).
+- **Blitz chests give two relics per player**: you will see `players × 2` relics and pick one in each of two
+  rounds — after round one, a "Chest round 2" banner appears and **the relics already taken are greyed out**;
+  with many seats the grid shrinks automatically so everything still fits.
+- **Blitz shops are per character**: switch to a seat and you see that seat's own three choices (same as
+  vanilla multiplayer).
 
 ## Vakuu (AI auto-play)
 
@@ -155,7 +171,7 @@ via the configured Vakuu players and re-grants the relic. Turning this off resto
   potions additionally require a free potion slot.
 - **Auto card removal** (off by default, same master switch): when the gold floor allows it, Vakuu buys the
   shop's card-removal service once and removes one card by pick priority (with "smart pick priority" on:
-  Curse > Status > Quest > Strike > basic Defend > the rest).
+  Curse > Status > Strike > basic Defend > the rest > Quest cards last).
 - With "Personal-stats decision assist" on and at least 3 finished runs that bought something, relics and
   potions also consult **your own** win-rate delta (runs where you bought it vs. runs where you did not):
   a **negative delta vetoes the purchase** (veto only — it never proactively picks what to buy).
