@@ -49,15 +49,14 @@ internal static class NMultiplayerHostSubmenuPatch
     {
         try
         {
-            NSubmenuButton? standardButton = __instance.GetNodeOrNull<NSubmenuButton>("StandardButton");
-            NSubmenuButton? dailyButton = __instance.GetNodeOrNull<NSubmenuButton>("DailyButton");
-            NSubmenuButton? customButton = __instance.GetNodeOrNull<NSubmenuButton>("CustomRunButton");
+            NSubmenuButton? standardButton = FindButton(__instance, "StandardButton");
             if (standardButton == null)
             {
                 LocalMultiControlLogger.Warn("未找到 StandardButton，无法注入本地多角色入口。");
                 return;
             }
 
+            NSubmenuButton? customButton = FindButton(__instance, "CustomRunButton");
             NSubmenuButton templateButton = customButton ?? standardButton;
             Control container = templateButton.GetParent<Control>();
 
@@ -70,28 +69,75 @@ internal static class NMultiplayerHostSubmenuPatch
                 LocalModText.LocalSelfCoopCardDescription,
                 () => OnLocalSelfCoopPressed(__instance));
 
-            List<NSubmenuButton> officialButtons = new() { standardButton };
-            if (dailyButton != null)
-            {
-                officialButtons.Add(dailyButton);
-            }
-
-            if (customButton != null)
-            {
-                officialButtons.Add(customButton);
-            }
-
-            officialButtons = officialButtons.OrderBy((item) => item.Position.X).ToList();
-            List<NSubmenuButton> allCards = new() { localButton };
-            allCards.AddRange(officialButtons);
-            ArrangeButtonsHorizontally(officialButtons, new List<NSubmenuButton> { localButton });
-            EnsureModeButtons(__instance, container, allCards);
+            Relayout(__instance, localButton);
         }
         catch (Exception exception)
         {
             LocalMultiControlLogger.Error($"注入“单人多角色”入口失败: {exception}");
         }
     }
+
+    /// <summary>
+    /// 按卡片名找官方卡片。**0.113 起卡片是 unique name（`%StandardButton`）**，而且官方从 3 张变 5 张
+    /// （新增 `BlitzButton` / `DreadButton`）。所以这里 `%名字` 优先、裸名字回退 —— 旧版的直接子节点
+    /// 路径仍然命中，新版靠 unique name 命中，不依赖中间容器层级（实测 0.113 裸名直接子节点查找返回 null，
+    /// 就是"入口消失"的原因）。
+    /// </summary>
+    private static NSubmenuButton? FindButton(Node root, string name)
+    {
+        return root.GetNodeOrNull<NSubmenuButton>("%" + name)
+            ?? root.GetNodeOrNull<NSubmenuButton>(name);
+    }
+
+    /// <summary>
+    /// 重排卡片行：我们的卡放最左，官方卡片里**只排当前可见的**（未解锁的 Dread/Blitz 被原版隐藏，
+    /// 不能给它们留空位）。可重复调用（`_Ready` 之后原版还会 `RefreshButtons()` 改可见性）。
+    /// </summary>
+    internal static void Relayout(NMultiplayerHostSubmenu submenu, NSubmenuButton? localButton = null)
+    {
+        localButton ??= submenu.FindChild(LocalSelfCoopButtonName, recursive: true, owned: false) as NSubmenuButton;
+        if (localButton == null || !GodotObject.IsInstanceValid(localButton))
+        {
+            return;
+        }
+
+        List<NSubmenuButton> officialButtons = new();
+        foreach (string name in OfficialCardNames)
+        {
+            NSubmenuButton? button = FindButton(submenu, name);
+            if (button != null && GodotObject.IsInstanceValid(button) && button.Visible)
+            {
+                officialButtons.Add(button);
+            }
+        }
+
+        if (officialButtons.Count == 0)
+        {
+            return;
+        }
+
+        officialButtons = officialButtons.OrderBy((item) => item.Position.X).ToList();
+        ArrangeButtonsHorizontally(officialButtons, new List<NSubmenuButton> { localButton });
+
+        List<NSubmenuButton> allCards = new() { localButton };
+        allCards.AddRange(officialButtons);
+
+        Control? container = localButton.GetParentOrNull<Control>();
+        if (container != null)
+        {
+            EnsureModeButtons(submenu, container, allCards);
+        }
+    }
+
+    /// <summary>官方卡片名（0.113 顺序：标准 / 每日 / Blitz / Dread / 自定义）。</summary>
+    private static readonly string[] OfficialCardNames =
+    {
+        "StandardButton",
+        "DailyButton",
+        "BlitzButton",
+        "DreadButton",
+        "CustomRunButton"
+    };
 
     private static NSubmenuButton EnsureCard(
         NMultiplayerHostSubmenu submenu,
@@ -400,5 +446,27 @@ internal sealed partial class LocalSelfCoopMenuButtonsTracker : Node
 
         float centerX = (minX + maxX) * 0.5f;
         _panel.Position = new Vector2(centerX - panelWidth * 0.5f, maxBottom + _gapBelowCards);
+    }
+}
+
+/// <summary>
+/// 0.113：原版在 `_Ready` 之后还会调 `RefreshButtons()` 改卡片可见性（Dread 未解锁时 `Visible=false`）。
+/// 我们的卡片行是按"当前可见的官方卡"重排的，所以每次可见性变化后再排一次 —— 否则会留下一个空格子
+/// 或者把隐藏的 Dread 也占掉宽度。
+/// </summary>
+[HarmonyPatch(typeof(NMultiplayerHostSubmenu), "RefreshButtons")]
+internal static class NMultiplayerHostSubmenuRefreshPatch
+{
+    [HarmonyPostfix]
+    private static void Postfix(NMultiplayerHostSubmenu __instance)
+    {
+        try
+        {
+            NMultiplayerHostSubmenuPatch.Relayout(__instance);
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"联机菜单卡片重排失败（忽略，沿用当前布局）: {exception.Message}");
+        }
     }
 }

@@ -26,7 +26,7 @@ internal static class StartRunLobbySetReadyPatch
             {
                 player.isReady = true;
                 __instance.Players[i] = player;
-                __instance.LobbyListener.PlayerChanged(player, false);
+                __instance.LobbyListener.PlayerChanged(player);
                 hasChange = true;
             }
         }

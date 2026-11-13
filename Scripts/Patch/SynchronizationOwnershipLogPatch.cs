@@ -1,5 +1,7 @@
 using HarmonyLib;
 using LocalMultiControl.Scripts.Runtime;
+using MegaCrit.Sts2.Core.Entities.Merchant;
+using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
 
 namespace LocalMultiControl.Scripts.Patch;
@@ -35,11 +37,15 @@ internal static class SynchronizationOwnershipLogPatch
         LogOwnership(__instance, "奖励-拿金币");
     }
 
+    // 0.113：商店删牌不再经 `OneOffSynchronizer.DoLocalMerchantCardRemoval`（该方法已删），
+    // 改成 `MerchantCardRemovalEntry.DoCardRemoval(player, isCancelable)` 本地直接执行（不再广播）。
+    // 因此这里没有 synchronizer 可读，归属玩家直接取形参。
     [HarmonyPostfix]
-    [HarmonyPatch(typeof(OneOffSynchronizer), nameof(OneOffSynchronizer.DoLocalMerchantCardRemoval))]
-    private static void PostfixMerchantRemoval(OneOffSynchronizer __instance)
+    [HarmonyPatch(typeof(MerchantCardRemovalEntry), nameof(MerchantCardRemovalEntry.DoCardRemoval))]
+    private static void PostfixMerchantRemoval(Player player)
     {
-        LogOwnership(__instance, "商店-删牌");
+        ulong? contextId = LocalSeatSource.ContextSeatId();
+        LocalMultiControlLogger.Info($"商店-删牌归属玩家: context={contextId?.ToString() ?? "null"}, player={player?.NetId.ToString() ?? "null"}");
     }
 
     private static void LogOwnership(object synchronizer, string operation)

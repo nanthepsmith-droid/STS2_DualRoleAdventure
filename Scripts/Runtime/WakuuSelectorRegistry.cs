@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using MegaCrit.Sts2.Core.Commands;
+using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.TestSupport;
 
 namespace LocalMultiControl.Scripts.Runtime;
@@ -10,18 +11,20 @@ namespace LocalMultiControl.Scripts.Runtime;
 /// 瓦库托管选择器的**归属者注册表**（改进-2 / Phase 1）。
 ///
 /// 职责：把「压栈」与「登记归属者」绑定成一个不可分割的操作
-/// （<see cref="Open"/> = <c>CardSelectCmd.PushSelector</c> + <see cref="WakuuOwnerSelectorMap{TSelector}"/>.Register），
-/// 于是 <c>CardSelectCmd.Selector</c> getter 的守卫可以按**归属者**而不是「栈顶」来分发选择器：
+/// （<see cref="Open"/> = <c>CardSelectorStack.PushSelector(player, …)</c> + <see cref="WakuuOwnerSelectorMap{TSelector}"/>.Register），
+/// 于是 <c>CardSelectorStack.GetSelector</c> 的守卫可以按**归属者**而不是「栈顶」来分发选择器：
 /// 两个瓦库的作用域同时存在时，各自的选择各归各，不再被晚压入的一方抢答。
 ///
-/// 为什么需要它：游戏的选择器栈是全局静态、getter 只给栈顶、<c>ICardSelector</c> 不带归属者信息
+/// 为什么需要它：0.112 及更早的选择器栈是全局静态、getter 只给栈顶、<c>ICardSelector</c> 不带归属者信息
 /// （详见 <c>maintenance-docs/decision-records/多瓦库并行托管可行性与方案.md</c> §4）。
+/// **0.113 起上游把栈按玩家槽位拆开**（每个 Player 一个栈），本注册表因此退化为两层用途：
+/// ① 诊断/日志里的"谁压了什么"；② 守卫在"结构外成员没有自己的栈"时按 NetId 直接分发。
 ///
 /// 与旧行为的兼容性：<see cref="TryGet"/> 未命中时守卫退回既有三条老路
 /// （真人摘掉 / 瓦库放过 / 保持栈顶），因此**单瓦库、单作用域下行为与升级前完全等价**。
 ///
-/// 清理：原版 <c>CardSelectCmd.Reset()</c>（run cleanup）会清掉游戏自己的选择器栈，
-/// <c>CardSelectCmdResetRegistryPatch</c> 同步调用 <see cref="Reset"/>，
+/// 清理：0.113 删掉了原版 <c>CardSelectCmd.Reset()</c>（改由各 scope 的 Dispose 清自己那个栈），
+/// 因此改为由 <c>LocalMultiControlRuntime.OnRunCleanup</c> 直接调用 <see cref="Reset"/>，
 /// 防止被卡住的异步链泄漏的条目跨局生效。
 /// </summary>
 internal static class WakuuSelectorRegistry
@@ -41,7 +44,14 @@ internal static class WakuuSelectorRegistry
             throw new ArgumentNullException(nameof(selector));
         }
 
-        IDisposable stackScope = CardSelectCmd.PushSelector(selector);
+        // 0.113：选择器栈按玩家槽位拆分（`CardSelectorStack.PushSelector(player, selector)`），
+        // 所以必须先把归属者 NetId 解析成 Player。解析不到（战神这类结构外成员 / 无局）时**不压栈**，
+        // 只登记归属者 —— 此时选择器守卫仍可按 NetId 直接分发（见 CardSelectorStackGetSelectorGuardPatch），
+        // 因此"托管选牌是否生效"取决于调用点能不能给出 Player，而不是静默失效。
+        Player? owner = RunManager.Instance?.DebugOnlyGetState()?.GetPlayer(ownerId);
+        IDisposable? stackScope = owner == null
+            ? null
+            : WakuuSelectorStackAccess.Push(owner, selector);
 
         IDisposable registration;
         try
@@ -51,7 +61,7 @@ internal static class WakuuSelectorRegistry
         catch
         {
             // 登记失败不能留下「已压栈但无归属」的选择器（那正是抢答的来源）
-            stackScope.Dispose();
+            stackScope?.Dispose();
             throw;
         }
 
@@ -99,7 +109,7 @@ internal static class WakuuSelectorRegistry
         private IDisposable? _stackScope;
         private readonly ICardSelector _selector;
 
-        internal OpenScope(IDisposable registration, IDisposable stackScope, ICardSelector selector)
+        internal OpenScope(IDisposable registration, IDisposable? stackScope, ICardSelector selector)
         {
             _registration = registration;
             _stackScope = stackScope;

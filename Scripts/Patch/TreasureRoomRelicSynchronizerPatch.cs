@@ -66,7 +66,8 @@ internal static class TreasureRoomRelicSynchronizerPatch
             List<TreasureRoomRelicSynchronizer.PlayerVote>? votes =
                 AccessTools.Field(typeof(TreasureRoomRelicSynchronizer), "_votes")?.GetValue(__instance)
                     as List<TreasureRoomRelicSynchronizer.PlayerVote>;
-            IPlayerCollection? players = AccessTools.Field(typeof(TreasureRoomRelicSynchronizer), "_playerCollection")?.GetValue(__instance) as IPlayerCollection;
+            // 0.113：同步器不再持有 `_playerCollection`，改由 `_runState`（IRunState : IPlayerCollection）提供
+            IPlayerCollection? players = AccessTools.Field(typeof(TreasureRoomRelicSynchronizer), "_runState")?.GetValue(__instance) as IPlayerCollection;
             IReadOnlyList<RelicModel>? currentRelics = __instance.CurrentRelics;
             if (votes == null || players == null || currentRelics == null || currentRelics.Count == 0)
             {
@@ -90,7 +91,7 @@ internal static class TreasureRoomRelicSynchronizerPatch
             InvokeVotesChanged(__instance);
 
             RelicModel selectedRelic = currentRelics[selectedIndex];
-            List<RelicPickingResult> results = BuildOverflowResults(plan, player, selectedRelic);
+            List<RelicPickingResult> results = BuildOverflowResults(plan, player, selectedRelic, selectedIndex);
 
             InvokeRelicsAwarded(__instance, results);
             AccessTools.Method(typeof(TreasureRoomRelicSynchronizer), "EndRelicVoting")?.Invoke(__instance, null);
@@ -108,7 +109,11 @@ internal static class TreasureRoomRelicSynchronizerPatch
         }
     }
 
-    private static List<RelicPickingResult> BuildOverflowResults(OverflowCopyPlan plan, Player sourcePlayer, RelicModel selectedRelic)
+    private static List<RelicPickingResult> BuildOverflowResults(
+        OverflowCopyPlan plan,
+        Player sourcePlayer,
+        RelicModel selectedRelic,
+        int relicIndex)
     {
         List<Player> orderedPlayers = new();
         HashSet<ulong> seenPlayerIds = new();
@@ -135,6 +140,9 @@ internal static class TreasureRoomRelicSynchronizerPatch
             {
                 type = RelicPickingResultType.OnlyOnePlayerVoted,
                 relic = selectedRelic,
+                // 0.113：relicIndex 变成 required（UI 用它索引 _holdersInUse 播动画）。
+                // 溢出场景（5 人以上）所有人的复制品都对应"被选中的那一格"，沿用选中下标。
+                relicIndex = relicIndex,
                 player = participant
             });
         }
@@ -177,7 +185,7 @@ internal static class TreasureRoomRelicSynchronizerPatch
             List<TreasureRoomRelicSynchronizer.PlayerVote>? votes =
                 AccessTools.Field(typeof(TreasureRoomRelicSynchronizer), "_votes")?.GetValue(synchronizer)
                     as List<TreasureRoomRelicSynchronizer.PlayerVote>;
-            IPlayerCollection? players = AccessTools.Field(typeof(TreasureRoomRelicSynchronizer), "_playerCollection")?.GetValue(synchronizer) as IPlayerCollection;
+            IPlayerCollection? players = AccessTools.Field(typeof(TreasureRoomRelicSynchronizer), "_runState")?.GetValue(synchronizer) as IPlayerCollection;
             if (votes == null || players == null)
             {
                 return false;
@@ -257,7 +265,7 @@ internal static class TreasureRoomRelicSynchronizerBeginPatch
             List<TreasureRoomRelicSynchronizer.PlayerVote>? votes =
                 AccessTools.Field(typeof(TreasureRoomRelicSynchronizer), "_votes")?.GetValue(__instance)
                     as List<TreasureRoomRelicSynchronizer.PlayerVote>;
-            IReadOnlyList<Player>? players = AccessTools.Field(typeof(TreasureRoomRelicSynchronizer), "_playerCollection")?.GetValue(__instance) is IPlayerCollection playerCollection
+            IReadOnlyList<Player>? players = AccessTools.Field(typeof(TreasureRoomRelicSynchronizer), "_runState")?.GetValue(__instance) is IPlayerCollection playerCollection
                 ? playerCollection.Players
                 : null;
             IReadOnlyList<RelicModel>? currentRelics = __instance.CurrentRelics;

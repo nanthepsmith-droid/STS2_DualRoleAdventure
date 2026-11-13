@@ -794,7 +794,8 @@ internal static class LocalSelfCoopContext
             }
 
             NetService.SetCurrentSenderId(playerId);
-            _ = lobby.AddLocalHostPlayerInternal(serializableUnlockState, maxAscension);
+            // 0.113：第三个参数是 maxBlitzAscension（新模式 Blitz）；本地回环两个上限都给满。
+            _ = lobby.AddLocalHostPlayerInternal(serializableUnlockState, maxAscension, maxAscension);
         }
 
         List<ulong> removablePlayerIds = _localPlayerIds
@@ -836,7 +837,7 @@ internal static class LocalSelfCoopContext
 
             lobbyPlayer.isReady = true;
             lobby.Players[playerIndex] = lobbyPlayer;
-            screen.PlayerChanged(lobbyPlayer, false);
+            screen.PlayerChanged(lobbyPlayer);
         }
 
         EnsureLobbyEditingPlayerIsValid();
@@ -857,14 +858,15 @@ internal static class LocalSelfCoopContext
         for (int i = 0; i < lobby.Players.Count; i++)
         {
             StartRunLobbyPlayer player = lobby.Players[i];
-            if (player.maxMultiplayerAscensionUnlocked >= MaxLocalAscensionLevel)
+            // 0.113：maxMultiplayerAscensionUnlocked 拆成 maxStandardAscension / maxBlitzAscension（新模式 Blitz）。
+            if (player.maxStandardAscension >= MaxLocalAscensionLevel)
             {
                 continue;
             }
 
-            player.maxMultiplayerAscensionUnlocked = MaxLocalAscensionLevel;
+            player.maxStandardAscension = MaxLocalAscensionLevel;
             lobby.Players[i] = player;
-            lobby.LobbyListener.PlayerChanged(player, false);
+            lobby.LobbyListener.PlayerChanged(player);
             changed = true;
         }
 

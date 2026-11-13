@@ -55,13 +55,14 @@ internal static class CardSelectForegroundSwitchPatch
         CurrentChoicePlayerId.Value = player.NetId;
 
         // 「会被自动作答、不弹 UI」的两种情况：
-        //   ① 栈上已有全局选择器（瓦库自动出牌作用域内，如攻击药水选牌）；
+        //   ① 该玩家栈上已有选择器（瓦库自动出牌作用域内，如攻击药水选牌）；
         //   ② 该入口由 CardSelectWakuuTurnStartAutoAnswerPatch 对瓦库做「作用域外自动作答」
         //      （FromChooseACardScreen / FromSimpleGrid，如工具箱三选一）。
         // 两种都不需要真人，切前台没有意义（改进-2：避免无谓的视角"闪一下"）。
         // 其余情况是「防软锁兜底」——必须切给真人，此行为经实机验证不可改为自动作答
         // （会导致战斗开局流程异常），且**不受视角档位影响**（WakuuViewPolicy 里做了保证）。
-        bool willAutoAnswer = CardSelectCmd.Selector != null
+        // 0.113：栈按玩家拆分，"有没有选择器"必须问该玩家自己的栈（结构外成员返回 null）。
+        bool willAutoAnswer = WakuuSelectorStackAccess.GetTop(player) != null
             || (CardSelectWakuuTurnStartAutoAnswerPatch.IsAutoAnswerEntry(source)
                 && CardSelectWakuuTurnStartAutoAnswerPatch.ShouldAutoAnswer(player));
 
@@ -183,7 +184,8 @@ internal static class CardSelectForegroundSwitchPatch
 }
 
 /// <summary>
-/// 全局选择器**按归属者分发**守卫（改进-2 / Phase 1）：CardSelectCmd.Selector 返回栈顶选择器时，
+/// 选择器**按归属者分发**守卫（改进-2 / Phase 1；0.113 从 <c>CardSelectCmd.Selector</c> 迁到
+/// <c>CardSelectorStack.GetSelector(player)</c>）：原方法返回该**玩家自己**栈顶的选择器时，
 /// 按本次异步链的选牌归属者（<c>CurrentChoicePlayerId</c>）决定处置：
 /// <list type="bullet">
 /// <item>归属者是**瓦库形态**且已在 <see cref="WakuuSelectorRegistry"/> 登记 → 改用**它自己**的选择器
@@ -196,10 +198,29 @@ internal static class CardSelectForegroundSwitchPatch
 /// CurrentChoicePlayerId 由上方各 From* 前缀在方法体读取 Selector 之前写入，时序可靠。
 /// 注意：作用域外（栈上无选择器）的选择一律不在此兜底作答——酒狐初始遗物开局二选一
 /// 依赖"自动切前台由真人处理"的原有链路，实测改为即时作答会导致进战斗黑屏。
+///
+/// **0.113 新增 prefix（结构外成员防护）**：上游 <c>GetSelectorStackForPlayer</c> 用
+/// <c>GetPlayerSlotIndex(player)</c> 取槽位，返回 -1 时**直接 throw**。战神这类临时席位不在
+/// <c>RunState.Players</c> 里 ⇒ 它一旦触发任何选牌就会把异常冒穿选牌链（r264 同型坑）。
+/// 这里在异常发生前返回 null（= "没有自动选择器"），由调用方走各自的兜底。
 /// </summary>
-[HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.Selector), MethodType.Getter)]
-internal static class CardSelectCmdSelectorGuardPatch
+[HarmonyPatch(typeof(CardSelectorStack), nameof(CardSelectorStack.GetSelector))]
+internal static class CardSelectorStackGetSelectorGuardPatch
 {
+    [HarmonyPriority(Priority.First)]
+    [HarmonyPrefix]
+    private static bool Prefix(Player player, ref ICardSelector? __result)
+    {
+        if (!WakuuSelectorStackAccess.IsStructuralOutsider(player))
+        {
+            return true;
+        }
+
+        // 不属于本局玩家集合（战神 / 已离场席位 / 无局）：上游会抛，这里按"没有选择器"处理
+        __result = null;
+        return false;
+    }
+
     [HarmonyPostfix]
     private static void Postfix(ref ICardSelector? __result)
     {
@@ -258,21 +279,6 @@ internal static class CardSelectCmdSelectorGuardPatch
     }
 }
 
-/// <summary>
-/// 运行清理时同步清空归属者注册表（改进-2 / Phase 1）。
-/// 原版 <c>CardSelectCmd.Reset()</c> 只在 run cleanup 调用、且只清游戏自己的选择器栈；
-/// 若不同步清我们的登记表，被卡住的异步链泄漏的条目会跨局残留（指向已失效的选择器实例）。
-/// </summary>
-[HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.Reset))]
-internal static class CardSelectCmdResetRegistryPatch
-{
-    [HarmonyPostfix]
-    private static void Postfix()
-    {
-        int cleared = WakuuSelectorRegistry.Reset();
-        if (cleared > 0)
-        {
-            LocalMultiControlLogger.Info($"运行清理：已清空瓦库选择器归属注册表（{cleared} 条）");
-        }
-    }
-}
+// 0.113：`CardSelectCmd.Reset()` 已不存在（选择器栈搬进 CardSelectorStack，由各 scope 的 Dispose 自己清），
+// 归属者注册表的运行清理改由 `LocalMultiControlRuntime.OnRunCleanup` 直接调用 `WakuuSelectorRegistry.Reset()`。
+// 原来的 CardSelectCmdResetRegistryPatch 因此删除 —— 留着会让「补丁目标清单」指向一个不存在的成员。

@@ -57,9 +57,14 @@ internal static class PatchDomainMap
             ["NPlayerHandSelectCardsSerializationPatch"] = PatchDomain.Core,
             ["CardSelectCmdPatch"] = PatchDomain.Core,
             ["CardSelectForegroundSwitchPatch"] = PatchDomain.Core,
-            ["CardSelectCmdSelectorGuardPatch"] = PatchDomain.Core,
-            // 改进-2 / Phase 1：运行清理时同步清空「选择器归属者注册表」
-            ["CardSelectCmdResetRegistryPatch"] = PatchDomain.Core,
+            // 0.113：选择器栈从 CardSelectCmd 搬到 CardSelectorStack（按玩家分栈）
+            ["CardSelectorStackGetSelectorGuardPatch"] = PatchDomain.Core,
+            // 战斗胜利结算四段探针（0.113：战神局"敌人死了但不结算"的定位工具，行为零变化）
+            ["CombatManagerEndCombatProbePatch"] = PatchDomain.Core,
+            ["CombatManagerEndCombatNoArgProbePatch"] = PatchDomain.Core,
+            ["PlayerReviveBeforeCombatEndProbePatch"] = PatchDomain.Core,
+            ["HookAfterCombatEndProbePatch"] = PatchDomain.Core,
+            ["CombatRoomOnCombatEndedProbePatch"] = PatchDomain.Core,
             ["CardSelectManualConfirmationPatch"] = PatchDomain.Core,
             ["CardSelectDeckScenarioPatch"] = PatchDomain.Core,
             ["CardPileAddForegroundContextPinPatch"] = PatchDomain.Core,
@@ -140,6 +145,8 @@ internal static class PatchDomainMap
             ["NCustomRunSelectionSyncProcessPatch"] = PatchDomain.Lobby,
             // 联机菜单入口：注入「单人多角色」卡片 + 下方两个模式小按钮（r158 零劫持）
             ["NMultiplayerHostSubmenuPatch"] = PatchDomain.Lobby,
+            // 0.113：原版 _Ready 之后还会 RefreshButtons() 改可见性 ⇒ 再重排一次卡片行
+            ["NMultiplayerHostSubmenuRefreshPatch"] = PatchDomain.Lobby,
             ["NMultiplayerHostSubmenuOfficialEntryGuardPatch"] = PatchDomain.Lobby,
             ["NMultiplayerLoadGameScreenPatch"] = PatchDomain.Lobby,
             ["NMultiplayerSubmenuHostRoutePatch"] = PatchDomain.Lobby,

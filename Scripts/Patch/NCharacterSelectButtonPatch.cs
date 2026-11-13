@@ -38,7 +38,8 @@ internal static class NCharacterSelectButtonSelectPatch
             }
 
             LocalSelfCoopContext.EnsureLobbySenderContext("character-button-reselect");
-            selectDelegate.SelectCharacter(button, button.Character);
+            // 0.113：接口签名收窄为 SelectCharacter(NCharacterSelectButton)（角色从按钮自身取）
+            selectDelegate.SelectCharacter(button);
             AccessTools.Method(typeof(NCharacterSelectButton), "RefreshState")?.Invoke(button, Array.Empty<object>());
             LocalMultiControlLogger.Info($"允许重复选角重新提交流程: character={button.Character.Id.Entry}");
             return true;
@@ -85,7 +86,7 @@ internal static class NCharacterSelectButtonOnPressPatch
 
             // 处理“已聚焦按钮重复点击不触发Select”的情况。
             LocalSelfCoopContext.EnsureLobbySenderContext("character-button-on-press-reselect");
-            selectDelegate.SelectCharacter(__instance, __instance.Character);
+            selectDelegate.SelectCharacter(__instance);
             AccessTools.Method(typeof(NCharacterSelectButton), "RefreshState")?.Invoke(__instance, Array.Empty<object>());
             LocalMultiControlLogger.Info($"允许重复点击已选角色: character={__instance.Character.Id.Entry}");
         }

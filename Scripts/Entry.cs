@@ -697,7 +697,7 @@ public partial class Entry
     //      `CardPoolModel.Title.ToLowerInvariant()`（`silent`）⇒ 改成**从游戏自己给的 `PortraitPath` 上做
     //      路径换算**（含 `beta/` 子目录），并用 `ResourceLoader.Exists` 复核，不成立就留空（不给猜想）。
     //   ② **`gameVersion` 等于没用** = `Assembly.GetName().Version` 是 `0.1.0.0` ⇒ 改读游戏自己的
-    //      `ReleaseInfoManager`（可执行文件旁的 `release_info.json`，实机值 `v0.111.0`），读不到才回落程序集版本。
+    //      `ReleaseInfoManager`（可执行文件旁的 `release_info.json`，实机值 `v0.113.0`），读不到才回落程序集版本。
     //   ③ **实机发现图片路径有三态**：`.tres`（图集条目，≈695）/ `.png`（mod 覆写，≈2064）/ `.jpg`（≈205）⇒
     //      `Portrait` 原样给（规范成 `/`），`PortraitPng` **只在能确定时给**；另外 **322 张 mod 卡的
     //      `Portrait` 可直读却 `HasPortrait=false`**（游戏那句判据只查它自己的规则路径）⇒ 字段注释写明
@@ -850,7 +850,7 @@ public partial class Entry
     // r323（2026-10-27，同一轮日志卫生）：**状态【战灵守卫】的 `powers` 表键补齐** —— BaseLib 启动扫描
     //   全部 Power 取 `.title`，我们那条 `HELLWAR_WAR_GOD_GUARD_POWER` 缺键（实机 1 条 WARN + 返回垃圾串）。
     //   该状态 `IsVisibleInternal = false`（不给它建节点、避免缺图标 ERROR）⇒ 玩家看不见，纯补键。
-    private const string BuildMarker = "Revival v1.47.0 (game v0.111.0, marker=2026-11-12-r349)";
+    private const string BuildMarker = "Revival v1.47.0 (game v0.113.0, marker=2026-11-13-r350)";
 
     private static Harmony? _harmony;
 
@@ -903,6 +903,10 @@ public partial class Entry
         "MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromCombatPile/4",
         "MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromCombatPile/5",
         "MegaCrit.Sts2.Core.Commands.CardSelectCmd.ShouldSelectLocalCard",
+        // 0.113：选择器栈搬到 CardSelectorStack（按玩家分栈）。守卫在这里做两件事 ——
+        // ① 结构外成员（战神临时席位）原本会被上游 throw，这里改成返回 null；② 按归属者分发。
+        // 缺了 ⇒ 战神一触选牌就 turn loop died（r264 同型），因此按 Critical 钉死。
+        "MegaCrit.Sts2.Core.CardSelection.CardSelectorStack.GetSelector",
         // ---- 回合流程 / 切前台 ----
         "MegaCrit.Sts2.Core.Combat.CombatManager.SetupPlayerTurn",
         "MegaCrit.Sts2.Core.Combat.CombatManager.DoTurnEnd",
@@ -936,6 +940,15 @@ public partial class Entry
         "MegaCrit.Sts2.Core.Models.Relics.WhisperingEarring.AfterAutoPrePlayPhaseEnteredLate",
         // 纯 UI：结束回合按钮重评
         "MegaCrit.Sts2.Core.Nodes.Combat.NEndTurnButton.CallReleaseLogic",
+        // 联机菜单入口注入（0.113：卡片改 unique name、官方新增 Dread/Blitz ⇒ 靠 RefreshButtons 后重排一次）
+        "MegaCrit.Sts2.Core.Nodes.Screens.MainMenu.NMultiplayerHostSubmenu.RefreshButtons",
+        // 战斗胜利结算四段探针（0.113 战神局"敌人死了但不结算"定位；缺了只是少一份观测）
+        // 注意：胜利实际走的是带参重载（参数类型 CombatTurnState 是 internal，按名字解析）。
+        "MegaCrit.Sts2.Core.Combat.CombatManager.EndCombatInternal/0",
+        "MegaCrit.Sts2.Core.Combat.CombatManager.EndCombatInternal/1",
+        "MegaCrit.Sts2.Core.Entities.Players.Player.ReviveBeforeCombatEnd",
+        "MegaCrit.Sts2.Core.Hooks.Hook.AfterCombatEnd",
+        "MegaCrit.Sts2.Core.Rooms.CombatRoom.OnCombatEnded",
         // BUG-42（2026-11-04）：战斗中重排时把「谁是 me」钉回开局那一席
         // （缺了 → 第三方布局补丁每次 reflow 都会按当前 POV 重算 ⇒ 两人立绘左右对调）
         "MegaCrit.Sts2.Core.Nodes.Rooms.NCombatRoom.PositionPlayersAndPets",
@@ -950,12 +963,10 @@ public partial class Entry
         "MegaCrit.Sts2.Core.Rewards.CardReward.OnSelect",
         // 个人记录器：事件网格选 N 入卡组
         "MegaCrit.Sts2.Core.Models.EventModel.SelectCardsToAddToDeckFromGrid",
-        // 个人记录器：商店购买记录
-        "MegaCrit.Sts2.Core.Entities.Merchant.MerchantEntry.OnTryPurchaseWrapper",
+        // 个人记录器：商店购买记录（0.113：OnTryPurchaseWrapper 改名 OnTryPurchaseUnsynchronized）
+        "MegaCrit.Sts2.Core.Entities.Merchant.MerchantEntry.OnTryPurchaseUnsynchronized",
         // 个人记录器：真人删牌统计
         "MegaCrit.Sts2.Core.Commands.CardSelectCmd.FromDeckForRemoval",
-        // 改进-2 / Phase 1：运行清理时同步清空选择器归属者注册表（缺了只会导致条目跨局残留）
-        "MegaCrit.Sts2.Core.Commands.CardSelectCmd.Reset",
         // 改进-2 / 方案 D 队列路径出牌加速：瓦库队列出牌强制跳过卡牌堆演出（缺了只是少一份提速）
         "MegaCrit.Sts2.Core.Models.CardModel.OnPlayWrapper",
         // BUG-20（r155）：整局进度写入的本地玩家识别校正（缺了 → 进度不写入 + 结算页无按钮）

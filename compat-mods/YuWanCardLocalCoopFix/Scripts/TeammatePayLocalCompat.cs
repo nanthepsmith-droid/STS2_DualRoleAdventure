@@ -44,7 +44,7 @@ namespace YuWanCardLocalCoopFix;
 /// <list type="number">
 /// <item>直接读本机其他席位的真实金币，复用猪猪自己的「选择队友」弹层（不重画 UI）；</item>
 /// <item>选定后**在本机扣那位席位的钱**（<c>PlayerCmd.LoseGold</c>，损失类型与猪猪一致 = Lost）；</item>
-/// <item>再按猪猪原来的方式结算货物：<c>entry.OnTryPurchaseWrapper(inventory, ignoreCost: true)</c>
+/// <item>再按猪猪原来的方式结算货物：<c>entry.OnTryPurchaseUnsynchronized(inventory, ignoreCost: true)</c>
 ///   （猪猪也是这么调的 —— 钱已经在付款者那边扣过了）；</item>
 /// <item>购买失败则把金币退回给付款者，并记 WARN。</item>
 /// </list>
@@ -200,7 +200,8 @@ internal static class TeammatePayLocalCompat
             try
             {
                 // 与猪猪原实现一致：钱已经在付款者那边扣掉，这里以 ignoreCost 结算货物。
-                purchased = await entry.OnTryPurchaseWrapper(inventory, ignoreCost: true);
+                // 0.113：`MerchantEntry.OnTryPurchaseWrapper` 改名 `OnTryPurchaseUnsynchronized`（逐行等价）
+        purchased = await entry.OnTryPurchaseUnsynchronized(inventory, ignoreCost: true);
             }
             catch (Exception exception)
             {

@@ -4,6 +4,38 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+### 适配游戏 v0.113.0（r350；2026-11-13）
+
+> ⚠ **这一版只支持游戏 0.113.0**。0.111 / 0.112 请继续用 v1.47.0。
+
+- **联机菜单入口恢复**：0.113 把主机子菜单的卡片改成 Godot unique name（`%StandardButton` 等），且官方卡片
+  从 3 张变 **5 张**（新增「闪电战 Blitz」「恐惧 Dread」）。上一版按裸节点名走相对路径 ⇒ 注入直接失败
+  （表现：联机菜单里**我们的入口整块消失**，日志 `未找到 StandardButton`）。现在按 unique name 查找、
+  只对**当前可见**的卡片重排（未解锁的模式不占位），可见性变化后再排一次（锚点 `联机菜单卡片已重排: count=…`）。
+- **选牌栈「按玩家」重构跟随**：0.113 把选择器栈从 `CardSelectCmd` 的全局单栈搬到
+  `RunManager.CardSelectorStack`（**每个玩家一个栈**）。托管选择器改走官方 `PushSelector(player, selector)`；
+  结构外席位（战神这类临时席位）没有自己的栈、上游 `GetSelector` 会**直接抛异常**，因此加了一层防守
+  （返回"没有选择器"而不是崩），并保留原有的按归属者分发。
+- **商店库存跟随上游**：0.113 把库存从 `MerchantRoom.Inventories` 搬到 `MerchantSynchronizer`，并新增官方
+  工厂 `CreateForNormalMerchant` / `CreateForBlitzMerchant`。原来手搓的「每角色一套库存」（反射塞私有列表）
+  改为直接复用官方工厂 —— 以后上游改商店规则会自动跟随，不用再跟着改。
+- **修复：敌人被托管/战神打死后战斗不结束**。0.113 的 `ActionExecutor` 在执行完 `EndPlayerTurnAction` /
+  `ReadyToBeginEnemyTurnAction` 后**故意跳过**胜利判定，而本地多控的「全员收口」恰好只走这两类动作 ⇒
+  最后一个敌人若死在托管就地打出的牌里，就再也没有任何一次胜利判定（表现：敌人没了、奖励不出、
+  点结束回合也没用、只能 ESC 重启房间）。现在检测到「敌人已清空但结算未推进」时**每场补一次**胜利判定
+  （锚点 `检测到敌人已清空但战斗结算未推进，主动补一次胜利判定`）。
+- 其余跟随性修复（均不改变玩法）：大厅 `PlayerChanged` 收窄为单参、`AddLocalHostPlayerInternal` 新增
+  Blitz 进阶上限、`StartRunLobbyPlayer.maxMultiplayerAscensionUnlocked` 拆成 standard / blitz、
+  `MerchantEntry.OnTryPurchaseWrapper` → `OnTryPurchaseUnsynchronized`、商店删牌改走
+  `MerchantCardRemovalEntry.DoCardRemoval`、`RelicPickingResult.relicIndex` 变成必填、
+  `SmithRestSiteOption.SmithCount` / `NCreature.ToggleIsInteractable` /
+  `NTreasureRoomRelicCollection.SingleplayerRelicHolder` / `ICharacterSelectButtonDelegate.SelectCharacter`
+  改名。
+- **不在本版范围**：
+  - 新模式（Dread / 闪电战 Blitz）的**本地多角色**版本 —— 官方入口保持原版，排期见 `TODO.md`；
+  - 第三方 mod 对 0.113 的适配。本机实测 `BaseLib` / `SkadaHelper` / `IntegratedStrategyEvents` /
+    `TheQueen` / `YuWanCard` 等会因为类型或方法被删除而报错、甚至让游戏**启动失败**（与本 mod 无关）。
+
 ### 逃跑 / 离场与建筑师（r346~r349；均已实机验证）
 
 - **角色逃跑后战斗界面不再消失**（典型触发：瓦库在回合开始自动喝了第三方【烟雾弹】，该角色被原版

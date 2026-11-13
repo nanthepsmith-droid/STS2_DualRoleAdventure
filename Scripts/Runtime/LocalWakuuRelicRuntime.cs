@@ -97,8 +97,8 @@ internal static class LocalWakuuRelicRuntime
     /// 到底是排队问题还是帧率问题，只看这一对数。表是按席位分槽的，天然不会互相覆盖。
     /// </summary>
     private static readonly Dictionary<ulong, long> _pendingPlayExecStartMs = new();
-    private static readonly FieldInfo? SelectorStackField =
-        typeof(CardSelectCmd).GetField("_selectorStack", BindingFlags.NonPublic | BindingFlags.Static);
+    // 0.113：选择器栈从 `CardSelectCmd._selectorStack`（全局单栈）搬到 `CardSelectorStack._selectorStacks`
+    // （按玩家槽位分栈），反射面统一收进 WakuuSelectorStackAccess，这里不再自己持有 FieldInfo。
     private static int _selectorScopeInFlight;
 
     /// <summary>
@@ -212,9 +212,10 @@ internal static class LocalWakuuRelicRuntime
 
         // 只有「作用域外真人交互选牌」这一条需要判断"会不会被自动作答"（其余场景该参数无意义）：
         // ① 调用方已判定会被自动作答（作用域外自动作答入口，见 CardSelectWakuuTurnStartAutoAnswerPatch）；
-        // ② 栈上已有全局选择器（瓦库自动出牌作用域内）。
+        // ② 该玩家栈上已有选择器（瓦库自动出牌作用域内）。
+        // 0.113：栈按玩家拆分 ⇒ 问该玩家自己的栈（结构外成员返回 null）。
         bool willAutoAnswer = trigger == WakuuViewTrigger.HumanInteractionChoice
-            && (willAutoAnswerOverride || CardSelectCmd.Selector != null);
+            && (willAutoAnswerOverride || WakuuSelectorStackAccess.GetTop(player) != null);
 
         return WakuuViewPolicy.ShouldSuppressSwitch(
             LocalWakuuAutopilotConfig.ViewMode,
@@ -2278,36 +2279,29 @@ internal static class LocalWakuuRelicRuntime
 
     public static SelectorStackSnapshot SnapshotSelectorStack()
     {
-        object? rawStack = SelectorStackField?.GetValue(null);
-        if (rawStack == null)
+        // 0.113：栈是「每玩家一栈」，这里给的是所有槽位的条目汇总（Count 为总和、TopType 取最后一个非空栈顶），
+        // 调用方只需要"是否为 0 / 全是不是托管选择器"两个判据，语义保持不变。
+        IReadOnlyList<object> entries = WakuuSelectorStackAccess.SnapshotEntries();
+        if (entries.Count == 0)
         {
-            return new SelectorStackSnapshot(0, "null", allVakuuSelectors: false);
+            return new SelectorStackSnapshot(
+                0,
+                WakuuSelectorStackAccess.IsReflectionReady ? "none" : "unavailable",
+                allVakuuSelectors: false);
         }
 
-        Type stackType = rawStack.GetType();
-        int count = (int?)stackType.GetProperty("Count")?.GetValue(rawStack) ?? 0;
-        object? top = count > 0 ? stackType.GetMethod("Peek")?.Invoke(rawStack, null) : null;
-        string topType = top?.GetType().Name ?? "none";
-
-        bool allVakuuSelectors = count > 0;
-        if (rawStack is IEnumerable enumerable)
+        bool allVakuuSelectors = true;
+        foreach (object selector in entries)
         {
-            foreach (object? selector in enumerable)
+            // 托管作用域可能压入游戏原生选择器或本 mod 的策略选择器，两者都视为瓦库选择器
+            if (selector is not VakuuCardSelector and not LocalWakuuStrategySelector)
             {
-                // 托管作用域可能压入游戏原生选择器或本 mod 的策略选择器，两者都视为瓦库选择器
-                if (selector is not VakuuCardSelector and not LocalWakuuStrategySelector)
-                {
-                    allVakuuSelectors = false;
-                    break;
-                }
+                allVakuuSelectors = false;
+                break;
             }
         }
-        else
-        {
-            allVakuuSelectors = false;
-        }
 
-        return new SelectorStackSnapshot(count, topType, allVakuuSelectors);
+        return new SelectorStackSnapshot(entries.Count, WakuuSelectorStackAccess.DescribeTop(), allVakuuSelectors);
     }
 
     /// <summary>
@@ -2320,69 +2314,15 @@ internal static class LocalWakuuRelicRuntime
     /// </summary>
     internal static bool RemoveSelectorFromStackIfPresent(object selector)
     {
-        object? rawStack = SelectorStackField?.GetValue(null);
-        if (rawStack == null)
-        {
-            return false;
-        }
-
-        Type stackType = rawStack.GetType();
-        int count = (int?)stackType.GetProperty("Count")?.GetValue(rawStack) ?? 0;
-        if (count <= 0 || rawStack is not IEnumerable enumerable)
-        {
-            return false;
-        }
-
-        List<object> topToBottom = new(count);
-        foreach (object? item in enumerable)
-        {
-            if (item != null)
-            {
-                topToBottom.Add(item);
-            }
-        }
-
-        // Stack<T> 的枚举顺序就是「栈顶 → 栈底」，与 WakuuSelectorStackSurgery 的入参约定一致
-        List<object> remaining = WakuuSelectorStackSurgery.RemoveByReference(topToBottom, selector);
-        if (remaining.Count == topToBottom.Count)
-        {
-            return false;
-        }
-
-        MethodInfo? push = stackType.GetMethod("Push");
-        if (push == null)
-        {
-            return false;
-        }
-
-        stackType.GetMethod("Clear")?.Invoke(rawStack, null);
-        for (int i = remaining.Count - 1; i >= 0; i--)
-        {
-            push.Invoke(rawStack, new object[] { remaining[i] });
-        }
-
-        return true;
+        // 0.113：栈按玩家拆开，按引用在**所有槽位**里找（命中哪个槽位摘哪个；都不在 = 空操作）。
+        return WakuuSelectorStackAccess.RemoveByReference(selector);
     }
 
     private static bool TryClearSelectorStack(out int clearedCount)
     {
-        clearedCount = 0;
-        object? rawStack = SelectorStackField?.GetValue(null);
-        if (rawStack == null)
-        {
-            return false;
-        }
-
-        Type stackType = rawStack.GetType();
-        int count = (int?)stackType.GetProperty("Count")?.GetValue(rawStack) ?? 0;
-        if (count <= 0)
-        {
-            return false;
-        }
-
-        stackType.GetMethod("Clear")?.Invoke(rawStack, null);
-        clearedCount = count;
-        return true;
+        // 0.113：只有"整栈全是托管选择器"的槽位才会被清（混合栈一律不动，与旧版保守口径一致）。
+        clearedCount = WakuuSelectorStackAccess.ClearVakuuStacks();
+        return clearedCount > 0;
     }
 
     private static void EnsureWakuuPerspective(Player player, string source)
@@ -2445,9 +2385,23 @@ internal static class LocalWakuuRelicRuntime
     private static bool TryGetAutoplayUnsafeReason(ICombatState combatState, Player player, out string reason)
     {
         reason = string.Empty;
-        if (!RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress || CombatManager.Instance.IsOverOrEnding)
+        // 2026-11-13：拆成四条独立判据 —— 战神局出现"熔断说 combat-not-in-progress、战斗却还在画面上"，
+        // 三条原因混在一个 reason 里没法归因（`IsOverOrEnding` 在 0.113 就是 `!IsInProgress` 的镜像）。
+        if (!RunManager.Instance.IsInProgress)
         {
-            reason = "combat-not-in-progress";
+            reason = "run-not-in-progress";
+            return true;
+        }
+
+        if (!CombatManager.Instance.IsInProgress)
+        {
+            reason = "combat-not-in-progress(CombatManager.IsInProgress=false)";
+            return true;
+        }
+
+        if (CombatManager.Instance.IsOverOrEnding)
+        {
+            reason = "combat-over-or-ending";
             return true;
         }
 

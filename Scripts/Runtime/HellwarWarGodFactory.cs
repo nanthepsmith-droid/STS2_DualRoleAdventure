@@ -1427,7 +1427,8 @@ internal static class HellwarWarGodFactory
         {
             try
             {
-                node.ToggleIsInteractable(on: false);
+                // 0.113：ToggleIsInteractable 改名 SetIsInteractable(on, changeVisibilityImmediately)
+                node.SetIsInteractable(on: false, changeVisibilityImmediately: false);
                 node.Visible = false;
                 NCombatRoom.Instance!.RemoveCreatureNode(node);
             }

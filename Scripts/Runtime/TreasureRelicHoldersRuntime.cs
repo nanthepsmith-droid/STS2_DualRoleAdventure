@@ -107,10 +107,12 @@ internal static class TreasureRelicHoldersRuntime
             return;
         }
 
-        NTreasureRoomRelicHolder? singleplayer = collection.SingleplayerRelicHolder;
+        // 0.113：原版删掉了 `SingleplayerRelicHolder`（改为每玩家一份 `_holderLayouts` → `HoldersInUse`）。
+        // 这里改成"跳过已经被 original 列表认领的格子"，语义仍是"只认领还没登记的 vanilla 格"。
+        IReadOnlyList<NTreasureRoomRelicHolder> inUse = collection.HoldersInUse;
         foreach (NTreasureRoomRelicHolder candidate in container.GetChildren().OfType<NTreasureRoomRelicHolder>())
         {
-            if (candidate == singleplayer || !GodotObject.IsInstanceValid(candidate))
+            if (inUse.Contains(candidate) || !GodotObject.IsInstanceValid(candidate))
             {
                 continue;
             }

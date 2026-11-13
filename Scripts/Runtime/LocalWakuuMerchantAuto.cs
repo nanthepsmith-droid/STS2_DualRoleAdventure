@@ -253,7 +253,7 @@ internal static class LocalWakuuMerchantAuto
             WakuuMerchantCardCandidate candidate = plan[index].Candidate;
             try
             {
-                bool success = await entry.OnTryPurchaseWrapper(inventory, ignoreCost: false);
+                bool success = await entry.OnTryPurchaseUnsynchronized(inventory, ignoreCost: false);
                 if (success)
                 {
                     bought++;
@@ -351,7 +351,7 @@ internal static class LocalWakuuMerchantAuto
             WakuuMerchantPricedItem candidate = plan[index].Candidate;
             try
             {
-                bool success = await entry.OnTryPurchaseWrapper(inventory, ignoreCost: false);
+                bool success = await entry.OnTryPurchaseUnsynchronized(inventory, ignoreCost: false);
                 if (success)
                 {
                     bought++;
@@ -457,7 +457,7 @@ internal static class LocalWakuuMerchantAuto
             WakuuMerchantPricedItem candidate = plan[index].Candidate;
             try
             {
-                bool success = await entry.OnTryPurchaseWrapper(inventory, ignoreCost: false);
+                bool success = await entry.OnTryPurchaseUnsynchronized(inventory, ignoreCost: false);
                 if (success)
                 {
                     bought++;
@@ -486,13 +486,14 @@ internal static class LocalWakuuMerchantAuto
     /// <summary>
     /// **自动删牌服务**（v3，2026-09-18，开关 <c>shopAssistBuyRemoval</c>，默认关）。
     ///
-    /// ⚠ **刻意不走原版 `MerchantCardRemovalEntry.OnTryPurchaseWrapper`**：它内部调
-    /// `OneOffSynchronizer.DoLocalMerchantCardRemoval`，而该方法
-    /// ① 用的是**同步器自己的** `_localPlayerId`（不是 `LocalContext`）—— 多控下不对齐就会删错人的牌；
-    /// ② 会 `_gameService.SendMessage(MerchantCardRemovalMessage)` 广播，接收端
-    /// `HandleMerchantCardRemoval` 对「sender == LocalPlayer」直接抛 `InvalidOperationException`，
-    /// 而本地多控下"其他玩家"全在同一进程 ⇒ 要么重复执行、要么刷错误日志。
-    /// 所以这里**复刻它的后半段**（选牌 → 扣钱 → 从牌组移除 → 计数 → 收尾），但不广播、只认传入的 player。
+    /// ⚠ **刻意手写删牌链，不走原版入口**（0.112 及更早：原版经
+    /// `OneOffSynchronizer.DoLocalMerchantCardRemoval`，它 ① 用同步器自己的 `_localPlayerId`（不是
+    /// `LocalContext`）—— 多控下不对齐就删错人的牌；② 会广播 `MerchantCardRemovalMessage`，接收端对
+    /// 「sender == LocalPlayer」直接抛 `InvalidOperationException`，而本地多控下"其他玩家"全在同一进程
+    /// ⇒ 要么重复执行、要么刷错误日志。**0.113 上游把这条链改成 `MerchantCardRemovalEntry.DoCardRemoval`
+    /// 本地直接执行、不再广播** —— 上述 ①② 已消失，但我们仍保留手写版本：它"只认传入的 player"，
+    /// 而原版 DoCardRemoval 依赖调用点自己传对 player（多控下由前台/归属决定，不可控）。
+    /// 这里**复刻它的后半段**（选牌 → 扣钱 → 从牌组移除 → 计数 → 收尾），只认传入的 player。
     ///
     /// 收尾三件事与原版一致：`Inventory.OnCardRemovalUsed()`（标记条目 Used + 刷新视觉）、
     /// `Hook.AfterItemPurchased`（会员卡之类折扣遗物靠它）、`InvokePurchaseCompleted`（触发库存刷新）。

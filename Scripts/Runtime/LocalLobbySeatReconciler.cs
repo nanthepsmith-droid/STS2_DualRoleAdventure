@@ -62,7 +62,9 @@ internal static class LocalLobbySeatReconciler
             }
 
             loopbackService.SetCurrentSenderId(playerId);
-            _ = lobby.AddLocalHostPlayerInternal(serializableUnlockState, MaxLocalAscensionLevel);
+            // 0.113：AddLocalHostPlayerInternal 新增第三参 maxBlitzAscension（新模式 Blitz 的进阶上限）；
+            // 本地回环不区分模式，两个上限都给满。
+            _ = lobby.AddLocalHostPlayerInternal(serializableUnlockState, MaxLocalAscensionLevel, MaxLocalAscensionLevel);
             added++;
         }
 
@@ -97,7 +99,7 @@ internal static class LocalLobbySeatReconciler
 
             player.isReady = true;
             lobby.Players[i] = player;
-            listener.PlayerChanged(player, false);
+            listener.PlayerChanged(player);
             readyChanged = true;
         }
 

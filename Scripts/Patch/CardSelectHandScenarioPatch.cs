@@ -65,9 +65,10 @@ internal static class CardSelectHandScenarioPatch
             return true;
         }
 
-        // 必须在瓦库出牌作用域内（栈上全局选择器为本 mod 的策略选择器）——作用域外选牌一律不代答
+        // 必须在瓦库出牌作用域内（该玩家栈顶为本 mod 的策略选择器）——作用域外选牌一律不代答
         // （r6 回滚教训：作用域外自动作答曾导致进战斗黑屏，选牌仍交真人/安全网处理）。
-        if (CardSelectCmd.Selector is not LocalWakuuStrategySelector)
+        // 0.113：栈按玩家拆分 ⇒ 问该玩家自己的栈（结构外成员返回 null ⇒ 不代答）。
+        if (WakuuSelectorStackAccess.GetTop(player) is not LocalWakuuStrategySelector)
         {
             return true;
         }

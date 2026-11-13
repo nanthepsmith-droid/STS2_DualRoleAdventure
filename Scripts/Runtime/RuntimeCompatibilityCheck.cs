@@ -54,6 +54,11 @@ internal static class RuntimeCompatibilityCheck
         // 所以启动就解析一次并打日志（同 §9 的"改了运行期目标要自检"）。
         LocalActionQueueSetBridge.SelfCheck();
 
+        // 0.113：选择器栈从 `CardSelectCmd._selectorStack`（全局单栈）搬到 `CardSelectorStack._selectorStacks`
+        // （按玩家分栈）。探针/按引用摘栈/自恢复清理仍要靠反射读这个字段，改名后就只会"静默空转"，
+        // 所以同样启动解析一次并留痕。
+        WakuuSelectorStackAccess.SelfCheck();
+
         int fatalCount = fatalFailures.Count - fatalBefore;
         if (fatalCount > 0)
         {

@@ -390,14 +390,15 @@ internal static class PersonalGridCardPickPatch
 /// <summary>
 /// 个人偏好记录器的「真人商店购买」钩子（用户口径：只记「买了」这一种真人决策）。
 ///
-/// 锚点：MerchantEntry.OnTryPurchaseWrapper 是所有商店条目（卡/遗物/药水）购买成功后的公共出口；
-/// 删卡服务（MerchantCardRemovalEntry）用三参重载自己走另一条链，天然不进这里。
+/// 锚点：MerchantEntry.OnTryPurchaseUnsynchronized 是所有商店条目（卡/遗物/药水）购买成功后的公共出口
+/// （0.113 由 <c>OnTryPurchaseWrapper</c> 改名而来，逐行逻辑一致，只是多了 <c>TestMode.IsOff</c> 守卫）；
+/// 删卡服务（MerchantCardRemovalEntry）走 <c>DoCardRemoval</c> 另一条链，天然不进这里。
 /// 前缀在扣款/清栏之前快照"这一格卖的是什么 + 应付金币"（购买成功后条目会被 Clear/Restock，
 /// 后缀再读就拿不到了），后缀把记录挂到返回 Task 上、购买成功才入账。
 ///
 /// 目前商店只有真人会买（瓦库商店自动化是 Phase 4，届时瓦库自动购买需在此处加作用域排除）。
 /// </summary>
-[HarmonyPatch(typeof(MerchantEntry), nameof(MerchantEntry.OnTryPurchaseWrapper))]
+[HarmonyPatch(typeof(MerchantEntry), nameof(MerchantEntry.OnTryPurchaseUnsynchronized))]
 internal static class PersonalShopPurchasePatch
 {
     private sealed class Snapshot

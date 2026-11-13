@@ -154,7 +154,8 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
         // 栈上是**我们的**策略选择器（瓦库自动出牌作用域内）→ 交回它按场景作答，避免重复作答。
         // ⚠ 这里**不能**写成"栈必须为空"：第三方 mod 也会自己 `PushSelector`（实例：猪猪 mod【重瞳】
         // 在调 `From*` 之前压它自己的选择器），那样我们会**永远**被挡在门外 —— r173 就是这么漏掉的。
-        if (CardSelectCmd.Selector is LocalWakuuStrategySelector)
+        // 0.113：栈按玩家拆分 ⇒ 只看该玩家自己的栈顶。
+        if (WakuuSelectorStackAccess.GetTop(player) is LocalWakuuStrategySelector)
         {
             return false;
         }
@@ -381,7 +382,7 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
 
         LocalMultiControlLogger.Warn(
             $"瓦库作用域外选牌入口未适配: entry={entry}, player={player.NetId}, "
-            + $"selectorStackTop={CardSelectCmd.Selector?.GetType().Name ?? "none"} —— 本次不会自动作答"
+            + $"selectorStackTop={WakuuSelectorStackAccess.GetTop(player)?.GetType().Name ?? "none"} —— 本次不会自动作答"
             + "（若该角色是后台托管的瓦库，界面会等真人点）。请把这条日志报给维护者以扩展适配。");
     }
 

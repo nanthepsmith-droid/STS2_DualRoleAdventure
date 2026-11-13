@@ -55,6 +55,13 @@ internal sealed class LocalLoopbackHostGameService : INetHostGameService
 
     public NetHost? NetHost => null;
 
+    /// <summary>0.113：接口新增 <c>debugReason</c>（只用于日志，回环服务直接忽略）。</summary>
+    public void DisconnectClient(ulong peerId, NetError reason, bool now = false, string? debugReason = null)
+    {
+        LocalMultiControlLogger.Info(
+            $"本地回环收到断开请求（回环无真实连接，忽略）: peer={peerId}, reason={reason}, now={now}, debug={debugReason ?? "null"}");
+    }
+
     public event Action<NetErrorInfo>? Disconnected;
 
     public event Action<ulong>? ClientConnected;

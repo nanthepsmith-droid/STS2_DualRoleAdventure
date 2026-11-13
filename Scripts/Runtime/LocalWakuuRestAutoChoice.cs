@@ -451,7 +451,9 @@ internal static class LocalWakuuRestAutoChoice
     {
         if (option is SmithRestSiteOption smith)
         {
-            return WakuuSelectorRegistry.Open(player.NetId, new LocalWakuuSmithSelector(smith.SmithCount));
+            // 0.113：`SmithRestSiteOption.SmithCount` 已删除 —— 原版改成"每次 FromDeckForUpgrade 只升 1 张"
+        // （见 OnSelect 的 CardSelectorPrefs(..., 1)），所以这里固定 1；多次锻造由原版逐次调用。
+        return WakuuSelectorRegistry.Open(player.NetId, new LocalWakuuSmithSelector(1));
         }
 
         return WakuuSelectorRegistry.Open(player.NetId, new LocalWakuuStrategySelector());

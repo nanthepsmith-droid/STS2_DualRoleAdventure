@@ -64,6 +64,19 @@ internal static class LocalMultiControlRuntime
 
     private static long _lastEndTurnReconcileCheckMs;
 
+    /// <summary>
+    /// 0.113：「敌人已清空、战斗却没结算」的自愈节流与"本场只补一次"标记。
+    /// 只补一次是为了**防重复结算**（`CheckWinCondition` 内部会走 `EndCombatInternal` 发奖励）——
+    /// 若原版自己随后也判一次，`IsInProgress` 已是 false，不会重复进。
+    /// </summary>
+    private const long CombatEndStallNudgeIntervalMs = 700L;
+
+    private static long _lastCombatEndStallNudgeMs;
+
+    private static int _combatEndNudgedCombatId = int.MinValue;
+
+    private static int _combatEndNudgeCount;
+
     /// <summary>按钮内部 `_state` 字段的反射句柄（r282：解析一次，别每帧 `AccessTools.Field`）。</summary>
     private static FieldInfo? _endTurnButtonStateField;
 
@@ -252,6 +265,9 @@ internal static class LocalMultiControlRuntime
         // r282 性能优化新增的两个节流点 + 逐帧开销探针（退局后不该带着上一局的窗口）。
         _lastEndTurnReconcileCheckMs = 0L;
         _lastHeavyAutoEndTickMs = 0L;
+        // 0.113：战斗结束卡住自愈的记账（跨局必须复位，否则下一局同 CombatId 哈希会误判"已补过"）。
+        _lastCombatEndStallNudgeMs = 0L;
+        _combatEndNudgedCombatId = int.MinValue;
         _hostedPlayableCache.Clear();
         _tickPlayableMemo.Clear();
         _tickPlayableMemoAtMs = 0L;
@@ -267,6 +283,13 @@ internal static class LocalMultiControlRuntime
         // 立绘站位探针的采样快照（r215 诊断用）。
         LocalCreaturePositionProbe.Reset("run-cleanup");
         LocalWakuuRelicRuntime.ProbeAndRecoverSelectorStack("run-cleanup", allowRecover: true);
+        // 0.113：原版删掉了 `CardSelectCmd.Reset()`（选择器栈改由各 scope 自己清），
+        // 因此归属者注册表改在这里清 —— 否则被卡住的异步链泄漏的条目会跨局残留。
+        int clearedSelectorOwners = WakuuSelectorRegistry.Reset();
+        if (clearedSelectorOwners > 0)
+        {
+            LocalMultiControlLogger.Info($"运行清理：已清空瓦库选择器归属注册表（{clearedSelectorOwners} 条）");
+        }
         // 联机机器人席位：退局释放（只放本 mod 接管过的那些；CB 的接管集合是进程内静态的，不清会跨局残留）。
         CoopBotsSeatRuntime.ReleaseOnRunCleanup();
         LocalSelfCoopContext.Disable("RunManager.CleanUp");
@@ -2844,6 +2867,58 @@ internal static class LocalMultiControlRuntime
         RuntimeDiagnosticsLedger.RollFlowWindow(nowMs);
     }
 
+    /// <summary>
+    /// 0.113：「敌人已清空（`CombatManager.IsEnding`）、战斗却一直没结算」的**兜底一次**胜利判定。
+    ///
+    /// 为什么会缺这一次：0.113 的 `ActionExecutor` 在动作执行完后本该 `CheckWinCondition`
+    /// （`ActionExecutor.cs:170`），但对
+    /// <list type="bullet">
+    /// <item><c>EndPlayerTurnAction</c></item>
+    /// <item><c>ReadyToBeginEnemyTurnAction</c></item>
+    /// </list>
+    /// 两类动作**故意跳过**（161-171 行）。本地多控的"全员收口"路径恰好只有这两类动作 ⇒
+    /// 最后一个敌人若死在托管/战神就地打出的牌里（不出 `PlayCardAction` 队列），胜利判定永远不会发生，
+    /// 表现就是"敌人没了、奖励不出、点结束回合也没用"（2026-11-13 两次实机复现）。
+    ///
+    /// 安全性：只在 `IsInProgress &amp;&amp; IsEnding`（= 敌人确实清空）时补，且**每场战斗只补一次**
+    /// （按 <c>CombatId</c> 记账）—— 避免与原版正常路径叠加导致重复结算发两次奖励。
+    /// </summary>
+    private static void TryNudgeStalledCombatEnd()
+    {
+        if (!LocalSelfCoopContext.IsEnabled)
+        {
+            return;
+        }
+
+        CombatManager manager = CombatManager.Instance;
+        if (!manager.IsInProgress || !manager.IsEnding)
+        {
+            return;
+        }
+
+        int combatId = manager.CurrentCombatId?.GetHashCode() ?? 0;
+        if (_combatEndNudgedCombatId == combatId)
+        {
+            return;
+        }
+
+        long now = (long)Time.GetTicksMsec();
+        if (now - _lastCombatEndStallNudgeMs < CombatEndStallNudgeIntervalMs)
+        {
+            return;
+        }
+
+        _lastCombatEndStallNudgeMs = now;
+        _combatEndNudgedCombatId = combatId;
+        _combatEndNudgeCount++;
+
+        LocalMultiControlLogger.Warn(
+            $"检测到敌人已清空但战斗结算未推进，主动补一次胜利判定（0.113 收口路径不做胜利检查）: "
+            + $"nudge={_combatEndNudgeCount}, combatId={combatId}");
+
+        _ = manager.CheckWinCondition();
+    }
+
     private static void ReevaluateEndTurnButtonState(NCombatUi combatUi, CombatState combatState, Player currentPlayer)
     {
         if (combatState.CurrentSide != CombatSide.Player)
@@ -2982,6 +3057,12 @@ internal static class LocalMultiControlRuntime
         }
 
         _lastEndTurnReconcileCheckMs = checkMs;
+
+        // 0.113（2026-11-13 实机：战神局"敌人死了但战斗不结束"）：0.113 的 `ActionExecutor` 在执行完
+        // `EndPlayerTurnAction` / `ReadyToBeginEnemyTurnAction` 之后**故意跳过** `CheckWinCondition`
+        // （`ActionExecutor.cs:161-171`），而本地多控的收口路径恰好只走这两类动作 ⇒
+        // 敌人若死在托管/战神就地打出的牌里，就再也没有任何一次胜利判定，`IsEnding` 会一直挂着。
+        TryNudgeStalledCombatEnd();
 
         NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
         if (combatUi == null)

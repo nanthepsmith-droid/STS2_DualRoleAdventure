@@ -2,8 +2,8 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-11-12 19:43  HEAD=4276c6c
-# 统计: patch_classes=210 patch_rows=250 string_targets=211 descriptors=409
+# 生成时间=2026-11-13 18:44  HEAD=1824cb5
+# 统计: patch_classes=215 patch_rows=255 string_targets=215 descriptors=418
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	BgmProbeAudioManagerPatch	NAudioManager	-	no-target
@@ -14,8 +14,6 @@ P	CardPileHandVisualOwnerGuardPatch	CardPileCmd	CreateCardNodeAndUpdateVisuals	s
 P	CardPlayVisualsSkipPatch	CardModel	OnPlayWrapper	nameof
 P	CardRewardPatch	CardReward	OnSelect	string
 P	CardSelectCmdPatch	CardSelectCmd	ShouldSelectLocalCard	string
-P	CardSelectCmdResetRegistryPatch	CardSelectCmd	Reset	nameof
-P	CardSelectCmdSelectorGuardPatch	CardSelectCmd	Selector	nameof
 P	CardSelectDeckScenarioPatch	CardSelectCmd	FromDeckForRemoval	nameof
 P	CardSelectDeckScenarioPatch	CardSelectCmd	FromDeckForUpgrade	nameof
 P	CardSelectForegroundSwitchPatch	CardSelectCmd	FromChooseACardScreen	nameof
@@ -40,16 +38,20 @@ P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromHandForDiscard	nameo
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromHandForUpgrade	nameof
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromSimpleGrid	nameof
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromSimpleGridForRewards	nameof
+P	CardSelectorStackGetSelectorGuardPatch	CardSelectorStack	GetSelector	nameof
 P	CardTransformAutomatedSeatContextGuardPatch	-	-	no-target
 P	CardTransformNetIdPinPatch	CardCmd	Transform	nameof
 P	ClientLobbyJoinResponseDeserializePatch	ClientLobbyJoinResponseMessage	Deserialize	nameof
 P	ClientLobbyJoinResponseSerializePatch	ClientLobbyJoinResponseMessage	Serialize	nameof
 P	CombatManagerDoTurnEndForegroundPatch	CombatManager	DoTurnEnd	string
+P	CombatManagerEndCombatNoArgProbePatch	CombatManager	EndCombatInternal	string
+P	CombatManagerEndCombatProbePatch	-	-	no-target
 P	CombatManagerFlushPlayerHandForegroundPatch	CombatManager	FlushPlayerHand	string
 P	CombatManagerPatch	CombatManager	SetReadyToEndTurn	nameof
 P	CombatManagerReadyEnemyTurnPatch	CombatManager	SetReadyToBeginEnemyTurn	nameof
 P	CombatManagerSetupPlayerTurnForegroundPatch	CombatManager	SetupPlayerTurn	string
 P	CombatRoomOfferRoomEndRewardsPatch	CombatRoom	OfferRoomEndRewards	nameof
+P	CombatRoomOnCombatEndedProbePatch	CombatRoom	OnCombatEnded	nameof
 P	CombatRoomTemporarySeatRewardPatch	CombatRoom	-	no-target
 P	CombatStateListCachePatch	CombatState	-	no-target
 P	CoopBotsShopAckPatch	-	-	no-target
@@ -70,6 +72,7 @@ P	GhostHandsHotkeysPatch	NGame	_Input	nameof
 P	HealRestSiteOptionPatch	HealRestSiteOption	OnSelect	nameof
 P	HellwarContentPatch	LocManager	Initialize	nameof
 P	HellwarContentPatch	ModelDb	Preload	nameof
+P	HookAfterCombatEndProbePatch	Hook	AfterCombatEnd	nameof
 P	HookEnqueueForegroundPatch	ActionQueueSynchronizer	EnqueueHookAction	string
 P	HookPlayerChoiceContextLocalPatch	HookPlayerChoiceContext	-	no-target
 P	HookPlayerChoiceContextPatch	HookPlayerChoiceContext	SignalPlayerChoiceEnded	nameof
@@ -149,6 +152,7 @@ P	NInputManagerPatch	NInputManager	_UnhandledInput	nameof
 P	NMerchantInventoryPatch	NMerchantInventory	Initialize	nameof
 P	NMultiplayerHostSubmenuOfficialEntryGuardPatch	NMultiplayerHostSubmenu	StartHost	nameof
 P	NMultiplayerHostSubmenuPatch	NMultiplayerHostSubmenu	_Ready	nameof
+P	NMultiplayerHostSubmenuRefreshPatch	NMultiplayerHostSubmenu	RefreshButtons	string
 P	NMultiplayerLoadGameScreenPatch	NMultiplayerLoadGameScreen	ShouldAllowRunToBegin	nameof
 P	NMultiplayerPlayerIntentHandlerPatch	NMultiplayerPlayerIntentHandler	Create	nameof
 P	NMultiplayerPlayerStatePetHpPatch	NMultiplayerPlayerState	_Ready	nameof
@@ -186,7 +190,7 @@ P	PersonalDeckRemovalPatch	CardSelectCmd	FromDeckGeneric	nameof
 P	PersonalEventClickPatch	NEventRoom	OptionButtonClicked	nameof
 P	PersonalGridCardPickPatch	EventModel	SelectCardsToAddToDeckFromGrid	string
 P	PersonalRunEndPatch	RunManager	OnEnded	nameof
-P	PersonalShopPurchasePatch	MerchantEntry	OnTryPurchaseWrapper	nameof
+P	PersonalShopPurchasePatch	MerchantEntry	OnTryPurchaseUnsynchronized	nameof
 P	PlatformUtilGetPlayerNamePatch	PlatformUtil	GetPlayerName	nameof
 P	PlayerChoiceSynchronizerPatch	PlayerChoiceSynchronizer	SyncLocalChoice	nameof
 P	PlayerChoiceSynchronizerRemoteChoiceFallbackPatch	PlayerChoiceSynchronizer	WaitForRemoteChoice	nameof
@@ -196,6 +200,7 @@ P	PlayerChoiceSynchronizerWaitForRemoteChoicePatch	PlayerChoiceSynchronizer	Wait
 P	PlayerGainGoldMirrorPatch	PlayerCmd	GainGold	nameof
 P	PlayerLoseGoldMirrorPatch	PlayerCmd	LoseGold	nameof
 P	PlayerRemoveRelicInternalGuardPatch	Player	RemoveRelicInternal	nameof
+P	PlayerReviveBeforeCombatEndProbePatch	Player	ReviveBeforeCombatEnd	nameof
 P	PotionManualUseTargetPatch	PotionModel	EnqueueManualUse	nameof
 P	PotionProcuredAutoDrinkPatch	PotionCmd	TryToProcure	nameof
 P	ProgressSaveManagerUpdateWithRunDataPatch	ProgressSaveManager	UpdateWithRunData	nameof
@@ -225,7 +230,7 @@ P	StatBadgeEventPatch	NEventRoom	SetOptions	string
 P	StatBadgeMerchantFillSlotPatch	NMerchantCard	FillSlot	string
 P	StatBadgeMerchantPatch	NMerchantInventory	Initialize	string
 P	StatBadgeRewardRowPatch	NCardRewardSelectionScreen	RefreshOptions	string
-P	SynchronizationOwnershipLogPatch	OneOffSynchronizer	DoLocalMerchantCardRemoval	nameof
+P	SynchronizationOwnershipLogPatch	MerchantCardRemovalEntry	DoCardRemoval	nameof
 P	SynchronizationOwnershipLogPatch	RewardSynchronizer	SyncLocalObtainedCard	nameof
 P	SynchronizationOwnershipLogPatch	RewardSynchronizer	SyncLocalObtainedGold	nameof
 P	SynchronizationOwnershipLogPatch	RewardSynchronizer	SyncLocalObtainedPotion	nameof
@@ -259,6 +264,7 @@ S	accesstools	ActionQueueSet	_actionQueues	field
 S	accesstools	ActionQueueSynchronizer	_actionQueueSet	field
 S	accesstools	AutomatedSeatTransformVisualGate	IsMineForTransformVisual	method
 S	accesstools	CardCmd	Transform	method
+S	accesstools	CombatManager	EndCombatInternal	method
 S	accesstools	CombatManager	_playersReadyToBeginEnemyTurn	field
 S	accesstools	CombatManager	_turnState	field
 S	accesstools	CoopBotsShopAckPatch	Postfix	method
@@ -275,6 +281,7 @@ S	accesstools	MapSelectionSynchronizer	MoveToMapCoord	method
 S	accesstools	MapSelectionSynchronizer	_netService	field
 S	accesstools	MapSelectionSynchronizer	_runState	field
 S	accesstools	MapSelectionSynchronizer	_votes	field
+S	accesstools	MegaCrit.Sts2.Core.Combat.CombatTurnState	-	method
 S	accesstools	MegaCrit.Sts2.Core.Multiplayer.Game.RestSiteSynchronizer	-	method
 S	accesstools	MerchantEntry	_player	field
 S	accesstools	ModManager	-	method
@@ -352,7 +359,7 @@ S	accesstools	StartupProfilerPatch	Prefix	method
 S	accesstools	TreasureRoomRelicSynchronizer	EndRelicVoting	method
 S	accesstools	TreasureRoomRelicSynchronizer	RelicsAwarded	field
 S	accesstools	TreasureRoomRelicSynchronizer	VotesChanged	field
-S	accesstools	TreasureRoomRelicSynchronizer	_playerCollection	field
+S	accesstools	TreasureRoomRelicSynchronizer	_runState	field
 S	accesstools	TreasureRoomRelicSynchronizer	_votes	field
 S	getmember	-	Clear	method
 S	harmony	ActionQueueSynchronizer	EnqueueHookAction	method
@@ -363,6 +370,7 @@ S	harmony	CardReward	OnSelect	method
 S	harmony	CardSelectCmd	ShouldSelectLocalCard	method
 S	harmony	CombatManager	AfterAllPlayersReadyToBeginEnemyTurn	method
 S	harmony	CombatManager	DoTurnEnd	method
+S	harmony	CombatManager	EndCombatInternal	method
 S	harmony	CombatManager	FlushPlayerHand	method
 S	harmony	CombatManager	SetupPlayerTurn	method
 S	harmony	CrystalSphere	PaymentPlan	method
@@ -396,6 +404,7 @@ S	harmony	NHandImageCollection	UpdateHandVisibility	method
 S	harmony	NMainMenuSubmenuStack	GetSubmenuType	method
 S	harmony	NMerchantCard	FillSlot	method
 S	harmony	NMerchantInventory	Initialize	method
+S	harmony	NMultiplayerHostSubmenu	RefreshButtons	method
 S	harmony	NMultiplayerSubmenu	OnHostPressed	method
 S	harmony	NMultiplayerSubmenu	StartLoad	method
 S	harmony	NPlayerHand	OnHolderPressed	method
