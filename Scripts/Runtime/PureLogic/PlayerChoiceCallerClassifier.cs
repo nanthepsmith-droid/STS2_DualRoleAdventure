@@ -106,14 +106,24 @@ internal static class PlayerChoiceCallerClassifier
     /// <summary>
     /// 按调用方映射它需要的结果类型。表来自 `sts2src`（逐个 `WaitForRemoteChoice` 调用点核对）：
     /// <code>
-    /// CardSelectCmd.FromHand* / FromCombatPile*            → AsCombatCards()  → CombatCard
-    /// CardSelectCmd.FromDeck*                              → AsDeckCards()    → DeckCard
+    /// *.FromHand* / *.FromCombatPile*                      → AsCombatCards()  → CombatCard
+    /// *.FromDeck*                                          → AsDeckCards()    → DeckCard
     /// CardSelectCmd.FromSimpleGrid* / FromChooseACardScreen → AsIndex(es)      → Index
     /// RelicSelectCmd.FromChooseARelicScreen                → AsIndex()        → Index
     /// CardReward.OnSelect                                  → AsIndexOrNull()  → Index
     /// MendRestSiteOption.OnSelect                          → AsPlayerId()     → Player
     /// 其它（含第三方自绘选牌）                              → 默认 Index
     /// </code>
+    ///
+    /// ⚠ **r356 起改按「方法名前缀」判定，不再要求声明类型就是 `CardSelectCmd`**。
+    /// 实证（2026-11-14 实机，marker r355）：BaseLib 把卡牌选择入口整体又包了一层，栈上露出的是
+    /// `BaseLibCardSelectCmd.FromCombatPileInOrder` ⇒ 旧实现（`callerType == "CardSelectCmd"`）落到
+    /// 默认 `Index` ⇒ 调用方 `.AsCombatCards()` 抛
+    /// `Tried to get combat cards from player choice result of type Index!` ⇒ 包住它的
+    /// `GenericHookGameAction` 永久停在 `waiting for player choice`（战神遗物自动打出的
+    /// `WATCHER-CUT_THROUGH_FATE` 卡面一直停在屏幕中间），随后把回合循环一起拖死。
+    /// 语义在方法名里（`FromCombatPile*` / `FromHand*` / `FromDeck*` 都只是原版同名命令的包装层），
+    /// 所以按前缀判定比按声明类型更稳。
     /// </summary>
     internal static PlayerChoiceEmptyResultKind Classify(string callerType, string callerMethod)
     {
@@ -122,17 +132,14 @@ internal static class PlayerChoiceCallerClassifier
             return PlayerChoiceEmptyResultKind.Player;
         }
 
-        if (string.Equals(callerType, "CardSelectCmd", System.StringComparison.Ordinal))
+        if (StartsWith(callerMethod, "FromHand") || StartsWith(callerMethod, "FromCombatPile"))
         {
-            if (StartsWith(callerMethod, "FromHand") || StartsWith(callerMethod, "FromCombatPile"))
-            {
-                return PlayerChoiceEmptyResultKind.CombatCard;
-            }
+            return PlayerChoiceEmptyResultKind.CombatCard;
+        }
 
-            if (StartsWith(callerMethod, "FromDeck"))
-            {
-                return PlayerChoiceEmptyResultKind.DeckCard;
-            }
+        if (StartsWith(callerMethod, "FromDeck"))
+        {
+            return PlayerChoiceEmptyResultKind.DeckCard;
         }
 
         // FromSimpleGrid* / FromChooseACardScreen / RelicSelectCmd / CardReward / 未知（含第三方自绘）
