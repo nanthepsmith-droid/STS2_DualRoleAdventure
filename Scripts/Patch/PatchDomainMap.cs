@@ -84,7 +84,8 @@ internal static class PatchDomainMap
             ["RestSiteSynchronizerChooseLocalOptionPatch"] = PatchDomain.Core,
             ["TreasureRoomRelicSynchronizerPatch"] = PatchDomain.Core,
             ["TreasureRoomRelicSynchronizerBeginPatch"] = PatchDomain.Core,
-            // r352 极速模式宝箱「每人 2 件」：池子补齐 + 两阶段投票后一次性派发
+            // r352 极速模式宝箱的可选「每人 2 件」（开关 blitzTreasureDoublePick 默认关；
+            // 关 = 原版多人口径「人数 + 2 件、每人 1 件」）：池子补齐 + 两阶段投票后一次性派发
             ["BlitzTreasureDoublePickPatch"] = PatchDomain.Core,
             ["BlitzTreasurePoolTopUpPatch"] = PatchDomain.Core,
             ["OneOffSynchronizerSpoilsMapPatch"] = PatchDomain.Core,

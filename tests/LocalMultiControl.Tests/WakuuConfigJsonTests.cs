@@ -30,6 +30,7 @@ public class WakuuConfigJsonTests
             Assert.That(data.shopAssistBuyRemoval, Is.False); // Phase 4 增量 v3：自动删牌默认关
             Assert.That(data.statBadge, Is.False);
             Assert.That(data.skipTurnStartDrawAnim, Is.False);
+            Assert.That(data.blitzTreasureDoublePick, Is.False); // 极速宝箱每人 2 件：默认关 = 原版多人口径（每人 1 件）
             // 方案 D 队列档 / 并发档已于 2026-09-26 转正为「默认开」（断言已移入下方「默认开」组）
             // 默认开
             Assert.That(data.playAllCards, Is.True);
@@ -305,6 +306,23 @@ public class WakuuConfigJsonTests
         });
     }
 
+    /// <summary>
+    /// 极速宝箱「每人 2 件」开关（2026-11-14，**默认关**）：关 = 原版多人口径（人数 + 2 件、每人 1 件）。
+    /// </summary>
+    [Test]
+    public void 解析极速宝箱双选开关_true生效_默认关()
+    {
+        Assert.That(new WakuuConfigData().blitzTreasureDoublePick, Is.False, "默认必须关 = 保持原版");
+
+        WakuuConfigData data = WakuuConfigJson.Parse("""{ "blitzTreasureDoublePick": true }""")!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(data.blitzTreasureDoublePick, Is.True);
+            Assert.That(data.vakuuDaddy, Is.False, "未提供的字段保持默认值");
+        });
+    }
+
     [Test]
     public void 解析null字面量_返回null()
     {
@@ -361,6 +379,7 @@ public class WakuuConfigJsonTests
             Assert.That(json, Does.Contain("\"shopAssistBuyPotions\""));
             Assert.That(json, Does.Contain("\"shopAssistBuyRemoval\""));
             Assert.That(json, Does.Contain("\"statBadge\""));
+            Assert.That(json, Does.Contain("\"blitzTreasureDoublePick\""));
             Assert.That(json, Does.Contain("\"skipTurnStartDrawAnim\""));
             Assert.That(json, Does.Contain("\"fastVakuuPlay\""));
             Assert.That(json, Does.Contain("\"vakuuPlayQueue\""));

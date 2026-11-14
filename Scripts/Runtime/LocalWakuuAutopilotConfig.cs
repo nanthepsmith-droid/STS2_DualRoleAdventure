@@ -254,6 +254,14 @@ internal static class LocalWakuuAutopilotConfig
     public static bool SeatStatusBadge { get; private set; } = true;
 
     /// <summary>
+    /// 极速模式宝箱「每人 2 件」（**默认关**，2026-11-14 用户实机联机确认后改成开关）：
+    /// 关 = 原版多人口径（遗物 = 人数 + 2 件、每人只选 1 件）；
+    /// 开 = 本 mod 把池子补到 人数 × 2 件 + 两阶段投票（每人 2 件）。
+    /// 见 <see cref="Patch.BlitzTreasureDoublePickRuntime"/> / <see cref="BlitzTreasurePickPolicy"/>。
+    /// </summary>
+    public static bool BlitzTreasureDoublePick { get; private set; }
+
+    /// <summary>
     /// 跳过「其他人」的回合开始抽牌演出（改进-1，默认关）：
     /// 回合开始只保留当前前台玩家的抽牌演出，其余玩家不切前台（其抽牌按原版规则瞬时生效）。
     /// </summary>
@@ -387,6 +395,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.statBadge): data.statBadge = value; break;
                     case nameof(WakuuConfigData.petHpBadge): data.petHpBadge = value; break;
                     case nameof(WakuuConfigData.seatStatusBadge): data.seatStatusBadge = value; break;
+                    case nameof(WakuuConfigData.blitzTreasureDoublePick): data.blitzTreasureDoublePick = value; break;
                     case nameof(WakuuConfigData.skipTurnStartDrawAnim): data.skipTurnStartDrawAnim = value; break;
                     case nameof(WakuuConfigData.fastVakuuPlay): data.fastVakuuPlay = value; break;
                     case nameof(WakuuConfigData.vakuuPlayQueue): data.vakuuPlayQueue = value; break;
@@ -812,7 +821,7 @@ internal static class LocalWakuuAutopilotConfig
                 + $"shopAssist={data.shopAssist}, shopAssistBuyNoData={data.shopAssistBuyNoData}, "
                 + $"shopAssistBuyRelics={data.shopAssistBuyRelics}, shopAssistBuyPotions={data.shopAssistBuyPotions}, "
                 + $"shopAssistBuyRemoval={data.shopAssistBuyRemoval}, "
-                + $"statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, seatStatusBadge={data.seatStatusBadge}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, fastVakuuPlay={data.fastVakuuPlay}, vakuuPlayQueue={data.vakuuPlayQueue}, vakuuPlayOverlap={data.vakuuPlayOverlap}, vakuuViewMode={WakuuViewModes.Normalize(data.vakuuViewMode)}, "
+                + $"statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, seatStatusBadge={data.seatStatusBadge}, blitzTreasureDoublePick={data.blitzTreasureDoublePick}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, fastVakuuPlay={data.fastVakuuPlay}, vakuuPlayQueue={data.vakuuPlayQueue}, vakuuPlayOverlap={data.vakuuPlayOverlap}, vakuuViewMode={WakuuViewModes.Normalize(data.vakuuViewMode)}, "
                 + $"personalTier={NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier}, "
                 + $"purifyVakuu={data.purifyVakuu}, uniteVakuu={data.uniteVakuu}, "
                 + $"refineVakuu={data.refineVakuu}, "
@@ -884,6 +893,7 @@ internal static class LocalWakuuAutopilotConfig
         StatBadgeSource = WakuuStatBadgeSource.Normalize(data.statBadgeSource);
         PetHpBadge = data.petHpBadge;
         SeatStatusBadge = data.seatStatusBadge;
+        BlitzTreasureDoublePick = data.blitzTreasureDoublePick;
         SkipTurnStartDrawAnim = data.skipTurnStartDrawAnim;
         FastWakuuPlay = data.fastVakuuPlay;
         WakuuPlayQueue = data.vakuuPlayQueue;

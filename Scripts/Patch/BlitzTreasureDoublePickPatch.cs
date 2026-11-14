@@ -23,14 +23,16 @@ using MegaCrit.Sts2.Core.Runs;
 namespace LocalMultiControl.Scripts.Patch;
 
 /// <summary>
-/// 极速模式（Blitz）宝箱「每人 2 件」（r352）。
+/// 极速模式（Blitz）宝箱「每人 2 件」（r352；**2026-11-14 起变成开关，默认关**）。
 ///
 /// <para><b>原版口径</b>（`TreasureRoomRelicSynchronizer.BeginRelicPicking`）：
 /// 单人 = 每人 1 件 + 额外 1 件，`_roundsLeft = 2` ⇒ 一个人选两轮、拿 2 件；
-/// 多人 = 每人 1 件 + 额外 2 件，但 `_roundsLeft = 1` ⇒ **只投一轮**，多出来的遗物按"没人投就跳过"处理。
-/// 本地多控走的是多人分支，实机表现 = 2 人局宝箱里 4 件遗物，每人只能拿 1 件（另外 2 件被丢掉）。</para>
+/// 多人 = 每人 1 件 + 额外 2 件，`_roundsLeft = 1` ⇒ **只投一轮、每人只选 1 件**
+/// （多出来的遗物按"没人投就跳过"处理）。**这是原版多人设计**（2026-11-14 用户实机联机确认），
+/// 所以我们不再默认改它 —— 开关 <see cref="LocalWakuuAutopilotConfig.BlitzTreasureDoublePick"/>
+/// 默认关 = 完全走原版；开 = 走下面的两阶段派发。</para>
 ///
-/// <para><b>本补丁</b>：仍然**只结算一次**（避开原版"多轮"里 `_holdersInUse.RemoveAt(relicIndex)`
+/// <para><b>开关打开时</b>：仍然**只结算一次**（避开原版"多轮"里 `_holdersInUse.RemoveAt(relicIndex)`
 /// 按下标乱序删除导致第二轮卡面与遗物错位的坑），但把投票分成两个阶段：
 /// 第一阶段每人各投 1 件 → 清票 → 第二阶段每人再投 1 件 → 一次性派发。
 /// 派发规则见 <see cref="BlitzTreasurePickPolicy"/>（先认玩家点的，再按席位顺序补足到 2 件）。</para>
@@ -60,7 +62,11 @@ internal static class BlitzTreasureDoublePickPatch
     }
 }
 
-/// <summary>极速宝箱遗物池的「每人 2 件」口径补齐（原版多人只给 人数 + 2 件）。</summary>
+/// <summary>
+/// 极速宝箱遗物池的「每人 2 件」口径补齐（原版多人只给 人数 + 2 件）。
+/// 仅当开关 <see cref="LocalWakuuAutopilotConfig.BlitzTreasureDoublePick"/> 打开时执行，
+/// 并且顺便把本轮标记成"已接管"（开关在房间中途被关掉也不会出现半截两阶段流程）。
+/// </summary>
 [HarmonyPatch(typeof(TreasureRoomRelicSynchronizer), nameof(TreasureRoomRelicSynchronizer.BeginRelicPicking))]
 internal static class BlitzTreasurePoolTopUpPatch
 {
@@ -136,7 +142,11 @@ internal static class BlitzTreasureDoublePickRuntime
         States.Remove(synchronizer);
     }
 
-    /// <summary>把遗物池补到「每个席位 2 件」（上限 = 本 mod 的席位口径 12）。</summary>
+    /// <summary>
+    /// 把遗物池补到「每个席位 2 件」并标记本轮走两阶段派发。
+    /// **开关 <see cref="LocalWakuuAutopilotConfig.BlitzTreasureDoublePick"/> 关（默认）时什么都不做** ——
+    /// 直接沿用原版多人口径：遗物「人数 + 2」件、`_roundsLeft = 1` ⇒ 每人只选 1 件。
+    /// </summary>
     internal static void TopUpPoolForDoublePick(TreasureRoomRelicSynchronizer synchronizer)
     {
         if (!TryGetBlitzContext(synchronizer, out IRunState? runState, out IReadOnlyList<Player>? players))
@@ -152,8 +162,26 @@ internal static class BlitzTreasureDoublePickRuntime
         // r353：不再按格子上限截断 —— 12 席 × 每人 2 件 = 24 件都得放得下
         // （原版多人只给 人数 + 2 件，12 人局只有 14 件 ⇒ 实机上"该有 24 件却只看到 14 件"）。
         int target = players!.Count * BlitzTreasurePickPolicy.PicksPerPlayer;
+
+        if (!LocalWakuuAutopilotConfig.BlitzTreasureDoublePick)
+        {
+            // 默认档：原版多人设计就是「人数 + 2 件、每人只选 1 件」（2026-11-14 实机确认），
+            // 我们只在日志里留一条口径锚点，不做任何改动。
+            LocalMultiControlLogger.Info(
+                $"极速宝箱沿用原版口径（blitzTreasureDoublePick=关）: 玩家={players.Count}, 遗物={relics.Count}, "
+                + $"每人={BlitzTreasurePickPolicy.VanillaPicksPerPlayer}件");
+            return;
+        }
+
+        // 先登记"本轮已接管"：这样即便下面补齐失败、或者开关在房间中途被关掉，
+        // 投票判定也不会从两阶段流程半路崩回原版单轮（原版会自己再写一次票）。
+        GetOrCreateState(synchronizer);
+
         if (relics.Count >= target)
         {
+            LocalMultiControlLogger.Info(
+                $"极速宝箱池子本来就够「每人 {BlitzTreasurePickPolicy.PicksPerPlayer} 件」: "
+                + $"玩家={players.Count}, 现有={relics.Count}");
             return;
         }
 
@@ -222,7 +250,14 @@ internal static class BlitzTreasureDoublePickRuntime
             return false;
         }
 
-        PickState state = GetOrCreateState(synchronizer);
+        // 只有「开关开 + 本轮已在 BeginRelicPicking 时登记过」才接管；
+        // 否则（开关关 = 原版口径 / 池子补齐失败）**在写票之前**交回原版 ——
+        // 先写票再返回 false 会让原版拿着我们改过的票继续结算。
+        if (!States.TryGetValue(synchronizer, out PickState? state))
+        {
+            return false;
+        }
+
         votes[slot].index = index;
         votes[slot].voteReceived = true;
 

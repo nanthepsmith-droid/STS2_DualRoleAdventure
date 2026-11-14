@@ -7,12 +7,14 @@ namespace LocalMultiControl.Scripts.Runtime;
 internal readonly record struct BlitzTreasureAssignment(int PlayerSlot, int RelicIndex, bool FromPick);
 
 /// <summary>
-/// 极速模式（Blitz）宝箱「每人 2 件」的**纯逻辑**派发判据（r352）。
+/// 极速模式（Blitz）宝箱「每人 2 件」的**纯逻辑**派发判据（r352；2026-11-14 起只在开关打开时使用）。
 ///
-/// <para><b>为什么需要</b>：单人极速宝箱是 <c>_roundsLeft = 2</c> + 「1 件固定 + 1 件额外」，
-/// 一个人选两轮拿到 2 件；而多人分支把 <c>_roundsLeft</c> 写死 1、额外塞 2 件 ⇒
-/// 每人只能投一次票，第二件永远没人选（实机：2 人局 4 件遗物只发出去 2 件）。
-/// 本地多控走的是多人分支，所以「每人 2 件」必须由我们自己派发。</para>
+/// <para><b>为什么不默认用</b>：单人极速宝箱是 <c>_roundsLeft = 2</c> + 「1 件固定 + 1 件额外」，
+/// 一个人选两轮拿到 2 件；而**多人分支的「<c>_roundsLeft = 1</c>、遗物 = 人数 + 2、每人只选 1 件」
+/// 本来就是原版设计**（2026-11-14 用户实机联机确认），不是 bug。本地多控走多人分支，
+/// 所以默认档就应该原样照原版的"每人 1 件"。</para>
+///
+/// <para>只有把开关 <c>blitzTreasureDoublePick</c> 打开时，才由我们自己按下面的口径派发每人 2 件。</para>
 ///
 /// <para><b>口径</b>（纯函数，可单测）：
 /// ① 每个席位最多 <see cref="PicksPerPlayer"/> 件；
@@ -23,7 +25,13 @@ internal readonly record struct BlitzTreasureAssignment(int PlayerSlot, int Reli
 /// </summary>
 internal static class BlitzTreasurePickPolicy
 {
-    /// <summary>每个席位在宝箱里应得的遗物件数（与单人极速一致）。</summary>
+    /// <summary>
+    /// 原版**多人**宝箱每人可选的件数（`_roundsLeft = 1`）。开关关（默认）时就是这个口径，
+    /// 也是"用户实机联机确认过的原版设计"。日志里用它把口径写清楚。
+    /// </summary>
+    internal const int VanillaPicksPerPlayer = 1;
+
+    /// <summary>开关打开时每个席位在宝箱里应得的遗物件数（与单人极速一致）。</summary>
     internal const int PicksPerPlayer = 2;
 
     internal static List<BlitzTreasureAssignment> BuildAssignments(

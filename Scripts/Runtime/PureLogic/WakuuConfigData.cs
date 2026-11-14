@@ -324,6 +324,20 @@ internal sealed class WakuuConfigData
     public bool seatStatusBadge { get; set; } = true;
 
     /// <summary>
+    /// 极速模式（Blitz）宝箱「每人 2 件」（**默认关**，2026-11-14 用户实机联机确认后追加开关）。
+    ///
+    /// <para><b>原版多人口径就是这个</b>：<c>TreasureRoomRelicSynchronizer.BeginRelicPicking</c> 里
+    /// 多人分支 = 遗物「人数 + 2」件、<c>_roundsLeft = 1</c> ⇒ **每人只选 1 件**（多出来的按"没人投"丢弃），
+    /// 只有单人极速才是每人 2 件。我们 r352/r353 曾按"这是 bug"改成每人 2 件，
+    /// 现在改成**开关（默认关 = 完全回到原版）**。</para>
+    ///
+    /// <para>开启后：池子补到「人数 × 2」件 + 两阶段投票，每人先各选 1 件、第二阶段再各选 1 件，
+    /// 一次性派发（12 席局 = 24 件）。只作用于**本地多角色极速**，不影响官方联机。
+    /// 见 <c>BlitzTreasureDoublePickRuntime</c> / <see cref="BlitzTreasurePickPolicy"/>。</para>
+    /// </summary>
+    public bool blitzTreasureDoublePick { get; set; }
+
+    /// <summary>
     /// 跳过「其他人」的回合开始抽牌演出（改进-1，默认关）。
     /// 本地多控下回合开始会依次把前台切到每个真人玩家、逐个播完自动抽牌动画再切下一个，
     /// 满员（10+ 玩家）时要等很久。开启后回合开始**只保留当前正在看的那位**的演出：

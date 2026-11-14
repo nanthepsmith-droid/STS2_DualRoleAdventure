@@ -585,6 +585,13 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
         column.AddChild(CreateSpacer(10));
 
         AddToggleRow(column,
+            LocalModText.Select("极速宝箱每人 2 件", "Blitz Chest: 2 Relics Each"),
+            LocalModText.Select(
+                "默认关 = 完全走原版多人口径：极速模式宝箱只有「人数 + 2」件遗物，每人只选 1 件（2026-11-14 用官方联机实机确认过，这就是原版设计，不是 bug；只有单人极速才是每人 2 件）。开启后本 mod 把遗物池补到「人数 × 2」件，并改成两阶段投票：每人先各选 1 件，第二阶段再各选 1 件，最后一次性派发（12 人局 = 24 件）。只作用于「本地多角色极速」，官方联机入口不受影响。",
+                "Off by default = vanilla multiplayer behavior: the Blitz chest holds (players + 2) relics and each player picks only ONE (confirmed in official multiplayer on 2026-11-14 — this is by design, not a bug; only solo Blitz gives 2 each). When on, the mod tops the pool up to players × 2 and uses two voting phases: everyone picks one, then everyone picks one more, then all rewards are granted at once (12 players = 24 relics). Only affects \"Local Multi-Co-op Blitz\"; the official multiplayer entry is untouched."),
+            () => LocalWakuuAutopilotConfig.BlitzTreasureDoublePick,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("blitzTreasureDoublePick", value));
+        AddToggleRow(column,
             LocalModText.Select("跨角色卡组（战后奖励）", "Cross-Character Card Offers (Post-Combat)"),
             LocalModText.Select(
                 "默认关。开启后每个角色的战后卡牌奖励追加一组从「其他角色」卡池抽取的 3 选 1（原作者未完成的 v1.30 设计）。",
