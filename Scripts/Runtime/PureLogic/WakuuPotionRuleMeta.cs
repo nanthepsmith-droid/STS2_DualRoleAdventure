@@ -40,4 +40,5 @@ internal sealed record WakuuPotionRuleMeta(
     string? AllyCharacterTypeName,
     string? MatchedPotionTypeName,
     bool HasCondition,
-    bool HasCardPicker);
+    bool HasCardPicker,
+    bool RequireAllyCharacterMatch = false);

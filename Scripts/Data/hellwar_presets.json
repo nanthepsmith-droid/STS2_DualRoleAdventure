@@ -308,6 +308,57 @@
         "RADIANT_PEARL"
       ],
       "default": false
+    },
+    {
+      "id": "fool1",
+      "name": "愚者（箭矢循环）",
+      "tiers": [
+        "Rare"
+      ],
+      "skin": "FOOL",
+      "deck": "QUICK_SHOT+, QUICK_SHOT+, FOOLISH_SHOT+, FOOLISH_SHOT+, HEAVY_SHOT+, HEAVY_SHOT+, NOCK+, NOCK+, ARCHERY+, QUIVER+, WREST+, WREST+, UPROOT+, WHISTLING_ARROWS+, DEFEND_FOOL+, DEFEND_FOOL+, CHO_FIRM+, CHO_READY+, WAH_HAMMER+, BOW_SMACK+, BOW_SMACK+",
+      "relics": [
+        "WHITTLING_KNIFE",
+        "TWINE",
+        "NUNCHAKU"
+      ],
+      "upgradeDeck": true,
+      "default": false
+    },
+    {
+      "id": "fool2",
+      "name": "愚者（瞄准爆发）",
+      "tiers": [
+        "Epic"
+      ],
+      "skin": "FOOL",
+      "deck": "NOCK+, NOCK+, ARCHERY+, QUIVER+, QUIVER+, SHOW_OFF+, HEAVY_SHOT+, HEAVY_SHOT+, SKY_SHOT+, RAPID_SHOT+, TRICK_SHOT+, HONING+, SERRATED_ARROWS+, EXPLOSIVE_ARROWS+, CHO_READY+, KI_REST+, DEFEND_FOOL+, DEFEND_FOOL+, WREST+, WHISTLING_ARROWS+, BOW_SMACK+",
+      "relics": [
+        "WHITTLING_KNIFE",
+        "TWINE",
+        "PEN_NIB",
+        "ICE_CREAM"
+      ],
+      "upgradeDeck": true,
+      "default": false
+    },
+    {
+      "id": "fool3",
+      "name": "愚者（旋律交响）",
+      "tiers": [
+        "Ancient"
+      ],
+      "skin": "FOOL",
+      "deck": "WAH_HAMMER+, WAH_SWEEP+, WAH_BLAST+, WAH_TOUCH+, WAH_KI+, CHO_CHORUS+, CHO_LIMBS+, CHO_KI+, CHO_READY+, KI_VERSE+, KI_REST+, KI_HOP+, KI_WHIP+, WAH_CHO_KI+, WAH_SYMPHONY+, LOST_LUTE+, MOTIF+, VIOLENT_CHORD+, SONG_PATH+, LULLABY+",
+      "relics": [
+        "CONDUCTORS_BATON",
+        "RUNIC_PYRAMID",
+        "PEN_NIB",
+        "ICE_CREAM"
+      ],
+      "upgradeDeck": true,
+      "bonusHp": 25,
+      "default": false
     }
   ]
 }

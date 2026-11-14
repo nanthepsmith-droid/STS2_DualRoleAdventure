@@ -320,6 +320,9 @@ public class PotionRuleTableTests
     [TestCase("王之勇气给储君", "KingsCourage", "Regent")]
     [TestCase("骨头酿给亡灵契约师", "BoneBrew", "Necrobinder")]
     [TestCase("尸鬼瓮给亡灵契约师", "PotOfGhouls", "Necrobinder")]
+    [TestCase("精密药水给愚者", "PrecisionPotion", "Fool")]
+    [TestCase("瓶装歌曲给愚者", "BottledSong", "Fool")]
+    [TestCase("幸福结晶给愚者", "CrystallineEuphoria", "Fool")]
     public void 角色专属药水_指向正确职业(string ruleName, string potionTypeName, string characterTypeName)
     {
         WakuuPotionRuleMeta? meta = Find(ruleName);
@@ -343,6 +346,27 @@ public class PotionRuleTableTests
             Assert.That(meta.Scope, Is.EqualTo(WakuuPotionFightScope.BossFight));
             Assert.That(meta.Target, Is.EqualTo(WakuuPotionTargetKind.AllyCharacter));
             Assert.That(meta.AllyCharacterTypeName, Does.Contain("Ironclad"));
+            Assert.That(meta.FirstRoundOnly, Is.False);
+        });
+    }
+
+    /// <summary>
+    /// 愚者三瓶专属药水必须走「严格」目标解析：队伍里没有愚者 ⇒ 保留药水，**不兜底给自己**。
+    /// 为什么钉住：幸福结晶会给目标手牌塞满不可打的「悲伤」，误给非愚者 = 把瓦库手牌堵死；
+    /// 且三瓶都改成不限首回合（战斗中途中拿到也要能转交），所以不能再靠 FirstRoundOnly 兜。
+    /// </summary>
+    [TestCase("精密药水给愚者")]
+    [TestCase("瓶装歌曲给愚者")]
+    [TestCase("幸福结晶给愚者")]
+    public void 愚者专属药水_严格只给愚者玩家(string ruleName)
+    {
+        WakuuPotionRuleMeta? meta = Find(ruleName);
+        Assert.That(meta, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(meta!.Target, Is.EqualTo(WakuuPotionTargetKind.AllyCharacter));
+            Assert.That(meta.RequireAllyCharacterMatch, Is.True);
+            Assert.That(meta.Scope, Is.EqualTo(WakuuPotionFightScope.HardFight));
             Assert.That(meta.FirstRoundOnly, Is.False);
         });
     }

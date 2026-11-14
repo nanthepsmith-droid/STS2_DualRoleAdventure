@@ -80,6 +80,15 @@ internal static class LocalWakuuPotionAutoUse
         public Func<PotionRuleContext, bool>? Condition;
         public WakuuPotionTargetKind Target = WakuuPotionTargetKind.Default;
         public Type? AllyCharacterClass;
+
+        /// <summary>
+        /// <see cref="WakuuPotionTargetKind.AllyCharacter"/> 的**严格模式**：必须真的有该职业的玩家（自己就是该职业 ⇒ 自用）
+        /// 才喝；队伍里没有该职业 ⇒ **不喝、留着**（而不是像旧口径那样兜底给自己）。
+        ///
+        /// 用途：愚者（Fool）三瓶专属药水对别的角色**没有收益甚至有害** ——
+        /// 幸福结晶会给目标手牌塞满「悲伤」（不可打 + 保留），给非愚者等于把人手牌堵死。
+        /// </summary>
+        public bool RequireAllyCharacterMatch;
         public Func<PotionRuleContext, IReadOnlyList<CardModel>, int, int, List<CardModel>>? CardPicker;
         public bool DiscardInsteadOfUse;
 
@@ -98,6 +107,9 @@ internal static class LocalWakuuPotionAutoUse
 
     /// <summary>「腾栏无可用稀有度」提示的去重键：(玩家, 战斗) → 上次打过的药水栏签名。</summary>
     private static readonly Dictionary<(ulong NetId, object Combat), string> _dumpSkipLogged = new();
+
+    /// <summary>「队伍里没有该职业玩家 ⇒ 专属药水保留」提示的去重键：(玩家, 战斗) → 上次打过的药水 id。</summary>
+    private static readonly Dictionary<(ulong NetId, object Combat), string> _noAllyCharacterLogged = new();
 
     // ------------------------------------------------------------------
     // 规则表（2026-08-26 用户逐药拍板，见 pain\原版药水一览表.md）
@@ -192,6 +204,15 @@ internal static class LocalWakuuPotionAutoUse
         new() { Name = "骨头酿给亡灵契约师", Match = (p) => p is BoneBrew, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true, Target = WakuuPotionTargetKind.AllyCharacter, AllyCharacterClass = typeof(Necrobinder) },
         new() { Name = "尸鬼瓮给亡灵契约师", Match = (p) => p is PotOfGhouls, Scope = WakuuPotionFightScope.HardFight, FirstRoundOnly = true, Target = WakuuPotionTargetKind.AllyCharacter, AllyCharacterClass = typeof(Necrobinder) },
         new() { Name = "士兵炖汤给铁甲战士", Match = (p) => p is SoldiersStew, Scope = WakuuPotionFightScope.BossFight, Target = WakuuPotionTargetKind.AllyCharacter, AllyCharacterClass = typeof(Ironclad) },
+
+        // 愚者（Fool）专属药水：瓦库不是愚者时转交给**愚者玩家**（优先真人，见 ResolveAllyCharacterTarget）。
+        // ⚠ 严格模式（RequireAllyCharacterMatch）：队伍里没有愚者就**不喝、留着** ——
+        //    这三瓶对别的角色没有收益，幸福结晶还会给目标手牌塞满不可打的「悲伤」。
+        // ⚠ 不限定首回合：药水常常是战斗中途从宝箱/商人到手的，限定首回合等于永远不喝；
+        //    战斗范围仍限精英/Boss（普通小怪不值得动用 Rare 档药水，也避免幸福结晶堵普通战斗的手牌）。
+        new() { Name = "精密药水给愚者", Match = (p) => p is PrecisionPotion, Scope = WakuuPotionFightScope.HardFight, Target = WakuuPotionTargetKind.AllyCharacter, AllyCharacterClass = typeof(Fool), RequireAllyCharacterMatch = true },
+        new() { Name = "瓶装歌曲给愚者", Match = (p) => p is BottledSong, Scope = WakuuPotionFightScope.HardFight, Target = WakuuPotionTargetKind.AllyCharacter, AllyCharacterClass = typeof(Fool), RequireAllyCharacterMatch = true },
+        new() { Name = "幸福结晶给愚者", Match = (p) => p is CrystallineEuphoria, Scope = WakuuPotionFightScope.HardFight, Target = WakuuPotionTargetKind.AllyCharacter, AllyCharacterClass = typeof(Fool), RequireAllyCharacterMatch = true },
         new() { Name = "药水石头首回合对敌", Match = (p) => p is PotionShapedRock, FirstRoundOnly = true },
 
         // —— 手牌构成条件类 ——
@@ -335,7 +356,8 @@ internal static class LocalWakuuPotionAutoUse
                 AllyCharacterTypeName: r.AllyCharacterClass?.FullName,
                 MatchedPotionTypeName: ExtractMatchedPotionTypeName(r.Match),
                 HasCondition: r.Condition != null,
-                HasCardPicker: r.CardPicker != null))
+                HasCardPicker: r.CardPicker != null,
+                RequireAllyCharacterMatch: r.RequireAllyCharacterMatch))
             .ToArray();
     }
 
@@ -474,6 +496,22 @@ internal static class LocalWakuuPotionAutoUse
         WakuuPotionPhase phase)
     {
         Creature? target = ResolveTarget(rule, potion, ctx);
+
+        // 严格角色专属（愚者三瓶）：队伍里没有该职业 ⇒ **不喝、留着**（不是目标非法，别打 WARN）。
+        // 每场战斗 + 每瓶只提示一次，否则每个评估点都会刷一条。
+        if (target == null
+            && rule is { Target: WakuuPotionTargetKind.AllyCharacter, RequireAllyCharacterMatch: true })
+        {
+            if (ShouldLogNoAllyCharacter(player.NetId, ctx.CombatState, potion.Id.Entry))
+            {
+                LocalMultiControlLogger.Info(
+                    $"瓦库自动用药保留（队伍里没有该职业的玩家）: player={player.NetId}, "
+                    + $"potion={potion.Id.Entry}, reason={reason}");
+            }
+
+            return false;
+        }
+
         if (!potion.IsValidTarget(target))
         {
             LocalMultiControlLogger.Warn(
@@ -624,6 +662,37 @@ internal static class LocalWakuuPotionAutoUse
 
                 matchedRule = rule;
             }
+            else
+            {
+                // Common 档默认直接喝（2026-11-10 用户口径：不值钱，留着占栏更亏）。
+                // ⚠ 例外 = **严格角色专属**的 Common 药水（愚者「精密药水」是 Common 档）：
+                //   盲喝就会灌给瓦库自己（非愚者 ⇒ 纯浪费），必须先过规则判定、找到该职业玩家；
+                //   找不到时 UsePotionAsync 会按严格模式保留，不会兜底自用。
+                PotionRule? strictRule = Rules.FirstOrDefault(
+                    (r) => r.RequireAllyCharacterMatch && SafeMatch(r.Match, slot));
+                if (strictRule != null)
+                {
+                    bool strictConditionMet = strictRule.Condition == null || SafeCondition(strictRule.Condition, ctx);
+                    if (!WakuuPotionDecision.ShouldUseRule(
+                            strictRule.Phases,
+                            WakuuPotionFightScope.AnyCombat, // 腾栏口径同样放宽战斗范围
+                            strictRule.FirstRoundOnly,
+                            strictRule.Condition != null,
+                            strictConditionMet,
+                            strictRule.SkipWhenStunned,
+                            stunned,
+                            phase,
+                            ctx.Round,
+                            ctx.HardFight,
+                            ctx.BossFight))
+                    {
+                        skippedByCondition++;
+                        continue;
+                    }
+
+                    matchedRule = strictRule;
+                }
+            }
 
             candidates.Add((slotIndex, rank, matchedRule));
             bySlot[slotIndex] = slot;
@@ -708,6 +777,24 @@ internal static class LocalWakuuPotionAutoUse
         }
 
         _dumpSkipLogged[key] = signature;
+        return true;
+    }
+
+    /// <summary>「没有该职业玩家」提示是否值得打：同一场战斗 + 同一瓶药水只打一次（口径同 <see cref="ShouldLogDumpSkip"/>）。</summary>
+    private static bool ShouldLogNoAllyCharacter(ulong netId, object combat, string potionEntry)
+    {
+        (ulong, object) key = (netId, combat);
+        if (_noAllyCharacterLogged.TryGetValue(key, out string? last) && last == potionEntry)
+        {
+            return false;
+        }
+
+        if (_noAllyCharacterLogged.Count > 64)
+        {
+            _noAllyCharacterLogged.Clear();
+        }
+
+        _noAllyCharacterLogged[key] = potionEntry;
         return true;
     }
 
@@ -953,7 +1040,7 @@ internal static class LocalWakuuPotionAutoUse
                 return ResolveHumanFirstTarget(ctx);
 
             case WakuuPotionTargetKind.AllyCharacter:
-                return ResolveAllyCharacterTarget(ctx, rule.AllyCharacterClass);
+                return ResolveAllyCharacterTarget(ctx, rule.AllyCharacterClass, rule.RequireAllyCharacterMatch);
 
             default:
                 return ResolveDefaultTarget(potion, ctx);
@@ -977,29 +1064,56 @@ internal static class LocalWakuuPotionAutoUse
 
     private static Creature? ResolveHumanFirstTarget(PotionRuleContext ctx)
     {
-        Player? teammate = GetOtherPlayers(ctx.Owner).FirstOrDefault((p) => p.Creature is { IsDead: false });
+        Player? teammate = OrderHumanFirst(GetOtherPlayers(ctx.Owner))
+            .FirstOrDefault((p) => p.Creature is { IsDead: false });
         return teammate?.Creature ?? ctx.Owner.Creature;
     }
 
-    private static Creature? ResolveAllyCharacterTarget(PotionRuleContext ctx, Type? characterClass)
+    /// <summary>
+    /// 角色专属药水的目标：
+    /// 自己就是该职业 ⇒ 自用；否则给该职业的存活队友（**真人优先**）；
+    /// <paramref name="requireMatch"/> = true（愚者三瓶专属药水）时**找不到就不再兜底自用**（返回 null ⇒ 保留药水），
+    /// 否则沿用旧口径兜底自用。
+    /// </summary>
+    private static Creature? ResolveAllyCharacterTarget(PotionRuleContext ctx, Type? characterClass, bool requireMatch)
     {
         if (characterClass == null)
         {
             return ctx.Owner.Creature;
         }
 
-        // 自己就是该职业 → 自用；否则找该职业存活队友；都没有 → 自用
-        if (!characterClass.IsInstanceOfType(ctx.Owner.Character))
+        if (characterClass.IsInstanceOfType(ctx.Owner.Character))
         {
-            Player? mate = GetOtherPlayers(ctx.Owner).FirstOrDefault((p) =>
-                characterClass.IsInstanceOfType(p.Character) && p.Creature is { IsDead: false });
-            if (mate != null)
-            {
-                return mate.Creature;
-            }
+            return ctx.Owner.Creature;
         }
 
-        return ctx.Owner.Creature;
+        Player? mate = OrderHumanFirst(GetOtherPlayers(ctx.Owner))
+            .FirstOrDefault((p) => characterClass.IsInstanceOfType(p.Character) && p.Creature is { IsDead: false });
+        if (mate != null)
+        {
+            return mate.Creature;
+        }
+
+        return requireMatch ? null : ctx.Owner.Creature;
+    }
+
+    /// <summary>
+    /// 队友排序：**真人席位优先**，其余（瓦库托管 / Co-op Bots / 临时席位 / 第三方 bot）保持原顺序。
+    ///
+    /// Why：角色专属药水在多人局里可能出现"同职业两个队友"（一个真人、一个托管），
+    /// 交给托管席位等于白喝（托管不吃药性收益，甚至像幸福结晶那样把手牌堵死）；
+    /// 用户口径是「优先真人玩家」。<see cref="Enumerable.OrderByDescending{TSource,TKey}"/> 是稳定排序 ⇒ 同层不乱序。
+    /// </summary>
+    private static IEnumerable<Player> OrderHumanFirst(IEnumerable<Player> players)
+        => players.OrderByDescending(IsHumanControlledSeat);
+
+    /// <summary>该席位是否由**真人**操控（不是瓦库 / Co-op Bots / 战神临时席位）。</summary>
+    private static bool IsHumanControlledSeat(Player player)
+    {
+        ulong netId = player.NetId;
+        return !LocalSelfCoopContext.IsWakuuEnabled(netId)
+            && !LocalSelfCoopContext.IsCoopBotsDriven(netId)
+            && !LocalSelfCoopContext.IsTemporarySeat(netId);
     }
 
     /// <summary>
