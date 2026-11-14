@@ -276,6 +276,9 @@ internal static class PatchDomainMap
             ["NCombatUiDisablePatch"] = PatchDomain.Ui,
             ["NCombatUiExitPatch"] = PatchDomain.Ui,
             ["NEndTurnButtonLifecyclePatch"] = PatchDomain.Ui,
+            // r356：回合开始时上下文席位为空/不在战斗里 ⇒ 临时钉住（防原版 OnTurnStarted 里
+            // `GetMe` 返回 null 后 `me.PlayerCombatState` NRE ⇒ turn loop died）
+            ["NEndTurnButtonOnTurnStartedContextGuardPatch"] = PatchDomain.Ui,
             ["NEventRoomPatch"] = PatchDomain.Ui,
             ["NEventRoomOptionButtonPatch"] = PatchDomain.Ui,
             ["NGameInputPatch"] = PatchDomain.Ui,

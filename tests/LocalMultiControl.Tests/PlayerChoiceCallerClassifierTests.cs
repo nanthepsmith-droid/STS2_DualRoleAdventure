@@ -28,6 +28,23 @@ public class PlayerChoiceCallerClassifierTests
     }
 
     [Test]
+    public void 第三方包装的卡牌入口_按方法名判定结果类型()
+    {
+        // 2026-11-14 实机（marker r355）：BaseLib 把 `FromCombatPile` 又包了一层，栈上露出
+        // `BaseLibCardSelectCmd.FromCombatPileInOrder`。旧实现只认 callerType=="CardSelectCmd"
+        // ⇒ 落到默认 Index ⇒ 调用方 `.AsCombatCards()` 抛 ⇒ 包住它的 GenericHookGameAction
+        // 永久停在 waiting for player choice（牌停屏 + turn loop 被拖死）。
+        Assert.That(Classify("BaseLibCardSelectCmd", "FromCombatPileInOrder"),
+            Is.EqualTo(PlayerChoiceEmptyResultKind.CombatCard));
+        Assert.That(Classify("BaseLibCardSelectCmd", "FromHandForDiscard"),
+            Is.EqualTo(PlayerChoiceEmptyResultKind.CombatCard));
+        Assert.That(Classify("BaseLibCardSelectCmd", "FromDeckForUpgrade"),
+            Is.EqualTo(PlayerChoiceEmptyResultKind.DeckCard));
+        Assert.That(Classify("BaseLibCardSelectCmd", "FromSimpleGrid"),
+            Is.EqualTo(PlayerChoiceEmptyResultKind.Index));
+    }
+
+    [Test]
     public void 卡牌入口_牌组_要牌组卡结果()
     {
         Assert.That(Classify("CardSelectCmd", "FromDeckForUpgrade"), Is.EqualTo(PlayerChoiceEmptyResultKind.DeckCard));
