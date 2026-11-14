@@ -4,6 +4,23 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+### 修复：托管席位自动打「要选牌」的牌会把牌卡在屏幕中间 + 无法结束回合（r356；2026-11-14）
+
+- **症状**：一张牌停在屏幕中间不动，结束回合按钮点了没反应；日志 `Combat #N turn loop died … the combat
+  is stuck until the room is restarted`。实机触发场景：战神（临时席位）经遗物效果自动打出观者【穿越命运】。
+- **第一层（牌停屏）**：这类"远端选择无人作答"的兜底必须给出**调用方要的结果类型**。原来按调用方的
+  声明类型认人（只认 `CardSelectCmd`），而 BaseLib 把同样的入口又包了一层
+  （`BaseLibCardSelectCmd.FromCombatPileInOrder`）⇒ 兜底落回默认的 `Index` 空值 ⇒ 调用方要的是
+  「战斗牌列表」⇒ 抛异常 ⇒ 包住它的钩子动作**永久停在 `waiting for player choice`**。现在改按**方法名**
+  判定（`FromCombatPile*` / `FromHand*` → 战斗牌、`FromDeck*` → 牌组牌），包装层也能正确给空列表。
+- **第二层（无法结束回合）**：期间一次后台角色换牌把全局上下文（`LocalContext.NetId`）让成空（防止原版
+  视觉去找后台角色不存在的手牌节点），正常靠换牌完成后还原；那条任务被上面的卡住动作拖住 ⇒ 空值跨过了
+  回合边界 ⇒ 原版 `NEndTurnButton.OnTurnStarted` 里 `GetMe` 拿到 null ⇒ NRE ⇒ 回合循环死。
+  现在在「回合开始刷新结束回合按钮」这一刻加兜底：上下文为空/不在战斗里时**只在这一个调用期间**临时指向
+  一个确实在场的前台席位，调用返回立刻还原（不跟换牌视觉抢状态）。
+- 实机复测：同一场景兜底类型变成 `combat-card`、钩子动作正常 `finished execution`、
+  `Tried to get combat cards` / `turn loop died` 均为 0。
+
 ### 极速（闪电战）宝箱口径改正：默认回到原版，每人 2 件改成开关（r355；2026-11-14）
 
 - **默认行为改回原版**：「多人宝箱 = 人数 + 2 件遗物、每人只选 1 件」是**原版设计**（2026-11-14 用官方联机

@@ -37,6 +37,10 @@
 > **2026-11-14（r355，极速宝箱口径订正）**：「多人宝箱 = 人数 + 2 件、每人只选 1 件」是原版设计（官方联机实测），
 > 我们的「每人 2 件」收进开关 `blitzTreasureDoublePick`（默认关 = 完全原版）；排期 1（Dread/Blitz 本地多角色）
 > 随之关单，详见 `开发进度记录.md` 第一百七十段。
+> **2026-11-14（r356，托管席位「要选牌的牌」卡屏 + turn loop died）**：兜底结果类型改按**方法名**判定
+> （BaseLib 包装层也能认出来）+ 回合开始上下文为空的临时钉扎兜底 —— **实机复测通过**（`combat-card`、
+> 动作 `finished execution`、`Tried to get combat cards` / `turn loop died` 均 0），详见
+> `开发进度记录.md` 第一百七十一段；残留观察项见下方 §待查-14。
 
 ---
 
@@ -257,6 +261,21 @@
 > 判据与备选路线走（逐条已写好现象、日志锚点、根因分析与修法备选）。
 > ⚠ 原「BUG-14 已排期」的例外已随 §BUG-14 关单切到归档（2026-10-21，见文末索引）。
 > 同类既有备案：`maintenance-docs\decision-records\瓦库托管优化可行性分析.md` §16.2。
+
+### 待查-14 上下文被「让开」成空的窗口里，**别的**原版 UI 查 `GetMe` 仍可能 NRE（2026-11-14 r356 登记）
+
+- **背景**：r356 修掉了已知的那个崩点（`NEndTurnButton.OnTurnStarted` 里 `me.PlayerCombatState` NRE ⇒
+  `turn loop died`）。根因是 `CardTransformNetIdPinPatch` 为躲原版换牌视觉，会把**全局**
+  `LocalContext.NetId` 让成 `null`，还原挂在"await 换牌 Task 之后"——只要那条 Task 被堵（例如动作停在
+  `waiting for player choice`），`null` 就会跨过回合边界。
+- **已覆盖**：回合开始刷新结束回合按钮那一刻（新补丁只在**这一次调用期间**钉住，返回即还原，
+  命中打锚点 `[上下文兜底] …`）。
+- **未覆盖**：同一窗口里其它原版/第三方 UI 若也查 `LocalContext.GetMe(...)`，`GetMe` 在 `NetId` 为空时
+  **返回 null 而不抛** ⇒ 后续 `.Xxx` 同样会 NRE。**只在真出现时才扩**（按 `[上下文兜底]` 前后 + 崩溃栈顶
+  找入口，套用同一个"临时钉住 + 立刻还原"模板），别提前铺开。
+- **触发概率下降**：r356 已让"要选牌的牌"在托管席位能正常完成（不再永久 paused），"堵住的 Task"这一
+  上游来源基本没了。**判据**：崩溃栈顶在 `NEndTurnButton.OnTurnStarted` 之外、且紧邻日志有
+  `[手牌同步修复] … netId=… -> null`。
 
 ### 待查-1 宝藏房共享选遗物界面手牌图像重复添加（`add hand … twice!`）—— ✅ **2026-10-24 已修（r318）**
 
