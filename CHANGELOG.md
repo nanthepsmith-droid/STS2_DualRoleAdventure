@@ -2,6 +2,18 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
+## [Unreleased]
+
+### 极速（闪电战）宝箱口径改正：默认回到原版，每人 2 件改成开关（r355；2026-11-14）
+
+- **默认行为改回原版**：「多人宝箱 = 人数 + 2 件遗物、每人只选 1 件」是**原版设计**（2026-11-14 用官方联机
+  实测确认），v1.48.0 把它当成 bug 改成了「每人 2 件」。现在那套改动收进开关，**默认关 = 完全走原版**
+  （池子不补、单轮投票、多出来的按"没人投"丢弃）。
+- **新开关**：mod 设置页 →「其它设置」→「极速宝箱每人 2 件」（配置文件 `vakuu_autopilot.json` 的
+  `blitzTreasureDoublePick`，默认 `false`）。开了才会把遗物池补到 人数 × 2 件，并分成两阶段各选一件
+  （第一阶段被拿走的格子置灰，最后一次性派发）。
+- 只作用于「本地多角色闪电战」；官方联机入口与其它模式的宝箱一行代码不变。
+
 ## [1.48.0] - 2026-11-13
 
 > ⚠ **这一版只支持游戏 0.113.0**（0.111 / 0.112 请继续用 v1.47.0）。
@@ -20,6 +32,8 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   多出来的按"没人投"丢掉。现在改成**两阶段**：每人先选 1 件 → 提示「宝箱第二轮」→ 每人再选 1 件 →
   一起结算；第一阶段被选走的格子会**置灰**，不会误点。遗物池按「人数 × 2」补齐（12 人 = 24 件）。
   非极速模式的宝箱行为不变。
+  （⚠ 该口径 2026-11-14 已订正：**原版设计就是每人 1 件**，此处改动自 r355 起改为开关、默认关，
+  见 [Unreleased]。）
 - **修复：宝箱遗物格放不下**。游戏 0.113 把遗物格从"固定 4 个"改成"按遗物数量选一套布局（1~6）"，
   于是 7 件以上一件也显示不出来（12 人局、极速"每人 2 件"都会撞）。现在超过 6 件会自建一套布局，
   13 件以上自动缩小；12 席位 / 最多 24 件都排得下。
