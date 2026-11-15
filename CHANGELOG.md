@@ -4,6 +4,26 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+### 修复：托管瓦库拿海克斯遗物【前奏】时不会自己选牌（r359；2026-11-15）
+
+- **症状**：海克斯符文 mod 的遗物【前奏】（`PRELUDE_RUNE`，愚者专属）效果是「本回合不抽牌，改成从抽牌堆
+  选 N 张加入手牌」，界面弹出来但**后台托管的瓦库那一席不会自动选**，得真人替它点一下；同时视角会先被切到瓦库那一席。
+- **真因**：这个效果走 `CardSelectCmd.FromCombatPile`（战斗牌堆选牌），而「瓦库作用域外选牌自动作答」只适配了
+  `FromHand` / `FromSimpleGrid` / `FromSimpleGridForRewards` / `FromChooseACardScreen` / `FromDeck*`；
+  `FromCombatPile` 那里**只有一条"未适配入口"探针**（实机日志 `瓦库作用域外选牌入口未适配: entry=FromCombatPile,
+  selectorStackTop=none`）⇒ 原版弹出 `NCombatPileCardSelectScreen` 等真人点。
+- **修法**：给 `FromCombatPile` 加真正的作答前缀 —— 只挂**带 filter 的 5 参数重载**（4 参数重载的实现就是转发给它，
+  两个都挂会撞 `AmbiguousMatchException`）；候选与游戏原方法同口径（`pile.Cards` + `filter`，抽牌堆按稀有度稳定排序），
+  交托管策略选择器按 `prefs.MinSelect~MaxSelect` 取牌。原版「空候选 / 候选数 ≤ MinSelect 且不要求手动确认」
+  本来就不弹界面 ⇒ 这几种情况仍交回原流程（不把"本来没有选择"变成"我们替它选"）。
+  `IsAutoAnswerEntry` 纳入 `FromCombatPile` ⇒ 切前台前缀不再把视角抢到托管席位；真人席位照旧自己点。
+- **验证（实机，`godot__20261115-145620__r359.log`）**：`瓦库作用域外战斗牌堆选牌自动作答: player=…329,
+  options=12, select=5~5, pile=Draw, source=FromCombatPile`；`…未适配: entry=FromCombatPile` 归零、
+  `combat-choice-FromCombatPile` 的自动切前台 0 条；`turn loop died` / 选择器作用域异常退出 / `still waiting` 均 0；
+  14 条 `[ERROR]` 全非我方（Steam 分支 ×2、skadahelper 版本、Oddmelt 自身 ×3、BaseLib 缺
+  `GetPlayerRuneRaritySortOrder`、BaseLib `ModSourceTooltip.Fold` 越界 ×3、动作 `was in state Canceled` ×3、
+  `card holder passed is null` ×1 —— 后两组 r358 同族且更少）。
+
 ### 修复：点「结束回合」毫无反应（r358；2026-11-15）
 
 - **症状**：真人点结束回合什么都没发生，回合号停在同一轮；日志里 `检测到全员无牌可出，已自动结束全部角色回合`

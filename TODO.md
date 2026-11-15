@@ -47,6 +47,11 @@
 > 两处复位）+ 门与收口统一「本机席位 ∪ 临时席位」判据 + 战神被挡 8s 的**兜底收口**；**实机确认**
 > （`inFlight` 只有 0/1、`tempSeat=True`、两场打到 round 3、`turn loop died` 0、兜底 0 次），详见
 > `开发进度记录.md` 第一百七十三段。无残留观察项。
+> **2026-11-15（r359，托管瓦库不选海克斯【前奏】的抽牌堆选牌）**：`CardSelectCmd.FromCombatPile` 原先是"未适配入口"
+> 探针（`瓦库作用域外选牌入口未适配: entry=FromCombatPile`）⇒ 托管瓦库那一屏停着等真人点、视角还被抢过去。
+> 已补成真正的作答前缀（**只挂 5 参数重载**，4 参数实现就是转发；空候选 / 候选 ≤ MinSelect 照旧交回原流程）+
+> `IsAutoAnswerEntry` 纳入该入口；**实机命中**（`options=12 select=5~5 pile=Draw`、未适配 WARN 0、
+> `turn loop died` 0），详见 `开发进度记录.md` 第一百七十四段。无残留观察项。
 
 ---
 
