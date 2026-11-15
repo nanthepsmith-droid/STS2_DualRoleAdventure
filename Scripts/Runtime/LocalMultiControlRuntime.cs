@@ -10,6 +10,7 @@ using LocalMultiControl.Scripts.Patch;
 using LocalMultiControl.Scripts.Runtime.PureLogic;
 using MegaCrit.Sts2.Core.Assets;
 using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
@@ -29,6 +30,7 @@ using MegaCrit.Sts2.Core.Nodes.Screens.Map;
 using MegaCrit.Sts2.Core.Nodes.TopBar;
 using MegaCrit.Sts2.Core.Nodes.Vfx;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Characters;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Rooms;
@@ -2369,6 +2371,150 @@ internal static class LocalMultiControlRuntime
         // 第三方次级资源计数器（RitsuLib 框架，如 LexNinja2 的蕾克拉）只会跟着 CombatStateChanged 刷新，
         // 我们切前台不走那个事件 → 切到别的角色后它仍显示上一个角色的资源，这里主动补一次刷新（r100）。
         LocalThirdPartySecondaryResourceBridge.RefreshCombatUiForPlayer(combatUi, player);
+
+        // 愚者的「箭 / 旋律」战斗UI（NFoolCombatUi）：原版只在 NCombatUi.Activate 时按当时的前台
+        // Initialize 一次，之后不重绑也不隐藏 ⇒ 切到别的角色仍显示愚者那份（r361）。
+        EnsureFoolCombatUiForPlayer(combatUi, player);
+    }
+
+    /// <summary>
+    /// 让愚者的「箭 / 旋律」战斗UI（<see cref="NFoolCombatUi"/>）跟随**当前前台玩家**（r361）。
+    ///
+    /// 原版行为（单人局够用、本地多控下错）：
+    /// - <c>NCombatUi.Activate</c> 里 <c>_foolCombatUi.Initialize(LocalContext.GetMe(state))</c> —— **只在战斗开始**
+    ///   按那一刻的前台绑定一次；我们切人不重建它，于是永远显示战斗开始时那位（实机：切到谁都显示愚者那份）；
+    /// - <c>RefreshVisibility()</c> 只有"从 false 置 true"的分支，**没有置 false 的路径** ⇒ 一旦显示就永不消失；
+    /// - <c>Initialize</c> 里的订阅被 <c>_isListeningToCombatState</c> 挡住（与 <c>NStarCounter</c> 同款老坑），
+    ///   直接再调一次 Initialize 不会重订阅，只会换掉 <c>_player</c>。
+    ///
+    /// 修法（与 <c>RefreshStarCounterForPlayer</c> 同口径）：
+    /// ① 退订旧玩家的 <c>ArrowsChanged</c>（两个处理器：UpdateArrows / 无参 RefreshVisibility）；
+    /// ② 反射写 <c>_player</c> = 前台玩家（**不动**全局 <c>CombatStateChanged</c> 订阅 —— 它读的也是 <c>_player</c>，
+    ///    换过之后自然跟着新玩家，且不会重复订阅）；
+    /// ③ 订阅新玩家的 <c>ArrowsChanged</c>；
+    /// ④ 主动跑一次 UpdateArrows / SetMelodyAmounts 把旧玩家的箭与旋律节点清掉、按新玩家重建；
+    /// ⑤ 可见性由我们算（原版只置 true）：前台不是愚者且没有箭/旋律 ⇒ 隐藏。
+    /// </summary>
+    private static void EnsureFoolCombatUiForPlayer(NCombatUi combatUi, Player player)
+    {
+        try
+        {
+            if (AccessTools.Field(typeof(NCombatUi), "_foolCombatUi")?.GetValue(combatUi) is not NFoolCombatUi foolUi
+                || !GodotObject.IsInstanceValid(foolUi))
+            {
+                return;
+            }
+
+            ulong? boundPlayerId = TryGetFoolCombatUiPlayerId(foolUi);
+            if (boundPlayerId != player.NetId)
+            {
+                RebindFoolCombatUi(foolUi, player);
+                if (_combatEnergyDiagKeys.Add($"fool:{player.NetId}:bind"))
+                {
+                    LocalMultiControlLogger.Info(
+                        $"愚者战斗UI已重绑到当前角色: {boundPlayerId?.ToString() ?? "null"} -> {player.NetId}");
+                }
+            }
+
+            int arrowCount = player.PlayerCombatState?.Arrows.Count ?? 0;
+            bool hasMelody = HasMelodyThisTurn(player);
+            bool shouldShow = player.Character is Fool || arrowCount > 0 || hasMelody;
+            if (foolUi.Visible != shouldShow)
+            {
+                foolUi.Visible = shouldShow;
+                if (_combatEnergyDiagKeys.Add($"fool:{player.NetId}:visible:{shouldShow}"))
+                {
+                    LocalMultiControlLogger.Info(
+                        $"愚者战斗UI可见性跟随当前角色: player={player.NetId}, visible={shouldShow}, "
+                        + $"愚者={player.Character is Fool}, 箭={arrowCount}, 旋律={hasMelody}");
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"愚者战斗UI跟随前台失败: player={player.NetId}, error={exception.Message}");
+        }
+    }
+
+    /// <summary>读取愚者战斗UI当前绑定的玩家（取不到返回 null，不抛异常）。</summary>
+    private static ulong? TryGetFoolCombatUiPlayerId(NFoolCombatUi foolUi)
+    {
+        try
+        {
+            return (AccessTools.Field(typeof(NFoolCombatUi), "_player")?.GetValue(foolUi) as Player)?.NetId;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 把愚者战斗UI重绑到指定玩家（详见 <see cref="EnsureFoolCombatUiForPlayer"/> 的 ①②③④）。
+    /// 只动 <c>ArrowsChanged</c>（按玩家的每玩家事件）与 <c>_player</c> 字段；
+    /// 全局 <c>CombatStateChanged</c> 保持单次订阅不动（处理器读 <c>_player</c>，换过就跟着新玩家）。
+    /// </summary>
+    private static void RebindFoolCombatUi(NFoolCombatUi foolUi, Player player)
+    {
+        MethodInfo? updateArrowsMethod = AccessTools.Method(typeof(NFoolCombatUi), "UpdateArrows");
+        MethodInfo? refreshVisibilityMethod = AccessTools.Method(
+            typeof(NFoolCombatUi), "RefreshVisibility", Type.EmptyTypes);
+        Action? updateArrows = updateArrowsMethod == null
+            ? null
+            : (Action)Delegate.CreateDelegate(typeof(Action), foolUi, updateArrowsMethod);
+        Action? refreshVisibility = refreshVisibilityMethod == null
+            ? null
+            : (Action)Delegate.CreateDelegate(typeof(Action), foolUi, refreshVisibilityMethod);
+
+        if (AccessTools.Field(typeof(NFoolCombatUi), "_player")?.GetValue(foolUi) is Player previous
+            && previous.PlayerCombatState != null)
+        {
+            if (updateArrows != null)
+            {
+                previous.PlayerCombatState.ArrowsChanged -= updateArrows;
+            }
+
+            if (refreshVisibility != null)
+            {
+                previous.PlayerCombatState.ArrowsChanged -= refreshVisibility;
+            }
+        }
+
+        AccessTools.Field(typeof(NFoolCombatUi), "_player")?.SetValue(foolUi, player);
+
+        // 原版 Initialize 已被 _isListeningToCombatState 挡住，订阅要我们自己补。
+        if (AccessTools.Field(typeof(NFoolCombatUi), "_isListeningToCombatState")?.GetValue(foolUi) is true
+            && player.PlayerCombatState != null)
+        {
+            if (updateArrows != null)
+            {
+                player.PlayerCombatState.ArrowsChanged += updateArrows;
+            }
+
+            if (refreshVisibility != null)
+            {
+                player.PlayerCombatState.ArrowsChanged += refreshVisibility;
+            }
+        }
+
+        // 旧玩家的箭 / 旋律节点必须在换绑后重建，否则两个愚者会叠在一起显示。
+        updateArrowsMethod?.Invoke(foolUi, Array.Empty<object>());
+        AccessTools.Method(typeof(NFoolCombatUi), "SetMelodyAmounts")?.Invoke(foolUi, Array.Empty<object>());
+    }
+
+    /// <summary>本回合是否打出过愚者的旋律牌（Wah / Cho / Ki，与原版 <c>NFoolCombatUi.MelodyTags</c> 同口径）。</summary>
+    private static bool HasMelodyThisTurn(Player player)
+    {
+        try
+        {
+            return MelodyCmd.PlayedThisTurn(player, CardTag.Wah)
+                   || MelodyCmd.PlayedThisTurn(player, CardTag.Cho)
+                   || MelodyCmd.PlayedThisTurn(player, CardTag.Ki);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static void RefreshTopBarForControlledPlayer(ulong playerId)
