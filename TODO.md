@@ -41,6 +41,12 @@
 > （BaseLib 包装层也能认出来）+ 回合开始上下文为空的临时钉扎兜底 —— **实机复测通过**（`combat-card`、
 > 动作 `finished execution`、`Tried to get combat cards` / `turn loop died` 均 0），详见
 > `开发进度记录.md` 第一百七十一段；残留观察项见下方 §待查-14。
+> **2026-11-15（r358，点「结束回合」毫无反应）**：真因两层 —— 出牌作用域**裸计数器跨战斗/跨局泄漏**
+> （`selector-scope-busy` + `selectorStackCount=0`）⇒ 战神永远调度不上；结束回合门/收口**漏掉临时席位**
+> ⇒ 分母 3 只 ready 2、永不出 `EndPlayerTurnAction`。已改成**租约账本**（令牌归还 + 60s 剪枝 + 换战斗/退局
+> 两处复位）+ 门与收口统一「本机席位 ∪ 临时席位」判据 + 战神被挡 8s 的**兜底收口**；**实机确认**
+> （`inFlight` 只有 0/1、`tempSeat=True`、两场打到 round 3、`turn loop died` 0、兜底 0 次），详见
+> `开发进度记录.md` 第一百七十三段。无残留观察项。
 
 ---
 
