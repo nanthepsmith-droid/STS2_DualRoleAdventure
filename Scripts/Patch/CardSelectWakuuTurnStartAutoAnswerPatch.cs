@@ -115,10 +115,14 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
     }
 
     /// <summary>该选牌入口是否由本补丁对瓦库做「作用域外自动作答」（供切前台前缀判断"要不要切"）。</summary>
+    /// <remarks>
+    /// <c>FromCombatPile</c> 自 r359 起在内（【前奏】PRELUDE_RUNE 的抽牌堆选牌）：不列进来的话，
+    /// 切前台前缀会先把视角切到托管瓦库那一席，然后我们又把界面自动答掉了 ⇒ 真人视角无故被抢一次。
+    /// </remarks>
     internal static bool IsAutoAnswerEntry(string source)
     {
         return source is "FromChooseACardScreen" or "FromSimpleGrid" or "FromSimpleGridForRewards"
-            or "FromDeckGeneric" or "FromDeckForUpgrade" or "FromHand";
+            or "FromDeckGeneric" or "FromDeckForUpgrade" or "FromHand" or "FromCombatPile";
     }
 
     /// <summary>
@@ -224,8 +228,23 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
     }
 
     /// <summary>
-    /// 未适配入口探针（**只记日志、不改行为**）：门控成立（本该自动作答）但还没适配的选牌入口，
-    /// 复现日志里会直接点名 ⇒ 下次照它扩展，不用再猜第三方走了哪条路。
+    /// **战斗牌堆**选牌入口（r359，2026-11-15 用户实测「海克斯遗物【前奏】不能瓦库自动选择」）。
+    ///
+    /// <para>【前奏】(<c>PRELUDE_RUNE</c>，愚者专属) 的首回合效果是「不抽牌，改成从抽牌堆选 N 张加入手牌」
+    /// ⇒ 走 <c>CardSelectCmd.FromCombatPile</c>（栈上无选择器 = 作用域外）。原先这里只有一条探针，
+    /// 实机日志：<c>瓦库作用域外选牌入口未适配: entry=FromCombatPile, player=…329, selectorStackTop=none</c>
+    /// ⇒ 弹 <c>NCombatPileCardSelectScreen</c> 等真人点（且前置的切前台前缀还把视角切到了瓦库那一席）。</para>
+    ///
+    /// <para>⚠ **只挂带 filter 的 5 参数重载**：4 参数重载的实现就是
+    /// <c>return FromCombatPile(context, pile, player, prefs, _ =&gt; true)</c>（`sts2src` 同文件），
+    /// 所以两条调用链都会落到这里；重载写错会触发 Harmony `AmbiguousMatchException`（skill 坑 4）。</para>
+    ///
+    /// <para>候选与游戏原方法**同口径**：<c>pile.Cards</c> + <c>filter</c>；抽牌堆再按稀有度排序
+    /// （原版"有选择器"分支就是这样排的 ⇒ 与作用域内瓦库选择器的取牌顺序一致；本处只按稀有度做
+    /// **稳定**排序，不做原版次级 key 的卡实例比较）。</para>
+    ///
+    /// <para>原版「候选数 ≤ MinSelect 且不要求手动确认」会**直接全选、不弹界面** ⇒ 那种情况不接管
+    /// （否则等于把原版的"无选择"变成"我们选"，行为反而变了）。</para>
     /// </summary>
     [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromCombatPile), new[]
     {
@@ -233,13 +252,58 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
         typeof(CardPile),
         typeof(Player),
         typeof(CardSelectorPrefs),
+        typeof(Func<CardModel, bool>),
     })]
     [HarmonyPriority(Priority.Low)]
     [HarmonyPrefix]
-    private static void FromCombatPileProbe(Player player)
+    private static bool FromCombatPilePrefix(
+        CardPile pile,
+        Player player,
+        CardSelectorPrefs prefs,
+        Func<CardModel, bool>? filter,
+        ref Task<IEnumerable<CardModel>> __result)
     {
-        ProbeUncoveredEntry(player, "FromCombatPile");
+        if (!ShouldAutoAnswer(player))
+        {
+            return true;
+        }
+
+        List<CardModel> candidates;
+        try
+        {
+            candidates = pile.Cards.Where(filter ?? (_ => true)).ToList();
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"瓦库作用域外战斗牌堆选牌取牌失败(FromCombatPile)，交回原流程: {exception.Message}");
+            return true;
+        }
+
+        // 原版对这两种情况根本不弹界面（空候选 ⇒ 空结果；候选数 ≤ MinSelect ⇒ 直接全选）⇒ 交回原流程。
+        if (candidates.Count == 0
+            || (!prefs.RequireManualConfirmation && candidates.Count <= prefs.MinSelect))
+        {
+            return true;
+        }
+
+        if (pile.Type == PileType.Draw)
+        {
+            candidates = candidates.OrderBy(card => card.Rarity).ToList();
+        }
+
+        LocalMultiControlLogger.Info(
+            $"瓦库作用域外战斗牌堆选牌自动作答: player={player.NetId}, options={candidates.Count}, "
+            + $"select={prefs.MinSelect}~{prefs.MaxSelect}, mode={LocalWakuuAutopilotConfig.CardPickMode}, "
+            + $"pile={pile.Type}, source=FromCombatPile");
+
+        __result = ComputeGridAnswerAsync(candidates, prefs);
+        return false;
     }
+
+    /// <summary>
+    /// 未适配入口探针（**只记日志、不改行为**）：门控成立（本该自动作答）但还没适配的选牌入口，
+    /// 复现日志里会直接点名 ⇒ 下次照它扩展，不用再猜第三方走了哪条路。
+    /// </summary>
 
     [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromHandForUpgrade), new[]
     {
