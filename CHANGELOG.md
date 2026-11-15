@@ -2,7 +2,59 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
-## [Unreleased]
+## [1.49.0] - 2026-11-15
+
+### 适配：游戏 v0.113.1（r362）
+
+- 重新反编译 `sts2.dll`（v0.113.1，`release_info.json` `commit=d09d48e5`）做逐文件比对：
+  实际 C# 改动只有 **19 个文件 / 净 219 行**，全部是游戏自身修补（存档云同步 `CloudSaveStore`、
+  Boss 背景 `NKaiserCrabBossBackground`、悬停提示对齐 `NHoverTipSet` / `NPotionHolder`、
+  最佳iary、卡库排序、愚者箭 VFX `NImpaledArrowVfx`、`EnchantmentModel` +6 行、几个怪物文件）；
+  37 个"消失"的文件都是反编译口径差异（partial 合并 / 迁移类改名），类型均在
+  （例如 `ICardSelector` 只是搬到 `Core/TestSupport/`）。
+- **本 mod 零代码适配**：编译 0 警告 0 错误、`PATCH_RESULT critical=26/26 optional=25/25 total_patched=237`、
+  字符串/反射目标核对 234 项 **STALE=0**。本版只把 `BuildMarker` 里的游戏版本跟到 `v0.113.1`
+  （`min_game_version` 仍保留 `0.111.0` 的兼容下限）。
+
+### 修复：切到哪个角色都显示愚者的「箭 / 旋律」（r361；2026-11-15）
+
+- **症状**：本地多控里左下角愚者的箭槽与「哇/啾/叽」旋律符号一直贴着屏幕显示，切到别的角色也不消失；
+  队里有多个愚者时会显示错的那一位（用户 2026-11-15 实机报）。
+- **真因**：原版 `NCombatUi.Activate` 只在那一次按当时的 `LocalContext.GetMe` 给 `NFoolCombatUi` 绑玩家，
+  之后我们切前台不会重建它；而且 `RefreshVisibility()` 只有「false → true」分支、**没有置 false 的路径**，
+  `Initialize()` 里的订阅又被 `_isListeningToCombatState` 挡住（与 `NStarCounter` 同款老坑）⇒ 重调 Initialize
+  只会换 `_player`、不重订阅。
+- **修法**：在切人刷新战斗 UI 的汇合点（`RefreshCombatEnergyUi`，能量球/辉星/第三方次级资源同一入口）里：
+  退订旧玩家的 `ArrowsChanged` → 反射把 `_player` 换成当前前台玩家 → 订阅新玩家的 `ArrowsChanged`
+  （全局 `CombatStateChanged` 不动，它读的也是 `_player`，避免重复订阅）→ 主动跑一次
+  `UpdateArrows` / `SetMelodyAmounts` 把上一位愚者留下的箭与旋律节点清掉 → 按当前前台算可见性
+  （不是愚者且没有箭/旋律 ⇒ 隐藏）。
+- **验证（实机 `godot__20261115-155527__r361.log`）**：`愚者战斗UI已重绑到当前角色` 4 次；
+  `可见性跟随当前角色: visible=True, 愚者=True, 箭=1, 旋律=True` 与 `visible=False, 愚者=False` 均按预期；
+  无 `愚者战斗UI跟随前台失败`。
+
+### 修复：全瓦库时手牌视觉与实际不同步 + 瓦库火堆选完不出现「离开」（r360；2026-11-15）
+
+- **症状**：① 经常出现手牌显示与实际手牌不一致（瓦库打牌后要切人/等回合才恢复），日志里有
+  `A local card was played, but the card holder passed is null`；② 全瓦库（连前台角色本身也是瓦库托管）时，
+  火堆选项全自动选完后**「离开」按钮不出现**，得开一次菜单再回来才冒出来。
+- **真因 ①**：r199（BUG-29 修法）的前提是「托管席位的手牌 UI 根本不存在」，所以把托管席位的换牌视觉一律跳过。
+  但全瓦库时屏幕上显示的手牌**就是**该席位的 ⇒ 数据层换了牌、UI 还画旧牌；随后托管按新数据出牌，
+  原版 `NCardPlayQueue` 在自己手牌里找不到新牌节点 ⇒ 报上面那条 ERROR 并凭空造一张视觉牌进播放队列。
+- **真因 ②**：原版「离开火堆」按钮只在两处启用 —— 本地玩家点选项后的
+  `NRestSiteRoom.AfterSelectingOptionAsync`、以及 `ActiveScreenContext.Updated`。瓦库自动作答走的是
+  `RestSiteSynchronizer.ChooseOption`（反射私有方法），**不经过 `NRestSiteButton` 的点击链** ⇒
+  本地房间玩家的选项也是我们替它选的，于是没人启用按钮。
+- **修法 ①**：换牌视觉按前台/后台分流 —— 后台托管席位照旧跳过；前台托管席位改走原版视觉，并额外要求
+  「视觉那一刻原牌节点确实还在手牌容器里」（这个判定就发生在原版那句 `FindOnTable` 前一行，不受异步窗口影响）。
+  另给 `CardCmd.Transform` 状态机加 finalizer，精确吞 `Couldn't get hand node …`（数据层早已生效，只丢动画），
+  绝不让它抛穿导致 BUG-29 那种「牌停在屏幕中间」。
+- **修法 ②**：本地房间玩家的每次自动选择后补一次原版收尾（`NRestSiteRoom.AfterSelectingOption`，与真人点击等价）。
+  判据用「`GetLocalOptions()` 与 `GetOptionsForPlayer(该玩家)` 是否同一 List 实例」的引用相等，不依赖身份补丁；
+  别的席位的选择不动本机火堆 UI。
+- **验证（实机 `godot__20261115-155527__r361.log`）**：`瓦库火堆已驱动原版收尾（离开按钮/选项重建）` 3 次；
+  `card holder passed is null` 归零。换牌视觉那条主修本局没摸到变换牌（`[手牌同步修复]` 只有开机挂载行），
+  发版前另补一局验证。
 
 ### 修复：托管瓦库拿海克斯遗物【前奏】时不会自己选牌（r359；2026-11-15）
 
