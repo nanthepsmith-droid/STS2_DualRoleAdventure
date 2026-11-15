@@ -23,7 +23,7 @@ See the **[Player Guide](PLAYER_GUIDE.md)** ([简体中文](PLAYER_GUIDE.zh-CN.m
 
 ## Compatibility
 
-- Currently built against game version **v0.113.0** (November 2026). When the game patches, expect a short turnaround for a compatibility release — that is this fork's primary job.
+- Currently built against game version **v0.113.1** (November 2026). When the game patches, expect a short turnaround for a compatibility release — that is this fork's primary job.
 - **Oddmelt**: compatible since v1.33 — a built-in guard skips Oddmelt's hidden Gauge input cards during combat UI rebuilds (previously these broke character switching); no separate fix mod is needed.
 
 ### ⚠ Performance: with "content-heavy" third-party mods, **do not run large battles**
