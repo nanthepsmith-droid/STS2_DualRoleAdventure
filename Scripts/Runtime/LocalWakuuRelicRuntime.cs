@@ -97,9 +97,21 @@ internal static class LocalWakuuRelicRuntime
     /// 到底是排队问题还是帧率问题，只看这一对数。表是按席位分槽的，天然不会互相覆盖。
     /// </summary>
     private static readonly Dictionary<ulong, long> _pendingPlayExecStartMs = new();
+    // 0.111：选择器栈仍是 `CardSelectCmd._selectorStack`（全局单栈），反射句柄留在本类。
+    // 0.113 才搬到 `CardSelectorStack._selectorStacks`（按槽位分栈，反射面见 WakuuSelectorStackAccess）。
     private static readonly FieldInfo? SelectorStackField =
         typeof(CardSelectCmd).GetField("_selectorStack", BindingFlags.NonPublic | BindingFlags.Static);
-    private static int _selectorScopeInFlight;
+
+    // r358（回补到 0.111）：**不再用裸计数器**。出牌循环永久卡在 await 上时 `finally` 永不执行 ⇒ 计数只增不减，
+    // 而换战斗/退局又不重置它 ⇒ 之后整进程里非并发档席位（战神）永远被 `selector-scope-busy` 挡回
+    // （2026-11-15 实机 = 真人「结束回合」完全没反应的真凶之一，见 SelectorScopeLeaseBook 的注释）。
+    private static readonly SelectorScopeLeaseBook _selectorScopeLeases = new();
+
+    /// <summary>
+    /// 一条作用域租约算"已死"的年龄阈值（毫秒）。正常出牌循环实测 2~5 秒内收尾（10 战神局最坏 ~4 秒），
+    /// 超过 60 秒的一定是永远不会返回的任务 ⇒ 让它的租约失效，别再挡住别的席位。
+    /// </summary>
+    private const long SelectorScopeStaleMs = 60_000L;
 
     /// <summary>
     /// 改进-2 / B1：回合开始 hook 登记「该瓦库本回合要出牌」的时间戳（key = `round:netId`）。
@@ -570,17 +582,18 @@ internal static class LocalWakuuRelicRuntime
             // 方案 D 第二步：出牌已入该瓦库自己的动作队列，等选择时该队列会被 `GetReadyAction` 跳过，
             // 其他瓦库与真人照常出牌（多人模式的真实语义）。此时再抢全局 1 槽闸门反而把这份语义挡回去。
             LocalMultiControlLogger.Info(
-                $"瓦库并发出牌：跳过全局选择器闸门（方案 D 第二步）: player={player.NetId}, round={combatState.RoundNumber}, source={choiceContext.GetType().Name}, inFlight={Volatile.Read(ref _selectorScopeInFlight)}");
+                $"瓦库并发出牌：跳过全局选择器闸门（方案 D 第二步）: player={player.NetId}, round={combatState.RoundNumber}, source={choiceContext.GetType().Name}, inFlight={SelectorScopeInFlight()}");
         }
         else
         {
             LocalMultiControlLogger.Info(
-                $"瓦库选择器闸门等待: player={player.NetId}, round={combatState.RoundNumber}, source={choiceContext.GetType().Name}, inFlight={Volatile.Read(ref _selectorScopeInFlight)}");
+                $"瓦库选择器闸门等待: player={player.NetId}, round={combatState.RoundNumber}, source={choiceContext.GetType().Name}, inFlight={SelectorScopeInFlight()}");
             await SelectorScopeGate.WaitAsync();
             gateHeld = true;
         }
 
-        int inFlight = Interlocked.Increment(ref _selectorScopeInFlight);
+        long scopeLease = _selectorScopeLeases.Acquire((long)Time.GetTicksMsec());
+        int inFlight = SelectorScopeInFlight();
         ulong gateWaitMs = Time.GetTicksMsec() - gateWaitStartTick;
         SelectorStackSnapshot gateEnterSnapshot = SnapshotSelectorStack();
         LocalMultiControlLogger.Info(
@@ -782,9 +795,10 @@ internal static class LocalWakuuRelicRuntime
         }
         finally
         {
-            // inFlight 是「有出牌作用域在飞」的唯一来源（探针靠它避免误清栈），所以并发档同样要递减；
+            // inFlight 是「有出牌作用域在飞」的唯一来源（探针靠它避免误清栈），所以并发档同样要归还租约；
             // 只有真的抢到闸门才释放它（并发档从头到尾没占）。
-            int remainInFlight = Interlocked.Decrement(ref _selectorScopeInFlight);
+            // r358：按**令牌**归还 —— 租约若已被"超龄剪枝 / 换战斗复位"清掉，这里是空操作，不会把计数减成负数。
+            int remainInFlight = _selectorScopeLeases.Release(scopeLease);
             if (gateHeld)
             {
                 SelectorScopeGate.Release();
@@ -1973,7 +1987,7 @@ internal static class LocalWakuuRelicRuntime
         // r324：把这道"单次最大 456ms"拆成「前置判定 / 启动循环」两段（早退分支由 PhaseScope 自动结算，
         // 不会漏记）。启动循环那一段里还嵌着「重复手牌扫描」与「大脑决策」，两者各自另有子槽。
         using LocalPerfProbe.PhaseScope wdPhase = new(LocalPerfProbe.Slot.WdChecks);
-        if (Volatile.Read(ref _selectorScopeInFlight) > 0)
+        if (SelectorScopeInFlight() > 0)
         {
             // 并发出牌档（方案 D 第二步）：多瓦库就是要重叠，不能再因为「有作用域在飞」把别人挡回去。
             // 同一玩家的重复调度仍由下面的 `_watchdogInFlight` / 冷却时间兜住。
@@ -2251,15 +2265,17 @@ internal static class LocalWakuuRelicRuntime
     public static void ProbeAndRecoverSelectorStack(string source, bool allowRecover)
     {
         SelectorStackSnapshot snapshot = SnapshotSelectorStack();
+        int prunedStale;
+        int effectiveInFlight = SelectorScopeInFlight(out prunedStale);
         LocalMultiControlLogger.Info(
-            $"瓦库选择器栈探针: source={source}, selectorStackCount={snapshot.Count}, selectorStackTop={snapshot.TopType}, allVakuu={snapshot.AllVakuuSelectors}, inFlight={Volatile.Read(ref _selectorScopeInFlight)}");
+            $"瓦库选择器栈探针: source={source}, selectorStackCount={snapshot.Count}, selectorStackTop={snapshot.TopType}, allVakuu={snapshot.AllVakuuSelectors}, inFlight={effectiveInFlight}, rawInFlight={_selectorScopeLeases.RawCount}, prunedStale={prunedStale}");
 
         if (!allowRecover || snapshot.Count <= 0)
         {
             return;
         }
 
-        if (Volatile.Read(ref _selectorScopeInFlight) > 0)
+        if (effectiveInFlight > 0)
         {
             return;
         }
@@ -2274,6 +2290,40 @@ internal static class LocalWakuuRelicRuntime
             LocalMultiControlLogger.Warn(
                 $"检测到瓦库选择器栈残留，已执行自恢复清理: source={source}, clearedCount={clearedCount}, selectorStackTop={snapshot.TopType}");
         }
+    }
+
+    /// <summary>
+    /// 此刻**有效**的出牌作用域在飞条数（超龄租约先剪掉再数）。
+    /// 看门狗闸门与选择器栈探针都必须用这个口径 —— 裸计数会带着上一局泄漏的值把席位永久挡回。
+    /// </summary>
+    internal static int SelectorScopeInFlight() => SelectorScopeInFlight(out _);
+
+    /// <inheritdoc cref="SelectorScopeInFlight()"/>
+    /// <param name="prunedStale">本次顺带剪掉的超龄租约条数（诊断用）。</param>
+    internal static int SelectorScopeInFlight(out int prunedStale)
+    {
+        return _selectorScopeLeases.CountActive(
+            (long)Time.GetTicksMsec(), SelectorScopeStaleMs, out prunedStale);
+    }
+
+    /// <summary>
+    /// **复位枢纽**（r358）：把作用域租约账本整体清掉，返回被清掉的条数（>0 时打一条点名日志）。
+    ///
+    /// 只该在"这些任务一定不会返回"的两个时刻调用：换战斗（`RefreshAutoEndTrackingForCombat`）
+    /// 与退局（`OnRunCleanup`）。此时旧作用是上一场/上一局留下的，留着只会挡住新战斗的席位。
+    /// 归还走令牌 ⇒ 被清掉的租约之后 `Release` 是空操作，不会把计数减成负数。
+    /// </summary>
+    internal static int ResetSelectorScopeLeases(string source)
+    {
+        int cleared = _selectorScopeLeases.ResetAll();
+        if (cleared > 0)
+        {
+            LocalMultiControlLogger.Warn(
+                "已清掉遗留的出牌作用域租约（这些任务不会返回，留着会让非并发档席位永远被 selector-scope-busy 挡回）: "
+                + $"cleared={cleared}, source={source}");
+        }
+
+        return cleared;
     }
 
     public static SelectorStackSnapshot SnapshotSelectorStack()
