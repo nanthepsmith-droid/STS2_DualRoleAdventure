@@ -139,6 +139,22 @@ internal static class LocalMultiControlRuntime
 
     private static long _lastHeavyAutoEndTickMs;
 
+    /// <summary>
+    /// r358：临时席位（战神）"托管调度一直被挡"的起算时刻（key = 席位 NetId，值 = 首毫秒）。
+    ///
+    /// 为什么需要：战神的出牌由看门狗驱动，而看门狗可能被**别人的作用域/自己卡住的循环**长期挡回
+    /// （当日实机 = 泄漏的 `selector-scope-busy`）。它手里还有"托管能打"的牌 ⇒ 空闲收口（
+    /// `TryEndIdleWarGodTurns`）不敢替它 ready ⇒ 它这一席永远不 ready ⇒ 真人「结束回合」推不动回合。
+    /// 超过 <see cref="TempSeatSchedulingStallGraceMs"/> 还挡着，就认定"没有驱动者"、兜底替它收口。
+    /// </summary>
+    private static readonly Dictionary<ulong, long> _tempSeatBlockedSinceMs = new();
+
+    /// <summary>
+    /// 战神被挡多久算"卡死"（毫秒）。正常排队/并发让路都在 1~4 秒内结束（10 战神局最坏 ~4 秒），
+    /// 8 秒仍被同一条理由挡回 = 等下去不会自己好。
+    /// </summary>
+    private const long TempSeatSchedulingStallGraceMs = 8_000L;
+
     /// <summary>改进-1 跳过回合开始抽牌演出的日志去重（战斗场次变化时清空）。</summary>
     private static readonly HashSet<string> _skipDrawAnimLogged = new HashSet<string>();
     private static int _skipDrawAnimCombatIdentity = int.MinValue;
@@ -272,6 +288,8 @@ internal static class LocalMultiControlRuntime
         _tickPlayableMemo.Clear();
         _tickPlayableMemoAtMs = 0L;
         _tickPlayableMemoRound = -1;
+        // r358：战神"调度被挡"的计时（跨局必须清，否则上一局的计时会让新局的战神一入场就被兜底收口）。
+        _tempSeatBlockedSinceMs.Clear();
         LocalPerfProbe.Reset("run-cleanup");
         LocalMerchantInventoryRuntime.Clear();
         // r352 极速宝箱「每人 2 件」的两阶段投票状态（挂在 synchronizer 实例上，退局必须清）。
@@ -284,6 +302,9 @@ internal static class LocalMultiControlRuntime
         WakuuDaddyCombatState.ResetForRun("run-cleanup");
         // 立绘站位探针的采样快照（r215 诊断用）。
         LocalCreaturePositionProbe.Reset("run-cleanup");
+        // r358：出牌作用域租约必须先于探针复位 —— 探针的"有作用域在飞就不清栈"判据也读它，
+        // 带着上一局泄漏的条数进去，栈残留就永远自愈不了（2026-11-15 实机：rawInFlight=4 / stack=0）。
+        LocalWakuuRelicRuntime.ResetSelectorScopeLeases("run-cleanup");
         LocalWakuuRelicRuntime.ProbeAndRecoverSelectorStack("run-cleanup", allowRecover: true);
         // 0.113：原版删掉了 `CardSelectCmd.Reset()`（选择器栈改由各 scope 自己清），
         // 因此归属者注册表改在这里清 —— 否则被卡住的异步链泄漏的条目会跨局残留。
@@ -806,6 +827,7 @@ internal static class LocalMultiControlRuntime
             // r263：**托管口径**的可出牌（把"需要目标却没目标"/"托管打它会抛"的牌剔掉）——
             // 否则一张托管打不了的牌会让这一席被每帧反复调度、每次都空转（r262 实机死锁的一环）。
             bool hasPlayableCards = HasPlayableCached(player);
+            bool isTempSeat = LocalSelfCoopContext.IsTemporarySeat(player.NetId);
 
             // Phase 3：托管候选 = 持有接管遗物 **或临时席位（战神）**（见 LocalWakuuRelicRuntime.IsAutoplayHosted）。
             if (hasPlayableCards)
@@ -813,6 +835,12 @@ internal static class LocalMultiControlRuntime
                 anyWakuuPlayerHasPlayableCards = true;
                 if (scheduledThisTick >= 1)
                 {
+                    // 本 tick 名额用完了 —— 这是"让路"，不是被挡；不计入卡死计时（见 _tempSeatBlockedSinceMs）。
+                    if (isTempSeat)
+                    {
+                        ClearTempSeatSchedulingStall(player.NetId);
+                    }
+
                     continue;
                 }
 
@@ -824,13 +852,79 @@ internal static class LocalMultiControlRuntime
                 if (scheduled)
                 {
                     scheduledThisTick++;
+                    if (isTempSeat)
+                    {
+                        ClearTempSeatSchedulingStall(player.NetId);
+                    }
                 }
+                else if (isTempSeat)
+                {
+                    // r358：战神被"等下去也不会自己好"的理由挡回时开始计时；超时就兜底收口（否则回合推不动）。
+                    NoteTempSeatSchedulingRejected(player, combatState, reason);
+                }
+            }
+            else if (isTempSeat)
+            {
+                ClearTempSeatSchedulingStall(player.NetId);
             }
         }
 
         if (anyWakuuPlayerHasPlayableCards)
         {
             _allPlayersAutoEndedRounds.Remove(combatState.RoundNumber);
+        }
+    }
+
+    /// <summary>
+    /// r358：记录"战神这一席的托管调度被挡"。连续被
+    /// <see cref="TempSeatSchedulingStallPolicy.IsBlockingRejection"/> 认定的理由挡住超过
+    /// <see cref="TempSeatSchedulingStallGraceMs"/> ⇒ **兜底替它结束回合**。
+    ///
+    /// 兜底的必要性：战神不计入 `LocalPlayerIds`，`TryEndAllPlayersWhenNoCards` 之外**没有任何别的地方**
+    /// 会无条件替它 ready；而"手上有托管能打的牌"会让空闲收口一直不敢收它。没有这条兜底，
+    /// 只要它调度不上（作用域泄漏 / 循环卡死），真人「结束回合」就会**永久卡住**（2026-11-15 实机）。
+    /// </summary>
+    private static void NoteTempSeatSchedulingRejected(Player warGod, CombatState combatState, string reason)
+    {
+        if (!TempSeatSchedulingStallPolicy.IsBlockingRejection(reason))
+        {
+            ClearTempSeatSchedulingStall(warGod.NetId);
+            return;
+        }
+
+        long nowMs = (long)Time.GetTicksMsec();
+        if (!_tempSeatBlockedSinceMs.TryGetValue(warGod.NetId, out long blockedSinceMs))
+        {
+            _tempSeatBlockedSinceMs[warGod.NetId] = nowMs;
+            return;
+        }
+
+        if (!TempSeatSchedulingStallPolicy.ShouldForceEnd(blockedSinceMs, nowMs, TempSeatSchedulingStallGraceMs))
+        {
+            return;
+        }
+
+        _tempSeatBlockedSinceMs.Remove(warGod.NetId);
+        if (CombatManager.Instance?.IsPlayerReadyToEndTurn(warGod) ?? true)
+        {
+            return;
+        }
+
+        int blockedMs = (int)Math.Min(int.MaxValue, nowMs - blockedSinceMs);
+        LocalMultiControlLogger.Warn(
+            "战神长时间调度不上（出牌作用域疑似卡死），兜底替它结束回合以免整桌推不动: "
+            + $"seat={warGod.NetId}, reason={reason}, blockedMs={blockedMs}, round={combatState.RoundNumber}");
+        // r288 的口径：结束回合会**同步**跑完 turn-end 前缀（实测单次可达 702ms），绝不能在逐帧门里直接做。
+        Player targetWarGod = warGod;
+        Callable.From(() => HellwarWarGodFactory.EndWarGodTurn(targetWarGod, "[地狱战神]", "war-god-stall-fallback"))
+            .CallDeferred();
+    }
+
+    private static void ClearTempSeatSchedulingStall(ulong seatId)
+    {
+        if (_tempSeatBlockedSinceMs.Count > 0)
+        {
+            _tempSeatBlockedSinceMs.Remove(seatId);
         }
     }
 
@@ -889,8 +983,9 @@ internal static class LocalMultiControlRuntime
 
         foreach (Player player in combatState.Players)
         {
-            // 只管我们自己的席位：第三方 Bot 手上有没有牌，不该拦住我们收口自己的席位。
-            if (!IsLocalSessionPlayer(player) || player.Creature == null || !player.Creature.IsAlive)
+            // 只管我们驱动的席位（本机会话 + 战神）：第三方 Bot 手上有没有牌，不该拦住我们收口自己的席位。
+            // r358：战神必须算进来 —— 漏了它就会出现"门里看不到它的牌 ⇒ 误判全员无牌 ⇒ 收口后分母仍差一个"。
+            if (!IsLocalDrivenSeat(player) || player.Creature == null || !player.Creature.IsAlive)
             {
                 continue;
             }
@@ -914,7 +1009,10 @@ internal static class LocalMultiControlRuntime
                 : LocalWakuuRelicRuntime.HasHostedPlayableCards(player, combatState.RoundNumber);
             if (hasPlayableCards)
             {
-                LocalMultiControlLogger.Info($"玩家主动结束回合时检测到仍有可出牌角色，不触发全员结束: round={combatState.RoundNumber}");
+                // r358：带上席位与"是不是临时席位"—— 当日实机这条日志一条都没有，正是因为战神被前一行跳过。
+                LocalMultiControlLogger.Info(
+                    "玩家主动结束回合时检测到仍有可出牌角色，不触发全员结束: "
+                    + $"round={combatState.RoundNumber}, player={player.NetId}, tempSeat={LocalSelfCoopContext.IsTemporarySeat(player.NetId)}, source=manual-end-turn");
                 return false;
             }
         }
@@ -930,11 +1028,14 @@ internal static class LocalMultiControlRuntime
         }
 
         bool endedAnyPlayer = false;
+        // r358：点名"这次到底结束了谁"—— 当日实机只结束了 2 个真人席位、战神被跳过，日志里却看不出来。
+        List<ulong> endedSeats = new();
         foreach (Player player in combatState.Players)
         {
-            // 只结束我们自己的席位：第三方 Bot 的回合该由它自己的 mod 结束，
+            // 只结束我们驱动的席位（本机会话 + 战神）：第三方 Bot 的回合该由它自己的 mod 结束，
             // 我们替它 `EndTurn` 会污染它的动作流（r144 实机：日志里出现过对 Bot 席位的切人失败告警）。
-            if (!IsLocalSessionPlayer(player) || player.Creature == null || !player.Creature.IsAlive)
+            // r358：战神是**我们**的临时席位，且计入结束回合的分母 —— 不收它，分母就永远差一个（当日实机死锁）。
+            if (!IsLocalDrivenSeat(player) || player.Creature == null || !player.Creature.IsAlive)
             {
                 continue;
             }
@@ -945,6 +1046,21 @@ internal static class LocalMultiControlRuntime
                     isPartOfPlayerTurn: CombatManager.Instance.IsPartOfPlayerTurn(player)))
             {
                 continue;
+            }
+
+            // r358：临时席位（战神）**托管还有能打的牌时不要替它收口** —— Phase 3 的设计是"托管先打、
+            // 打光才 ready"。这里刻意再判一次（点击路径已在门里判过；自动兜底路径没判），
+            // 否则"切换不到下一个可操作席位"的兜底会顺手把战神的回合收掉。
+            // 它若因为调度卡死而永远 ready 不了，由 `NoteTempSeatSchedulingRejected` 的兜底收口接住。
+            if (LocalSelfCoopContext.IsTemporarySeat(player.NetId))
+            {
+                bool tempSeatPlayable = TryGetPlayableFromTickMemo(player, combatState, out bool tempSeatMemo)
+                    ? tempSeatMemo
+                    : LocalWakuuRelicRuntime.HasHostedPlayableCards(player, combatState.RoundNumber);
+                if (tempSeatPlayable)
+                {
+                    continue;
+                }
             }
 
             if (CombatManager.Instance.IsPlayerReadyToEndTurn(player))
@@ -972,12 +1088,16 @@ internal static class LocalMultiControlRuntime
             }
 
             endedAnyPlayer = true;
+            endedSeats.Add(player.NetId);
         }
 
         if (endedAnyPlayer)
         {
             _allPlayersAutoEndedRounds.Add(combatState.RoundNumber);
-            LocalMultiControlLogger.Info($"检测到全员无牌可出，已自动结束全部角色回合: round={combatState.RoundNumber}, source={source}");
+            LocalMultiControlLogger.Info(
+                "检测到全员无牌可出，已自动结束全部角色回合: "
+                + $"round={combatState.RoundNumber}, source={source}, "
+                + $"已结束=[{string.Join(",", endedSeats)}], 战斗内席位={combatState.Players.Count}");
         }
 
         return endedAnyPlayer;
@@ -1033,8 +1153,14 @@ internal static class LocalMultiControlRuntime
         _tickPlayableMemo.Clear();
         _tickPlayableMemoAtMs = 0L;
         _tickPlayableMemoRound = -1;
+        // r358：战神"调度被挡"的计时同样按战斗失效（上一场卡住的席位不该让新战斗的同一席位被立刻兜底收口）。
+        _tempSeatBlockedSinceMs.Clear();
         LocalMultiControlLogger.Info(
             $"检测到战斗场次切换，重置瓦库自动结束回合状态: combat={combatIdentity}, source={source}");
+        // r358：上一场战斗结束时还卡在 await 上的出牌循环**永远不会返回** ⇒ 它们的租约只增不减，
+        // 会让**新战斗**里非并发档席位（战神）每次调度都被 `selector-scope-busy` 挡回（2026-11-15 实机根因）。
+        // 换战斗 = 这些任务一定不会返回，直接清账；清完探针才有机会自愈选择器栈残留。
+        LocalWakuuRelicRuntime.ResetSelectorScopeLeases($"combat-switch-{combatIdentity}");
         LocalWakuuRelicRuntime.ProbeAndRecoverSelectorStack($"combat-switch-{combatIdentity}", allowRecover: true);
     }
 
@@ -1566,6 +1692,24 @@ internal static class LocalMultiControlRuntime
     private static bool IsLocalSessionPlayer(Player? player)
     {
         return player != null && LocalSeatSource.IsLocalSeat(player.NetId);
+    }
+
+    /// <summary>
+    /// 这一席是否**由我们驱动**：本机会话席位 + **临时席位（战神）**。
+    ///
+    /// 战神**刻意不进** <see cref="LocalSelfCoopContext.LocalPlayerIds"/>（那是大厅席位表），所以
+    /// <see cref="IsLocalSessionPlayer"/> 对它恒为 false —— 而它照样在 `CombatState.Players` 里、
+    /// 照样计入 `PlayersReadyToEndTurn.Count == State.Players.Count` 这个分母
+    /// （见 `HellwarWarGodFactory.EndWarGodTurn` 的注释）。
+    ///
+    /// r358：结束回合门与"全员无牌可出"收口必须用这个判据。当日实机就是因为两处都用了
+    /// `IsLocalSessionPlayer`：① 门里看不到战神手上的牌，误判"全员无牌"；② 收口只结束了两个真人席位
+    /// ⇒ 分母 3、只 ready 2 ⇒ 回合链停住、点「结束回合」毫无反应。
+    /// </summary>
+    private static bool IsLocalDrivenSeat(Player? player)
+    {
+        return player != null
+            && (LocalSeatSource.IsLocalSeat(player.NetId) || LocalSelfCoopContext.IsTemporarySeat(player.NetId));
     }
 
     public static void TryAutoSwitchAfterEndTurn(ulong endedPlayerId)
