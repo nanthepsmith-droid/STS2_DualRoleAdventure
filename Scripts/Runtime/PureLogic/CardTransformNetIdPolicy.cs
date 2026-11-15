@@ -60,13 +60,16 @@ internal static class CardTransformNetIdPolicy
     /// <c>null</c> = 没探（不在战斗/没有变换牌），<c>true</c> = 全部原牌都有节点，<c>false</c> = 至少一张缺失。
     /// </param>
     /// <param name="isOwnerAutomated">
-    /// 牌主人是否是**我们托管的席位**（瓦库驱动）。true ⇒ 一律跳过原版视觉，不看探针与前台：
+    /// 牌主人是否是**我们托管的席位**（瓦库驱动）。
+    /// **后台**托管席位（手牌 UI 显示的别的席位那份）true ⇒ 一律跳过原版视觉，不看探针：
     /// 游戏把变换分成"数据阶段（含多个 <c>await</c> 挂钩点）→ 视觉阶段"，视觉阶段才用
     /// <c>LocalContext.IsMine(cardAdded)</c> 去 <c>NCard.FindOnTable(original, PileType.Hand)</c> 找**原牌节点**；
-    /// 托管席位的手牌节点在异步窗口里可能已被换掉/重建 ⇒ 抛
+    /// 后台托管席位的手牌节点在异步窗口里可能已被换掉/重建 ⇒ 抛
     /// <c>Couldn't get hand node for original card …</c> ⇒ <c>PlayCardAction</c> 以异常结束 ⇒
     /// **牌停在屏幕中央、效果只做了一半**（r109「数据链」同族；2026-10-01 实机：猪猪 mod【猪猪王】要换 3 张，
-    /// 结果只换了 1 张、牌不消失）。视觉对这个席位只是装饰，跳过最安全（UI 由既有顺序自愈重建）。
+    /// 结果只换了 1 张、牌不消失）。
+    /// **r360**：若它恰好就是当前前台（全瓦库），手牌 UI 显示的就是它这份 ⇒ 改为按前台规则走原版视觉
+    /// （否则数据换了牌、UI 还画旧牌 ⇒ 手牌内容永久不同步，且后续出牌找不到 holder）。
     /// </param>
     public static CardTransformNetIdAction Decide(
         bool isOwnerLocal,
@@ -80,9 +83,9 @@ internal static class CardTransformNetIdPolicy
             return CardTransformNetIdAction.None;
         }
 
-        if (isOwnerAutomated)
+        if (isOwnerAutomated && !isOwnerForeground)
         {
-            // 不看探针、不看前台：必须保证**整段异步窗口**里 IsMine=false
+            // 后台托管席位：不看探针、不看前台时刻 —— 必须保证**整段异步窗口**里 IsMine=false
             // （中途 NetId 可能被看门狗/切人改写，所以不能只在"现在已是主人"时才让开）。
             return CardTransformNetIdAction.ShiftAwayFromOwner;
         }

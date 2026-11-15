@@ -49,13 +49,14 @@ public class AutomatedSeatTransformContextGuardTests
     }
 
     [Test]
-    public void 上下文是托管席位_受控位就是它自己_让到空()
+    public void 上下文是托管席位_受控位就是它自己_不干预()
     {
-        // 实机（BUG-25 唯我）教训：安全值不能是牌主人自己，否则 IsMine 仍为 true。
+        // 历史（BUG-25 唯我）教训：安全值不能是牌主人自己，否则 IsMine 仍为 true。
+        // r360（全瓦库）：这种情况恰恰是"前台托管席位"，手牌 UI 就是它那份 ⇒ 这次变换要走原版视觉，
+        // 不能把上下文拉走（否则换牌视觉被跳过，手牌内容与数据永久不同步）。
         Assert.That(
-            AutomatedSeatTransformContextGuard.TryResolveSafeNetId(Wakuu, true, Wakuu, true, out ulong? safe),
-            Is.True);
-        Assert.That(safe, Is.Null);
+            AutomatedSeatTransformContextGuard.TryResolveSafeNetId(Wakuu, true, Wakuu, true, out _),
+            Is.False);
     }
 
     [Test]
@@ -92,9 +93,15 @@ public class AutomatedSeatTransformContextGuardTests
                         bool resolved = AutomatedSeatTransformContextGuard.TryResolveSafeNetId(
                             current, isAutomated, control, controlIsLocal, out ulong? safe);
 
-                        // 期望"是否需要干预" = 上下文存在且是托管席位。
-                        Assert.That(resolved, Is.EqualTo(current.HasValue && isAutomated),
-                            $"是否需要拉回漂移: current={current?.ToString() ?? "null"}, auto={isAutomated}");
+                        // 期望"是否需要干预" = 上下文存在、是托管席位，且**受控位不是它自己**
+                        // （r360：前台托管席位的变换要走原版视觉，不拉回）。
+                        bool expectedResolved = current.HasValue
+                                                && isAutomated
+                                                && !(controlIsLocal && control.HasValue
+                                                     && control.Value == current!.Value);
+                        Assert.That(resolved, Is.EqualTo(expectedResolved),
+                            $"是否需要拉回漂移: current={current?.ToString() ?? "null"}, auto={isAutomated}, "
+                            + $"control={control?.ToString() ?? "null"}, controlIsLocal={controlIsLocal}");
 
                         if (!resolved)
                         {

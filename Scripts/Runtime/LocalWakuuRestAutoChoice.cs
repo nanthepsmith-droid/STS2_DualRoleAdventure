@@ -226,6 +226,13 @@ internal static class LocalWakuuRestAutoChoice
                     continue;
                 }
 
+                // r360：本地房间玩家的选项是**我们**替它选的（没走 NRestSiteButton 的点击链），
+                // 而原版「离开火堆」按钮只在 ① 本地玩家点完选项后的 AfterSelectingOptionAsync
+                // ② ActiveScreenContext.Updated 时才启用 ⇒ 全瓦库（连前台角色也托管）时选项选完了
+                // 按钮却永远不出现，得开菜单再回来才刷新（用户 2026-11-15 实机报）。
+                // 这里对"本地房间玩家"补一次原版收尾（与真人点击等价：隐藏选项 → 视觉 → 重建选项 → 启用离开）。
+                DriveVanillaRestSiteCompletionIfLocalRoomPlayer(player, choice);
+
                 await Task.Delay(400);
             }
         }
@@ -462,6 +469,52 @@ internal static class LocalWakuuRestAutoChoice
     private static IReadOnlyList<RestSiteOption> GetOptions(ulong playerId)
     {
         return RunManager.Instance.RestSiteSynchronizer.GetOptionsForPlayer(playerId);
+    }
+
+    /// <summary>
+    /// r360：替「本地房间玩家」补一次原版选项收尾（<see cref="NRestSiteRoom.AfterSelectingOption"/>）。
+    ///
+    /// 原版的「离开火堆」按钮只在两处启用：本地玩家点选项后的
+    /// <c>NRestSiteRoom.AfterSelectingOptionAsync</c>（内部 <c>ShowProceedButton</c>），
+    /// 以及 <c>ActiveScreenContext.Updated</c>。瓦库自动作答走的是
+    /// <c>RestSiteSynchronizer.ChooseOption</c>（反射私有方法），不经过
+    /// <c>NRestSiteButton</c> 的点击链 ⇒ 全瓦库（本地房间玩家也是托管席位）时选项全部选完，
+    /// 按钮却一直保持 <c>Disable()</c>，必须开一次菜单再回来（触发 ActiveScreenContext.Updated）才出现。
+    ///
+    /// 判据 = 「本地房间玩家」：<c>GetLocalOptions()</c> 与 <c>GetOptionsForPlayer(该玩家)</c>
+    /// 返回的是同一个 List 实例（<c>_restSites[slot].options</c>）⇒ 用引用相等判定，
+    /// 不依赖任何身份补丁；别人的选择不该动本机火堆 UI。
+    /// </summary>
+    private static void DriveVanillaRestSiteCompletionIfLocalRoomPlayer(Player player, RestSiteOption option)
+    {
+        try
+        {
+            RestSiteSynchronizer synchronizer = RunManager.Instance.RestSiteSynchronizer;
+            if (!ReferenceEquals(synchronizer.GetLocalOptions(), synchronizer.GetOptionsForPlayer(player.NetId)))
+            {
+                return;
+            }
+
+            NRestSiteRoom? room = NRestSiteRoom.Instance;
+            if (room == null || !room.IsInsideTree())
+            {
+                // 用户复测时若"离开按钮还是不出现"，靠这条区分"没驱动"与"驱动了但原版没启用"。
+                LocalMultiControlLogger.Warn(
+                    $"瓦库火堆本是本地房间玩家，但休息区节点未就绪，未能驱动原版收尾（离开按钮可能不出现）: "
+                    + $"player={player.NetId}, room={(room == null ? "null" : "not-in-tree")}");
+                return;
+            }
+
+            room.AfterSelectingOption(option);
+            LocalMultiControlLogger.Info(
+                $"瓦库火堆已驱动原版收尾（离开按钮/选项重建）: player={player.NetId}, option={option.OptionId}");
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn(
+                $"瓦库火堆驱动原版收尾失败（仅影响离开按钮显示）: player={player.NetId}, option={option.OptionId}, "
+                + $"error={exception.GetType().Name}: {exception.Message}");
+        }
     }
 
     /// <summary>
