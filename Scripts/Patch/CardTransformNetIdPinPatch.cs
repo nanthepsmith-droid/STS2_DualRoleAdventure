@@ -76,9 +76,10 @@ internal static class CardTransformNetIdPinPatch
         bool currentNetIdIsOwner = seats.IsContext(owner.NetId);
         CardModel? firstMissingOriginal = null;
         bool? handNodeExists = null;
-        if (!isOwnerAutomated)
+        // 后台托管席位不看探针（r199：探针看到节点也不代表视觉阶段还查得到，见策略注释）。
+        // r360：**前台**托管席位（全瓦库，屏幕上的手牌就是它这份）必须看探针 —— 它要走原版视觉。
+        if (!isOwnerAutomated || isOwnerForeground)
         {
-            // 托管席位不看探针（r199：探针看到节点也不代表视觉阶段还查得到，见策略注释）。
             handNodeExists = ProbeHandNodeExists(transformations, out firstMissingOriginal);
         }
 
@@ -96,8 +97,20 @@ internal static class CardTransformNetIdPinPatch
                 LocalContext.NetId = owner.NetId;
                 _pinActive.Value = true;
 
-                LocalMultiControlLogger.Info(
-                    $"[手牌同步修复] 变换期间钉 NetId 到牌主人: owner={owner.NetId}, prevNetId={_previousNetId.Value}");
+                if (isOwnerAutomated)
+                {
+                    // r360（全瓦库）：前台席位本身就是托管席位 ⇒ 手牌 UI 显示的就是它这份，
+                    // 照原版播换牌视觉即可（跳过会让「数据已换牌、UI 还画旧牌」永久不同步）。
+                    LocalMultiControlLogger.Info(
+                        "[手牌同步修复] 前台托管席位的变换照原版播视觉（全瓦库：手牌 UI 就是它这份）: "
+                        + $"owner={owner.NetId}, prevNetId={_previousNetId.Value}");
+                }
+                else
+                {
+                    LocalMultiControlLogger.Info(
+                        $"[手牌同步修复] 变换期间钉 NetId 到牌主人: owner={owner.NetId}, prevNetId={_previousNetId.Value}");
+                }
+
                 break;
 
             case CardTransformNetIdAction.ShiftAwayFromOwner:
@@ -122,7 +135,16 @@ internal static class CardTransformNetIdPinPatch
                     LocalContext.NetId = safeNetId;
                     _pinActive.Value = true;
 
-                    if (isOwnerAutomated)
+                    if (isOwnerAutomated && isOwnerForeground)
+                    {
+                        // r360：前台托管席位本来要走原版视觉，但探针显示原牌节点不在手牌容器里
+                        // ⇒ 走原版必抛 `Couldn't get hand node for original card`，改为跳过视觉（数据层已完成）。
+                        LocalMultiControlLogger.Warn(
+                            "[手牌同步修复] 前台托管席位的变换原牌节点缺失，跳过原版视觉（防抛异常卡屏）: "
+                            + $"owner={owner.NetId}, original={firstMissingOriginal}, "
+                            + $"netId={_previousNetId.Value?.ToString() ?? "null"} -> {safeNetId?.ToString() ?? "null"}");
+                    }
+                    else if (isOwnerAutomated)
                     {
                         // r199（BUG-29）：托管席位的变换一律跳过原版视觉。原版把变换分成
                         // 「数据阶段（中间有 await 挂钩点）→ 视觉阶段」，视觉阶段才查原牌手牌节点；
@@ -469,5 +491,34 @@ internal static class CardTransformAutomatedSeatContextGuardPatch
             "[手牌同步修复] 变换期间上下文被钉回托管席位，已拉回安全值"
             + "（否则原版视觉会去前台手牌找托管席位的牌节点并抛 Couldn't get hand node）: "
             + $"netId={current} -> {safeNetId?.ToString() ?? "null"}");
+    }
+
+    /// <summary>
+    /// r360 防卡屏兜底：前台托管席位（全瓦库）现在会走**原版换牌视觉**，而原版视觉在
+    /// <c>NCard.FindOnTable(original, Hand)</c> 为 null 时会抛
+    /// <c>InvalidOperationException("Couldn't get hand node for original card …")</c>。
+    /// 这条异常只可能是"视觉找不到原牌节点"（数据阶段早已完成），但抛穿调用链会让
+    /// `PlayCardAction` 以异常结束 ⇒ 牌停在屏幕中央（BUG-29 的老症状）。
+    /// 视觉对这类席位只是装饰 ⇒ 精确匹配这条消息后吞掉并记 WARN，绝不让它炸穿。
+    /// </summary>
+    [HarmonyFinalizer]
+    private static Exception? VisualOnlyExceptionFinalizer(Exception? __exception)
+    {
+        if (__exception is not InvalidOperationException
+            || !LocalSelfCoopContext.IsEnabled
+            || !LocalSelfCoopContext.UseSingleAdventureMode)
+        {
+            return __exception;
+        }
+
+        if (__exception.Message?.Contains("Couldn't get hand node", StringComparison.Ordinal) != true)
+        {
+            return __exception;
+        }
+
+        LocalMultiControlLogger.Warn(
+            "[手牌同步修复] 换牌视觉找不到原牌节点（前台托管席位），已吞掉该视觉异常防止牌停屏"
+            + "（数据层已生效，UI 由手牌顺序自愈/切人重建兜底）: " + __exception.Message);
+        return null;
     }
 }

@@ -55,6 +55,15 @@ internal static class AutomatedSeatTransformContextGuard
             return false;
         }
 
+        // r360（全瓦库）：被钉住的托管席位**正好是前台** ⇒ 屏幕上的手牌 UI 就是它这份，
+        // 这次变换要走原版视觉（见 AutomatedSeatTransformVisualPolicy）⇒ 不能把上下文拉走。
+        if (controlledSeatId.HasValue
+            && controlledSeatId.Value == currentNetId.Value
+            && controlledIsLocalSeat)
+        {
+            return false;
+        }
+
         // 优先让到"另一个本地席位"（前台玩家）：与原保底逻辑同口径。
         if (controlledSeatId.HasValue
             && controlledSeatId.Value != currentNetId.Value

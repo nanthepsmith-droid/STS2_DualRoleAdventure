@@ -146,7 +146,8 @@ public class CardTransformNetIdPolicyTests
 
                             // 期望动作 = 实现语义的逐格展开（写死，防回归漂移）：
                             // 非本地牌主 → None；
-                            // r199：托管席位（瓦库）→ 一律让开（异步窗口里原牌节点可能消失 ⇒ 视觉必抛）；
+                            // r199：**后台**托管席位（瓦库）→ 一律让开（异步窗口里原牌节点可能消失 ⇒ 视觉必抛）；
+                            // r360：**前台**托管席位（全瓦库）→ 手牌 UI 就是它那份，按前台规则走原版视觉；
                             // 节点缺失 → 视觉必抛，让 IsMine=false（NetId 已是主人时显式让开，否则不动）；
                             // 节点存在/未探 → 前台要对齐（未对齐就钉），后台要让开（已对齐就显式让）。
                             CardTransformNetIdAction expected;
@@ -154,7 +155,7 @@ public class CardTransformNetIdPolicyTests
                             {
                                 expected = CardTransformNetIdAction.None;
                             }
-                            else if (isOwnerAutomated)
+                            else if (isOwnerAutomated && !isOwnerForeground)
                             {
                                 expected = CardTransformNetIdAction.ShiftAwayFromOwner;
                             }
@@ -186,28 +187,49 @@ public class CardTransformNetIdPolicyTests
     }
 
     [Test]
-    public void 托管席位_一律让开_与探针前台均无关()
+    public void 后台托管席位_一律让开_与探针无关()
     {
         // r199（BUG-29，2026-10-01 实机 猪猪 mod【猪猪王】）：原版变换是
         // 「数据阶段（含多个 await）→ 视觉阶段」，视觉阶段才按 IsMine 去查原牌手牌节点。
-        // 托管席位（瓦库）的手牌节点在这段异步窗口里可能已被换掉 ⇒ 探针在 Prefix 时看到节点、
+        // 后台托管席位（瓦库）的手牌节点在这段异步窗口里可能已被换掉 ⇒ 探针在 Prefix 时看到节点、
         // 视觉阶段却查不到 ⇒ 抛 Couldn't get hand node ⇒ 出牌中断、牌停屏、只换了一半。
-        // 所以托管席位必须**无条件**让开（也不能只在"现在已是主人"时让开 —— 中途 NetId 可能被改写）。
+        // 所以**后台**托管席位必须无条件让开（也不能只在"现在已是主人"时让开 —— 中途 NetId 可能被改写）。
         Assert.Multiple(() =>
         {
-            foreach (bool isOwnerForeground in new[] { true, false })
+            foreach (bool netIdIsOwner in new[] { true, false })
             {
-                foreach (bool netIdIsOwner in new[] { true, false })
+                foreach (bool? handNodeExists in new bool?[] { true, false, null })
                 {
-                    foreach (bool? handNodeExists in new bool?[] { true, false, null })
-                    {
-                        Assert.That(
-                            CardTransformNetIdPolicy.Decide(true, isOwnerForeground, netIdIsOwner, handNodeExists, isOwnerAutomated: true),
-                            Is.EqualTo(CardTransformNetIdAction.ShiftAwayFromOwner),
-                            $"托管席位应无条件让开: fg={isOwnerForeground}, netIdIsOwner={netIdIsOwner}, node={handNodeExists}");
-                    }
+                    Assert.That(
+                        CardTransformNetIdPolicy.Decide(true, isOwnerForeground: false, netIdIsOwner, handNodeExists, isOwnerAutomated: true),
+                        Is.EqualTo(CardTransformNetIdAction.ShiftAwayFromOwner),
+                        $"后台托管席位应无条件让开: netIdIsOwner={netIdIsOwner}, node={handNodeExists}");
                 }
             }
+        });
+    }
+
+    [Test]
+    public void 前台托管席位_节点在场时按前台规则钉到牌主人()
+    {
+        // r360（2026-11-15 实机「瓦库打牌手牌视觉与实际不同步」）：全瓦库时前台角色本身就是托管席位，
+        // 手牌 UI 显示的就是它这份 ⇒ 必须走原版换牌视觉，否则数据换了牌、UI 还画旧牌。
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                CardTransformNetIdPolicy.Decide(true, isOwnerForeground: true, currentNetIdIsOwner: false, handNodeExists: true, isOwnerAutomated: true),
+                Is.EqualTo(CardTransformNetIdAction.PinToOwner));
+            Assert.That(
+                CardTransformNetIdPolicy.Decide(true, isOwnerForeground: true, currentNetIdIsOwner: true, handNodeExists: true, isOwnerAutomated: true),
+                Is.EqualTo(CardTransformNetIdAction.None));
+            Assert.That(
+                CardTransformNetIdPolicy.Decide(true, isOwnerForeground: true, currentNetIdIsOwner: false, handNodeExists: null, isOwnerAutomated: true),
+                Is.EqualTo(CardTransformNetIdAction.PinToOwner));
+
+            // 探针显示原牌节点缺失 ⇒ 走原版必抛 ⇒ 退回"让开"（宁可丢动画，不要卡屏）。
+            Assert.That(
+                CardTransformNetIdPolicy.Decide(true, isOwnerForeground: true, currentNetIdIsOwner: true, handNodeExists: false, isOwnerAutomated: true),
+                Is.EqualTo(CardTransformNetIdAction.ShiftAwayFromOwner));
         });
     }
 }
