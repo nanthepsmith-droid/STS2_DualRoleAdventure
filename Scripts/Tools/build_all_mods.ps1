@@ -35,6 +35,9 @@ param(
     [string]$MainRepo = "STS2_DualRoleAdventure-itriedtofix",
     [string]$MainSlot = "DualRoleAdventure",
     [string]$MainSlotDll = "DualRoleAdventurefixed.dll",
+    # 主 mod 是**双版本**（正式版 / beta）：主工程要对着 beta 程序集编（否则切到正式版后编不过），
+    # 部署走 build_dual.ps1（loader + lib\<版本>\ 两份载荷），不再把单个 dll 直接盖到槽位。
+    [string]$MainBetaGameDir = "D:\Download\pain\game-archives\v0.113.1",
     # 兼容旧用法：显式给出清单时只处理这些（缺省 = 自动发现）
     [string[]]$FixRepos = @(),
     # 已知的非 mod 目录（无 csproj 也会自动排除，这里只是加速 + 防止将来误放 csproj）
@@ -492,17 +495,50 @@ if ($List) {
 }
 
 if ($mainSelected -and ($mode -eq "all" -or $mode -eq "build")) {
-    if (-not (Invoke-BuildRepo $mainRepoDir $mainCsproj $mainOut $mainTestCsproj)) { $fail++ }
-    elseif (-not (Invoke-CompatCheck $mainRepoDir $mainOut)) { $fail++ }
+    # 双版本：主工程（= beta 载荷）必须对着 beta 程序集编。切到正式版后默认 Sts2Dir 是 0.111，
+    # 而 master 代码用到 0.113 的 API ⇒ 不覆盖就编不过。用环境变量传（Invoke-BuildRepo 不改签名）。
+    $previousSts2Dir = $env:STS2_DIR
+    $env:STS2_DIR = $MainBetaGameDir
+    try {
+        if (-not (Invoke-BuildRepo $mainRepoDir $mainCsproj $mainOut $mainTestCsproj)) { $fail++ }
+        elseif (-not (Invoke-CompatCheck $mainRepoDir $mainOut)) { $fail++ }
+    } finally {
+        $env:STS2_DIR = $previousSts2Dir
+    }
 }
 if ($mainSelected -and ($mode -eq "all" -or $mode -eq "deploy")) {
     if (-not (Test-Path -LiteralPath $mainOut)) { Write-Err "主 mod 构建产物缺失: $mainOut" }
-    if (-not (Invoke-DeployOne $mainOut $mainSlotDir $MainSlotDll)) { $fail++ }
-    elseif (-not (Invoke-DllCheck $mainOut $mainSlotDir $MainSlotDll)) { $fail++ }
+    # 双版本部署：loader（槽位 dll）+ lib\<版本>\ 两份载荷。走 build_dual，**不要再**把载荷直接盖成槽位 dll
+    # （那会把 loader 覆盖掉，游戏下次启动就只剩单版本载荷）。
+    Write-Step "主 mod 双版本部署（loader + lib）…"
+    & (Join-Path $mainRepoDir "Scripts\Tools\build_dual.ps1") -Deploy -SkipBetaBuild -ModsDir (Join-Path $GameDir "mods")
+    if ($LASTEXITCODE -ne 0) { Write-Host "[X] 主 mod 双版本部署失败" -ForegroundColor Red; $fail++ }
     if (-not (Test-SlotIdentity $mainMod)) { $fail++ }
 }
 if ($mainSelected -and ($mode -eq "check")) {
-    if (-not (Invoke-CheckOne $mainOut $mainSlotDir $MainSlotDll)) { $fail++ }
+    # 双版本：槽位里的 `<id>.dll` 是 **loader**，载荷在 `lib\<版本>\<id>.Payload.dll`，
+    # 所以这里不能拿"构建产物 vs 槽位 dll"比字节（那是单 dll 时代的口径）。
+    $slotLoader = Join-Path $mainSlotDir $MainSlotDll
+    if (-not (Test-Path -LiteralPath $slotLoader)) {
+        Write-Host "[X] 槽位 loader 缺失: $slotLoader" -ForegroundColor Red
+        $fail++
+    } else {
+        Write-Ok "槽位 loader 存在: $MainSlotDll"
+    }
+    # 动态枚举（别硬编码版本名：以后加/去掉分支不用改门禁）
+    $libRoot = Join-Path $mainSlotDir "lib"
+    $variantDirs = @(Get-ChildItem -LiteralPath $libRoot -Directory -ErrorAction SilentlyContinue)
+    if ($variantDirs.Count -eq 0) {
+        Write-Host "[!] 槽位没有任何 lib\<版本>\ 载荷目录" -ForegroundColor Yellow
+    }
+    foreach ($variantDir in $variantDirs) {
+        $payload = Join-Path $variantDir.FullName ("$([System.IO.Path]::GetFileNameWithoutExtension($MainSlotDll)).Payload.dll")
+        if (-not (Test-Path -LiteralPath $payload)) {
+            Write-Host "[!] 载荷缺失（该分支将不可用）: $payload" -ForegroundColor Yellow
+        } else {
+            Write-Ok "载荷存在: lib\$($variantDir.Name)"
+        }
+    }
     if (-not (Test-SlotIdentity $mainMod)) { $fail++ }
 }
 
@@ -515,7 +551,15 @@ foreach ($m in $mods) {
     }
     $slotDir = Join-Path $modsDir $m.Slot
     if ($mode -eq "all" -or $mode -eq "build") {
-        if (-not (Invoke-BuildRepo $m.RepoDir $m.Csproj $m.OutDll)) { $fail++; continue }
+        # compat mod 也是单份 dll 要两边跑：**对着 beta 编**（它们用到 0.113 的 API），
+        # 运行时差异用反射桥接兜（例：YuWanCardLocalCoopFix 的 MerchantPurchaseBridge）。
+        $previousCompatSts2Dir = $env:STS2_DIR
+        $env:STS2_DIR = $MainBetaGameDir
+        try {
+            if (-not (Invoke-BuildRepo $m.RepoDir $m.Csproj $m.OutDll)) { $fail++; continue }
+        } finally {
+            $env:STS2_DIR = $previousCompatSts2Dir
+        }
     }
     if ($mode -eq "all" -or $mode -eq "deploy") {
         if (-not (Test-Path -LiteralPath $m.OutDll)) {

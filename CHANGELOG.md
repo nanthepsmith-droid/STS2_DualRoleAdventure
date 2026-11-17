@@ -2,6 +2,30 @@
 
 Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. Entries up to v1.30 are translated from the original author's Chinese changelog; the fuller day-by-day history lives in `docs/archive/player-update-history.zh.md`.
 
+## [Unreleased]
+
+### 双版本分发：正式版（0.111.x）与 beta（0.113.x）共用一份安装（r363；2026-11-17）
+
+- **形态**：槽位里的 `<id>.dll` 改成**薄 loader**（约 13 KB），功能本体改成每分支一份完整载荷：
+  `lib\0.111.0\<id>.Payload.dll`（由 `stable/0.111` 代码线构建）与 `lib\0.113.0\<id>.Payload.dll`（master）。
+  loader 读 `release_info.json` 后只挑**不高于宿主版本**的最新载荷，加载后用
+  `ModManager.AssociateAssemblyWithMod` 登记到本 mod 名下（否则自定义卡/遗物不会被 `ModelDb` 扫到），
+  再转发调用载荷里的 `[ModInitializer]`。做法与生态里的内容 mod 一致（HextechRunes / Koishi 都是 `lib\<版本>\` 多份完整 dll）。
+- **为什么**：游戏 manifest 只有 `min_game_version`（无上限/区间），官方不支持按版本择一加载；
+  而 0.111 与 0.113 的原版 API 差异不小（选择器栈、商店库存、商店房间节点、愚者/恐惧/闪电战）。
+- **0.111 载荷不靠条件编译**：直接从 `1824cb5`（r349，支持 0.111 的最后代码点 / v1.47.0 发布点）构建，
+  对着 0.111.1 的 `sts2.dll` **0 警告 0 错误**。0.111 上的功能面 = v1.49.0（含战灵召唤、瓦库四功能、12 席），
+  不含 0.113 独占的恐惧/闪电战本地合作与愚者相关（这些在 0.111 里本来就不存在）。
+- **工具**：新增 `Scripts/Tools/build_dual.ps1`（出包/部署，`-SkipBetaBuild` 复用已构建载荷）；
+  `build_all_mods.ps1` 的主 mod 构建自动指向 beta 程序集（`$env:STS2_DIR`）、部署改走 build_dual、
+  `-Mode check` 改为校验 loader + `lib\<版本>\`；`Loader/` 是新工程（内部程序集名 `DualRoleAdventure.Loader`，
+  必须与载荷不同名，否则同一个 ALC 里加载会抛 `FileLoadException`）。
+- **compat**：`YuWanCardLocalCoopFix` 的「队友帮付」改用 `MerchantPurchaseBridge`
+  （`OnTryPurchaseUnsynchronized` ↔ `OnTryPurchaseWrapper` 反射桥），单份 dll 两个分支都能结算。
+- **实测**：0.111.1 → 选 `0.111.0` 载荷、`PATCH_RESULT critical=25/25`、`INIT_OK`；
+  0.113.1 → 选 `0.113.0` 载荷、`critical=26/26 optional=25/25 total_patched=237`、`INIT_OK`，
+  联机菜单四个本地入口（自定义/每日/恐惧/闪电战）都在。
+
 ## [1.49.0] - 2026-11-15
 
 ### 适配：游戏 v0.113.1（r362）

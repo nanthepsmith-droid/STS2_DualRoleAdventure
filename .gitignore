@@ -32,3 +32,6 @@ src/
 /DualRoleAdventure.pck
 /DualRoleAdventure.dll
 release/
+# 双版本出包产物（Scripts/Tools/build_dual.ps1）
+dist/
+/DualRoleAdventure.Payload.dll

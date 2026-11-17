@@ -133,6 +133,23 @@ The mod set is **dynamic** — never hand-maintain a repo list in the script:
   No pck export — this is a dll-only mod.（旧的 `copy_pck_to_game.ps1` 已删除，它会连带拷 json，见上。）
 - If the copy fails with *permission denied*, the game is running and holds the DLL lock; retry after it closes.
 
+### Dual-version packaging（正式版 0.111.x / beta 0.113.x，2026-11-17 起）
+
+- 形态 = **薄 loader + 每个分支一份完整载荷**（与生态里内容 mod 一致：HextechRunes / Koishi 都是 `lib\<版本>\` 多份 dll）：
+  ```
+  <slot>\<id>.dll                        ← loader（工程 `Loader\`，唯一被游戏加载的程序集）
+  <slot>\lib\0.111.0\<id>.Payload.dll    ← 由 `stable/0.111` 代码线构建（git 1824cb5，支持 0.111 的最后代码点）
+  <slot>\lib\0.113.0\<id>.Payload.dll    ← 由 master（beta 线）构建
+  ```
+- 主工程（= beta 载荷）**必须对着 beta 程序集编**（切到正式版后默认 `Sts2Dir` 是 0.111 ⇒ 编不过）：
+  `build_all_mods.ps1` 自动设 `$env:STS2_DIR=<MainBetaGameDir>`；手动构建时自己设。
+- **不要再把载荷直接盖成槽位 dll**（那会覆盖 loader）。部署一律走 `Scripts/Tools/build_dual.ps1 -Deploy`
+  （`build_all_mods` 的主 mod 部署段已接过去）。
+- 0.111 那份**从 `stable/0.111` 长出来**，不要用 `#if` 把 0.113 代码掰回去（踩过，见
+  `pain\maintenance-docs\双版本兼容差异表（0.111↔0.113）.md` §4）。
+- loader 只允许用两版共有 API（`Log` / `ModManager.AssociateAssemblyWithMod` / `ReleaseInfoManager` / `ModInitializerAttribute`）。
+- compat-mods 仍是单份 dll：对着 beta 编、运行期差异用反射桥接（例 `MerchantPurchaseBridge`）。
+
 ## 3. Runtime verification
 
 - Log file: `%APPDATA%\SlayTheSpire2\logs\godot.log`.

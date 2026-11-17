@@ -200,8 +200,9 @@ internal static class TeammatePayLocalCompat
             try
             {
                 // 与猪猪原实现一致：钱已经在付款者那边扣掉，这里以 ignoreCost 结算货物。
-                // 0.113：`MerchantEntry.OnTryPurchaseWrapper` 改名 `OnTryPurchaseUnsynchronized`（逐行等价）
-        purchased = await entry.OnTryPurchaseUnsynchronized(inventory, ignoreCost: true);
+                // 0.113：`MerchantEntry.OnTryPurchaseWrapper` 改名 `OnTryPurchaseUnsynchronized`（逐行等价）。
+                // compat mod 是单份 dll（正式版 / beta 都要跑）⇒ 走反射桥接，两个名字都试。
+                purchased = await MerchantPurchaseBridge.TryPurchaseAsync(entry, inventory, ignoreCost: true);
             }
             catch (Exception exception)
             {

@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- 薄 loader：**唯一**会被游戏按 manifest id 加载的程序集（mods\DualRoleAdventure\DualRoleAdventure.dll）。
+       真正的功能在 lib\<游戏版本>\DualRoleAdventure.Payload.dll 里，每个分支一份、各自对着自己的原版 dll 编译。
+
+       范式来源（生态里内容 mod 的通行做法，两个样本一致）：
+         · HextechRunes（ARAM: Mayhem）：根 44KB loader + lib\0.107.1|0.111.0|0.113.0\ 各一份 2.4MB 完整 dll
+         · Koishi：                    根 24KB loader + Koishi\0.107.0|0.111.0|0.113.0\ 各一份 3MB 完整 dll
+       所以本工程只允许用**两个分支都有**的原版 API（Log / ModManager / ReleaseInfoManager / ModInitializer），
+       并且对着**最低支持版本**编译（默认 0.111，可用 -p:Sts2Dir 覆盖）。 -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>true</ImplicitUsings>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <!-- ⚠ 程序集名**必须**与载荷不同：beta 载荷复用主工程产物时内部名是 `DualRoleAdventure`，
+         同名同版本再 LoadFromAssemblyPath 会抛 `FileLoadException: Could not load file or assembly 'DualRoleAdventure'`
+         （2026-11-17 实机：loader 选了载荷、被同一个 ALC 里的自己挡住 ⇒ mod 静默不启用）。
+         部署文件名另算（必须等于槽位 json 的 id，如 `DualRoleAdventurefixed.dll`）—— 游戏按文件名加载，不校验内部名。 -->
+    <AssemblyName>DualRoleAdventure.Loader</AssemblyName>
+    <RootNamespace>DualRoleAdventure.Loader</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <Sts2Dir Condition="'$(Sts2Dir)' == '' AND '$(STS2_DIR)' != ''">$(STS2_DIR)</Sts2Dir>
+    <Sts2Dir Condition="'$(Sts2Dir)' == ''">D:/SteamLibrary/steamapps/common/Slay the Spire 2</Sts2Dir>
+    <Sts2DataDir>$(Sts2Dir)/data_sts2_windows_x86_64</Sts2DataDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="ModLoaderEntry.cs" />
+    <Compile Include="PayloadVersionPolicy.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="sts2">
+      <HintPath>$(Sts2DataDir)/sts2.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="GodotSharp">
+      <HintPath>$(Sts2DataDir)/GodotSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

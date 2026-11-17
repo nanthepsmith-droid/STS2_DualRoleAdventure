@@ -38,6 +38,9 @@
     <None Remove="compat-mods/**" />
     <!-- Unit tests live in tests/; never compile them into the mod assembly -->
     <Compile Remove="tests/**" />
+    <!-- `Loader/` 是独立的"薄 loader"工程（输出 mods\DualRoleAdventure\DualRoleAdventure.dll）；
+         本工程输出的是**载荷**（lib\<游戏版本>\DualRoleAdventure.Payload.dll），两者不能互相编进来。 -->
+    <Compile Remove="Loader/**" />
     <None Remove="tests/**" />
   </ItemGroup>
 
