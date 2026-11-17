@@ -56,11 +56,31 @@ internal static class WarGodFormationUi
     /// （用户 2026-11-17：「战神都是在本体图层上面的，挡到了」）。这里只重排、不动坐标：
     /// 非生物节点 → 战神（**后召唤的在前 = 更下层**）→ 其它生物（真人/宠物/敌人，画在最上面）。
     /// 判据与顺序见 <see cref="WarGodLayerPolicy"/>；失败只 WARN（层级是纯表现）。
+    ///
+    /// r367：**同一帧补做一次**（`AddChildSafely` 可能走 `CallDeferred`，节点比我们这次重排更晚挂进容器 ⇒
+    /// 新召唤的会重新落到最上面）；两次都打**实际顺序**，实机判读就能看出到底谁在上面。
     /// </summary>
     internal static void ApplyDrawOrder(
         CombatState? state,
         IReadOnlyList<(Player WarGod, ulong SummonerNetId)> warGods,
         string tag)
+    {
+        ApplyDrawOrderCore(state, warGods, tag, "sync");
+
+        if (warGods == null || warGods.Count == 0)
+        {
+            return;
+        }
+
+        List<(Player WarGod, ulong SummonerNetId)> snapshot = warGods.ToList();
+        Callable.From(() => ApplyDrawOrderCore(state, snapshot, tag, "deferred")).CallDeferred();
+    }
+
+    private static void ApplyDrawOrderCore(
+        CombatState? state,
+        IReadOnlyList<(Player WarGod, ulong SummonerNetId)> warGods,
+        string tag,
+        string phase)
     {
         try
         {
@@ -109,16 +129,18 @@ internal static class WarGodFormationUi
             List<int> nonCreature = new();
             List<int> warGodIndices = new();
             List<int> otherCreatures = new();
+            List<string> beforeOrder = new();
             for (int i = 0; i < children.Count; i++)
             {
                 Node child = children[i];
-                if (child is not NCreature)
+                if (child is not NCreature creatureChild)
                 {
                     nonCreature.Add(i);
                 }
                 else if (warGodSet.Contains(child))
                 {
                     warGodIndices.Add(i);
+                    beforeOrder.Add(creatureChild.Entity?.Player?.NetId.ToString() ?? "?");
                 }
                 else
                 {
@@ -153,17 +175,31 @@ internal static class WarGodFormationUi
                 moved++;
             }
 
-            if (moved > 0)
+            if (moved > 0 || string.Equals(phase, "deferred", StringComparison.Ordinal))
             {
-                List<ulong> order = new();
+                // 期望顺序（后召唤的在前 = 更下层）
+                List<ulong> desiredOrder = new();
                 for (int i = warGods.Count - 1; i >= 0; i--)
                 {
-                    order.Add(warGods[i].WarGod?.NetId ?? 0UL);
+                    desiredOrder.Add(warGods[i].WarGod?.NetId ?? 0UL);
+                }
+
+                // **实际**容器顺序（判读用：看新召唤的到底落在哪一层）。
+                List<string> actualOrder = new();
+                foreach (Node child in parent.GetChildren())
+                {
+                    if (child is NCreature creatureNode && warGodSet.Contains(child))
+                    {
+                        actualOrder.Add(creatureNode.Entity?.Player?.NetId.ToString() ?? "?");
+                    }
                 }
 
                 LocalMultiControlLogger.Info(
-                    $"{tag} 战神绘制层级已调整（召唤物排到本体之下，后召唤的更靠下层）: 战神数={warGodNodes.Count}, "
-                    + $"绘制顺序=[{string.Join(" → ", order)}], 调整次数={moved}");
+                    $"{tag} 战神绘制层级已调整（召唤物排到本体之下，后召唤的更靠下层）: phase={phase}, "
+                    + $"战神数={warGodNodes.Count}, 期望顺序=[{string.Join(" → ", desiredOrder)}], "
+                    + $"调整前=[{string.Join(" → ", beforeOrder)}], "
+                    + $"调整后=[{string.Join(" → ", actualOrder)}], "
+                    + $"容器={parent.Name}, 子节点={parent.GetChildCount()}, 调整次数={moved}");
             }
         }
         catch (Exception exception)
