@@ -45,6 +45,131 @@ internal static class WarGodFormationUi
         }
 
         RelayoutBySummoner(state, warGods, tag);
+        // r366：位置摆好之后再调**绘制层级**（顺序与位置无关，但放在收尾里能顺带覆盖"回合开始重排"那次）。
+        ApplyDrawOrder(state, warGods, tag);
+    }
+
+    /// <summary>
+    /// r366：把战神节点在 `%AllyContainer` 里的**子节点顺序**调成"召唤物那一层"（纯表现）。
+    ///
+    /// 原版加节点是 `_allyContainer.AddChildSafely(node)` ⇒ 后召唤的直接画在**所有已存在的立绘上面**
+    /// （用户 2026-11-17：「战神都是在本体图层上面的，挡到了」）。这里只重排、不动坐标：
+    /// 非生物节点 → 战神（**后召唤的在前 = 更下层**）→ 其它生物（真人/宠物/敌人，画在最上面）。
+    /// 判据与顺序见 <see cref="WarGodLayerPolicy"/>；失败只 WARN（层级是纯表现）。
+    /// </summary>
+    internal static void ApplyDrawOrder(
+        CombatState? state,
+        IReadOnlyList<(Player WarGod, ulong SummonerNetId)> warGods,
+        string tag)
+    {
+        try
+        {
+            NCombatRoom? room = NCombatRoom.Instance;
+            if (room == null || warGods == null || warGods.Count == 0)
+            {
+                return;
+            }
+
+            // 登记顺序 = 召唤顺序（见 `_warGods` 的追加语义），所以这里天然是 oldest-first。
+            List<NCreature> warGodNodes = new();
+            foreach ((Player warGod, _) in warGods)
+            {
+                if (warGod?.Creature == null)
+                {
+                    continue;
+                }
+
+                NCreature? node = room.GetCreatureNode(warGod.Creature);
+                if (node != null && GodotObject.IsInstanceValid(node))
+                {
+                    warGodNodes.Add(node);
+                }
+            }
+
+            if (warGodNodes.Count == 0)
+            {
+                return;
+            }
+
+            Node? parent = warGodNodes[0].GetParent();
+            if (parent == null)
+            {
+                return;
+            }
+
+            // 只处理与第一只同父的（正常情况下全部在 `%AllyContainer`；异常就跳过该只）。
+            warGodNodes = warGodNodes.Where((node) => node.GetParent() == parent).ToList();
+            if (warGodNodes.Count == 0)
+            {
+                return;
+            }
+
+            List<Node> children = parent.GetChildren().ToList();
+            HashSet<Node> warGodSet = new(warGodNodes);
+            List<int> nonCreature = new();
+            List<int> warGodIndices = new();
+            List<int> otherCreatures = new();
+            for (int i = 0; i < children.Count; i++)
+            {
+                Node child = children[i];
+                if (child is not NCreature)
+                {
+                    nonCreature.Add(i);
+                }
+                else if (warGodSet.Contains(child))
+                {
+                    warGodIndices.Add(i);
+                }
+                else
+                {
+                    otherCreatures.Add(i);
+                }
+            }
+
+            List<int> desired = WarGodLayerPolicy.BuildDrawOrder(nonCreature, warGodIndices, otherCreatures);
+            if (desired.Count != children.Count)
+            {
+                // 防御：理论上不可能（三组是 children 的划分），真出现就什么都不动。
+                LocalMultiControlLogger.Warn(
+                    $"{tag} 战神绘制层级跳过（下标划分对不上）: children={children.Count}, desired={desired.Count}");
+                return;
+            }
+
+            int moved = 0;
+            for (int i = 0; i < desired.Count; i++)
+            {
+                Node node = children[desired[i]];
+                if (!GodotObject.IsInstanceValid(node))
+                {
+                    continue;
+                }
+
+                if (node.GetIndex() == i)
+                {
+                    continue;
+                }
+
+                parent.MoveChild(node, i);
+                moved++;
+            }
+
+            if (moved > 0)
+            {
+                List<ulong> order = new();
+                for (int i = warGods.Count - 1; i >= 0; i--)
+                {
+                    order.Add(warGods[i].WarGod?.NetId ?? 0UL);
+                }
+
+                LocalMultiControlLogger.Info(
+                    $"{tag} 战神绘制层级已调整（召唤物排到本体之下，后召唤的更靠下层）: 战神数={warGodNodes.Count}, "
+                    + $"绘制顺序=[{string.Join(" → ", order)}], 调整次数={moved}");
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"{tag} 战神绘制层级调整失败（已忽略，不影响召唤）: error={exception.Message}");
+        }
     }
 
     /// <summary>
