@@ -850,7 +850,13 @@ public partial class Entry
     // r323（2026-10-27，同一轮日志卫生）：**状态【战灵守卫】的 `powers` 表键补齐** —— BaseLib 启动扫描
     //   全部 Power 取 `.title`，我们那条 `HELLWAR_WAR_GOD_GUARD_POWER` 缺键（实机 1 条 WARN + 返回垃圾串）。
     //   该状态 `IsVisibleInternal = false`（不给它建节点、避免缺图标 ERROR）⇒ 玩家看不见，纯补键。
-    private const string BuildMarker = "Revival v1.47.0 (game v0.111.0, marker=2026-11-12-r349)";
+    // r364-stable（2026-11-17）：**把 beta(0.113) 线上与版本无关的 bug 修复回补到 0.111 代码线** ——
+    //   r353 删牌优先级（任务牌挪最后）、r356 远端选择兜底按方法名判类型 + 回合开始上下文兜底、
+    //   r358 出牌作用域改租约 + 结束回合门/收口收进临时席位、r359 战斗牌堆选牌自动作答、
+    //   r360 全瓦库换牌视觉 + 火堆自动作答驱动原版收尾。
+    //   不回补：r355/r351~r353 的新模式（恐惧/闪电战）、r357 愚者预设与药水、r361 愚者战斗 UI
+    //   —— 0.111 根本没有 Fool 职业与那两个模式（build_dual.ps1 里已注明）。
+    private const string BuildMarker = "Revival v1.47.1 (game v0.111.0, marker=2026-11-17-r364-stable)";
 
     private static Harmony? _harmony;
 
