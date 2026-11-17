@@ -4,6 +4,13 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+### 瓦库：消耗任务牌不再被排到最后（r365；2026-11-17 用户口径）
+
+- r353 的「任务牌最后」只该管**永久删除**（删除是不可逆的，任务牌删掉可能断线索）。战斗内**消耗**手牌
+  不影响战斗外的任务牌使用，所以消耗恢复原来的排位：诅咒 > 状态 > **任务** > 打击 > 基础防御 > 其余。
+- 实现：`WakuuPickScenario` 新增 `Exhaust` 场景（`TO_EXHAUST` 标题 / 来源类型名含 `Exhaust`），
+  与 `Remove`（`TO_REMOVE` / 牌库删除入口）分开；删除侧的「任务牌最后」不变。
+
 ### 双版本分发：正式版（0.111.x）与 beta（0.113.x）共用一份安装（r363；2026-11-17）
 
 - **形态**：槽位里的 `<id>.dll` 改成**薄 loader**（约 13 KB），功能本体改成每分支一份完整载荷：

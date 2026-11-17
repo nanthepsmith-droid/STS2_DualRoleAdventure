@@ -13,8 +13,17 @@ internal enum WakuuPickScenario
     /// <summary>未识别 / 无明确优先级语义（走既有策略）。</summary>
     Unknown,
 
-    /// <summary>消耗 / 删除类（去掉坏牌）：优先删 诅咒→状态→任务→打击→基础防御→其余。</summary>
+    /// <summary>删除类（永久去掉坏牌）：优先删 诅咒→状态→打击→基础防御→其余→**任务牌最后**。</summary>
     Remove,
+
+    /// <summary>
+    /// 消耗类（战斗中消耗手牌）：优先消耗 诅咒→状态→任务→打击→基础防御→其余（**与删除不同**）。
+    ///
+    /// 为什么与 <see cref="Remove"/> 分开（r365，用户 2026-11-17 口径）：
+    /// 「战斗中消耗任务牌不影响战斗外任务牌使用」⇒ 消耗没有删除那种不可逆代价，
+    /// 任务牌保持原来的排位（第三档，高于打击/防御），不要跟着"任务牌排最后"的删除口径走。
+    /// </summary>
+    Exhaust,
 
     /// <summary>复制类（复制好牌）：首选非坏牌，候选全坏时倒序 防御→打击→任务→状态→诅咒。</summary>
     Copy,
@@ -47,7 +56,9 @@ internal enum WakuuCardKind
 /// 智能选牌优先级纯函数（可行性分析 §9.2 规则表）。不依赖任何游戏类型，可直接单测。
 ///
 /// 规则表（§9.2）：
-///   Remove（消耗/删除）：Curse &gt; Status &gt; Quest &gt; Strike &gt; 基础防御 &gt; 其余从左到右
+///   Remove（删除）：Curse &gt; Status &gt; Strike &gt; 基础防御 &gt; 其余 &gt; **Quest（最后，r353）**
+///   Exhaust（消耗）：Curse &gt; Status &gt; Quest &gt; Strike &gt; 基础防御 &gt; 其余（r365 与删除拆开）
+///   其余场景见各分支注释。
 ///   Copy（复制）：首选非 {Curse/Status/Quest/Strike/基础防御} 的牌；候选全为坏牌时
 ///        倒序 防御 &gt; 打击 &gt; 任务 &gt; 状态 &gt; 诅咒
 ///   Transform（变化）：Strike &gt; Defend &gt; 其余从左到右；硬排除 Curse/Status/Quest/Sly
@@ -90,11 +101,11 @@ internal static class WakuuPriorityPicking
     /// <summary>
     /// 手牌选牌场景判定（可行性分析 §9.1 ★★）：FromHand 的 source 类型名 + prefs 标题 loc key → 场景。
     /// 两条线索独立兜底，任一命中即返回：
-    /// - prefs loc key：TO_EXHAUST / TO_REMOVE → Remove；TO_TRANSFORM → Transform；
+    /// - prefs loc key：TO_EXHAUST → Exhaust；TO_REMOVE → Remove；TO_TRANSFORM → Transform；
     ///   TO_DISCARD → Discard（杂技/预谋/赌徒芯片/行商之手等弃牌入口）。
     ///   （原版 Brand / 保暖手套 / 暴政之力 消耗用 ExhaustSelectionPrompt；熵 / 离去 用 TransformSelectionPrompt）
     /// - source 类型名：含复制语义关键词 → Copy（原版 DualWield 复制攻击/能力牌，标题是自定义的）；
-    ///   含 Exhaust → Remove。
+    ///   含 Exhaust → Exhaust（**不是** Remove，见 r365 的分割说明）。
     /// 未知 → Unknown（维持既有 cardPickMode 策略，不越权）。
     /// prefsLocKey 建议传 "LocTable/LocEntryKey"（如 card_selection/TO_EXHAUST），纯 key 亦可。
     /// </summary>
@@ -108,8 +119,13 @@ internal static class WakuuPriorityPicking
                 return WakuuPickScenario.Transform;
             }
 
-            if (prefsLocKey.Contains("TO_EXHAUST", StringComparison.Ordinal)
-                || prefsLocKey.Contains("TO_REMOVE", StringComparison.Ordinal))
+            // r365：消耗与删除分场景 —— 只有**永久删除**才把任务牌排到最后。
+            if (prefsLocKey.Contains("TO_EXHAUST", StringComparison.Ordinal))
+            {
+                return WakuuPickScenario.Exhaust;
+            }
+
+            if (prefsLocKey.Contains("TO_REMOVE", StringComparison.Ordinal))
             {
                 return WakuuPickScenario.Remove;
             }
@@ -133,7 +149,7 @@ internal static class WakuuPriorityPicking
 
             if (sourceTypeName.Contains("Exhaust", StringComparison.Ordinal))
             {
-                return WakuuPickScenario.Remove;
+                return WakuuPickScenario.Exhaust;
             }
         }
 
@@ -210,9 +226,9 @@ internal static class WakuuPriorityPicking
     {
         return scenario switch
         {
-            // 消耗/删除：坏牌优先被删（奇巧是正面牌，不优先消耗）。
+            // 删除：坏牌优先被删（奇巧是正面牌，不优先删）。
             // r353（用户口径「瓦库尽量不删任务牌」）：任务牌排到**最后**（0 < 其余 1）——
-            // 删除/消耗是不可逆的，任务牌删掉可能断掉线索，宁可先删一张普通牌。
+            // 删除是不可逆的，任务牌删掉可能断掉线索，宁可先删一张普通牌。
             WakuuPickScenario.Remove => kind switch
             {
                 WakuuCardKind.Curse => 6,
@@ -220,6 +236,19 @@ internal static class WakuuPriorityPicking
                 WakuuCardKind.BasicStrike => 3,
                 WakuuCardKind.BasicDefend => 2,
                 WakuuCardKind.Quest => 0,
+                _ => 1,
+            },
+
+            // 消耗（r365，用户 2026-11-17 口径）：**保持 r353 之前的排位** ——
+            // 「战斗中消耗任务牌不影响战斗外任务牌使用」，没有删除那种不可逆代价，
+            // 所以任务牌仍然排在诅咒/状态之后、打击/防御之前（4 > 3 > 2）。
+            WakuuPickScenario.Exhaust => kind switch
+            {
+                WakuuCardKind.Curse => 6,
+                WakuuCardKind.Status => 5,
+                WakuuCardKind.Quest => 4,
+                WakuuCardKind.BasicStrike => 3,
+                WakuuCardKind.BasicDefend => 2,
                 _ => 1,
             },
 

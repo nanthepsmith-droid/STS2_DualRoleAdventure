@@ -46,8 +46,10 @@ public class PriorityPickingTests
     }
 
     // ---------------------------------------------------------------
-    // Remove（消耗/删除）：Curse > Status > Strike > 基础防御 > 其余 > Quest
+    // Remove（删除）：Curse > Status > Strike > 基础防御 > 其余 > Quest
     // （r353 用户口径：瓦库「尽量不删任务牌」⇒ 任务牌从第三位挪到**最后**）
+    // Exhaust（消耗）：Curse > Status > Quest > Strike > 基础防御 > 其余
+    // （r365 用户口径：战斗内消耗任务牌不影响战斗外使用 ⇒ 消耗保持原位）
     // ---------------------------------------------------------------
 
     [Test]
@@ -92,6 +94,34 @@ public class PriorityPickingTests
 
         List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Remove, kinds);
         Assert.That(ranked, Is.EqualTo(new[] { 1, 0 }), "先删普通牌，任务牌最后才动");
+    }
+
+    [Test]
+    public void Exhaust_任务牌保持原位_排在打击与防御之前()
+    {
+        // r365：消耗和删除分场景 —— 战斗中消耗任务牌不影响战斗外任务，不该被排到最后。
+        List<WakuuCardKind> kinds = new()
+        {
+            K("FLAME_BARRIER", SKL),     // Other → 最低
+            K("CURSE_OF_THE_BELL", CUR), // Curse → 最高
+            K("BURN", STA),              // Status
+            K("NEOW_QUEST", QST),        // Quest → 第三档（4）
+            K("STRIKE_IRONCLAD", ATK),   // BasicStrike → 3
+            K("DEFEND_SILENT", SKL),     // BasicDefend → 2
+        };
+
+        List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Exhaust, kinds);
+        Assert.That(ranked, Is.EqualTo(new[] { 1, 2, 3, 4, 5, 0 }), "诅咒 > 状态 > 任务 > 打击 > 防御 > 其余");
+
+        List<WakuuCardKind> questVsStrike = new()
+        {
+            K("STRIKE_IRONCLAD", ATK),
+            K("NEOW_QUEST", QST),
+        };
+        Assert.That(
+            WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Exhaust, questVsStrike),
+            Is.EqualTo(new[] { 1, 0 }),
+            "消耗时任务牌仍然先于打击");
     }
 
     [Test]
@@ -237,7 +267,7 @@ public class PriorityPickingTests
     // ClassifyHandScenario（§9.1 ★★）：FromHand 的 source 类型名 + prefs 标题 loc key → 场景
     // ---------------------------------------------------------------
 
-    [TestCase("card_selection/TO_EXHAUST", "Brand", (int)WakuuPickScenario.Remove)]
+    [TestCase("card_selection/TO_EXHAUST", "Brand", (int)WakuuPickScenario.Exhaust)]
     [TestCase("card_selection/TO_REMOVE", "SomeRemoval", (int)WakuuPickScenario.Remove)]
     [TestCase("card_selection/TO_TRANSFORM", "EntropyPower", (int)WakuuPickScenario.Transform)]
     [TestCase(null, "DualWield", (int)WakuuPickScenario.Copy)]      // 自定义标题：靠 source 类型名识别
@@ -245,7 +275,7 @@ public class PriorityPickingTests
     [TestCase("custom/COPY_ONE", "GreedyCopy", (int)WakuuPickScenario.Copy)]
     [TestCase(null, "SonicEcho", (int)WakuuPickScenario.Copy)]
     [TestCase(null, "MirrorImage", (int)WakuuPickScenario.Copy)]
-    [TestCase(null, "ExhaustRitual", (int)WakuuPickScenario.Remove)] // 类型名含 Exhaust
+    [TestCase(null, "ExhaustRitual", (int)WakuuPickScenario.Exhaust)] // 类型名含 Exhaust ⇒ 消耗场景
     [TestCase("custom/OTHER_PROMPT", "Acrobatics", (int)WakuuPickScenario.Unknown)]
     [TestCase(null, null, (int)WakuuPickScenario.Unknown)]
     [TestCase(null, "Purity", (int)WakuuPickScenario.Unknown)]
@@ -261,7 +291,7 @@ public class PriorityPickingTests
     {
         // 预设标题（TO_EXHAUST/TO_TRANSFORM）确定性最高，优先于 source 类型名推断。
         Assert.That(WakuuPriorityPicking.ClassifyHandScenario("DualWield", "card_selection/TO_EXHAUST"),
-            Is.EqualTo(WakuuPickScenario.Remove));
+            Is.EqualTo(WakuuPickScenario.Exhaust));
         Assert.That(WakuuPriorityPicking.ClassifyHandScenario("Brand", "card_selection/TO_TRANSFORM"),
             Is.EqualTo(WakuuPickScenario.Transform));
     }
