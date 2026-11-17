@@ -127,24 +127,36 @@ internal static class WarGodFormationUi
             List<Node> children = parent.GetChildren().ToList();
             HashSet<Node> warGodSet = new(warGodNodes);
             List<int> nonCreature = new();
-            List<int> warGodIndices = new();
             List<int> otherCreatures = new();
             List<string> beforeOrder = new();
+            Dictionary<Node, int> indexOf = new();
             for (int i = 0; i < children.Count; i++)
             {
                 Node child = children[i];
+                indexOf[child] = i;
                 if (child is not NCreature creatureChild)
                 {
                     nonCreature.Add(i);
                 }
                 else if (warGodSet.Contains(child))
                 {
-                    warGodIndices.Add(i);
                     beforeOrder.Add(creatureChild.Entity?.Player?.NetId.ToString() ?? "?");
                 }
                 else
                 {
                     otherCreatures.Add(i);
+                }
+            }
+
+            // ⚠ r367 踩过的坑：这里必须按**召唤顺序**给下标（`warGodNodes` 就是登记顺序），
+            // 不能用"容器里现在的顺序"——否则 `BuildDrawOrder` 的倒序只是在把当前顺序反转一次，
+            // 结果是**每次重排都把两只互换**（sync / deferred 两趟互相翻回去，实机看着始终"后招的在上面"）。
+            List<int> warGodIndices = new();
+            foreach (NCreature warGodNode in warGodNodes)
+            {
+                if (indexOf.TryGetValue(warGodNode, out int index))
+                {
+                    warGodIndices.Add(index);
                 }
             }
 

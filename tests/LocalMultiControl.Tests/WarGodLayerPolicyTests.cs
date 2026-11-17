@@ -51,6 +51,33 @@ public class WarGodLayerPolicyTests
     }
 
     [Test]
+    public void 召唤顺序与容器顺序不一致时_仍按召唤顺序倒排()
+    {
+        // r367 的实机坑：调用方曾经把"容器里现在的顺序"当成召唤顺序传进来 ⇒
+        // 倒序只是在把当前顺序反转一次，每次重排都把两只互换（sync/deferred 互相翻回去）。
+        // 这里钉住口径：入参必须是**召唤顺序**，与容器里排第几无关。
+        List<int> order = WarGodLayerPolicy.BuildDrawOrder(
+            nonCreatureIndices: new List<int>(),
+            warGodIndicesOldestFirst: new List<int> { 5, 2 },
+            otherCreatureIndices: new List<int> { 0, 1 });
+
+        Assert.That(order, Is.EqualTo(new[] { 2, 5, 0, 1 }), "后召唤的那只（容器 2 号）排到最前 = 最下层");
+    }
+
+    [Test]
+    public void 已经排好之后再算一次是恒等的()
+    {
+        // 容器已经是 [最新, 次新, 其它…]（下标 0,1 是战神、2 是真人）：
+        // 召唤顺序 = [1(旧), 0(新)] ⇒ 期望顺序必须还是 0,1,2 ⇒ 幂等，不会来回翻。
+        List<int> order = WarGodLayerPolicy.BuildDrawOrder(
+            nonCreatureIndices: new List<int>(),
+            warGodIndicesOldestFirst: new List<int> { 1, 0 },
+            otherCreatureIndices: new List<int> { 2 });
+
+        Assert.That(order, Is.EqualTo(new[] { 0, 1, 2 }));
+    }
+
+    [Test]
     public void 没有战神时保持原有相对顺序()
     {
         List<int> order = WarGodLayerPolicy.BuildDrawOrder(
