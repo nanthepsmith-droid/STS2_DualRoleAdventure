@@ -25,6 +25,7 @@ using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
 using MegaCrit.Sts2.Core.Nodes.Screens;
 using MegaCrit.Sts2.Core.Nodes.Screens.Capstones;
+using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
 using MegaCrit.Sts2.Core.Nodes.Screens.Map;
 using MegaCrit.Sts2.Core.Nodes.TopBar;
 using MegaCrit.Sts2.Core.Nodes.Vfx;
@@ -993,6 +994,202 @@ internal static class LocalMultiControlRuntime
         }
 
         return TryEndAllPlayersWhenNoCards(combatState, "manual-end-turn");
+    }
+
+    /// <summary>
+    /// 战斗内「强行结束回合」按钮（r364）：让**托管席位**（战神 / 瓦库形态）本回合停手，
+    /// 并直接结束它们的回合 —— 解决"切不到战神视角，只能等它打到上限（cap=60）"。
+    ///
+    /// 只结束托管席位，不碰真人席位（真人可能想自己打最后一张）；
+    /// 结束按**外部结束**记账（不包 `BeginModIssuedEnd`）⇒ 托管出牌循环在下一张牌之前就熔断停手
+    /// （见 <see cref="WakuuTurnEndOrigin.ShouldStopAutoplay"/>），这才是"强行"的语义。
+    /// </summary>
+    public static void RequestForceEndHostedTurns(string source)
+    {
+        NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+        CombatState? combatState = combatUi != null ? TryGetCombatState(combatUi) : null;
+
+        // 判据顺序与 `TryManualEndTurnAutoCloseAllPlayers` 一致：先环境、再出牌/选牌在飞、最后数席位。
+        bool selectionBusy = IsCombatUiInPickFlow()
+            || (NOverlayStack.Instance?.ScreenCount ?? 0) > 0;
+        int endableSeats = combatState != null ? CountEndableHostedSeats(combatState) : 0;
+
+        ForceEndTurnBlockReason gate = ForceEndTurnPolicy.EvaluateGate(
+            LocalSelfCoopContext.IsEnabled,
+            RunManager.Instance.IsInProgress,
+            combatInProgress: combatState != null && CombatManager.Instance.IsInProgress,
+            sideIsPlayer: combatState?.CurrentSide == CombatSide.Player,
+            playPhase: RunManager.Instance.ActionQueueSynchronizer.CombatState == ActionSynchronizerCombatState.PlayPhase,
+            selectionBusy,
+            endableSeats);
+
+        if (!ForceEndTurnPolicy.IsAllowed(gate))
+        {
+            LocalMultiControlLogger.Info(
+                $"强行结束托管回合被拒: reason={gate}, round={combatState?.RoundNumber ?? -1}, "
+                + $"可结束席位={endableSeats}, source={source}");
+
+            if (gate == ForceEndTurnBlockReason.SelectionBusy)
+            {
+                NGame.Instance?.AddChildSafely(NFullscreenTextVfx.Create(LocalModText.ForceEndHostedSelectionBusy));
+            }
+            else if (gate == ForceEndTurnBlockReason.NothingToForce)
+            {
+                NGame.Instance?.AddChildSafely(NFullscreenTextVfx.Create(LocalModText.ForceEndHostedNothingToForce));
+            }
+
+            return;
+        }
+
+        // 战斗身份复位：记账键带战斗身份，跨战斗的回合号撞车是 r325 的坑。
+        RefreshAutoEndTrackingForCombat(combatState!);
+
+        LocalMultiControlLogger.Info(
+            $"强行结束托管回合（按钮）: round={combatState!.RoundNumber}, 可结束席位={endableSeats}, "
+            + $"战斗内席位={combatState.Players.Count}, source={source}");
+
+        // `PlayerCmd.EndTurn` 会**同步**跑完整个 turn-end 前缀（实测单次可达 702ms，见
+        // `HellwarWarGodFactory.TryEndIdleWarGodTurns` 的注释）⇒ 不在按钮信号里直接做，延后一帧、
+        // 到执行时再逐席复核（与 `TryEndAllPlayersWhenNoCards` 的口径一致）。
+        Callable.From(() => ExecuteForceEndHostedTurns(combatState, source)).CallDeferred();
+    }
+
+    /// <summary>
+    /// 按钮要不要显示：有"还没 ready 的托管席位"就显示（出牌/选牌在飞时也显示，点了会得到明确提示，
+    /// 比按钮忽然消失更好定位）。
+    /// </summary>
+    public static bool ShouldShowForceEndButton()
+    {
+        NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+        CombatState? combatState = combatUi != null ? TryGetCombatState(combatUi) : null;
+        int endableSeats = combatState != null ? CountEndableHostedSeats(combatState) : 0;
+
+        return ForceEndTurnPolicy.ShouldShowButton(
+            LocalSelfCoopContext.IsEnabled,
+            RunManager.Instance.IsInProgress,
+            combatInProgress: combatState != null && CombatManager.Instance.IsInProgress,
+            sideIsPlayer: combatState?.CurrentSide == CombatSide.Player,
+            playPhase: RunManager.Instance.ActionQueueSynchronizer.CombatState == ActionSynchronizerCombatState.PlayPhase,
+            endableSeats);
+    }
+
+    private static int CountEndableHostedSeats(CombatState combatState)
+    {
+        int count = 0;
+        foreach (Player player in combatState.Players)
+        {
+            if (TryDescribeForceEndCandidate(player, out _))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// 这一席是不是本次强行结束的目标；不是则给出原因（只用于日志/跳过清单）。
+    /// </summary>
+    private static bool TryDescribeForceEndCandidate(Player? player, out string reason)
+    {
+        reason = string.Empty;
+        if (player == null)
+        {
+            reason = "null";
+            return false;
+        }
+
+        // 只管我们驱动的席位：本机会话 + 临时席位（战神）。第三方 Bot 的回合该由它自己的 mod 结束。
+        if (!IsLocalDrivenSeat(player))
+        {
+            reason = "not-local-driven";
+            return false;
+        }
+
+        bool participates = TurnParticipationPolicy.CanDriveSeat(
+            currentSideIsPlayer: true,
+            isPartOfPlayerTurn: CombatManager.Instance.IsPartOfPlayerTurn(player));
+        bool ready = CombatManager.Instance.IsPlayerReadyToEndTurn(player);
+        bool hosted = LocalWakuuRelicRuntime.IsAutoplayHosted(player);
+        bool hasCreature = player.Creature != null;
+        bool alive = player.Creature?.IsAlive ?? false;
+
+        if (ForceEndTurnPolicy.ShouldEndSeat(hosted, hasCreature, alive, participates, ready))
+        {
+            return true;
+        }
+
+        reason = !hosted ? "not-hosted"
+            : !hasCreature ? "no-creature"
+            : !alive ? "dead"
+            : !participates ? "not-part-of-this-turn"
+            : "already-ready";
+        return false;
+    }
+
+    private static void ExecuteForceEndHostedTurns(CombatState combatState, string source)
+    {
+        if (!LocalSelfCoopContext.IsEnabled || !RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)
+        {
+            return;
+        }
+
+        if (combatState.CurrentSide != CombatSide.Player
+            || RunManager.Instance.ActionQueueSynchronizer.CombatState != ActionSynchronizerCombatState.PlayPhase)
+        {
+            LocalMultiControlLogger.Info(
+                $"强行结束托管回合未执行（执行时环境已变）: round={combatState.RoundNumber}, "
+                + $"side={combatState.CurrentSide}, sync={RunManager.Instance.ActionQueueSynchronizer.CombatState}, source={source}");
+            return;
+        }
+
+        List<ulong> endedSeats = new();
+        List<string> skippedSeats = new();
+        foreach (Player player in combatState.Players)
+        {
+            if (player == null)
+            {
+                continue;
+            }
+
+            if (!TryDescribeForceEndCandidate(player, out string reason))
+            {
+                // 只记录"我们驱动但没被结束"的席位，第三方 Bot / 真人席位不刷屏。
+                if (IsLocalDrivenSeat(player))
+                {
+                    skippedSeats.Add($"{player.NetId}:{reason}");
+                }
+
+                continue;
+            }
+
+            // 与 `TryEndAllPlayersWhenNoCards` 同一套台账（同键）—— 避免"强行结束 + 随后收口"对同一席重复发结束动作。
+            string key = $"{_lastAutoEndCombatIdentity}:{combatState.RoundNumber}:{player.NetId}";
+            if (!_wakuuAutoEndIssued.Add(key))
+            {
+                skippedSeats.Add($"{player.NetId}:already-issued");
+                continue;
+            }
+
+            try
+            {
+                // ⚠ 刻意**不**包 `WakuuTurnEndOrigin.BeginModIssuedEnd`：强行结束 = 外部结束 ⇒
+                // 托管链下一张牌之前就熔断（`ShouldStopAutoplay` 的 `endedExternally` 分支）。
+                // 包成"模组收口"反而会被放行继续打（BUG-10 的口径），那就不是"强行"了。
+                PlayerCmd.EndTurn(player, canBackOut: false);
+                endedSeats.Add(player.NetId);
+            }
+            catch (Exception exception)
+            {
+                LocalMultiControlLogger.Warn(
+                    $"强行结束托管回合失败（已跳过该席位）: seat={player.NetId}, couldBeTempSeat="
+                    + $"{LocalSelfCoopContext.IsTemporarySeat(player.NetId)}, error={exception.Message}");
+            }
+        }
+
+        LocalMultiControlLogger.Info(
+            $"强行结束托管回合已发出: round={combatState.RoundNumber}, 已结束=[{string.Join(",", endedSeats)}], "
+            + $"未结束=[{string.Join(",", skippedSeats)}], 战斗内席位={combatState.Players.Count}, source={source}");
     }
 
     private static bool TryEndAllPlayersWhenNoCards(CombatState combatState, string source)

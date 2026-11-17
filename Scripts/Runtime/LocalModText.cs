@@ -101,6 +101,19 @@ internal static class LocalModText
     /// <summary>我们联合：战斗界面按钮文案。</summary>
     public static string UniteButtonName => Select("我们联合", "Unite");
 
+    /// <summary>强行结束回合：战斗界面按钮文案（r364，只对托管席位生效）。</summary>
+    public static string ForceEndHostedButtonName => Select("强行结束回合", "Force End");
+
+    /// <summary>强行结束回合被拒（有出牌/选牌在飞）。</summary>
+    public static string ForceEndHostedSelectionBusy => Select(
+        "强行结束回合：有出牌或选牌正在进行，稍后再点",
+        "Force End: a play or card selection is in progress, try again shortly");
+
+    /// <summary>强行结束回合被拒（托管席位都已经结束回合）。</summary>
+    public static string ForceEndHostedNothingToForce => Select(
+        "强行结束回合：托管席位当前没有要结束的回合",
+        "Force End: hosted seats have nothing left to end");
+
     /// <summary>我们联合 ①（自己卡组 → 瓦库手牌）：选玩家选择器标题。</summary>
     public static string UniteGivePickTitle => Select("我们联合 · 选择目标瓦库", "Unite · Choose a Vakuu");
 

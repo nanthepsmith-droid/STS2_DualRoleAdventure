@@ -79,6 +79,9 @@ internal static class LocalCombatSwitchButtons
     /// <summary>瓦库四功能 · 我们联合：战斗内按钮（条件显示，见 <see cref="LocalWakuuUniteRuntime"/>）。</summary>
     private const string UniteButtonName = "LocalCombatUniteButton";
 
+    /// <summary>r364「强行结束回合」：条件显示的战斗内按钮（见 <see cref="LocalMultiControlRuntime.ShouldShowForceEndButton"/>）。</summary>
+    private const string ForceEndButtonName = "LocalCombatForceEndButton";
+
     private const string TrackerName = "LocalCombatSwitchTracker";
     private static readonly Vector2 PingShowPosRatio = new Vector2(1536f, 932f) / NGame.devResolution;
     private static readonly Vector2 EndTurnAnchorOffset = new Vector2(-28f, -42f);
@@ -91,6 +94,9 @@ internal static class LocalCombatSwitchButtons
 
     /// <summary>「我们联合」按钮相对容器原点的位置（两个切人钮在 (0,0) / (136,0)，这个放它们上面）。</summary>
     private static readonly Vector2 UniteButtonOffset = new Vector2(0f, -40f);
+
+    /// <summary>「强行结束回合」按钮位置（再往上叠一层，不跟切人钮 / 我们联合抢横向空间）。</summary>
+    private static readonly Vector2 ForceEndButtonOffset = new Vector2(0f, -80f);
 
     public static void Ensure(NCombatUi combatUi)
     {
@@ -160,10 +166,29 @@ internal static class LocalCombatSwitchButtons
                 LocalWakuuUniteRuntime.OnButtonPressed()));
         container.AddChild(uniteButton);
 
+        // r364「强行结束回合」：切不到战神视角时的显式入口（条件显示，见 LocalMultiControlRuntime.ShouldShowForceEndButton）。
+        LocalSimpleTextButton forceEndButton = new LocalSimpleTextButton
+        {
+            Name = ForceEndButtonName,
+            ButtonText = LocalModText.ForceEndHostedButtonName,
+            FocusMode = Control.FocusModeEnum.None,
+            FontSize = 18,
+            Size = new Vector2(140f, 32f),
+            CustomMinimumSize = new Vector2(140f, 32f),
+            Position = ForceEndButtonOffset,
+            Visible = false
+        };
+        forceEndButton.Connect(
+            MegaCrit.Sts2.Core.Nodes.GodotExtensions.NClickableControl.SignalName.Released,
+            Callable.From<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NClickableControl>((_) =>
+                LocalMultiControlRuntime.RequestForceEndHostedTurns("combat-ui-force-end-button")));
+        container.AddChild(forceEndButton);
+
         combatUi.AddChildSafely(container);
         EnsureTracker(combatUi);
         LocalMultiControlLogger.Info("战斗界面已创建 Ping 右侧上下切人按钮。");
         LocalMultiControlLogger.Info($"战斗界面已创建「{LocalModText.UniteButtonName}」按钮（按条件显示）。");
+        LocalMultiControlLogger.Info($"战斗界面已创建「{LocalModText.ForceEndHostedButtonName}」按钮（按条件显示）。");
     }
 
     private static void EnsureTracker(NCombatUi combatUi)
@@ -207,6 +232,13 @@ internal static class LocalCombatSwitchButtons
         if (uniteButton != null)
         {
             uniteButton.Visible = shouldShow && LocalWakuuUniteRuntime.ShouldShowButton();
+        }
+
+        // r364「强行结束回合」：只在"有托管席位还没 ready"时显示（判据在 runtime 里，纯逻辑部分见 ForceEndTurnPolicy）。
+        Control? forceEndButton = container.GetNodeOrNull<Control>(ForceEndButtonName);
+        if (forceEndButton != null)
+        {
+            forceEndButton.Visible = shouldShow && LocalMultiControlRuntime.ShouldShowForceEndButton();
         }
 
         if (!shouldShow)
