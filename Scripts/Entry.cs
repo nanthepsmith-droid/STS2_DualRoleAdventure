@@ -856,7 +856,7 @@ public partial class Entry
     //   r360 全瓦库换牌视觉 + 火堆自动作答驱动原版收尾。
     //   不回补：r355/r351~r353 的新模式（恐惧/闪电战）、r357 愚者预设与药水、r361 愚者战斗 UI
     //   —— 0.111 根本没有 Fool 职业与那两个模式（build_dual.ps1 里已注明）。
-    private const string BuildMarker = "Revival v1.47.1 (game v0.111.0, marker=2026-11-17-r364-stable)";
+    private const string BuildMarker = "Revival v1.47.2 (game v0.111.0, marker=2026-11-17-r365-stable)";
 
     private static Harmony? _harmony;
 
