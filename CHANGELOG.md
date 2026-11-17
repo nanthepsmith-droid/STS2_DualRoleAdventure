@@ -4,7 +4,7 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
-### 0.111 回补：beta 线（0.113）修好的 bug 同步回正式版（r364-stable，v1.47.1）
+### 0.111 回补：beta 线（0.113）修好的 bug 同步回正式版（r364-stable / r365-stable，v1.47.2）
 
 > 本节只存在于 **0.111 代码线**（`stable/0.111`）。同样的修复在 beta 线早已随 v1.48 / v1.49 发布，
 > 这里是把与游戏版本无关的那几条原样回补 —— 0.111 没有恐惧/闪电战两个新模式、也没有「愚者」职业，
@@ -23,7 +23,9 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
   `A local card was played, but the card holder passed is null`。
 - **全瓦库时火堆不出现「离开」按钮**（r360）：自动作答后补跑原版 `AfterSelectingOption` 收尾
   （原版只在"本地玩家点选项"和"界面更新"两处启用该按钮）。
-- **瓦库删牌不再优先删任务牌**（r353）：删除 / 消耗的优先级改为 诅咒 > 状态 > 打击 > 基础防御 > 其余 > 任务牌。
+- **瓦库删牌不再优先删任务牌**（r353）：**删除**的优先级改为 诅咒 > 状态 > 打击 > 基础防御 > 其余 > 任务牌。
+- **战斗内消耗任务牌恢复原优先级**（r365 订正）：r353 的「任务牌最后」只适用于**永久删除**；
+  战斗中消耗手牌不影响战斗外的任务牌使用，所以消耗仍按 诅咒 > 状态 > **任务** > 打击 > 基础防御 > 其余。
 
 ### 逃跑 / 离场与建筑师（r346~r349；均已实机验证）
 
