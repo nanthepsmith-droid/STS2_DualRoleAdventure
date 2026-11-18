@@ -57,6 +57,13 @@
 > `NRestSiteRoom.AfterSelectingOption`、`NFoolCombatUi` 重绑当前前台 —— 火堆与愚者UI **实机命中**，
 > **换牌视觉那条未命中**（两局都没有一次 `CardCmd.Transform`），残留观察项见下方 §待查-15；
 > 游戏 v0.113.1 零代码适配，详见 `开发进度记录.md` 第一百七十五段。
+> **2026-11-17~18（r363~r369，双版本分发 + 三个功能/修复 + 0.111 回补）**：
+> r363 槽位改**薄 loader + `lib\<版本>` 每分支一份载荷**（0.111 / 0.113 共用一份安装）；
+> r364「**强行结束回合**」按钮（排期 2 关单）；r365 瓦库**消耗**任务牌恢复原优先级（只对删除保留"任务牌最后"）；
+> r366~r368 战神立绘**排到本体之下、后召唤的更靠下层**（r367 探针抓到"每次只在反转"⇒ r368 改成按召唤顺序给下标）。
+> 四条均**两版实机确认**；同时把与版本无关的修复回补到 `stable/0.111`（v1.47.1 → **v1.47.4**，共 10 笔，
+> 清单见 `maintenance-docs\双版本兼容差异表（0.111↔0.113）.md` §6），两版部署位都已按 marker 校验；
+> master 与 stable 都是**本地提交、未 push**。详见 `开发进度记录.md` 第一百七十六/一百七十七段。
 
 ---
 
@@ -72,23 +79,157 @@
 > **r355 订正**：「多人宝箱 = 人数 + 2 件、每人只选 1 件」是**原版设计**（用户官方联机实测）⇒ 那套「每人 2 件」
 > 收进开关 `blitzTreasureDoublePick`（**默认关 = 完全原版**，开 = 补池到 人数 × 2 + 两阶段），见 CHANGELOG `[Unreleased]`。
 
-### 2. 「强行结束回合」按钮 —— 排在 1 之后
+### 2. 「强行结束回合」按钮 —— ✅ r364 关单（2026-11-17 beta / 11-18 正式版 0.111 均实机确认）
 
 > 用户原话（2026-11-13）：「排期后面做强行结束回合按钮（因为不能切换到战神视角，现在只能等战神打到上限，
 > 有时候要等好久）」。
 
-- **痛点**：战神是结构外席位，视角切不过去（`SwitchControlledPlayerTo` 只认本地席位）；它一回合能打到上限
-  （`cap=60`），中途想插一脚只能干等。
-- **待定口径**：按钮放哪（战斗 UI 角落 / 与结束回合按钮并列）、点一次是"结束战神这一回合"还是"跳过该席位本回合
-  剩余出牌"、是否只对托管席位可见。
-- 相关既有机制：`TryEndIdleWarGodTurns` / `war-god-idle-tick`（空闲收口）、`HasHostedPlayableCards` 的
+- **落地口径**（原待定的三件已定）：按钮放**切人按钮那一列的上方**（不跟切人钮/我们联合抢横向空间）；
+  点一次 = 让**托管席位（战神 / 瓦库形态）**本回合停手并结束它们的回合；**只在有托管席位没 ready 时显示**。
+- **实现**：纯逻辑 `ForceEndTurnPolicy`（门 + 逐席位判据，10 条单测）＋ `LocalMultiControlRuntime.RequestForceEndHostedTurns`
+  （出牌/选牌在飞时拒绝并提示）＋ 战斗 UI 按钮；结束**按外部结束记账**（不包 `BeginModIssuedEnd`）⇒ 托管链下一张牌前熔断。
+- **实机锚点**：`强行结束托管回合（按钮）` → `强行结束托管回合已发出: 已结束=[…], 未结束=[…]`；
+  12 席局里一次收掉 10 个战神（`已结束=[327,4097…4105]`），`turn loop died` 0。
+- 相关既有机制仍是硬约束：`TryEndIdleWarGodTurns` / `war-god-idle-tick`（空闲收口）、`HasHostedPlayableCards` 的
   「仍有可出牌角色」门（**不要**绕开它，否则会回到 r263 那种死锁）。
+- **同时回补到正式版 0.111 线**（`stable/0.111`，v1.47.4 / marker `2026-11-17-r369-stable`）。
 
 ### 3. 瓦库托管**删牌不要删任务牌** —— ✅ r353 已做（`WakuuPriorityPicking` 的 Remove 表把任务牌挪到最后）
 
 > 用户 2026-11-13 原话：「让瓦库托管尽量不要选择任务牌删除」。
-> 已落地：删除/消耗场景的优先级改为 诅咒 > 状态 > 打击 > 基础防御 > 其余 > **任务牌**（0，最低）；
+> 已落地：**删除**场景的优先级改为 诅咒 > 状态 > 打击 > 基础防御 > 其余 > **任务牌**（0，最低）；
 > 事件删牌 / 营地净化 / 商店删牌服务 / 删牌遗物都走同一张表。纯逻辑单测已跟（`PriorityPickingTests`）。
+> **r365 订正（2026-11-17 用户口径）**：只对**删除**生效 —— 战斗内**消耗**任务牌不影响战斗外任务使用，
+> 消耗走新增的 `WakuuPickScenario.Exhaust`，恢复原排位（诅咒 > 状态 > 任务 > 打击 > 防御 > 其余）。
+
+### 4. 全瓦库局：所有瓦库打完后**自动结束回合** —— ⏳ 待开工（2026-11-16 用户登记）
+
+> 用户原话（2026-11-16，测完一局 4 席全瓦库后）：「以后做全瓦库局所有瓦库打完自动结束回合」。
+
+- **现象（本次日志实证，非推测）**：4 席全瓦库局（`godot.log` 2026-11-16，147,267 行）里
+  `检测到全员无牌可出，已自动结束全部角色回合` 出现 **99 次**，其中 **`source=manual-end-turn` 96 次**、
+  `auto-end-turn-fallback` 只有 3 次 ⇒ 回合链实际上靠**真人点「结束回合」**在推；没人点就停在原地。
+- **代码事实（为什么现在不会自己收口）**：`TryEndAllPlayersWhenNoCards` 全仓只有两个调用点 ——
+  `manual-end-turn`（真人点按钮，`LocalMultiControlRuntime.cs` L1022）与 `auto-end-turn-fallback`
+  （`TryAutoSwitchAfterEndTurn` 的 deferred 尾，L1756，**前提是"已经有人结束了回合"**）。
+  没有任何"自由跑"的 tick 在托管全部打光后主动收口；`TryEndIdleWarGodTurns` 只服务战神（临时席位）。
+- **口径（开工前先拍，四条）**：
+  1. 判据：建议直接复用 `AreAllAliveWakuuSeatsWithoutPlayableCard(combatState)`（已有，L1770 在用）
+     **且**「没有在飞的出牌租约」**且**「没有待作答的选择器」**且**「前台/真人席位也没有可打牌」——
+     四项缺一项就会在还该打的时候抢收（r263 / r358 两次死锁教训）；
+  2. 触发位置：挂在**既有**的 100ms 重活 / 每 tick 预算里（与 `HasPlayableCached` 同一个 tick），
+     **不要新开 `_Process`**；命中时只调 `TryEndAllPlayersWhenNoCards`，不另写收口；
+  3. 生效范围：**只在所有活着的玩家席位都是瓦库 / 临时席位时**（有真人席位的局不许抢 —— 真人可能想自己打最后一张）；
+  4. 节奏：留 0.5~1s 观察窗（玩家可能刚想接管），到期再收；新锚点
+     `全瓦库局托管已全部打完，自动收口（source=all-wakuu-exhausted-auto-end）`。
+- **硬约束（别踩）**：① 不许绕开 `HasHostedPlayableCards`；② 必须照走 `_allPlayersAutoEndedRounds` /
+  `_wakuuAutoEndIssued` 台账 + `WakuuTurnEndOrigin.BeginModIssuedEnd()`（否则 BUG-10 归因错、同回合重复收口）；
+  ③ 战神那段「托管还有能打的牌就不代收」（L1053~L1066）留在原位。
+- **验证契约**：
+
+  ```
+  BUG / 改动: 全瓦库局托管打光后自动结束回合
+  EXPECTED:    每回合托管打光 ≤2s 自动收口一次，不再需要点「结束回合」
+  SETUP:       本地多角色 4 席、全员勾瓦库形态（全瓦库），打到第 2 场战斗
+  ACTION:      不点任何按钮，看回合是否自己推进
+  OBSERVE:     回合号是否递增；结束回合按钮状态；日志锚点
+  PASS:        `… source=all-wakuu-exhausted-auto-end` 每回合 1 条、`turn loop died` 0、
+               `inFlight` 只出现 0/1、无双收口
+  FAIL:        托管还有可打牌就被收 / 每帧重复 EndTurn / 有真人席位的局被抢
+  LOG ANCHORS: 检测到全员无牌 / manual-end-turn / auto-end-turn-fallback / turn loop died / inFlight
+  ```
+
+### 5. 大键盘数字键 `1`~`9` `0` `-` `=` 快速切到 1~12 号席位 —— ⏳ 待开工（2026-11-16 用户登记）
+
+> 用户原话（2026-11-16）：「新功能大键盘数字键1234567890和-=分别对应1到12号玩家，按一下就可以快速切换」。
+
+- **现状**：切人只有**循环**键（`Scripts/Patch/NGameInputPatch.cs`，挂在 `NGame._Input` 的 Postfix）——
+  正切 `Tab` / `]` / `R` / `/`，反切 `Shift+Tab` / `[` / `T`；落到 `SwitchNextControlledPlayer` /
+  `SwitchPreviousControlledPlayer` → `LocalMultiSessionState.SwitchNextPlayer`。**没有"指定第 N 位"的入口**，
+  但已有现成的 `LocalMultiControlRuntime.SwitchControlledPlayerTo(playerId, source)`（L505）
+  ⇒ 只要把"键 → 席位 id"算出来，切换本身复用这条链即可，不新增判定。
+- 席位上限正好 **12**（`SelfCoopSessionState.MaxLocalPlayerCount = 12`）⇒ 12 个键刚好一一对应，不用分页。
+- ⚠ **键位冲突（必须先处理）**：`-` / `=` 现在绑定的是**局外**的本地人数增减
+  （`NGameInputPatch` L44~64：`!RunManager.IsInProgress && LocalSelfCoopContext.IsEnabled` 时
+  `AdjustDesiredLocalPlayerCount` 然后 `return`）。**局内是空闲的** ⇒ 建议口径 = **数字键只在局内切人，
+  局外那套人数热键一个字都不动**（改局外会踩"大厅改人数"这条已经用惯的链）。
+- ⚠ **"第 N 号"按什么顺序（必须拍，否则实机一定错位）**：建议按**会话表顺序**
+  （`会话席位自检通过: seats=…, primary=…` 那一串 = `LocalMultiSessionState._orderedPlayerIds`，
+  与 `Tab` 循环**同序**）；**不要**按立绘左右 —— 立绘会被重排（实测本局探针从左到右 = 角色4 | 2 | 3 | 1，
+  与席位序不一致）。
+- **行为细节**：目标号位不是本机会话席位（第三方 Bot / 战神 4096、4097）时 `TrySetCurrentPlayer` 是
+  **静默跳过** ⇒ 要改成"提示该号位不是你的席位"（复用 `NFullscreenTextVfx.Create`，与 `-`/`=` 人数热键同款手法），
+  否则玩家按了没反应会以为卡死。
+- **必须复用同一道门**：占卜小游戏开着时切人会软锁（`CrystalSphereMirrorRuntime.HasActiveDivinationOverlay()`，
+  `SwitchNextControlledPlayer` 里就是这么挡的）⇒ 数字键走同一守卫，**不能另开一条切人路**。
+- **可抽纯逻辑（离线单测）**：`键码 → 序号 → 席位 id`（含越界号位、非本机席位、未开局、会话未初始化），
+  判定进 `PureLogic`，`NGameInputPatch` 只做翻译 + 转发（AGENTS.md §1 架构边界第 3 条）。
+- **待拍两件小事**：① 数字键要不要做成**可关**开关（有些第三方 mod / 玩家习惯会用到 `1`~`0`，默认开？）；
+  ② 局外是否也支持（**推荐先不做**）。
+
+---
+
+## 🧭 待讨论（2026-11-16 用户登记 —— **讨论定口径后才开工**，不进排期）
+
+> 这两条是用户明确要求"进一步讨论分析后才开工"的，本段只记需求、**已核过的现状证据**与待拍口径；
+> 口径定完再各自开分支动手。
+
+### 讨论-1 瓦库抓牌优化：抓取率不行 / 卡组太大 ⇒ **这屏奖励不抓**（可开关，小卡组形态 ↔ 原版大盘抓牌形态）
+
+> 用户原话（2026-11-16）：「瓦库抓牌优化，加个牌抓取率都不行或者卡组太大就不抓牌的设计
+> （可开关，从这样设计的普通卡组形态切换成原本抓牌的大卡组形态）」。
+
+- **现状（核过代码）**：`LocalWakuuRewardAutoClaim.TrySettleAsync` 的 `CardReward` 分支**一律**
+  `await reward.SelectUnsynchronized()`（选牌器 `LocalWakuuStrategySelector(owner)`）
+  ⇒ 结构上"永远会拿一张"，**根本没有"不拿"这条路**。
+- **已有可直接复用的判据（都已落地/带单测，不用另造）**：
+  - 抓取率信号：`WakuuStatBadgeQuery.BlendPickRate(个人 picked/offered, 社区 rate)`（个人 + 社区伪计数融合）
+    + `WakuuSkadaAdapter.TryGetCardSignal(characterId, cardId)`（社区 `PickRate` / `WinRateHeld`）；
+  - 牌组厚度代价：`WakuuOpportunityCost`（参考 30 张，张数越多"再加一张"的净收益越低）、
+    `WakuuDeckAssessment.needsThinning`、`WakuuShopOrderPolicy.BigDeckThreshold`
+    （商店侧已经在用"大卡组就先买删牌"）。
+- 🚧 **技术硬点（必须先做探针验证，否则整条做不成）**：原版**没有"跳过单个卡牌奖励"的入口**——
+  - `Reward.OnSkipped()` 基类是**空实现**；`CardReward.OnSkipped()` 只写历史
+    （`CardChoiceHistoryEntry(wasPicked: false)`）+ 解绑 `RelicObtained` 事件，
+    **不把自己从 `ParentRewardSet` 摘掉、也不推进奖励组**（`sts2src\src\Core\Rewards\CardReward.cs` L319）；
+  - `LinkedRewardSet.OnSelect()` 是 `protected`（外部程序集调不到）；唯一公开的跳过入口
+    `RewardsSetSynchronizer.SkipLocalRewardsSet()` 是**整组跳过**（金币 / 药水 / 遗物一起丢，不可接受）。
+  - ⇒ 要么反射 / Harmony 暴露一个等价于 `OnSkipped() + ParentRewardSet.RemoveReward(this) +
+    ParentRewardSet.OnSelect()` 的"单张跳过"，要么这条需求做不了。
+  - **第一步 = 先写探针局**：只验证"跳过这张卡之后，同组的金币 / 药水 / 遗物照常能领、奖励组正常完成"，
+    验证通过再谈策略与阈值。
+- **待拍口径（讨论清单）**：① 阈值形态 —— "三张的融合抓取率都 < X%" / "三张都不如牌组均卡" /
+  "拿了会让净收益变负"；② 卡组张数门槛（30 / 40 / 按幕递增）；③ 开关默认值（**建议默认关 = 完全现状**）；
+  ④ 小卡组形态是否**连带**约束商店买卡 / 事件拿牌 / 变化（否则只跳过奖励，卡组照样被撑大）；
+  ⑤ 跳过后怎么让玩家知道（日志锚点 + 奖励屏是否要显示"这屏被跳过"）；⑥ 是否只留一条
+  `wasPicked:false` 历史就够。
+- **风险**：跳过会少 3 条 `CardChoices` 历史（原版 skip 也是这么写的，属正常）；
+  ⚠ **不要**把整组判成 `RewardSetCompleteState.Skipped`（污染完成态与后续奖励链）。
+
+### 讨论-2 瓦库商店删牌：按「删牌统计」排优先级 + 同名牌优先删**无附魔**、其次**无升级**
+
+> 用户原话（2026-11-16）：「瓦库商店优化，加删牌统计功能，删牌优先度按照删牌统计来，
+> 同样的牌优先删没有附魔的，同样没有附魔就优先删没有升级的」。
+
+- **现状（核过代码）**：
+  - **统计底座已经有了**：`PersonalCardRemovalRecord`（真人每删一次记一行：
+    `runKey / isMulti / character / act / card / ts`）+ `WakuuPersonalQuery.CountCardRemovals /
+    CountAllCardRemovals`（只计已结束且非 abandon 的局，支持 角色 / 多人 / 幕 切片，已带单测）——
+    **但全仓只在单测里被调用一次都没接进决策** ⇒ 数据在、没接线；
+  - 删牌选取：`LocalWakuuMerchantAuto.TryAutoBuyRemovalAsync` → `CardSelectCmd.FromDeckForRemoval` +
+    `LocalWakuuStrategySelector(WakuuPickScenario.Remove)` → `WakuuPriorityPicking` 固定表
+    （诅咒 > 状态 > 打击 > 基础防御 > 其余 > 任务牌）；**不含统计项、也没有附魔/升级 tie-break**；
+  - 事件删牌 / 营地净化 / 删牌遗物走**同一张表**（`CardSelectDeckScenarioPatch`）⇒ 这里改排序会
+    **连带影响所有删牌场景**，要先明确"只改商店"还是"全场景生效"。
+- **字段可行性（已在反编译源核实）**：`CardModel.Enchantment`（`EnchantmentModel?`，L712）、
+  `CardModel.IsUpgraded` / `CurrentUpgradeLevel`（L864 / L845）。
+- **待拍口径（讨论清单）**：① 统计切片（同角色？多人 / 单人分开？跨幕合并？建议 = 同角色 + **多人优先**，
+  与现有 query 参数一致）；② 统计怎么进排序 —— 只在**同一类别内**做次级比较（保住"诅咒先删"这类硬规则），
+  还是加权进总分（有把该删的诅咒排到后面的风险）；③ 样本不足（0 次记录 ≠ 不该删）必须退化回现有表；
+  ④ "同样的牌" = `Id.Entry` 相同（同名多张）；⑤ 附魔 / 升级 tie-break 的层级 = 放**最后一级**
+  （升级/附魔花过资源，删了是纯亏，绝不能盖过"诅咒优先"）；⑥ 是否只作用于商店删牌。
+- **待定小设计**：统计窗口（全部历史 vs 最近 N 局）、是否按幕区分（一幕与三幕的删牌偏好不同）、
+  面板是否要展示"这张牌你删过几次"。
 
 ---
 
@@ -301,6 +442,28 @@
   优先补"变换完成后按缺/多余补节点"。
 - **第三方那半边不修**：`卡牌变化中心` 是 sunuo 自己的"先动画后变换"，被打断属于它的实现 + 托管节奏；
   想缓解只能拉长出牌间隔，成本与收益都不划算（2026-11-15 判读后登记）。
+- **2026-11-16 实机观察（4 席全瓦库局 `godot.log`，r362 构建）—— 按本节原先写的判据，答案已经出来了**：
+  - 主锚点 `前台托管席位的变换照原版播视觉` 仍然 **0 条**；但**备选判据那一条命中了 2 次**：
+    `[手牌同步修复] 前台托管席位的变换原牌节点缺失，跳过原版视觉（防抛异常卡屏）`
+    （`FOXFIRE_BOLT` / `DUNZHAN_BARRAGE`）⇒ `HasPendingOriginalHandNode` 判定没过、
+    **视觉被安全跳过**（不抛异常、也不卡屏，但牌面不跟着变）。另有 42 条
+    `托管席位（瓦库）的变换一律跳过原版视觉`（后台席位，按设计）。
+  - 同一局 `手牌UI与数据存在差异但未处理（仅记录）` **209 条**（当前日志目录另 4 份是 1 / 5 / 4 / 0 条；
+    行数密度 0.14% vs 0.02~0.03%，约 5~8 倍 —— 席位/时长不同，**不是严格 A/B**，只能说数量级上升）：
+    **全部是「多余=[] / 缺失=[…]」**（UI 少节点、数据有牌，不是画错牌），73 种卡，
+    174 条在席位 …326、35 条在 …329，来源一律 `combat-tick`，且都**持续 ≥1.5s 没自愈**。
+  - 缺失卡集中在第三方"塞进手牌"的牌：酒狐 `STS2_WINE_FOX_CARD_*`（约 2/3）、`SNAKEBITE`（17 次）、
+    `TRICK_MAGIC_CARD`、`WISH`、`YUWANCARD-BULLY_BIG_PIG` 等。
+  - **⚠ 这两条其实是同一根因（同局已对上号，不是两个问题）**：本局唯一 1 条
+    `[ERROR] A local card was played, but the card holder passed is null` 的栈**穿过了我们**：
+    `LocalWakuuRelicRuntime.TryPlayCardViaActionQueueAsync` → `ActionQueueSynchronizer.RequestEnqueue` →
+    原版 `EnqueueWithoutSynchronizing`，而当时出的那张牌正是 `STS2_WINE_FOX_CARD_MANA_REGULATION`
+    —— 它同时也在本局「缺失」清单里（6 次）。⇒ **"数据有牌、UI 无节点"会让托管出牌时原版找不到 holder，
+    然后凭空造一张视觉牌进播放队列**（r360 注释里描述的那条）。所以本条不只是"纯视觉"，优先级要往上抬。
+  - **下一步（先量后猜）**：把这些缺失的时刻与 `[手牌同步修复] … netId=… -> null` / 托管出牌窗口对时间轴
+    （±2s）。若成立 ⇒ 属于**"塞牌"向量**（效果往手牌加牌时那个席位不是 `IsMe` ⇒ 原版不建节点），
+    与 r360 修的**"换牌"向量**不是同一条 ⇒ 需要另一处"变换/新增完成后按缺补节点"的兜底；
+    ⚠ **不要**回到整表重建（r111 实机回归过，会打断出牌链）。
 
 ### 待查-14 上下文被「让开」成空的窗口里，**别的**原版 UI 查 `GetMe` 仍可能 NRE（2026-11-14 r356 登记）
 
