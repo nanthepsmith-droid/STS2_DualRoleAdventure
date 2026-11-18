@@ -174,6 +174,13 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.PlayAllCards,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("playAllCards", value));
         AddToggleRow(column,
+            LocalModText.Select("全瓦库局：打光后自动结束回合（默认开）", "All-Vakuu Party: Auto End Turn When Done (default ON)"),
+            LocalModText.Select(
+                "默认开。整桌所有活着的可行动角色都是托管角色（瓦库形态 / 战神）时，托管把手牌打到「托管口径下无牌可打」并稳定 0.8 秒后，自动替它们结束回合。全瓦库局没有真人会去点「结束回合」，不自动收就停在原地（实测上一局 99 次收口里 96 次是真人点的）。有真人角色在场的局无论本开关如何都一律不抢——真人可能就想自己打最后一张。关掉 = 完全回到旧行为（必须真人点「结束回合」推进）；改完立即生效，当前观察窗会被清掉。",
+                "On by default. When every alive, action-capable character in the party is autopiloted (Vakuu Form / War God), the autopilot ends their turns automatically once it has no playable card left under the hosted rule and that state holds for 0.8s. Nobody presses \"End Turn\" in an all-Vakuu party, so turns otherwise stall (last run: 96 of 99 turn-end triggers were manual clicks). Parties containing a human character are never touched regardless of this switch — the human may want to play the last card themselves. Off = exactly the old behavior (a human must end the turn); changes take effect immediately and the current observation window is discarded."),
+            () => LocalWakuuAutopilotConfig.AllVakuuAutoEndTurn,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("allVakuuAutoEndTurn", value));
+        AddToggleRow(column,
             LocalModText.Select("瓦库出牌加速（跳过卡牌堆动画）", "Fast Vakuu Plays (Skip Pile Animations)"),
             LocalModText.Select(
                 "默认开。瓦库自动出牌时跳过「牌飞向出牌区 + 烟雾特效 + 各牌堆补间」与打出/收尾的两段固定等待（约 0.4~0.65 秒/张）。多瓦库是串行出牌的，每张牌的耗时会直接相加成整回合时长（实测约 1.0~1.4 秒/张），所以这是提速最明显的一项。下方两个「走动作队列」实验档的出牌同样吃本项（队列路径能跳过的只有收尾等待与结算堆补间，约省 0.15~0.3 秒/张）。关闭后恢复完整的出牌动画（与旧版观感一致）。",

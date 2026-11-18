@@ -858,7 +858,10 @@ public partial class Entry
     //   r364：战斗内「强行结束回合」按钮（托管席位停手并直接结束它们的回合）。
     //   不回补：r355/r351~r353 的新模式（恐惧/闪电战）、r357 愚者预设与药水、r361 愚者战斗 UI
     //   —— 0.111 根本没有 Fool 职业与那两个模式（build_dual.ps1 里已注明）。
-    private const string BuildMarker = "Revival v1.47.4 (game v0.111.0, marker=2026-11-17-r369-stable)";
+    // r371-stable（2026-11-18）：**全瓦库局托管打光后自动结束回合**（r370）+ 开关 `allVakuuAutoEndTurn`
+    //   （r371，默认开，设置页瓦库托管区）。判据全在两版共有 API 上（`HasHostedPlayableCards` /
+    //   `PlayerCmd.EndTurn` / `WakuuTurnEndOrigin`），零 0.113 专属依赖。
+    private const string BuildMarker = "Revival v1.47.5 (game v0.111.0, marker=2026-11-18-r371-stable)";
 
     private static Harmony? _harmony;
 

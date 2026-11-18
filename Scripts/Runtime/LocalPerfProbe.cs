@@ -100,7 +100,13 @@ internal static class LocalPerfProbe
         /// </summary>
         ThirdPartyIsMe = 14,
 
-        Count = 15,
+        /// <summary>
+        /// r370：全瓦库局「托管打光 ⇒ 自动收口」的门（逐席位判"是不是全托管 / 还有没有能打的牌"）。
+        /// 它与 <see cref="GateHandScan"/> 共用同一份手牌扫描结果，正常情况下成本接近 0。
+        /// </summary>
+        GateAllWakuuAutoEnd = 15,
+
+        Count = 16,
     }
 
     private const long ReportIntervalMs = 5000L;
@@ -122,6 +128,7 @@ internal static class LocalPerfProbe
         "门-看门狗-重复手牌扫描",
         "门-看门狗-启动出牌循环",
         "第三方IsMe放行",
+        "门-全瓦库自动收口",
     };
 
     private static readonly long[] TotalTicks = new long[(int)Slot.Count];

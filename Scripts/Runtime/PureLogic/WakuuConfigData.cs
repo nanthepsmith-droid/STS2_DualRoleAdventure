@@ -13,6 +13,18 @@ internal sealed class WakuuConfigData
 
     public bool playAllCards { get; set; } = true;
 
+    /// <summary>
+    /// 全瓦库局「托管打光后自动结束回合」（r370，**默认开**，2026-11-18 用户要求加开关）。
+    ///
+    /// <para>开启后：一桌**所有活着的可行动席位都是托管席位**（瓦库形态 / 战神）时，托管把手牌打到
+    /// 「托管口径下无牌可打」并稳定 <c>800ms</c> 之后，自动替它们结束回合 —— 全瓦库局没有真人会去点
+    /// 「结束回合」按钮（实测上一局 99 次收口里 96 次是真人点的），不自动收就停在原地。</para>
+    ///
+    /// <para>关闭 = 完全回到旧行为（必须真人点「结束回合」推进）。判据与观察窗见
+    /// <see cref="AllWakuuAutoEndPolicy"/>；有真人席位的局无论开关如何都一律不抢。</para>
+    /// </summary>
+    public bool allVakuuAutoEndTurn { get; set; } = true;
+
     public bool backgroundMode { get; set; } = true;
 
     public bool suppressVanillaEarring { get; set; } = true;
