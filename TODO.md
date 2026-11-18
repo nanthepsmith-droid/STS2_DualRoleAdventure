@@ -112,42 +112,10 @@
 
 > 落地：纯逻辑 `AllWakuuAutoEndPolicy`（观察窗 800ms）+ 开关 `allVakuuAutoEndTurn`（默认开，设置页瓦库托管区）；
 > 开 = 每回合 1 条 `source=all-wakuu-exhausted-auto-end`、`manual-end-turn` 0、`turn loop died` 0；
-> 关 = 整段零日志且回合停在原地（负对照）。**下方正文待"收工"时切归档。**
-
-> 用户原话（2026-11-16，测完一局 4 席全瓦库后）：「以后做全瓦库局所有瓦库打完自动结束回合」。
-
-- **现象（本次日志实证，非推测）**：4 席全瓦库局（`godot.log` 2026-11-16，147,267 行）里
-  `检测到全员无牌可出，已自动结束全部角色回合` 出现 **99 次**，其中 **`source=manual-end-turn` 96 次**、
-  `auto-end-turn-fallback` 只有 3 次 ⇒ 回合链实际上靠**真人点「结束回合」**在推；没人点就停在原地。
-- **代码事实（为什么现在不会自己收口）**：`TryEndAllPlayersWhenNoCards` 全仓只有两个调用点 ——
-  `manual-end-turn`（真人点按钮，`LocalMultiControlRuntime.cs` L1022）与 `auto-end-turn-fallback`
-  （`TryAutoSwitchAfterEndTurn` 的 deferred 尾，L1756，**前提是"已经有人结束了回合"**）。
-  没有任何"自由跑"的 tick 在托管全部打光后主动收口；`TryEndIdleWarGodTurns` 只服务战神（临时席位）。
-- **口径（开工前先拍，四条）**：
-  1. 判据：建议直接复用 `AreAllAliveWakuuSeatsWithoutPlayableCard(combatState)`（已有，L1770 在用）
-     **且**「没有在飞的出牌租约」**且**「没有待作答的选择器」**且**「前台/真人席位也没有可打牌」——
-     四项缺一项就会在还该打的时候抢收（r263 / r358 两次死锁教训）；
-  2. 触发位置：挂在**既有**的 100ms 重活 / 每 tick 预算里（与 `HasPlayableCached` 同一个 tick），
-     **不要新开 `_Process`**；命中时只调 `TryEndAllPlayersWhenNoCards`，不另写收口；
-  3. 生效范围：**只在所有活着的玩家席位都是瓦库 / 临时席位时**（有真人席位的局不许抢 —— 真人可能想自己打最后一张）；
-  4. 节奏：留 0.5~1s 观察窗（玩家可能刚想接管），到期再收；新锚点
-     `全瓦库局托管已全部打完，自动收口（source=all-wakuu-exhausted-auto-end）`。
-- **硬约束（别踩）**：① 不许绕开 `HasHostedPlayableCards`；② 必须照走 `_allPlayersAutoEndedRounds` /
-  `_wakuuAutoEndIssued` 台账 + `WakuuTurnEndOrigin.BeginModIssuedEnd()`（否则 BUG-10 归因错、同回合重复收口）；
-  ③ 战神那段「托管还有能打的牌就不代收」（L1053~L1066）留在原位。
-- **验证契约**：
-
-  ```
-  BUG / 改动: 全瓦库局托管打光后自动结束回合
-  EXPECTED:    每回合托管打光 ≤2s 自动收口一次，不再需要点「结束回合」
-  SETUP:       本地多角色 4 席、全员勾瓦库形态（全瓦库），打到第 2 场战斗
-  ACTION:      不点任何按钮，看回合是否自己推进
-  OBSERVE:     回合号是否递增；结束回合按钮状态；日志锚点
-  PASS:        `… source=all-wakuu-exhausted-auto-end` 每回合 1 条、`turn loop died` 0、
-               `inFlight` 只出现 0/1、无双收口
-  FAIL:        托管还有可打牌就被收 / 每帧重复 EndTurn / 有真人席位的局被抢
-  LOG ANCHORS: 检测到全员无牌 / manual-end-turn / auto-end-turn-fallback / turn loop died / inFlight
-  ```
+> 关 = 整段零日志且回合停在原地（负对照）。详见 `开发进度记录.md` 第一百七十八段。
+> 📦 需求正文（现象 / 代码事实 / 四条口径 / 硬约束 / 验证契约）已切到
+> `maintenance-docs\decision-records\archive\TODO-归档（已完成 bug 与功能流水·r96~r226）.md`
+> 末尾「归档（2026-11-18·第一百七十八段）：§排期 4」。
 
 ### 5. 大键盘数字键 `1`~`9` `0` `-` `=` 快速切到 1~12 号席位 —— ⏳ 待开工（2026-11-16 用户登记）
 
