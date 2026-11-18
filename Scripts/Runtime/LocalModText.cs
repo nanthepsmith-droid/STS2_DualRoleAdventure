@@ -66,6 +66,28 @@ internal static class LocalModText
         return Select($"本地人数：{count}", $"Local Players: {count}");
     }
 
+    // ---- 数字键快速切人（2026-11-18 §排期 5）----
+
+    /// <summary>号位不存在（超出当前本地席位数）。</summary>
+    public static string SeatHotkeyNoSuchSeat(int seatNumber, int seatCount)
+    {
+        return Select(
+            $"没有第 {seatNumber} 号角色（当前本地 {seatCount} 名）",
+            $"No seat #{seatNumber} (local players: {seatCount})");
+    }
+
+    /// <summary>该号位不在这一场战斗里（已逃跑 / 已阵亡 / 没参战）。</summary>
+    public static string SeatHotkeyNotInCombat(int seatNumber)
+    {
+        return Select($"第 {seatNumber} 号角色不在战斗中", $"Seat #{seatNumber} is not in this combat");
+    }
+
+    /// <summary>此刻不允许切人（出牌 / 选牌 / 非玩家回合 / 小游戏 / 会话未就绪）。</summary>
+    public static string SeatHotkeyBlocked(int seatNumber)
+    {
+        return Select($"现在不能切换到第 {seatNumber} 号角色", $"Cannot switch to seat #{seatNumber} right now");
+    }
+
     public static string RandomCharacterNotSupported => Select(
         "本地多控暂不支持随机角色",
         "Random character is not supported in local multi-control");

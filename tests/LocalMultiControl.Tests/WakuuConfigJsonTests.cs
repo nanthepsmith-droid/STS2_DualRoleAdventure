@@ -34,6 +34,7 @@ public class WakuuConfigJsonTests
             // 默认开
             Assert.That(data.playAllCards, Is.True);
             Assert.That(data.allVakuuAutoEndTurn, Is.True); // 全瓦库局打光后自动结束回合：r370 起默认开
+            Assert.That(data.seatHotkeySwitch, Is.True); // 数字键快速切人（§排期 5）：默认开
             Assert.That(data.backgroundMode, Is.True);
             Assert.That(data.suppressVanillaEarring, Is.True);
             Assert.That(data.autoClaimCards, Is.True);

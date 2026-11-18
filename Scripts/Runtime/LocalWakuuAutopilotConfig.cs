@@ -32,6 +32,14 @@ internal static class LocalWakuuAutopilotConfig
     /// </summary>
     public static bool AllVakuuAutoEndTurn { get; private set; } = true;
 
+    /// <summary>
+    /// **小键盘** <c>1</c>~<c>9</c> <c>/</c> <c>*</c> <c>-</c> 切到第 1~12 号本地席位
+    /// （2026-11-18 §排期 5，**默认开**）：只在局内、只在本地多角色开启时响应；
+    /// 判定见 <see cref="SeatHotkeyPolicy"/>，关掉即回到"只有 Tab 循环切人"。
+    /// ⚠ 大键盘 <c>1</c>~<c>0</c> 是原版"选第 N 张手牌"，不能拿来切人。
+    /// </summary>
+    public static bool SeatHotkeySwitch { get; private set; } = true;
+
     /// <summary>瓦库形态：后台托管——不再为瓦库角色自动切换前台。</summary>
     public static bool BackgroundMode { get; private set; } = true;
 
@@ -361,6 +369,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.useVakuuForm): data.useVakuuForm = value; break;
                     case nameof(WakuuConfigData.playAllCards): data.playAllCards = value; break;
                     case nameof(WakuuConfigData.allVakuuAutoEndTurn): data.allVakuuAutoEndTurn = value; break;
+                    case nameof(WakuuConfigData.seatHotkeySwitch): data.seatHotkeySwitch = value; break;
                     case nameof(WakuuConfigData.backgroundMode): data.backgroundMode = value; break;
                     case nameof(WakuuConfigData.suppressVanillaEarring): data.suppressVanillaEarring = value; break;
                     case nameof(WakuuConfigData.keepVakuuFormRelic): data.keepVakuuFormRelic = value; break;
@@ -810,6 +819,7 @@ internal static class LocalWakuuAutopilotConfig
                 $"瓦库托管生效配置: useVakuuForm={data.useVakuuForm}, playAllCards={data.playAllCards}, "
                 + $"backgroundMode={data.backgroundMode}, suppressVanillaEarring={data.suppressVanillaEarring}, "
                 + $"allVakuuAutoEndTurn={data.allVakuuAutoEndTurn}, "
+                + $"seatHotkeySwitch={data.seatHotkeySwitch}, "
                 + $"keepVakuuFormRelic={data.keepVakuuFormRelic}, "
                 + $"autoClaimCards={data.autoClaimCards}, autoClaimGoldRelics={data.autoClaimGoldRelics}, "
                 + $"autoClaimPotions={data.autoClaimPotions}, "
@@ -848,6 +858,7 @@ internal static class LocalWakuuAutopilotConfig
         UseVakuuForm = data.useVakuuForm;
         PlayAllCards = data.playAllCards;
         AllVakuuAutoEndTurn = data.allVakuuAutoEndTurn;
+        SeatHotkeySwitch = data.seatHotkeySwitch;
         BackgroundMode = data.backgroundMode;
         SuppressVanillaEarring = data.suppressVanillaEarring;
         KeepWakuuFormRelic = data.keepVakuuFormRelic;
