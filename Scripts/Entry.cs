@@ -868,7 +868,25 @@ public partial class Entry
     //   ⚠ r372 第一版用的是**大键盘**数字键 —— 实机当场撞车：原版把 1~0 绑成"选第 N 张手牌"
     //   （`MegaInput.selectCard1..10`）⇒ r373 改成小键盘（含 NumLock 关着时走 PhysicalKeycode）。
     //   零 0.113 专属依赖（只碰 `InputEventKey` / 会话席位表 / `RunManager`）。
-    private const string BuildMarker = "Revival v1.47.6 (game v0.111.0, marker=2026-11-18-r373-stable)";
+    // r374（2026-11-18，§排期 6）：**本地席位统一叫 bot1 / bot2 …（与语言无关）**。
+    //   真凶 = 战斗内左侧玩家列表取的是 `PlatformUtil.GetPlayerNameRaw`，而我们此前只拦了 `GetPlayerName`
+    //   （BBCode 版）⇒ 列表里一直是 Steam 昵称；且旧文案 `角色N` / `Player N` 是**调用时**按语言分支，
+    //   而名牌是 `NMultiplayerPlayerState._Ready` 那一刻的快照 ⇒ 切语言后留着旧称呼。
+    //   修法 = 补 `GetPlayerNameRaw` 前缀 + 统一走 `LocalSeatLabels`（只接管本机会话席位，
+    //   其余 id 放行原版昵称）；N = 会话席位序 + 1（与 Tab / 小键盘切人同序），映射在
+    //   `SeatDisplayNamePolicy`（纯逻辑 + 5 条单测）。
+    // r375（2026-11-18，§排期 6 二轮）：① 真人席位不能也都叫 botN —— 本地多控所有席位共用同一个
+    //   Steam 账号 ⇒ 原版名字全是同一串；按 `IsWakuuEnabled` 分成 **瓦库 = botN / 真人 = playerN**，
+    //   两种称呼**共用同一套号位**（= 小键盘切人的号位）。② 加 `NMultiplayerPlayerStateNameplateProbePatch`
+    //   探针（行下标 / 席位 id / 名牌实际文字），用于定性"侧边只显示第一个玩家的名字"到底是
+    //   "解析退化成同一个"还是"文字对但排版叠在一起"。
+    // r376（2026-11-18，§排期 6 三轮）：探针定性出来了 —— 名牌拿到的是「0 号行 = 我的 Steam 昵称、
+    //   其余行 = 玩家 id 原串」⇒ **原版 `_Ready` 里那句 `GetPlayerNameRaw` 没走我们的前缀**（同一个 id、
+    //   同一时刻从别处调却能拿到 botN）。典型"小访问器被 JIT 内联、拦不住"（同 BUG-29 的 IsMine 那类），
+    //   所以改为**在名牌节点上直接重写文字**（`NMultiplayerPlayerStateNameplatePatch`，用原版同一个
+    //   `SetTextAutoSize`，非本地席位一个字不动）。
+    //   0.111 线同一套 API 都在（`_nameplateLabel` / `SetTextAutoSize` / `GetPlayerNameRaw`），零改动差异。
+    private const string BuildMarker = "Revival v1.47.7 (game v0.111.0, marker=2026-11-18-r376-stable)";
 
     private static Harmony? _harmony;
 

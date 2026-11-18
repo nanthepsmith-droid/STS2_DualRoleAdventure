@@ -288,6 +288,10 @@ internal static class PatchDomainMap
             ["MainMenuStackRegisterWakuuConfigSubmenuPatch"] = PatchDomain.Ui,
             ["RunStackRegisterWakuuConfigSubmenuPatch"] = PatchDomain.Ui,
             ["PlatformUtilGetPlayerNamePatch"] = PatchDomain.Ui,
+            // 2026-11-18 §排期 6：战斗内左侧玩家列表走的是 Raw 版入口 ⇒ 席位显示名也要拦这条
+            ["PlatformUtilGetPlayerNameRawPatch"] = PatchDomain.Ui,
+            // 2026-11-18 §排期 6：左侧列表名牌落盘（原版那条 Raw 调用没走我们的前缀 ⇒ 直接写名牌）
+            ["NMultiplayerPlayerStateNameplatePatch"] = PatchDomain.Ui,
             ["NRestSiteRoomReadyGuardPatch"] = PatchDomain.Ui,
             ["NTreasureRoomRelicCollectionFocusGuardPatch"] = PatchDomain.Ui,
             // r297 宝箱遗物格按遗物数量补齐（原版场景只有 4 格）

@@ -354,10 +354,11 @@ internal static class LocalSelfCoopContext
         }
 
         LocalMultiControlLogger.Info($"瓦库勾选状态变更: player={playerId}, enabled={enabled}, source={source}");
-        string slotLabel = GetSlotLabel(playerId);
+        // 称呼按"改动之后"的身份取（2026-11-18 §排期 6）：勾上 = botN、取消 = playerN。
+        string seatLabel = LocalSeatLabels.Describe(playerId);
         string tip = enabled
-            ? LocalModText.VakuuControlsPlayer(slotLabel)
-            : LocalModText.VakuuReleasedPlayer(slotLabel);
+            ? LocalModText.VakuuControlsPlayer(seatLabel)
+            : LocalModText.VakuuReleasedPlayer(seatLabel);
         NGame.Instance?.AddChildSafely(NFullscreenTextVfx.Create(tip));
         MarkCurrentProfileTag();
         return true;
@@ -525,7 +526,8 @@ internal static class LocalSelfCoopContext
 
         string slotLabel = GetSlotLabel(CurrentLobbyEditingPlayerId);
         LocalMultiControlLogger.Info($"大厅编辑角色切换: {previousPlayerId} -> {CurrentLobbyEditingPlayerId} (槽位{slotLabel})");
-        NGame.Instance?.AddChildSafely(NFullscreenTextVfx.Create(LocalModText.LobbyEditingSlot(slotLabel)));
+        NGame.Instance?.AddChildSafely(
+            NFullscreenTextVfx.Create(LocalModText.LobbyEditingSlot(LocalSeatLabels.Describe(CurrentLobbyEditingPlayerId))));
         return true;
     }
 
@@ -553,7 +555,8 @@ internal static class LocalSelfCoopContext
             string slotLabel = GetSlotLabel(CurrentLobbyEditingPlayerId);
             LocalMultiControlLogger.Info(
                 $"大厅编辑角色定向切换: {previousPlayerId} -> {CurrentLobbyEditingPlayerId} (槽位{slotLabel})");
-            NGame.Instance?.AddChildSafely(NFullscreenTextVfx.Create(LocalModText.LobbyEditingSlot(slotLabel)));
+            NGame.Instance?.AddChildSafely(
+                NFullscreenTextVfx.Create(LocalModText.LobbyEditingSlot(LocalSeatLabels.Describe(CurrentLobbyEditingPlayerId))));
         }
 
         return true;

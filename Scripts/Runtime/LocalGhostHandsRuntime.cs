@@ -423,10 +423,12 @@ internal sealed partial class LocalGhostHandsOverlay : Control
         };
         AddChild(container);
 
-        int slotIndex = runState.GetPlayerSlotIndex(player);
+        // 2026-11-18 §排期 6：幽灵手的名字也统一成 botN / playerN，且**按本地会话席位序**取号
+        // （`runState.GetPlayerSlotIndex` 是 runState 的槽位序，与 Tab 循环/小键盘切人的号位不是一回事）。
+        string seatLabelText = LocalSeatLabels.Describe(player.NetId);
         Label slotLabel = new()
         {
-            Text = LocalModText.RoleSlot((slotIndex + 1).ToString()),
+            Text = seatLabelText,
             MouseFilter = MouseFilterEnum.Ignore
         };
         slotLabel.AddThemeFontSizeOverride("font_size", 22);

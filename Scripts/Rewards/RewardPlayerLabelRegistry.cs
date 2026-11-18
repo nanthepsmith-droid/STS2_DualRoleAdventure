@@ -5,7 +5,7 @@ using MegaCrit.Sts2.Core.Rewards;
 namespace LocalMultiControl.Scripts.Rewards;
 
 /// <summary>
-/// 记录每个 Reward 实例对应的角色标签（如"角色1"）。
+/// 记录每个 Reward 实例对应的席位标签（`botN` / `playerN`，2026-11-18 §排期 6）。
 /// 在战利品汇总时写入，在 NRewardButton 展示时读取。
 /// </summary>
 internal static class RewardPlayerLabelRegistry
@@ -14,9 +14,7 @@ internal static class RewardPlayerLabelRegistry
 
     internal static void Register(Reward reward, ulong playerNetId)
     {
-        string slotLabel = LocalSelfCoopContext.GetSlotLabel(playerNetId);
-        string label = LocalModText.RoleSlot(slotLabel);
-        Labels.AddOrUpdate(reward, label);
+        Labels.AddOrUpdate(reward, LocalSeatLabels.Describe(playerNetId));
     }
 
     internal static bool TryGetLabel(Reward reward, out string? label)

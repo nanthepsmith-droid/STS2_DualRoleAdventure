@@ -2,8 +2,8 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-11-17 19:06  HEAD=e760c67
-# 统计: patch_classes=211 patch_rows=253 string_targets=214 descriptors=410
+# 生成时间=2026-11-18 20:36  HEAD=4b6f508
+# 统计: patch_classes=213 patch_rows=255 string_targets=216 descriptors=414
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	BgmProbeAudioManagerPatch	NAudioManager	-	no-target
@@ -152,6 +152,7 @@ P	NMultiplayerHostSubmenuOfficialEntryGuardPatch	NMultiplayerHostSubmenu	StartHo
 P	NMultiplayerHostSubmenuPatch	NMultiplayerHostSubmenu	_Ready	nameof
 P	NMultiplayerLoadGameScreenPatch	NMultiplayerLoadGameScreen	ShouldAllowRunToBegin	nameof
 P	NMultiplayerPlayerIntentHandlerPatch	NMultiplayerPlayerIntentHandler	Create	nameof
+P	NMultiplayerPlayerStateNameplatePatch	NMultiplayerPlayerState	_Ready	string
 P	NMultiplayerPlayerStatePetHpPatch	NMultiplayerPlayerState	_Ready	nameof
 P	NMultiplayerPlayerStateReadyPatch	NMultiplayerPlayerState	_Ready	nameof
 P	NMultiplayerSubmenuHostRoutePatch	NMultiplayerSubmenu	OnHostPressed	string
@@ -189,6 +190,7 @@ P	PersonalGridCardPickPatch	EventModel	SelectCardsToAddToDeckFromGrid	string
 P	PersonalRunEndPatch	RunManager	OnEnded	nameof
 P	PersonalShopPurchasePatch	MerchantEntry	OnTryPurchaseWrapper	nameof
 P	PlatformUtilGetPlayerNamePatch	PlatformUtil	GetPlayerName	nameof
+P	PlatformUtilGetPlayerNameRawPatch	PlatformUtil	GetPlayerNameRaw	nameof
 P	PlayerChoiceSynchronizerPatch	PlayerChoiceSynchronizer	SyncLocalChoice	nameof
 P	PlayerChoiceSynchronizerRemoteChoiceFallbackPatch	PlayerChoiceSynchronizer	WaitForRemoteChoice	nameof
 P	PlayerChoiceSynchronizerTemporarySeatGetChoiceIdPatch	PlayerChoiceSynchronizer	GetChoiceId	string
@@ -306,6 +308,7 @@ S	accesstools	NMultiplayerPlayerState	UpdateSelectionReticleWidth	method
 S	accesstools	NMultiplayerPlayerState	_cardContainer	field
 S	accesstools	NMultiplayerPlayerState	_energyContainer	field
 S	accesstools	NMultiplayerPlayerState	_healthBar	field
+S	accesstools	NMultiplayerPlayerState	_nameplateLabel	field
 S	accesstools	NMultiplayerPlayerState	_starContainer	field
 S	accesstools	NMultiplayerSubmenu	_loadButton	field
 S	accesstools	NPauseMenu	_backButton	field
@@ -397,6 +400,7 @@ S	harmony	NHandImageCollection	UpdateHandVisibility	method
 S	harmony	NMainMenuSubmenuStack	GetSubmenuType	method
 S	harmony	NMerchantCard	FillSlot	method
 S	harmony	NMerchantInventory	Initialize	method
+S	harmony	NMultiplayerPlayerState	_Ready	method
 S	harmony	NMultiplayerSubmenu	OnHostPressed	method
 S	harmony	NMultiplayerSubmenu	StartLoad	method
 S	harmony	NPlayerHand	OnHolderPressed	method

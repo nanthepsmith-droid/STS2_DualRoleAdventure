@@ -186,6 +186,8 @@ internal static class LocalMultiControlRuntime
     {
         // R5 第一批：进局复位自检 —— 此刻"上一局"的静态状态本该已被 OnRunCleanup 清空（有残留即点名）。
         ReportResetResiduals("进局");
+        // 席位显示名（botN）的日志去重表（2026-11-18 §排期 6，纯日志用途）。
+        LocalSeatLabels.ResetLogDedupe("run-launched");
         LocalWakuuRelicLocalization.Initialize();
         LocalWakuuRestSiteLocalization.Initialize();
         LocalWakuuUniteLocalization.Initialize();
@@ -279,6 +281,8 @@ internal static class LocalMultiControlRuntime
         // 局都清了，读档窗口没有存在的理由（防止它遮住守卫后续的清理职责）。
         LocalSelfCoopContext.CloseLoadReplayWindow("run-cleanup");
         Session.Reset("RunManager.CleanUp");
+        // 席位显示名（botN）的日志去重表（2026-11-18 §排期 6，纯日志用途）。
+        LocalSeatLabels.ResetLogDedupe("run-cleanup");
         // 战灵召唤 Phase 0 POC：退局兜底 —— 临时席位与"本场已生成"标记绝不跨局残留。
         HellwarPocRuntime.ResetForRun("RunManager.CleanUp");
         // 战灵召唤 Phase 2：退局兜底 —— 在册战神 / 临时席位登记 / "本回合已弹过选择"标记 / 战斗内计数预算一并复位。
@@ -2024,8 +2028,9 @@ internal static class LocalMultiControlRuntime
         LocalMultiControlLogger.Info($"控制上下文已更新: {previousNetId?.ToString() ?? "null"} -> {currentControlledPlayerId.Value}, source={source}");
         if (source != "run-launched" && !source.StartsWith("wakuu-", StringComparison.Ordinal))
         {
-            string slotLabel = LocalSelfCoopContext.GetSlotLabel(currentControlledPlayerId.Value);
-            NGame.Instance?.AddChildSafely(NFullscreenTextVfx.Create(LocalModText.ControlledSlot(slotLabel)));
+            NGame.Instance?.AddChildSafely(
+                NFullscreenTextVfx.Create(LocalModText.ControlledSlot(
+                    LocalSeatLabels.Describe(currentControlledPlayerId.Value))));
         }
     }
 
