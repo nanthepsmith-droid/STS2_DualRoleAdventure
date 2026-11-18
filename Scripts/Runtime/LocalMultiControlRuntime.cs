@@ -158,6 +158,38 @@ internal static class LocalMultiControlRuntime
     /// </summary>
     private const long TempSeatSchedulingStallGraceMs = 8_000L;
 
+    /// <summary>
+    /// r370：全瓦库局「托管全部打完 ⇒ 自动收口」的观察窗起点（毫秒，0 = 未开始计时）。
+    ///
+    /// 观察窗的意义见 <see cref="AllWakuuAutoEndPolicy.QuietWindowMs"/>：条件第一次同时成立后先等 0.8 秒，
+    /// 玩家这时想接管（点手牌 / 切人）还来得及；任一条判据掉回去就**立刻作废**（重新计时），
+    /// 所以"刚打完最后一张"和"真的一直没事干"能被区分开。
+    /// </summary>
+    private static long _allWakuuQuietSinceMs;
+
+    /// <summary>
+    /// 上一次"判据全部成立"的时刻（毫秒）。
+    ///
+    /// 为什么要它：这条 tick 有好几个**早退**分支根本走不到判据（真人在手动打牌 / 有选牌屏 /
+    /// 敌方回合 / 非出牌相位）。只靠"进入时复位"会漏掉这些分支 ⇒ 早退期间观察窗一直在偷偷计时，
+    /// 早退结束那一 tick 就可能**立刻**收口（玩家刚放下最后一张牌就被收走回合）。
+    /// 用"两次成立之间间隔超过 3 个 tick"来判定"观察窗已经断过"，比给每个早退分支各加一行复位可靠。
+    /// </summary>
+    private static long _allWakuuLastEligibleMs;
+
+    /// <summary>观察窗所属的回合号 / 战斗身份：换回合或换战斗都必须作废（回合号只在战斗内有效）。</summary>
+    private static int _allWakuuQuietRound = -1;
+    private static int _allWakuuQuietCombatIdentity = int.MinValue;
+
+    /// <summary>已经排了一次延后收口，别在同 100ms 里叠第二条（`PlayerCmd.EndTurn` 会同步跑完 turn-end）。</summary>
+    private static bool _allWakuuAutoEndDeferred;
+
+    /// <summary>本战斗内每种"被挡回原因"只打一条（大多数局根本不是全瓦库，否则会每 2 秒刷一行）。</summary>
+    private static readonly HashSet<AllWakuuAutoEndBlockReason> _allWakuuBlockLoggedReasons = new HashSet<AllWakuuAutoEndBlockReason>();
+
+    /// <summary>实机锚点用的固定 source（验证契约里按它 grep）。</summary>
+    private const string AllWakuuAutoEndSource = "all-wakuu-exhausted-auto-end";
+
     /// <summary>改进-1 跳过回合开始抽牌演出的日志去重（战斗场次变化时清空）。</summary>
     private static readonly HashSet<string> _skipDrawAnimLogged = new HashSet<string>();
     private static int _skipDrawAnimCombatIdentity = int.MinValue;
@@ -293,6 +325,8 @@ internal static class LocalMultiControlRuntime
         _tickPlayableMemoRound = -1;
         // r358：战神"调度被挡"的计时（跨局必须清，否则上一局的计时会让新局的战神一入场就被兜底收口）。
         _tempSeatBlockedSinceMs.Clear();
+        // r370：全瓦库自动收口的观察窗与被挡日志去重（退局后一律从头算）。
+        ResetAllWakuuAutoEndState();
         LocalPerfProbe.Reset("run-cleanup");
         LocalMerchantInventoryRuntime.Clear();
         // r352 极速宝箱「每人 2 件」的两阶段投票状态（挂在 synchronizer 实例上，退局必须清）。
@@ -876,6 +910,289 @@ internal static class LocalMultiControlRuntime
         {
             _allPlayersAutoEndedRounds.Remove(combatState.RoundNumber);
         }
+
+        // r370：全瓦库局「托管全部打完 ⇒ 自动收口」。挂在**这条既有的 100ms 重活**里（与上面的
+        // `HasPlayableCached` 同一个 tick、共用同一份扫描结果），不新开 `_Process`。
+        long allWakuuStart = LocalPerfProbe.Begin();
+        TryAutoEndWhenAllWakuuExhausted(combatState, HasPlayableCached);
+        LocalPerfProbe.End(LocalPerfProbe.Slot.GateAllWakuuAutoEnd, allWakuuStart);
+    }
+
+    /// <summary>
+    /// r370：全瓦库局「所有瓦库打完后自动结束回合」的观察窗 + 收口（用户 2026-11-16 原话：
+    /// 「以后做全瓦库局所有瓦库打完自动结束回合」）。
+    ///
+    /// **为什么需要**：`TryEndAllPlayersWhenNoCards` 全仓只有两个调用点 —— 真人点「结束回合」
+    /// （`manual-end-turn`）与"已经有人结束了回合"之后的兜底（`auto-end-turn-fallback`）。
+    /// 全瓦库局没有真人会去点按钮 ⇒ 回合链停在原地（实测 4 席局 99 次收口里 96 次是真人点的）。
+    ///
+    /// **口径（四条，见 <see cref="AllWakuuAutoEndPolicy"/>）**：
+    /// ① 判据 = 托管口径下全员无牌可打 + 无在飞出牌租约 + 无待作答选择器 + 没有该结束的席位；
+    /// ② 只在**所有活着的可行动席位都是托管席位**（瓦库形态 / 战神）时生效 —— 有真人席位一律不抢；
+    /// ③ 命中后只调 `TryEndAllPlayersWhenNoCards`（照走台账 + `WakuuTurnEndOrigin` 归因）；
+    /// ④ 留 <see cref="AllWakuuAutoEndPolicy.QuietWindowMs"/> 观察窗，判据一掉回去就作废重算。
+    /// </summary>
+    private static void TryAutoEndWhenAllWakuuExhausted(CombatState combatState, Func<Player, bool> hasPlayableCards)
+    {
+        // 开关（设置页「全瓦库局打光后自动结束回合」，默认开）：关掉时连判据都不算，顺手清观察窗
+        // —— 否则关掉期间它会继续偷偷计时，重新打开的那一 tick 立即可收（不是"刚打完"的语义）。
+        if (!LocalWakuuAutopilotConfig.AllVakuuAutoEndTurn)
+        {
+            ResetAllWakuuQuietWindow();
+            return;
+        }
+
+        long nowMs = (long)Time.GetTicksMsec();
+        int combatIdentity = RuntimeHelpers.GetHashCode(combatState);
+        if (_allWakuuQuietCombatIdentity != combatIdentity || _allWakuuQuietRound != combatState.RoundNumber)
+        {
+            // 换战斗 / 换回合：上一段的观察窗没有任何意义（回合号只在战斗内有效）。
+            ResetAllWakuuQuietWindow();
+        }
+
+        DescribeAllWakuuTurn(combatState, hasPlayableCards, out AllWakuuTurnFacts facts);
+
+        AllWakuuAutoEndBlockReason reason = AllWakuuAutoEndPolicy.Evaluate(new AllWakuuAutoEndInputs(
+            LocalMultiEnabled: LocalSelfCoopContext.IsEnabled,
+            RunInProgress: RunManager.Instance.IsInProgress,
+            CombatInProgress: CombatManager.Instance.IsInProgress,
+            SideIsPlayer: combatState.CurrentSide == CombatSide.Player,
+            PlayPhase: RunManager.Instance.ActionQueueSynchronizer.CombatState == ActionSynchronizerCombatState.PlayPhase,
+            ManualPlayGuardActive: LocalManualPlayGuard.IsActive,
+            SelectionBusy: IsCombatUiInPickFlow() || (NOverlayStack.Instance?.ScreenCount ?? 0) > 0,
+            PlayLoopInFlight: facts.PlayLoopInFlight,
+            SelectorScopeInFlight: LocalWakuuRelicRuntime.SelectorScopeInFlight() > 0,
+            AllAliveSeatsHosted: facts.AllSeatsHosted,
+            NoHostedSeatHasPlayableCard: facts.NoPlayableCard,
+            HasPendingSeatToEnd: facts.HasPendingSeat,
+            AlreadyAutoEndedThisRound: _allPlayersAutoEndedRounds.Contains(combatState.RoundNumber)));
+
+        if (!AllWakuuAutoEndPolicy.IsAllowed(reason))
+        {
+            ResetAllWakuuQuietWindow();
+            LogAllWakuuBlockedOnce(reason, combatState, facts);
+            return;
+        }
+
+        // 观察窗必须**连续**成立：上一次成立到现在隔了不止几个 tick ⇒ 中间一定被早退分支打断过，重新计时。
+        const long streakGapMs = HeavyAutoEndTickIntervalMs * 3;
+        if (_allWakuuQuietSinceMs <= 0L
+            || _allWakuuLastEligibleMs <= 0L
+            || nowMs - _allWakuuLastEligibleMs > streakGapMs)
+        {
+            _allWakuuQuietSinceMs = nowMs;
+            _allWakuuQuietRound = combatState.RoundNumber;
+            _allWakuuQuietCombatIdentity = combatIdentity;
+            _allWakuuLastEligibleMs = nowMs;
+            LocalMultiControlLogger.Info(
+                $"全瓦库局托管已全部打完，进入观察窗（{AllWakuuAutoEndPolicy.QuietWindowMs}ms 后自动收口）: "
+                + $"round={combatState.RoundNumber}, {facts.Detail}, source={AllWakuuAutoEndSource}");
+            return;
+        }
+
+        _allWakuuLastEligibleMs = nowMs;
+
+        if (!AllWakuuAutoEndPolicy.ShouldFire(_allWakuuQuietSinceMs, nowMs, AllWakuuAutoEndPolicy.QuietWindowMs))
+        {
+            return;
+        }
+
+        if (_allWakuuAutoEndDeferred)
+        {
+            return;
+        }
+
+        int quietMs = (int)Math.Min(int.MaxValue, nowMs - _allWakuuQuietSinceMs);
+        _allWakuuAutoEndDeferred = true;
+        // `PlayerCmd.EndTurn` 会**同步**跑完整个 turn-end 前缀（实测单次可达 702ms，见
+        // `TryEndIdleWarGodTurns` 的注释）⇒ 绝不在 100ms 门里直接收，延后一帧再逐席复核。
+        ResetAllWakuuQuietWindow();
+        Callable.From(() => ExecuteAllWakuuAutoEnd(combatState, quietMs)).CallDeferred();
+    }
+
+    /// <summary>
+    /// 延后执行的那一步：**重新**核对一遍环境与逐席状态（这中间可能有人出了牌 / 开了选牌屏 /
+    /// 玩家手动接管），确认仍满足才调 `TryEndAllPlayersWhenNoCards`。
+    /// </summary>
+    private static void ExecuteAllWakuuAutoEnd(CombatState combatState, int quietMs)
+    {
+        _allWakuuAutoEndDeferred = false;
+        try
+        {
+            if (!LocalSelfCoopContext.IsEnabled || !RunManager.Instance.IsInProgress || !CombatManager.Instance.IsInProgress)
+            {
+                return;
+            }
+
+            // 开关在延后这一帧里被关掉 ⇒ 放弃这次收口（设置页改动是立即生效的）。
+            if (!LocalWakuuAutopilotConfig.AllVakuuAutoEndTurn)
+            {
+                return;
+            }
+
+            if (combatState.CurrentSide != CombatSide.Player
+                || RunManager.Instance.ActionQueueSynchronizer.CombatState != ActionSynchronizerCombatState.PlayPhase)
+            {
+                return;
+            }
+
+            // 这一帧里战斗可能已经换了一场（敌人全死 / 转场）⇒ 绝不能拿着上一场的 CombatState 去结束回合。
+            NCombatUi? combatUi = NCombatRoom.Instance?.Ui;
+            CombatState? liveState = combatUi != null ? TryGetCombatState(combatUi) : null;
+            if (liveState == null || !ReferenceEquals(liveState, combatState))
+            {
+                return;
+            }
+
+            if (LocalManualPlayGuard.IsActive || IsCombatUiInPickFlow() || (NOverlayStack.Instance?.ScreenCount ?? 0) > 0)
+            {
+                LocalMultiControlLogger.Info(
+                    $"全瓦库局自动收口取消（延后期间有人接管 / 有选牌在飞）: round={combatState.RoundNumber}, "
+                    + $"manual={LocalManualPlayGuard.IsActive}, pickFlow={IsCombatUiInPickFlow()}, "
+                    + $"overlay={NOverlayStack.Instance?.ScreenCount ?? 0}, source={AllWakuuAutoEndSource}");
+                return;
+            }
+
+            // 逐席**重新扫**（不用门里的 memo：隔了一帧，手牌/能量都可能变了）。
+            DescribeAllWakuuTurn(combatState, null, out AllWakuuTurnFacts facts);
+            if (!facts.AllSeatsHosted || !facts.NoPlayableCard || facts.PlayLoopInFlight || !facts.HasPendingSeat)
+            {
+                LocalMultiControlLogger.Info(
+                    $"全瓦库局自动收口取消（状态已变）: round={combatState.RoundNumber}, {facts.Detail}, source={AllWakuuAutoEndSource}");
+                return;
+            }
+
+            LocalMultiControlLogger.Info(
+                $"全瓦库局托管已全部打完，自动收口: round={combatState.RoundNumber}, 观察窗={quietMs}ms, "
+                + $"{facts.Detail}, source={AllWakuuAutoEndSource}");
+            TryEndAllPlayersWhenNoCards(combatState, AllWakuuAutoEndSource);
+        }
+        catch (Exception exception)
+        {
+            // 收口失败绝不能冒穿到 Godot 的 deferred 回调（那会把异常打到引擎层、连带吞掉回合推进）。
+            LocalMultiControlLogger.Warn($"全瓦库局自动收口失败（已忽略）: {exception.Message}");
+        }
+    }
+
+    /// <summary>一次「全瓦库局面」的逐席事实（r370）。只在本文件内用，字段名就按判据命名。</summary>
+    private readonly record struct AllWakuuTurnFacts(
+        bool AllSeatsHosted,
+        bool NoPlayableCard,
+        bool HasPendingSeat,
+        bool PlayLoopInFlight,
+        string Detail);
+
+    /// <summary>
+    /// 逐席收集「全瓦库自动收口」需要的事实（r370）。
+    ///
+    /// **只统计本段回合的行动参与者**（`TurnParticipationPolicy.CanDriveSeat`）：额外回合里非参与者
+    /// 这一回合本来就不能行动，把它的手牌算进"还有牌可打"只会让收口永远不触发；
+    /// 而 `TryEndAllPlayersWhenNoCards` 本身也只结束参与者，两边口径必须一致。
+    ///
+    /// <paramref name="hasPlayableCards"/> 传 null = 现场按托管口径扫（`HasHostedPlayableCards`）；
+    /// 传函数 = 复用本 tick 门里已经算好的结论（12 席整桌重扫一次实测 111ms）。
+    /// </summary>
+    private static void DescribeAllWakuuTurn(
+        CombatState combatState,
+        Func<Player, bool>? hasPlayableCards,
+        out AllWakuuTurnFacts facts)
+    {
+        bool allSeatsHosted = true;
+        bool noPlayableCard = true;
+        bool hasPendingSeat = false;
+        bool playLoopInFlight = false;
+        List<ulong> seats = new();
+        List<string> blockers = new();
+
+        foreach (Player player in combatState.Players)
+        {
+            if (player?.Creature == null || !player.Creature.IsAlive)
+            {
+                continue;
+            }
+
+            if (!TurnParticipationPolicy.CanDriveSeat(
+                    currentSideIsPlayer: true,
+                    isPartOfPlayerTurn: CombatManager.Instance.IsPartOfPlayerTurn(player)))
+            {
+                continue;
+            }
+
+            seats.Add(player.NetId);
+
+            // ① 不是托管席位（真人 / 第三方 Bot / 遗物被摘掉的瓦库）⇒ 全瓦库口径不成立。
+            if (!LocalWakuuRelicRuntime.IsAutoplayHosted(player))
+            {
+                allSeatsHosted = false;
+                blockers.Add($"{player.NetId}:not-hosted");
+                continue;
+            }
+
+            // ② 有出牌循环在飞 ⇒ 它正打着，等它自己收手。
+            if (LocalWakuuRelicRuntime.HasPlayLoopInFlight(player.NetId, PlayLoopInFlightTrustMs))
+            {
+                playLoopInFlight = true;
+                noPlayableCard = false;
+                blockers.Add($"{player.NetId}:in-flight");
+                continue;
+            }
+
+            // ③ 托管口径下还有能打的牌（**不许绕开** `HasHostedPlayableCards`）。
+            bool playable = hasPlayableCards != null
+                ? hasPlayableCards(player)
+                : LocalWakuuRelicRuntime.HasHostedPlayableCards(player, combatState.RoundNumber);
+            if (playable)
+            {
+                noPlayableCard = false;
+                blockers.Add($"{player.NetId}:has-playable");
+                continue;
+            }
+
+            // ④ 还没 ready ⇒ 这一席确实需要被收口。
+            if (!CombatManager.Instance.IsPlayerReadyToEndTurn(player))
+            {
+                hasPendingSeat = true;
+            }
+        }
+
+        facts = new AllWakuuTurnFacts(
+            allSeatsHosted,
+            noPlayableCard,
+            hasPendingSeat,
+            playLoopInFlight,
+            $"席位=[{string.Join(",", seats)}], 阻止=[{string.Join(",", blockers)}]");
+    }
+
+    /// <summary>每种被挡原因**本战斗内只打一条**（避免"大多数局根本不是全瓦库"时每 2 秒刷一行）。</summary>
+    private static void LogAllWakuuBlockedOnce(
+        AllWakuuAutoEndBlockReason reason,
+        CombatState combatState,
+        AllWakuuTurnFacts facts)
+    {
+        if (!_allWakuuBlockLoggedReasons.Add(reason))
+        {
+            return;
+        }
+
+        LocalMultiControlLogger.Info(
+            $"全瓦库局自动收口未触发: reason={reason}, round={combatState.RoundNumber}, {facts.Detail}, "
+            + $"source={AllWakuuAutoEndSource}");
+    }
+
+    private static void ResetAllWakuuQuietWindow()
+    {
+        _allWakuuQuietSinceMs = 0L;
+        _allWakuuLastEligibleMs = 0L;
+        _allWakuuQuietRound = -1;
+        _allWakuuQuietCombatIdentity = int.MinValue;
+    }
+
+    /// <summary>换战斗 / 退局复位：观察窗 + "已排延后"标记 + 被挡日志去重。</summary>
+    private static void ResetAllWakuuAutoEndState()
+    {
+        ResetAllWakuuQuietWindow();
+        _allWakuuAutoEndDeferred = false;
+        _allWakuuBlockLoggedReasons.Clear();
     }
 
     /// <summary>
@@ -1354,6 +1671,8 @@ internal static class LocalMultiControlRuntime
         _tickPlayableMemoRound = -1;
         // r358：战神"调度被挡"的计时同样按战斗失效（上一场卡住的席位不该让新战斗的同一席位被立刻兜底收口）。
         _tempSeatBlockedSinceMs.Clear();
+        // r370：全瓦库自动收口的观察窗/日志去重同样按战斗失效（回合号会重置，旧窗口属于上一场）。
+        ResetAllWakuuAutoEndState();
         LocalMultiControlLogger.Info(
             $"检测到战斗场次切换，重置瓦库自动结束回合状态: combat={combatIdentity}, source={source}");
         // r358：上一场战斗结束时还卡在 await 上的出牌循环**永远不会返回** ⇒ 它们的租约只增不减，

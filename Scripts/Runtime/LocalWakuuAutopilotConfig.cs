@@ -24,6 +24,14 @@ internal static class LocalWakuuAutopilotConfig
     /// <summary>瓦库形态：打光所有手牌（false = 沿用原版每回合最多 13 张的上限）。</summary>
     public static bool PlayAllCards { get; private set; } = true;
 
+    /// <summary>
+    /// 全瓦库局「托管打光后自动结束回合」（r370，**默认开**）：
+    /// 一桌所有活着的可行动席位都是托管席位时，托管打光手牌并稳定 800ms 后自动替它们结束回合。
+    /// 关 = 完全回到旧行为（必须真人点「结束回合」）。
+    /// 判据见 <see cref="AllWakuuAutoEndPolicy"/>；有真人席位的局无论开关如何都不抢。
+    /// </summary>
+    public static bool AllVakuuAutoEndTurn { get; private set; } = true;
+
     /// <summary>瓦库形态：后台托管——不再为瓦库角色自动切换前台。</summary>
     public static bool BackgroundMode { get; private set; } = true;
 
@@ -360,6 +368,7 @@ internal static class LocalWakuuAutopilotConfig
                 {
                     case nameof(WakuuConfigData.useVakuuForm): data.useVakuuForm = value; break;
                     case nameof(WakuuConfigData.playAllCards): data.playAllCards = value; break;
+                    case nameof(WakuuConfigData.allVakuuAutoEndTurn): data.allVakuuAutoEndTurn = value; break;
                     case nameof(WakuuConfigData.backgroundMode): data.backgroundMode = value; break;
                     case nameof(WakuuConfigData.suppressVanillaEarring): data.suppressVanillaEarring = value; break;
                     case nameof(WakuuConfigData.keepVakuuFormRelic): data.keepVakuuFormRelic = value; break;
@@ -809,6 +818,7 @@ internal static class LocalWakuuAutopilotConfig
             LocalMultiControlLogger.Info(
                 $"瓦库托管生效配置: useVakuuForm={data.useVakuuForm}, playAllCards={data.playAllCards}, "
                 + $"backgroundMode={data.backgroundMode}, suppressVanillaEarring={data.suppressVanillaEarring}, "
+                + $"allVakuuAutoEndTurn={data.allVakuuAutoEndTurn}, "
                 + $"keepVakuuFormRelic={data.keepVakuuFormRelic}, "
                 + $"autoClaimCards={data.autoClaimCards}, autoClaimGoldRelics={data.autoClaimGoldRelics}, "
                 + $"autoClaimPotions={data.autoClaimPotions}, "
@@ -846,6 +856,7 @@ internal static class LocalWakuuAutopilotConfig
 
         UseVakuuForm = data.useVakuuForm;
         PlayAllCards = data.playAllCards;
+        AllVakuuAutoEndTurn = data.allVakuuAutoEndTurn;
         BackgroundMode = data.backgroundMode;
         SuppressVanillaEarring = data.suppressVanillaEarring;
         KeepWakuuFormRelic = data.keepVakuuFormRelic;

@@ -34,6 +34,7 @@ public class WakuuConfigJsonTests
             // 方案 D 队列档 / 并发档已于 2026-09-26 转正为「默认开」（断言已移入下方「默认开」组）
             // 默认开
             Assert.That(data.playAllCards, Is.True);
+            Assert.That(data.allVakuuAutoEndTurn, Is.True); // 全瓦库局打光后自动结束回合：r370 起默认开
             Assert.That(data.backgroundMode, Is.True);
             Assert.That(data.suppressVanillaEarring, Is.True);
             Assert.That(data.autoClaimCards, Is.True);
@@ -323,6 +324,27 @@ public class WakuuConfigJsonTests
         });
     }
 
+    /// <summary>
+    /// 全瓦库局「打光后自动结束回合」开关（r370，**默认开**）：旧配置里没有这个键时也必须保持开启
+    /// （否则老玩家升级后功能静默消失）。
+    /// </summary>
+    [Test]
+    public void 解析全瓦库自动收口开关_缺省时保持开_显式关生效()
+    {
+        Assert.That(new WakuuConfigData().allVakuuAutoEndTurn, Is.True, "默认必须开 = 用户 2026-11-16 要的行为");
+
+        // 旧 json 里没有这个键 ⇒ 走属性初始值（默认开）。
+        WakuuConfigData legacy = WakuuConfigJson.Parse("""{ "useVakuuForm": true }""")!;
+        Assert.That(legacy.allVakuuAutoEndTurn, Is.True, "缺键时不能变成关");
+
+        WakuuConfigData off = WakuuConfigJson.Parse("""{ "allVakuuAutoEndTurn": false }""")!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(off.allVakuuAutoEndTurn, Is.False);
+            Assert.That(off.vakuuDaddy, Is.False, "未提供的字段保持默认值");
+        });
+    }
+
     [Test]
     public void 解析null字面量_返回null()
     {
@@ -372,6 +394,7 @@ public class WakuuConfigJsonTests
         {
             Assert.That(json, Does.Contain("\"useVakuuForm\""));
             Assert.That(json, Does.Contain("\"playAllCards\""));
+            Assert.That(json, Does.Contain("\"allVakuuAutoEndTurn\""));
             Assert.That(json, Does.Contain("\"suppressVanillaEarring\""));
             Assert.That(json, Does.Contain("\"autoClaimPotions\""));
             Assert.That(json, Does.Contain("\"shopAssistBuyNoData\""));
