@@ -5,7 +5,6 @@ namespace LocalMultiControl.Scripts.Runtime;
 internal static class LocalModText
 {
     private const string EnglishLanguageCode = "eng";
-    private const string UnknownSlotLabel = "?";
 
     public static bool IsEnglish => LocManager.Instance.Language == EnglishLanguageCode;
 
@@ -14,12 +13,11 @@ internal static class LocalModText
         return IsEnglish ? en : zh;
     }
 
-    public static string RoleSlot(string slotLabel)
-    {
-        return slotLabel == UnknownSlotLabel
-            ? Select("未知角色", "Unknown Player")
-            : Select($"角色{slotLabel}", $"Player {slotLabel}");
-    }
+    /// <summary>
+    /// 解析不出本地席位身份时的兜底称呼（2026-11-18 §排期 6）。
+    /// 正常情况下不该出现 —— 席位名统一走 <see cref="LocalSeatLabels"/>（<c>botN</c> / <c>playerN</c>）。
+    /// </summary>
+    public static string UnknownSeat => Select("未知角色", "Unknown Player");
 
     public static string RestartRoomButton => Select("重启房间", "Restart Room");
     public static string RestartRoomFailed => Select("重启失败，请手动继续游戏", "Restart failed, please continue manually");
@@ -70,14 +68,16 @@ internal static class LocalModText
         "队友手牌已隐藏（F8 重新显示）",
         "Teammate hands hidden (F8 to show)");
 
-    public static string LobbyEditingSlot(string slotLabel)
+    /// <summary>大厅编辑席位提示。<paramref name="seatLabel"/> 由 <see cref="LocalSeatLabels.Describe"/> 给（botN / playerN）。</summary>
+    public static string LobbyEditingSlot(string seatLabel)
     {
-        return Select($"大厅编辑角色：{RoleSlot(slotLabel)}", $"Lobby Editor: {RoleSlot(slotLabel)}");
+        return Select($"大厅编辑角色：{seatLabel}", $"Lobby Editor: {seatLabel}");
     }
 
-    public static string ControlledSlot(string slotLabel)
+    /// <summary>切人提示。<paramref name="seatLabel"/> 由 <see cref="LocalSeatLabels.Describe"/> 给（botN / playerN）。</summary>
+    public static string ControlledSlot(string seatLabel)
     {
-        return Select($"控制角色：{RoleSlot(slotLabel)}", $"Controlled Character: {RoleSlot(slotLabel)}");
+        return Select($"控制角色：{seatLabel}", $"Controlled Character: {seatLabel}");
     }
 
     public static string LocalPlayerCount(int count)
@@ -470,14 +470,16 @@ internal static class LocalModText
 
     public static string GlobalWakuuLabel => Select("全瓦库", "All Vakuu");
 
-    public static string VakuuControlsPlayer(string slotLabel)
+    /// <summary>勾选/取消瓦库托管时的提示。<paramref name="seatLabel"/> 由 <see cref="LocalSeatLabels.Describe"/> 给。</summary>
+    public static string VakuuControlsPlayer(string seatLabel)
     {
-        return Select($"瓦库将接管角色{slotLabel}的操作", $"Vakuu will control {RoleSlot(slotLabel)}");
+        return Select($"瓦库将接管 {seatLabel} 的操作", $"Vakuu will control {seatLabel}");
     }
 
-    public static string VakuuReleasedPlayer(string slotLabel)
+    /// <summary>同上（取消勾选时）。</summary>
+    public static string VakuuReleasedPlayer(string seatLabel)
     {
-        return Select($"瓦库已停止接管角色{slotLabel}的操作", $"Vakuu stopped controlling {RoleSlot(slotLabel)}");
+        return Select($"瓦库已停止接管 {seatLabel} 的操作", $"Vakuu stopped controlling {seatLabel}");
     }
 
     public static string VakuuControlsAllPlayers()

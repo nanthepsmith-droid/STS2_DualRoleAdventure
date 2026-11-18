@@ -129,12 +129,11 @@ internal static class PurifyWakuuRestSiteRuntime
         return PileType.Deck.GetPile(player).Cards.Count(card => card.IsRemovable);
     }
 
-    /// <summary>选择器里的候选标签：角色席位 + 当前血量（只读展示，不含玩家个人信息）。</summary>
+    /// <summary>选择器里的候选标签：席位称呼（botN）+ 当前血量（只读展示，不含玩家个人信息）。</summary>
     internal static string DescribeCandidate(Player candidate)
     {
-        string slotLabel = LocalSelfCoopContext.GetSlotLabel(candidate.NetId);
         decimal currentHp = candidate.Creature?.CurrentHp ?? 0m;
         decimal maxHp = candidate.Creature?.MaxHp ?? 0m;
-        return $"{LocalModText.RoleSlot(slotLabel)} · HP {currentHp:0}/{maxHp:0}";
+        return $"{LocalSeatLabels.Describe(candidate.NetId)} · HP {currentHp:0}/{maxHp:0}";
     }
 }
