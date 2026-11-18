@@ -606,6 +606,13 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             () => LocalWakuuAutopilotConfig.ExtraCrossCharacterCardReward,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("extraCrossCharacterCardReward", value));
         AddToggleRow(column,
+            LocalModText.Select("小键盘快速切人（默认开）", "Numpad Quick Switch (default ON)"),
+            LocalModText.Select(
+                "默认开。局内按**小键盘**1~9、/、*、- 直接切到第 1~12 号本地席位（号位 = 与 Tab 循环相同的会话席位序，不是立绘左右顺序）。⚠ 刻意不用大键盘数字键 —— 原版把大键盘 1~0 绑成「选第 N 张手牌」，会撞车。只在本地多角色的局里响应，且只在局内：局外的大键盘 - / = 仍是「本地人数增减」热键，不受本开关影响。按到不存在的号位、或该号位这一场不在战斗里（逃跑/阵亡）时会弹一行提示，不会硬切。关掉 = 完全回到只有 Tab 循环切人的旧行为。",
+                "On by default. In a run, press NUMPAD 1-9, /, *, - to jump straight to local seats 1-12 (seat order is the same session order used by Tab cycling, not the left-to-right portrait order). ⚠ Main-keyboard digits are deliberately NOT used — vanilla binds 1-0 to \"select the Nth hand card\", which would collide. Only responds in local multi-control runs, and only in-run: outside a run the main-keyboard - / = stay bound to \"change local player count\" and are unaffected by this switch. Pressing a nonexistent seat, or a seat that is not in this combat (escaped/dead), shows a one-line notice instead of switching. Off = exactly the old behavior (Tab cycling only)."),
+            () => LocalWakuuAutopilotConfig.SeatHotkeySwitch,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("seatHotkeySwitch", value));
+        AddToggleRow(column,
             LocalModText.Select("召唤物血量显示", "Summon HP Display"),
             LocalModText.Select(
                 "默认开。本地多控时，顶部每个玩家的状态条旁显示其持有的全部召唤物/宠物血条（每只一行，含名字与血量，如亡灵契约师的奥斯蒂 Osty）。判据是「该玩家是否拥有召唤物」而非职业——奥斯蒂也可以由亡灵契约师为其他玩家召唤、或其它角色合法持有 Necrobinder 卡召唤；女王 mod 等走原版宠物体系的召唤物同样会显示。召唤物死亡后显示 0-X（置灰），提示需要复活/再召唤。",

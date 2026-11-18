@@ -551,6 +551,130 @@ internal static class LocalMultiControlRuntime
         }
     }
 
+    /// <summary>
+    /// 小键盘「切到第 N 号席位」（2026-11-18 §排期 5）：判定在
+    /// <see cref="SeatHotkeyPolicy"/>（纯逻辑，可单测），切换复用与 Tab 循环**同一条链**
+    /// （<c>Session.TrySetCurrentPlayer</c> + <see cref="ApplyControlContext"/>）。
+    ///
+    /// <para>守卫与循环键**完全同源**：占卜小游戏 / 假商人药水投掷 / 战斗内出牌·选牌中都不许切
+    /// （切走后 owner 与上下文不符会软锁，见 <see cref="SwitchNextControlledPlayer"/> 的注释）。
+    /// 战斗中额外要求目标席位**这一场确实在战斗里**（逃跑 / 阵亡的席位切过去会让手牌 UI 与动作队列
+    /// owner 不一致）；另外**任何选牌在飞**（原版 <c>FromSimpleGrid</c> 这类弹层手牌并不进入选牌态）
+    /// 也一律不切，否则选牌结果会挂到换过去的那个席位身上。</para>
+    /// </summary>
+    public static SeatHotkeyResult SwitchControlledPlayerToSeat(int seatNumber, string source)
+    {
+        if (!RunManager.Instance.IsInProgress)
+        {
+            return SeatHotkeyResult.Of(SeatHotkeyStatus.RunNotInProgress, seatNumber);
+        }
+
+        int seatCount = Session.OrderedPlayerIds.Count;
+
+        // 守卫①占卜进行中禁止切换（风险同 SwitchNextControlledPlayer）。
+        if (CrystalSphereMirrorRuntime.HasActiveDivinationOverlay())
+        {
+            LocalMultiControlLogger.Info(
+                $"占卜小游戏进行中，已忽略数字键切人: seat={seatNumber}, source={source}");
+            return SeatHotkeyResult.Of(SeatHotkeyStatus.BlockedByMinigame, seatNumber, seatCount);
+        }
+
+        // 守卫②假商人药水投掷结算进行中禁止切换（风险同 SwitchNextControlledPlayer）。
+        if (FoulPotionOnUsePatch.IsThrowInProgress)
+        {
+            LocalMultiControlLogger.Info(
+                $"假商人药水投掷结算进行中，已忽略数字键切人: seat={seatNumber}, source={source}");
+            return SeatHotkeyResult.Of(SeatHotkeyStatus.BlockedByMinigame, seatNumber, seatCount);
+        }
+
+        // 守卫③战斗内：出牌 / 选牌 / 非玩家相位一律不切（与循环键同一道门）。
+        List<ulong>? combatSeatIds = null;
+        if (CombatManager.Instance.IsInProgress)
+        {
+            if (!CanSwitchDuringCombat(source))
+            {
+                return SeatHotkeyResult.Of(SeatHotkeyStatus.BlockedByCombatBusy, seatNumber, seatCount);
+            }
+
+            CombatState? combatState = NCombatRoom.Instance?.Ui is { } combatUi ? TryGetCombatState(combatUi) : null;
+            if (combatState == null)
+            {
+                return SeatHotkeyResult.Of(SeatHotkeyStatus.BlockedByCombatBusy, seatNumber, seatCount);
+            }
+
+            // 只有"这一场真的在场且活着"的本地席位才允许切过去。
+            combatSeatIds = combatState.Players
+                .Where((player) => LocalSeatSource.IsLocalSeat(player.NetId))
+                .Where((player) => player.Creature?.IsAlive == true)
+                .Select((player) => player.NetId)
+                .Distinct()
+                .ToList();
+        }
+
+        // 守卫④任何"选牌在飞"都不切：原版 FromSimpleGrid 这类选牌弹层打开时手牌并没有 `IsInCardSelection`
+        // （战斗内那道门挡不住），而此时换 owner ⇒ 选牌结果会挂到错的人身上（同族风险见 r358 租约泄漏）。
+        if (HasAnyCardSelectorInFlight())
+        {
+            LocalMultiControlLogger.Info(
+                $"有选牌正在进行中，已忽略数字键切人: seat={seatNumber}, source={source}");
+            return SeatHotkeyResult.Of(SeatHotkeyStatus.BlockedByCardSelection, seatNumber, seatCount);
+        }
+
+        SeatHotkeyResult result = SeatHotkeyPolicy.Resolve(
+            seatNumber,
+            runInProgress: true,
+            LocalSelfCoopContext.IsEnabled,
+            Session.IsInitialized,
+            Session.OrderedPlayerIds,
+            Session.CurrentControlledPlayerId,
+            combatSeatIds);
+
+        if (result.Status != SeatHotkeyStatus.Ok)
+        {
+            if (result.Status != SeatHotkeyStatus.AlreadyCurrent
+                && result.Status != SeatHotkeyStatus.LocalCoopDisabled)
+            {
+                LocalMultiControlLogger.Info(
+                    $"数字键切人未执行: seat={seatNumber}, status={result.Status}, "
+                    + $"seats={result.SeatCount}, source={source}");
+            }
+
+            return result;
+        }
+
+        if (!Session.TrySetCurrentPlayer(result.PlayerId))
+        {
+            LocalMultiControlLogger.Warn(
+                $"数字键切人失败: seat={seatNumber}, player={result.PlayerId}, source={source}");
+            return SeatHotkeyResult.Of(SeatHotkeyStatus.OutOfRange, seatNumber, result.SeatCount, result.PlayerId);
+        }
+
+        ApplyControlContext(source);
+        NoteManualSwitchToWakuu(source);
+        LocalMultiControlLogger.Info(
+            $"数字键切人: seat={seatNumber}, player={result.PlayerId}, seats={result.SeatCount}, source={source}");
+        return result;
+    }
+
+    /// <summary>
+    /// 是否有选牌选择器在飞（原版选牌弹层 / 托管作用域）。反射面缺失时**返回 false（开放）** ——
+    /// 宁可让玩家照常切人，也不要因为一次上游改名把整条数字键切人静默废掉。
+    /// </summary>
+    private static bool HasAnyCardSelectorInFlight()
+    {
+        try
+        {
+            return WakuuSelectorStackAccess.SnapshotEntries().Count > 0;
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn(
+                $"读取选择器栈失败（数字键切人按「没有选牌在飞」处理）: "
+                + $"{exception.GetType().Name}: {exception.Message}");
+            return false;
+        }
+    }
+
     private static long _lastDepartedForegroundCheckMs;
 
     private const long DepartedForegroundCheckIntervalMs = 400L;

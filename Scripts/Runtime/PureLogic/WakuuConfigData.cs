@@ -25,6 +25,18 @@ internal sealed class WakuuConfigData
     /// </summary>
     public bool allVakuuAutoEndTurn { get; set; } = true;
 
+    /// <summary>
+    /// **小键盘** <c>1</c>~<c>9</c> <c>/</c> <c>*</c> <c>-</c> 切到第 1~12 号本地席位
+    /// （2026-11-18 §排期 5，**默认开**）。
+    ///
+    /// <para>只在**局内**生效（局外的大键盘 <c>-</c> / <c>=</c> 仍是"本地人数增减"热键，不受本开关影响），
+    /// 且只在本地多角色开启的局里响应。判定见 <see cref="SeatHotkeyPolicy"/>。</para>
+    ///
+    /// <para>⚠ **不能用大键盘数字键**（2026-11-18 实机）：原版把大键盘 <c>1</c>~<c>0</c> 绑成
+    /// "选第 N 张手牌"（<c>MegaInput.selectCard1..10</c>），第一版实机当场撞车。</para>
+    /// </summary>
+    public bool seatHotkeySwitch { get; set; } = true;
+
     public bool backgroundMode { get; set; } = true;
 
     public bool suppressVanillaEarring { get; set; } = true;

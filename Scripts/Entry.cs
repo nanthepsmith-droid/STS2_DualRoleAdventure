@@ -850,7 +850,13 @@ public partial class Entry
     // r323（2026-10-27，同一轮日志卫生）：**状态【战灵守卫】的 `powers` 表键补齐** —— BaseLib 启动扫描
     //   全部 Power 取 `.title`，我们那条 `HELLWAR_WAR_GOD_GUARD_POWER` 缺键（实机 1 条 WARN + 返回垃圾串）。
     //   该状态 `IsVisibleInternal = false`（不给它建节点、避免缺图标 ERROR）⇒ 玩家看不见，纯补键。
-    private const string BuildMarker = "Revival v1.49.0 (game v0.113.1, marker=2026-11-18-r371)";
+    // r372~r373（2026-11-18，§排期 5）：**小键盘 1~9 / / / * / - 快速切到第 1~12 号本地席位**。
+    //   判定提成纯逻辑 `SeatHotkeyPolicy`（号位 = 与 Tab 循环相同的会话席位序），切人复用
+    //   `Session.TrySetCurrentPlayer` + `ApplyControlContext`；守卫与循环键同源（占卜 / 假商人投掷 /
+    //   战斗内出牌选牌中一律不切），战斗中额外要求目标席位在场且存活。开关 `seatHotkeySwitch`（默认开）。
+    //   ⚠ r372 第一版用的是**大键盘**数字键 —— 实机当场撞车：原版把 1~0 绑成"选第 N 张手牌"
+    //   （`MegaInput.selectCard1..10`）⇒ r373 改成小键盘（含 NumLock 关着时走 PhysicalKeycode）。
+    private const string BuildMarker = "Revival v1.49.0 (game v0.113.1, marker=2026-11-18-r373)";
 
     private static Harmony? _harmony;
 
