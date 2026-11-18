@@ -70,6 +70,12 @@
 > `source=all-wakuu-exhausted-auto-end`、`manual-end-turn` 0、`turn loop died` 0；关 = 整段零日志
 > 且回合停在原地（负对照成立）。排期 4 关单；新登记 **排期 6**（左侧玩家列表 `botN` 命名）与
 > **讨论-3**（瓦库战斗内出牌改进，待讨论）。
+> **2026-11-18（r372~r376，小键盘切人 + 席位称呼 botN/playerN）**：① 排期 5 关单 —— 局内**小键盘**
+> `1`~`9` `/` `*` `-` 直达 1~12 号席位（`SeatHotkeyPolicy` 纯逻辑 + 11 条单测，守卫与 Tab 同源，
+> 开关 `seatHotkeySwitch` 默认开）；第一版用大键盘数字键，实机当场撞车（原版 `1`~`0` = 选第 N 张手牌）⇒ 改小键盘。
+> ② 排期 6 关单 —— 席位称呼统一 **瓦库 `botN` / 真人 `playerN`**（共用同一套号位、语言无关）；真因是
+> 左侧列表走 `GetPlayerNameRaw`（此前只拦了 BBCode 版）且该调用点**被 JIT 内联、补丁拦不住**
+> ⇒ 改为在名牌节点上直接重写。两件均实机确认并回补 `stable/0.111`（v1.47.6 → **v1.47.7**）。
 
 ---
 
@@ -117,74 +123,22 @@
 > `maintenance-docs\decision-records\archive\TODO-归档（已完成 bug 与功能流水·r96~r226）.md`
 > 末尾「归档（2026-11-18·第一百七十八段）：§排期 4」。
 
-### 5. 大键盘数字键 `1`~`9` `0` `-` `=` 快速切到 1~12 号席位 —— ⏳ 待开工（2026-11-16 用户登记）
+### 5. 小键盘 `1`~`9` `/` `*` `-` 快速切到 1~12 号席位 —— ✅ r372/r373 关单（2026-11-18 实机确认）
 
-> 用户原话（2026-11-16）：「新功能大键盘数字键1234567890和-=分别对应1到12号玩家，按一下就可以快速切换」。
+> 落地：局内**小键盘** `1`~`9` / `/`(10) / `*`(11) / `-`(12) 直达对应席位（号位 = 会话席位序，与 Tab 同序）；
+> 判定在纯逻辑 `SeatHotkeyPolicy`（11 条单测），切人复用 Tab 循环那条链；开关 `seatHotkeySwitch` 默认开。
+> ⚠ 第一版用**大键盘**数字键，实机当场撞车（原版 `1`~`0` = 选第 N 张手牌）⇒ 改小键盘。
+> 📦 需求正文（现象 / 代码事实 / 待拍项 / 验证契约 / 内联坑）已切到
+> `maintenance-docs\decision-records\archive\TODO-归档（已完成 bug 与功能流水·r96~r226）.md`
+> 末尾「归档（2026-11-18·第一百七十九段）：§排期 5」。
 
-- **现状**：切人只有**循环**键（`Scripts/Patch/NGameInputPatch.cs`，挂在 `NGame._Input` 的 Postfix）——
-  正切 `Tab` / `]` / `R` / `/`，反切 `Shift+Tab` / `[` / `T`；落到 `SwitchNextControlledPlayer` /
-  `SwitchPreviousControlledPlayer` → `LocalMultiSessionState.SwitchNextPlayer`。**没有"指定第 N 位"的入口**，
-  但已有现成的 `LocalMultiControlRuntime.SwitchControlledPlayerTo(playerId, source)`（L505）
-  ⇒ 只要把"键 → 席位 id"算出来，切换本身复用这条链即可，不新增判定。
-- 席位上限正好 **12**（`SelfCoopSessionState.MaxLocalPlayerCount = 12`）⇒ 12 个键刚好一一对应，不用分页。
-- ⚠ **键位冲突（必须先处理）**：`-` / `=` 现在绑定的是**局外**的本地人数增减
-  （`NGameInputPatch` L44~64：`!RunManager.IsInProgress && LocalSelfCoopContext.IsEnabled` 时
-  `AdjustDesiredLocalPlayerCount` 然后 `return`）。**局内是空闲的** ⇒ 建议口径 = **数字键只在局内切人，
-  局外那套人数热键一个字都不动**（改局外会踩"大厅改人数"这条已经用惯的链）。
-- ⚠ **"第 N 号"按什么顺序（必须拍，否则实机一定错位）**：建议按**会话表顺序**
-  （`会话席位自检通过: seats=…, primary=…` 那一串 = `LocalMultiSessionState._orderedPlayerIds`，
-  与 `Tab` 循环**同序**）；**不要**按立绘左右 —— 立绘会被重排（实测本局探针从左到右 = 角色4 | 2 | 3 | 1，
-  与席位序不一致）。
-- **行为细节**：目标号位不是本机会话席位（第三方 Bot / 战神 4096、4097）时 `TrySetCurrentPlayer` 是
-  **静默跳过** ⇒ 要改成"提示该号位不是你的席位"（复用 `NFullscreenTextVfx.Create`，与 `-`/`=` 人数热键同款手法），
-  否则玩家按了没反应会以为卡死。
-- **必须复用同一道门**：占卜小游戏开着时切人会软锁（`CrystalSphereMirrorRuntime.HasActiveDivinationOverlay()`，
-  `SwitchNextControlledPlayer` 里就是这么挡的）⇒ 数字键走同一守卫，**不能另开一条切人路**。
-- **可抽纯逻辑（离线单测）**：`键码 → 序号 → 席位 id`（含越界号位、非本机席位、未开局、会话未初始化），
-  判定进 `PureLogic`，`NGameInputPatch` 只做翻译 + 转发（AGENTS.md §1 架构边界第 3 条）。
-- **待拍两件小事**：① 数字键要不要做成**可关**开关（有些第三方 mod / 玩家习惯会用到 `1`~`0`，默认开？）；
-  ② 局外是否也支持（**推荐先不做**）。
+### 6. 战斗内左侧玩家列表：席位称呼统一 `botN` / `playerN` —— ✅ r374~r376 关单（2026-11-18 实机确认）
 
-### 6. 战斗内左侧玩家列表：瓦库玩家**显示名字**，统一按顺序命名 `bot1` / `bot2` —— ⏳ 待开工（2026-11-18 用户登记）
-
-> 用户原话（2026-11-18）：「我发现战斗中左侧玩家列表不会显示瓦库玩家的名字，目前我们似乎是给瓦库玩家编号
-> 之类的，但是不显示名字可能对一些玩家来说难以分辨。考虑到按语言区分不方便以及玩家游戏中切换语言可能导致 bug，
-> 瓦库玩家统一按顺序命名：bot1、bot2 之类的」。
-
-- **现状（已核代码，两处要一起改）**：
-  - 战斗内左侧那一条玩家状态由**原版** `NMultiplayerPlayerState._Ready` 画，名字取
-    `PlatformUtil.GetPlayerNameRaw(...)`（`sts2src\src\Core\Nodes\Multiplayer\NMultiplayerPlayerState.cs:423`）；
-  - 而我们的补丁**只拦了 `PlatformUtil.GetPlayerName`**
-    （`Scripts\Patch\PlatformUtilPlayerNamePatch.cs`，取不到槽位就放行）⇒ `GetPlayerNameRaw` 这条
-    **根本没被接管**，所以左侧列表显示的不是我们给的 `角色N`。同族只用 Raw 的还有
-    `Creature.cs:141`（creature 的玩家名，tooltip 用）。
-- **现状（命名口径，正是"切语言"风险的来源）**：`LocalModText.RoleSlot()` → `角色N` / `Player N`，
-  在**调用时**按 `LocManager.Instance.Language == "eng"` 分支 ⇒ 同一玩家在切语言后会得到不同字符串。
-- **两条实现细节（都核过源码）**：① `_nameplateLabel` 只在 `_Ready` 里写一次
-  （`SetTextAutoSize`）⇒ 名字是**建节点那一刻**的快照，运行中改口径不会自己刷新（要等该条重建）；
-  ② 容器**先放"我"**再放其余玩家（`NMultiplayerPlayerStateContainer.cs:161~170`）⇒ 显示顺序 =
-  「我 + 其余」，**不等于** `botN` 的席位序，别拿列表第几行去反推 `botN`。
-- **落地口径（用户已定）**：改成**语言无关**的 `bot1` / `bot2` …（不查语言、不进本地化表）。
-  `botN` 的 N = **会话席位序 + 1**（`LocalSelfCoopContext.TryGetSlotIndex` → `_localPlayerIds` 顺序，
-  与 `Tab` 循环**同序**；**不要**按立绘左右 —— 立绘会被重排，实测从左到右 = 角色4 | 2 | 3 | 1）。
-- **待拍板（三件小事）**：
-  1. **范围**：只给瓦库席位用 `botN`、真人席位仍 `角色N`？还是**所有本地席位**统一 `botN`
-     （更简单、不会出现"同一个人两套称呼"；但 `RoleSlot` 还被奖励归属标签 `RewardPlayerLabelRegistry`、
-     火堆净化/炼化的选项文案、幽灵手共用，会一起变）；
-  2. 补 `GetPlayerNameRaw` 时**只接管本地席位**，其它 id 一律 `return true` 放行（真联机队友的名字不能被动）；
-  3. 战神（临时席位 4096…）**不在** `_localPlayerIds` 里 ⇒ 现在拿不到名字；要不要也给它编号
-     （若给，需要独立号段避免与 `botN` 撞号）。
-- **验证契约**：
-
-  ```
-  BUG / 改动: 战斗内左侧玩家列表显示 bot1/bot2（语言无关）
-  EXPECTED:    4 席全瓦库局里左侧四条分别稳定显示 bot1~bot4，切中文/英文都不变
-  SETUP:       本地多角色 4 席，进战斗
-  ACTION:      看左侧列表；设置里切语言再回战斗看一次
-  PASS:        四条名字稳定为 bot1..bot4；非本地 id 的 Raw 名字保持原值（真联机不受影响）
-  FAIL:        切语言后名字变了 / 真联机队友名被改 / 与 Tab 循环顺序对不上
-  LOG ANCHORS: （本轮新增）玩家显示名解析: seat=…, label=botN
-  ```
+> 落地：瓦库 = `botN`、真人 = `playerN`（**共用同一套号位** = 会话席位序 = 小键盘切人的号位），语言无关；
+> 三条待拍项取值 = ① 所有本地席位统一新称呼；② 只接管本机会话席位（真联机队友放行）；③ 战神等临时席位不编号。
+> 真因 = 左侧列表走 `GetPlayerNameRaw`（此前只拦了 BBCode 版），且该调用点**被 JIT 内联、补丁拦不住**
+> ⇒ 改为在名牌节点上直接重写文字。详见 `开发进度记录.md` 第一百七十九段。
+> 📦 需求正文已切到（同上归档文件）末尾「归档（2026-11-18·第一百七十九段）：§排期 6」。
 
 ---
 

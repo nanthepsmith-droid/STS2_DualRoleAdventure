@@ -263,11 +263,13 @@ When the third-party **Co-op Bots** mod (online AI teammates) is installed, this
 ## During a run
 
 - **Switch characters:** `Tab` (next) / `Shift+Tab` (previous). Legacy keys `]` `R` `/` (next) and `[` `T` (previous) still work.
+  **Jump straight to a seat** with the **numpad**: `1`~`9` = seats 1–9, `/` = 10, `*` = 11, `-` = 12
+  (main-keyboard digits are deliberately left to the game's "select the Nth hand card").
 - Each character owns their deck, hand, energy, gold, potions, relics, and choices. The UI (hand, energy, potion bar, status strip) follows whoever you control.
 - **Combat:** play each character's turn, switching freely; end turn per character.
 - **Turn-start animations:** with many players, "Other settings" offers **"Skip other players' turn-start draw animations"** (off by default) —
   only the character you are viewing plays its draw animation, the rest resolve instantly (data is unaffected).
-- **Rewards:** loot is generated per character and shown as one combined list, each entry prefixed with its owner (e.g. `[Player 2]`). Claim with the matching character.
+- **Rewards:** loot is generated per character and shown as one combined list, each entry prefixed with its owner (e.g. `player2` / `bot3`). Claim with the matching character.
 - **Events:** by default each character resolves the event independently — the mod walks you through them one by one. Shared-event votes are auto-completed where the game requires everyone to vote.
 - **Crystal Sphere:** each character pays for and divines on their own turn; revealed rewards (and the Payment Plan curse) belong only to the revealing character. Character switching is locked while a divination is in progress — finish your divinations first, the mod switches automatically.
 - **Rest sites:** each character chooses in sequence (rest, upgrade, etc.). **With 5+ players everyone's portrait and speech bubble show up**
@@ -294,6 +296,7 @@ Shows your backgrounded characters' hands behind and above your active hand, so 
 |---|---|---|
 | `Tab` / `Shift+Tab` | anywhere | switch controlled character (next / previous) |
 | `[` `T` / `]` `R` `/` | anywhere | legacy switch aliases (previous / next) |
+| numpad `1`~`9` `/` `*` `-` | during a run | jump to seat 1–12 (`/`=10, `*`=11, `-`=12; toggle in settings, on by default) |
 | `+` / `-` | lobby | change local character count (2–12) |
 | `F8` | combat | toggle ghost hands overlay |
 | `Ctrl+Arrows` (+`Shift`) | combat, overlay on | move ghost hands (fine steps with Shift) |
