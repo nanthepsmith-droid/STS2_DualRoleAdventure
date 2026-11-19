@@ -354,7 +354,7 @@ internal static class LocalWakuuRewardAutoClaim
     ///
     /// <para>口径来源：用户 2026-11-19 —— 小卡组（上限 30）/ 中卡组（三张都烂不抓 + ≥40 抬门槛 +
     /// 前三次不许跳）/ 大卡组（永不跳）；二三层不单独识别过渡牌，而是**提高抓牌要求**；
-    /// 有浮木时先 roll 再看；有佩尔之翼时直接献祭。</para>
+    /// 有浮木时**先 roll 再看**，roll 完还是烂、且有佩尔之翼才献祭。</para>
     /// </summary>
     private static async Task<bool> SettleCardRewardAsync(CardReward reward, Player owner, bool canLeaveForHuman)
     {
@@ -407,8 +407,13 @@ internal static class LocalWakuuRewardAutoClaim
             }
             catch (Exception exception)
             {
-                LocalMultiControlLogger.Warn($"[瓦库抓牌] 重掷失败，按不抓处理: {exception.Message}");
-                decision = canLeaveForHuman ? WakuuCardTakeDecision.Skip : WakuuCardTakeDecision.Take;
+                // 重掷本身炸了（第三方改过奖励选项 / 手动卡池不可重掷之类）：还有献祭选项就去献祭，
+                // 否则按"不抓（留给真人）"处理；没有真人能接的入口退回照常抓。
+                decision = eval.CanSacrifice
+                    ? WakuuCardTakeDecision.Sacrifice
+                    : (canLeaveForHuman ? WakuuCardTakeDecision.Skip : WakuuCardTakeDecision.Take);
+                LocalMultiControlLogger.Warn(
+                    $"[瓦库抓牌] 重掷失败，改按 {decision} 处理: {exception.Message}");
             }
         }
 

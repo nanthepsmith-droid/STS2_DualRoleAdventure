@@ -96,19 +96,20 @@ public class WakuuCardPickPolicyTests
     }
 
     [Test]
-    public void 三张都烂时_献祭优先于重掷()
+    public void 三张都烂时_先重掷_没浮木才献祭()
     {
+        // 2026-11-19 用户订正：浮木优先 —— 先抽一次机会，抽完还烂才献祭。
         Assert.That(
             WakuuCardPickPolicy.Decide(
                 WakuuCardPickTier.Normal, act: 2, deckSize: 25, rewardOrdinal: 5,
                 bestPickRate: 0.05, hasAnySignal: true, canSacrifice: true, canReroll: true),
-            Is.EqualTo(WakuuCardTakeDecision.Sacrifice));
+            Is.EqualTo(WakuuCardTakeDecision.Reroll));
 
         Assert.That(
             WakuuCardPickPolicy.Decide(
                 WakuuCardPickTier.Normal, act: 2, deckSize: 25, rewardOrdinal: 5,
-                bestPickRate: 0.05, hasAnySignal: true, canSacrifice: false, canReroll: true),
-            Is.EqualTo(WakuuCardTakeDecision.Reroll));
+                bestPickRate: 0.05, hasAnySignal: true, canSacrifice: true, canReroll: false),
+            Is.EqualTo(WakuuCardTakeDecision.Sacrifice));
 
         Assert.That(
             WakuuCardPickPolicy.Decide(
@@ -120,7 +121,7 @@ public class WakuuCardPickPolicyTests
     [Test]
     public void 达标就抓_哪怕手里有遗物()
     {
-        // 二层门槛 0.40，最高 0.55 ⇒ 抓，不该为了献祭/重掷放弃好牌。
+        // 二层门槛 0.40，最高 0.55 ⇒ 抓，不该为了重掷/献祭放弃好牌。
         Assert.That(
             WakuuCardPickPolicy.Decide(
                 WakuuCardPickTier.Normal, act: 2, deckSize: 25, rewardOrdinal: 5,
