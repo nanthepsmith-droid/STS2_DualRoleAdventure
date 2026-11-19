@@ -56,6 +56,23 @@ internal static class LocalWakuuAutopilotConfig
     /// <summary>瓦库形态：战后卡牌奖励自动领最左（仅瓦库角色自己的奖励）。</summary>
     public static bool AutoClaimCards { get; private set; } = true;
 
+    /// <summary>
+    /// 【探针】瓦库托管**不自动领卡牌奖励**（讨论-1 第一步，**默认关**）：
+    /// 开 = 瓦库形态的卡牌奖励托管这次不选，**奖励留在奖励屏上让真人自己点**；
+    /// 同组金币/药水/遗物照常自动领。
+    /// 判据见 <see cref="WakuuCardRewardSkipProbePolicy"/>；阈值口径未拍板，探针本身不含任何门槛。
+    /// </summary>
+    public static bool SkipCardRewardProbe { get; private set; }
+
+    /// <summary>
+    /// 瓦库抓牌形态档位（用户 2026-11-19 口径，默认中卡组）：<c>small</c> / <c>normal</c> / <c>big</c>。
+    /// 判定与阈值见 <see cref="WakuuCardPickPolicy"/>。
+    /// </summary>
+    public static string CardPickTier { get; private set; } = WakuuCardPickPolicy.NormalTier;
+
+    /// <summary>档位的枚举形态（每帧都会读，干脆在 Apply 里解析好）。</summary>
+    public static WakuuCardPickTier CardPickTierValue { get; private set; } = WakuuCardPickTier.Normal;
+
     /// <summary>瓦库形态：金币与遗物奖励自动领取。</summary>
     public static bool AutoClaimGoldRelics { get; private set; } = true;
 
@@ -382,6 +399,7 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.suppressVanillaEarring): data.suppressVanillaEarring = value; break;
                     case nameof(WakuuConfigData.keepVakuuFormRelic): data.keepVakuuFormRelic = value; break;
                     case nameof(WakuuConfigData.autoClaimCards): data.autoClaimCards = value; break;
+                    case nameof(WakuuConfigData.vakuuSkipCardRewardProbe): data.vakuuSkipCardRewardProbe = value; break;
                     case nameof(WakuuConfigData.autoClaimGoldRelics): data.autoClaimGoldRelics = value; break;
                     case nameof(WakuuConfigData.autoClaimPotions): data.autoClaimPotions = value; break;
                     case nameof(WakuuConfigData.autoChooseEvents): data.autoChooseEvents = value; break;
@@ -453,10 +471,12 @@ internal static class LocalWakuuAutopilotConfig
                     or nameof(WakuuConfigData.refineHpRatio) or nameof(WakuuConfigData.refineCardLimit)
                     or nameof(WakuuConfigData.refineRelicLimit)
                     or nameof(WakuuConfigData.hellwarSplitHpRatio)
-                    or nameof(WakuuConfigData.hellwarActGainAmount))
+                    or nameof(WakuuConfigData.hellwarActGainAmount)
+                    or nameof(WakuuConfigData.vakuuCardPickTier))
                 {
                     string? normalized = key switch
                     {
+                        nameof(WakuuConfigData.vakuuCardPickTier) => WakuuCardPickPolicy.NormalizeTier(value),
                         nameof(WakuuConfigData.vakuuBrain) => NormalizeBrainMode(value),
                         nameof(WakuuConfigData.cardPickMode) => NormalizeCardPickMode(value),
                         nameof(WakuuConfigData.personalTier) => NormalizePersonalTier(value),
@@ -513,6 +533,9 @@ internal static class LocalWakuuAutopilotConfig
                             break;
                         case nameof(WakuuConfigData.hellwarActGainAmount):
                             data.hellwarActGainAmount = normalized;
+                            break;
+                        case nameof(WakuuConfigData.vakuuCardPickTier):
+                            data.vakuuCardPickTier = normalized;
                             break;
                         default:
                             data.vakuuBrain = normalized;
@@ -831,6 +854,8 @@ internal static class LocalWakuuAutopilotConfig
                 + $"seatHotkeySwitch={data.seatHotkeySwitch}, "
                 + $"keepVakuuFormRelic={data.keepVakuuFormRelic}, "
                 + $"autoClaimCards={data.autoClaimCards}, autoClaimGoldRelics={data.autoClaimGoldRelics}, "
+                + $"vakuuSkipCardRewardProbe={data.vakuuSkipCardRewardProbe}, "
+                + $"vakuuCardPickTier={WakuuCardPickPolicy.NormalizeTier(data.vakuuCardPickTier)}, "
                 + $"autoClaimPotions={data.autoClaimPotions}, "
                 + $"autoChooseEvents={data.autoChooseEvents}, autoRestChoice={data.autoRestChoice}, "
                 + $"autoUsePotions={data.autoUsePotions}, "
@@ -872,6 +897,9 @@ internal static class LocalWakuuAutopilotConfig
         SuppressVanillaEarring = data.suppressVanillaEarring;
         KeepWakuuFormRelic = data.keepVakuuFormRelic;
         AutoClaimCards = data.autoClaimCards;
+        SkipCardRewardProbe = data.vakuuSkipCardRewardProbe;
+        CardPickTier = WakuuCardPickPolicy.NormalizeTier(data.vakuuCardPickTier);
+        CardPickTierValue = WakuuCardPickPolicy.ParseTier(CardPickTier);
         AutoClaimGoldRelics = data.autoClaimGoldRelics;
         AutoClaimPotions = data.autoClaimPotions;
         AutoChooseEvents = data.autoChooseEvents;

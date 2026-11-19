@@ -202,6 +202,8 @@ internal static class LocalMultiControlRuntime
         ReportResetResiduals("进局");
         // 席位显示名（botN）的日志去重表（2026-11-18 §排期 6，纯日志用途）。
         LocalSeatLabels.ResetLogDedupe("run-launched");
+        // 抓牌档位（2026-11-19）：每位瓦库本局的「第几次卡牌奖励」计数绝不跨局残留。
+        LocalWakuuCardRewardCounter.Reset("run-launched");
         LocalWakuuRelicLocalization.Initialize();
         LocalWakuuRestSiteLocalization.Initialize();
         LocalWakuuUniteLocalization.Initialize();
@@ -297,6 +299,8 @@ internal static class LocalMultiControlRuntime
         Session.Reset("RunManager.CleanUp");
         // 席位显示名（botN）的日志去重表（2026-11-18 §排期 6，纯日志用途）。
         LocalSeatLabels.ResetLogDedupe("run-cleanup");
+        // 抓牌档位（2026-11-19）：同上，退局复位。
+        LocalWakuuCardRewardCounter.Reset("run-cleanup");
         // 战灵召唤 Phase 0 POC：退局兜底 —— 临时席位与"本场已生成"标记绝不跨局残留。
         HellwarPocRuntime.ResetForRun("RunManager.CleanUp");
         // 战灵召唤 Phase 2：退局兜底 —— 在册战神 / 临时席位登记 / "本回合已弹过选择"标记 / 战斗内计数预算一并复位。

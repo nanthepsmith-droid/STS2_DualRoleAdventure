@@ -56,7 +56,8 @@ internal enum WakuuCardKind
 /// 智能选牌优先级纯函数（可行性分析 §9.2 规则表）。不依赖任何游戏类型，可直接单测。
 ///
 /// 规则表（§9.2）：
-///   Remove（删除）：Curse &gt; Status &gt; Strike &gt; 基础防御 &gt; 其余 &gt; **Quest（最后，r353）**
+///   Remove（删除）：Curse &gt; Status &gt; Strike &gt; 基础防御 &gt;
+///        **过渡牌（一层抓取率高、二/三层低，按落差降序；2026-11-18）** &gt; 其余 &gt; **Quest（最后，r353）**
 ///   Exhaust（消耗）：Curse &gt; Status &gt; Quest &gt; Strike &gt; 基础防御 &gt; 其余（r365 与删除拆开）
 ///   其余场景见各分支注释。
 ///   Copy（复制）：首选非 {Curse/Status/Quest/Strike/基础防御} 的牌；候选全为坏牌时
@@ -201,7 +202,16 @@ internal static class WakuuPriorityPicking
     /// 稳定排序 → 同优先级保持原序（"其余从左到右"）。
     /// Unknown 场景直接返回原序（0..N-1）。
     /// </summary>
-    public static List<int> RankIndicesByScenario(WakuuPickScenario scenario, IReadOnlyList<WakuuCardKind> kinds)
+    /// <param name="removeTransitionScores">
+    /// 可选：**删除场景**的「过渡牌」次级分值（下标对齐 kinds，0 = 不是过渡牌）。
+    /// 用户 2026-11-18 口径 = 「一层抓取率高、二/三层抓取率低的牌」按落差先删；
+    /// 它只在**同一优先级档内的「其余」**之间参与比较 —— 诅咒 / 状态 / 打击 / 防御 / 任务牌的
+    /// 硬规则一个字不动（见 <see cref="PriorityOf"/>）。其它场景传 null 即可。
+    /// </param>
+    public static List<int> RankIndicesByScenario(
+        WakuuPickScenario scenario,
+        IReadOnlyList<WakuuCardKind> kinds,
+        IReadOnlyList<double>? removeTransitionScores = null)
     {
         int count = kinds?.Count ?? 0;
         List<int> indices = new(count);
@@ -219,7 +229,24 @@ internal static class WakuuPriorityPicking
         IReadOnlyList<WakuuCardKind> effectiveKinds = kinds ?? Array.Empty<WakuuCardKind>();
         return indices
             .OrderByDescending((i) => PriorityOf(scenario, effectiveKinds[i]))
+            .ThenByDescending((i) => SecondaryScoreOf(scenario, removeTransitionScores, i))
             .ToList();
+    }
+
+    /// <summary>同一优先级档内的次级比较分值（目前只有删除场景的过渡牌用它）。</summary>
+    private static double SecondaryScoreOf(
+        WakuuPickScenario scenario,
+        IReadOnlyList<double>? removeTransitionScores,
+        int index)
+    {
+        if (scenario != WakuuPickScenario.Remove || removeTransitionScores == null
+            || index < 0 || index >= removeTransitionScores.Count)
+        {
+            return 0.0;
+        }
+
+        double score = removeTransitionScores[index];
+        return double.IsNaN(score) || double.IsInfinity(score) || score <= 0 ? 0.0 : score;
     }
 
     private static int PriorityOf(WakuuPickScenario scenario, WakuuCardKind kind)
@@ -229,6 +256,9 @@ internal static class WakuuPriorityPicking
             // 删除：坏牌优先被删（奇巧是正面牌，不优先删）。
             // r353（用户口径「瓦库尽量不删任务牌」）：任务牌排到**最后**（0 < 其余 1）——
             // 删除是不可逆的，任务牌删掉可能断掉线索，宁可先删一张普通牌。
+            // 2026-11-18 追加「过渡牌」次级档：一层抓取率高、二/三层低的牌（其余档内）按落差降序先删，
+            // 由 rank 的 ThenByDescending 处理 —— 这里只保证它们的**档位**仍然是"其余"，
+            // 不会越级盖过诅咒/状态/打击/防御，也不会掉到任务牌下面。
             WakuuPickScenario.Remove => kind switch
             {
                 WakuuCardKind.Curse => 6,

@@ -138,6 +138,78 @@ public class PriorityPickingTests
     }
 
     // ---------------------------------------------------------------
+    // Remove 的「过渡牌」次级档（用户 2026-11-18 口径）：
+    //   诅咒 > 状态 > 打击 > 基础防御 > 过渡牌（一层抓取率高、二/三层低，按落差降序） > 其余 > 任务牌
+    // ---------------------------------------------------------------
+
+    [Test]
+    public void Remove_过渡牌按落差降序_但排在打击防御之后()
+    {
+        List<WakuuCardKind> kinds = new()
+        {
+            K("FLAME_BARRIER", SKL),     // Other，不是过渡牌（分值 0）
+            K("ANGER", ATK),             // Other，过渡牌（落差大）—— 注意 id 不能含 STRIKE，否则会归到 BasicStrike
+            K("CLOTHESLINE", ATK),       // Other，过渡牌（落差小）
+            K("STRIKE_IRONCLAD", ATK),   // BasicStrike
+        };
+
+        List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(
+            WakuuPickScenario.Remove, kinds, new double[] { 0.0, 0.62, 0.31, 0.0 });
+
+        Assert.That(ranked, Is.EqualTo(new[] { 3, 1, 2, 0 }), "打击 > 过渡牌(落差 0.62 → 0.31) > 其余");
+    }
+
+    [Test]
+    public void Remove_过渡牌分值不越级_诅咒与任务牌硬规则不变()
+    {
+        List<WakuuCardKind> kinds = new()
+        {
+            K("NEOW_QUEST", QST),        // Quest → 永远最后
+            K("CURSE_OF_THE_BELL", CUR), // Curse → 永远第一
+            K("ANGER", ATK),             // Other，过渡牌分值拉满 1.0
+        };
+
+        List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(
+            WakuuPickScenario.Remove, kinds, new double[] { 0.0, 0.0, 1.0 });
+
+        Assert.That(ranked, Is.EqualTo(new[] { 1, 2, 0 }), "诅咒仍第一；过渡牌上不去、任务牌下不来");
+    }
+
+    [Test]
+    public void Remove_无过渡牌分值_行为与旧版完全一致()
+    {
+        List<WakuuCardKind> kinds = new()
+        {
+            K("FLAME_BARRIER", SKL),
+            K("CURSE_OF_THE_BELL", CUR),
+            K("STRIKE_IRONCLAD", ATK),
+        };
+
+        List<int> withoutScores = WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Remove, kinds);
+        List<int> allZero = WakuuPriorityPicking.RankIndicesByScenario(
+            WakuuPickScenario.Remove, kinds, new double[] { 0.0, 0.0, 0.0 });
+
+        Assert.That(withoutScores, Is.EqualTo(new[] { 1, 2, 0 }));
+        Assert.That(allZero, Is.EqualTo(withoutScores));
+    }
+
+    [Test]
+    public void 过渡牌分值只对删除场景生效()
+    {
+        List<WakuuCardKind> kinds = new()
+        {
+            K("FLAME_BARRIER", SKL),
+            K("ANGER", ATK),
+        };
+
+        // 消耗场景：两张都是 Other ⇒ 分值不该改动顺序（稳定原序 0,1）
+        List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(
+            WakuuPickScenario.Exhaust, kinds, new double[] { 0.0, 0.9 });
+
+        Assert.That(ranked, Is.EqualTo(new[] { 0, 1 }));
+    }
+
+    // ---------------------------------------------------------------
     // Copy（复制）：首选非坏牌；候选全坏时倒序 防御>打击>任务>状态>诅咒
     // ---------------------------------------------------------------
 

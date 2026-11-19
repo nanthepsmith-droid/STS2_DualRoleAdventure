@@ -52,6 +52,31 @@ internal sealed class WakuuConfigData
 
     public bool autoClaimCards { get; set; } = true;
 
+    /// <summary>
+    /// **瓦库抓牌形态档位**（用户 2026-11-19 口径，默认 <c>normal</c>）：
+    /// <list type="bullet">
+    /// <item><c>small</c> 小卡组：牌组到 30 张就抬门槛（比中卡组更早收紧）；</item>
+    /// <item><c>normal</c> 中卡组：三张都烂不抓 + 卡组 ≥40 抬门槛 + 前三次卡牌奖励不许跳；</item>
+    /// <item><c>big</c> 大卡组（原版大盘）：永不跳过卡牌奖励，删牌只删 诅咒/状态/打击/防御。</item>
+    /// </list>
+    /// 判定与阈值见 <see cref="WakuuCardPickPolicy"/>。
+    /// </summary>
+    public string vakuuCardPickTier { get; set; } = WakuuCardPickPolicy.NormalTier;
+
+    /// <summary>
+    /// 【探针】**瓦库托管不自动领卡牌奖励**（讨论-1 第一步，**默认关**）。
+    ///
+    /// <para>开 = 瓦库形态的卡牌奖励**托管这次不选**，奖励**照旧留在奖励屏上**让真人自己决定
+    /// （上一版是把奖励收掉，实机反馈那一行会直接消失，已改）。同组的金币 / 药水 / 遗物照旧自动领。</para>
+    ///
+    /// <para>⚠ 这是**验证用探针**，不是成品：它没有任何「抓取率 / 牌组大小」门槛（阈值口径尚未拍板），
+    /// 开着就一定不替瓦库选牌。口径定下来后由正式的取舍判据取代。判据见
+    /// <see cref="WakuuCardRewardSkipProbePolicy"/>。</para>
+    ///
+    /// <para>键名用官方拼写 <c>vakuu</c>（r140 口径：序列化里不许出现 <c>Wakuu</c>）。</para>
+    /// </summary>
+    public bool vakuuSkipCardRewardProbe { get; set; }
+
     public bool autoClaimGoldRelics { get; set; } = true;
 
     /// <summary>药水奖励自动领取（满栏按稀有度换药/先喝鲜血），默认开。</summary>
