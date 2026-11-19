@@ -51,8 +51,11 @@ internal enum WakuuCardTakeDecision
 /// </list>
 ///
 /// <para><b>决策顺序</b>：大卡组永不跳 → 无任何数据不瞎跳（照抓最左）→ 中卡组前三次保护 →
-/// 最高抓取率达标就抓 → 不达标时 佩尔之翼献祭 &gt; 浮木重掷 &gt; 留给真人。
-/// 献祭优先于重掷：献祭**一定有产出**（累积到次数换遗物），重掷可能再烂一次。</para>
+/// 最高抓取率达标就抓 → 不达标时 <b>浮木重掷 &gt; 佩尔之翼献祭 &gt; 留给真人</b>。</para>
+///
+/// <para><b>为什么重掷在献祭之前</b>（2026-11-19 用户订正）：重掷只是"再抽一次机会"，
+/// 抽到好牌就照抓；抽完还是烂，下一次评估里 <c>CanReroll</c> 已变 false ⇒ 自然落到献祭。
+/// 反过来先献祭就等于放弃了这一抽。</para>
 /// </summary>
 internal static class WakuuCardPickPolicy
 {
@@ -180,14 +183,16 @@ internal static class WakuuCardPickPolicy
             return WakuuCardTakeDecision.Take;
         }
 
-        if (canSacrifice)
-        {
-            return WakuuCardTakeDecision.Sacrifice;
-        }
-
+        // 2026-11-19 用户订正：**先重掷**（抽一次机会），抽完还烂才献祭。
+        // 重掷后 `CanReroll` 自动变 false ⇒ 下一次评估自然落到献祭/不抓。
         if (canReroll)
         {
             return WakuuCardTakeDecision.Reroll;
+        }
+
+        if (canSacrifice)
+        {
+            return WakuuCardTakeDecision.Sacrifice;
         }
 
         return WakuuCardTakeDecision.Skip;
