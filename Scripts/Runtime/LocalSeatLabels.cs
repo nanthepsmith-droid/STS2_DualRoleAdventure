@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace LocalMultiControl.Scripts.Runtime;
 
 /// <summary>
-/// 本地席位显示名的**唯一解析入口**（2026-11-18 §排期 6）：瓦库 = <c>botN</c>，真人 = <c>playerN</c>。
+/// 本地席位显示名的**唯一解析入口**（2026-11-18 §排期 6）：瓦库 = <c>Bot N</c>，真人 = <c>Player N</c>。
 ///
 /// <para><b>为什么要这一层</b>：战斗内左侧玩家列表的名牌由原版 <c>NMultiplayerPlayerState._Ready</c> 画，
 /// 取的是 <c>PlatformUtil.GetPlayerNameRaw</c>；而本地多控的所有席位都是同一台机器 / 同一个 Steam 账号
@@ -27,7 +27,7 @@ internal static class LocalSeatLabels
     private static readonly HashSet<ulong> _loggedPlayerIds = new();
 
     /// <summary>
-    /// 解析本地席位显示名（<c>botN</c> / <c>playerN</c>）。
+    /// 解析本地席位显示名（<c>Bot N</c> / <c>Player N</c>）。
     /// 非本地席位 / 没开本地多角色 ⇒ **null**（调用方必须放行原版昵称）。
     /// </summary>
     internal static string? TryResolve(ulong playerId)
