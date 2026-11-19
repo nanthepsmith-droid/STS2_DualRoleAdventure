@@ -125,6 +125,10 @@ internal static class RewardsCmdOfferCustomPatch
             int skippedCount = 0;
             foreach (Reward reward in set.Rewards.ToList())
             {
+                // ⚠ 「卡牌奖励留给真人选」的探针**刻意不接这条链**：这里接手的前提就是
+                // "前台不是瓦库（IsMe=false）"——原版根本不会给这一位弹奖励屏，也就没有真人能点它。
+                // 留在 set.Rewards 里只会变成一条永远没人领的奖励（事件还会因此挂起）。
+                // 探针只作用于战后合并奖励屏（SettleAsync 那条链）。
                 if (LocalWakuuRewardAutoClaim.IsAutoClaimable(reward, player))
                 {
                     bool settled = await LocalWakuuRewardAutoClaim.TrySettleSingleRewardAsync(reward, player);

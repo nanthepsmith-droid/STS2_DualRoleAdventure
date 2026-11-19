@@ -1,10 +1,14 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
+using LocalMultiControl.Scripts.Patch;
 using MegaCrit.Sts2.Core.Entities.CardRewardAlternatives;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.TestSupport;
 
 namespace LocalMultiControl.Scripts.Runtime;
@@ -48,6 +52,13 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
     /// 返回 <see cref="WakuuPickScenario.Unknown"/> 表示退回既有 cardPickMode 策略。
     /// </summary>
     internal Func<WakuuPickScenario?>? ScenarioProvider { get; set; }
+
+    /// <summary>
+    /// 卡牌奖励里**优先选这个额外选项**（option id，如佩尔之翼的 <c>SACRIFICE</c>）。
+    /// 非空且本次候选里确实有这个选项时，<see cref="GetSelectedCardReward"/> 直接返回它而不是取牌。
+    /// 2026-11-19：抓牌档位决定"这张奖励不值得抓、但有献祭选项"时用。
+    /// </summary>
+    internal string? PreferAlternativeOptionId { get; set; }
 
     /// <summary>实际生效的选牌场景：动态提供器优先，否则用构造时传入的场景。</summary>
     private WakuuPickScenario ResolveScenario()
@@ -114,18 +125,45 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
     {
         try
         {
-            List<WakuuCardKind> kinds = options
+            // 大卡组档（2026-11-19 用户口径）：删牌**只删 诅咒/状态/打击/防御**，别的牌一概不动。
+            // 做法 = 先把候选过滤成垃圾牌；过滤空了就回退全量（否则这条删牌流程（商店已付钱 /
+            // 营地净化已选）会没有候选可答）。
+            List<CardModel> candidates = options;
+            if (scenario == WakuuPickScenario.Remove
+                && WakuuCardPickPolicy.IsRemovalJunkOnly(LocalWakuuAutopilotConfig.CardPickTierValue))
+            {
+                candidates = options
+                    .Where((c) => c != null && WakuuCardPickPolicy.IsRemovableInJunkOnly(
+                        WakuuPriorityPicking.ClassifyCard(c.Id.Entry, (int)c.Type, c.IsSlyThisTurn)))
+                    .ToList();
+                if (candidates.Count == 0)
+                {
+                    LocalMultiControlLogger.Warn(
+                        "大卡组档删牌：牌组里没有 诅咒/状态/打击/防御 可删，回退原规则表（避免这条删牌流程没有候选）");
+                    candidates = options;
+                }
+            }
+
+            List<WakuuCardKind> kinds = candidates
                 .Select((c) => WakuuPriorityPicking.ClassifyCard(c.Id.Entry, (int)c.Type, c.IsSlyThisTurn))
                 .ToList();
-            List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(scenario, kinds);
+
+            // 删除场景追加「过渡牌」次级分值（用户 2026-11-18：一层抓取率高、二/三层低 ⇒ 按落差先删）。
+            // 只在同一优先级档内的「其余」之间比较，诅咒/状态/打击/防御/任务牌的硬规则不变。
+            IReadOnlyList<double>? removalScores = scenario == WakuuPickScenario.Remove
+                ? BuildRemovalTransitionScores(candidates)
+                : null;
+
+            List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(scenario, kinds, removalScores);
             List<CardModel> picked = ranked
                 .Take(maxSelect)
-                .Select((i) => options[i])
+                .Select((i) => candidates[i])
                 .ToList();
 
             LocalMultiControlLogger.Info(
-                $"瓦库智能选牌: scenario={scenario}, options={options.Count}, select={maxSelect}, "
-                + $"picked={string.Join(",", picked.Select((c) => c.Id.Entry))}");
+                $"瓦库智能选牌: scenario={scenario}, options={options.Count}"
+                + (candidates.Count != options.Count ? $"（大卡组档过滤后 {candidates.Count}）" : string.Empty)
+                + $", select={maxSelect}, picked={string.Join(",", picked.Select((c) => c.Id.Entry))}");
             return picked;
         }
         catch (Exception exception)
@@ -138,6 +176,104 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
                     options, mode, maxSelect, _random,
                     mode == WakuuChoiceModes.Rare ? (Func<CardModel, int>)RarityRank : null);
             }
+        }
+    }
+
+    /// <summary>
+    /// 删除场景的「过渡牌」次级分值（用户 2026-11-18 口径）：按个人记录器的**分幕抓取率**算
+    /// 「一层 − 二/三层」的落差。这些牌是撑过前期的过渡牌，进中后期删除很正常 ⇒ 落差越大越先删。
+    ///
+    /// 没有个人数据 / 样本不足（一层 &lt; 3 次、后两层合计 &lt; 2 次）⇒ 全 0，退化成原规则表。
+    /// 切片优先用本次选牌的归属者（<see cref="CardSelectForegroundSwitchPatch.CurrentChoicePlayerId"/>），
+    /// 拿不到就不按角色过滤 —— 宁可聚合也不要拿错角色的数据。
+    /// </summary>
+    private double[] BuildRemovalTransitionScores(List<CardModel> options)
+    {
+        double[] scores = new double[options?.Count ?? 0];
+        try
+        {
+            if (options == null || options.Count == 0)
+            {
+                return scores;
+            }
+
+            PersonalStore store = LocalPersonalRecorder.Snapshot();
+            if (store == null || store.cardOffers.Count == 0)
+            {
+                return scores;
+            }
+
+            Player? owner = ResolveChoiceOwner();
+            bool? isMulti = owner?.RunState == null ? (bool?)null : owner.RunState.Players.Count > 1;
+            string? character = null;
+            if (owner?.Character != null)
+            {
+                character = owner.Character.Id.Entry.ToUpperInvariant();
+            }
+
+            StringBuilder? log = null;
+            for (int i = 0; i < options.Count; i++)
+            {
+                string? id = options[i]?.Id.Entry;
+                double score = WakuuTransitionCardTier.ScoreOf(store, id, isMulti, character);
+                scores[i] = score;
+                if (score > 0 && id != null)
+                {
+                    log ??= new StringBuilder();
+                    if (log.Length > 0)
+                    {
+                        log.Append(", ");
+                    }
+
+                    log.Append(id).Append("(落差=").Append(score.ToString("P0")).Append(')');
+                }
+            }
+
+            if (log != null)
+            {
+                LocalMultiControlLogger.Info(
+                    $"瓦库删牌过渡牌优先（一层抓取率高、二/三层低）: char={character ?? "全部"}, "
+                    + $"isMulti={(isMulti?.ToString() ?? "全部")}, 命中=[{log}]");
+            }
+            else
+            {
+                // 未命中也要留一行（2026-11-19）：否则"没有过渡牌"和"这段代码没走到/没数据"在日志里长得一样。
+                LocalMultiControlLogger.Info(
+                    $"瓦库删牌过渡牌优先: 本屏未命中（无过渡牌或样本不足）: options={options.Count}, "
+                    + $"char={character ?? "全部"}, isMulti={(isMulti?.ToString() ?? "全部")}, "
+                    + $"个人 offer 记录={store.cardOffers.Count}");
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"瓦库删牌过渡牌评分失败，回退规则表: {exception.Message}");
+        }
+
+        return scores;
+    }
+
+    /// <summary>本次选牌的归属者：奖励归属者优先，其次本次异步链登记的 chooser，最后 null。</summary>
+    private Player? ResolveChoiceOwner()
+    {
+        if (_rewardOwner != null)
+        {
+            return _rewardOwner;
+        }
+
+        try
+        {
+            ulong? chooser = CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value;
+            if (!chooser.HasValue)
+            {
+                return null;
+            }
+
+            return RunManager.Instance?.DebugOnlyGetState()?.Players
+                .FirstOrDefault((p) => p != null && p.NetId == chooser.Value);
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -165,6 +301,18 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
     /// </summary>
     public CardRewardSelection GetSelectedCardReward(IReadOnlyList<CardCreationResult> options, IReadOnlyList<CardRewardAlternative> alternatives)
     {
+        if (PreferAlternativeOptionId != null && alternatives != null)
+        {
+            foreach (CardRewardAlternative alternative in alternatives)
+            {
+                if (alternative != null
+                    && string.Equals(alternative.OptionId, PreferAlternativeOptionId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new CardRewardSelection { alternative = alternative };
+                }
+            }
+        }
+
         return new CardRewardSelection
         {
             card = PickRewardCard(options),

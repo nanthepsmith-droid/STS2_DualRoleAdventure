@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using LocalMultiControl.Scripts.Patch;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Context;
+using MegaCrit.Sts2.Core.Entities.CardRewardAlternatives;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Entities.Potions;
 using MegaCrit.Sts2.Core.Helpers;
@@ -94,7 +96,24 @@ internal static class LocalWakuuRewardAutoClaim
         foreach (Reward reward in mergedRewards)
         {
             Player? owner = reward.Player;
-            if (owner == null || !ShouldAutoClaim(reward, owner))
+            if (owner == null)
+            {
+                remaining.Add(reward);
+                continue;
+            }
+
+            WakuuRewardKind kind = ClassifyReward(reward);
+            if (!ShouldAutoClaim(kind, owner))
+            {
+                remaining.Add(reward);
+                continue;
+            }
+
+            // 讨论-1 探针：**这次不自动领瓦库的卡牌奖励**，把它留在展示集里让真人自己决定
+            //（2026-11-18 用户口径：跳过后卡牌奖励不能直接消失，要留着可以真人选）。
+            // 判据见 WakuuCardRewardSkipProbePolicy：只管瓦库形态 + 卡牌 + 不在链接奖励组里的那一条；
+            // 金币/药水/遗物/特殊卡照旧自动领 = 对照组。
+            if (TryLeaveCardRewardForHuman(reward, owner))
             {
                 remaining.Add(reward);
                 continue;
@@ -110,10 +129,10 @@ internal static class LocalWakuuRewardAutoClaim
         return remaining;
     }
 
-    private static bool ShouldAutoClaim(Reward reward, Player owner)
+    private static bool ShouldAutoClaim(WakuuRewardKind kind, Player owner)
     {
         return WakuuRewardClaimPolicy.ShouldAutoClaim(
-            ClassifyReward(reward),
+            kind,
             LocalWakuuRelicRuntime.IsVakuuFormMode(owner),
             LocalWakuuAutopilotConfig.AutoClaimCards,
             LocalWakuuAutopilotConfig.AutoClaimGoldRelics,
@@ -140,7 +159,7 @@ internal static class LocalWakuuRewardAutoClaim
     {
         try
         {
-            return ShouldAutoClaim(reward, owner);
+            return ShouldAutoClaim(ClassifyReward(reward), owner);
         }
         catch
         {
@@ -148,13 +167,399 @@ internal static class LocalWakuuRewardAutoClaim
         }
     }
 
-    /// <summary>供 RewardsCmdOfferCustomPatch 结算单个奖励（内部含上下文对齐与异常兜底）。</summary>
+    /// <summary>
+    /// 供 RewardsCmdOfferCustomPatch 结算单个奖励（内部含上下文对齐与异常兜底）。
+    /// ⚠ 这条入口**没有真人能接**（后台瓦库原版不弹屏）⇒ "不抓"会退化成照常抓，见 <see cref="SettleCardRewardAsync"/>。
+    /// </summary>
     internal static Task<bool> TrySettleSingleRewardAsync(Reward reward, Player owner)
     {
-        return TrySettleAsync(reward, owner);
+        return TrySettleAsync(reward, owner, canLeaveForHuman: false);
     }
 
-    private static async Task<bool> TrySettleAsync(Reward reward, Player owner)
+    /// <summary>
+    /// 【探针】按判据决定这次要不要「**不自动领**、把卡牌奖励留给真人自己选」。
+    ///
+    /// 2026-11-18 口径修正（实机反馈）：上一版直接 `OnSkipped()` 把奖励收掉 ⇒ 奖励屏上那一行
+    /// **整条消失**，玩家连看都看不到。现在改成**只是不替瓦库选**：奖励照旧进展示集，
+    /// 真人想拿就自己点那一行（点下去会临时把控制上下文切到该席位，见
+    /// <c>NRewardButtonMergedRewardSelectPatch</c>），不想要就跟着整屏跳过。
+    ///
+    /// 关掉开关时连判据都不算（零行为变化：照旧自动领最左）。任何异常都退回"正常领取"。
+    /// </summary>
+    internal static bool TryLeaveCardRewardForHuman(Reward reward, Player owner)
+    {
+        if (reward == null || owner == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            // 探针语义 =「把**本该自动领**的那张卡牌改成不领」：
+            // 自动领卡牌开关关着时，这张牌本来就该留给真人，探针不去动它（否则两个开关的作用会互相打脸）。
+            if (!LocalWakuuAutopilotConfig.AutoClaimCards)
+            {
+                return false;
+            }
+
+            if (!WakuuCardRewardSkipProbePolicy.ShouldSkip(
+                    LocalWakuuAutopilotConfig.SkipCardRewardProbe,
+                    LocalWakuuRelicRuntime.IsVakuuFormMode(owner),
+                    ClassifyReward(reward),
+                    reward.ParentRewardSet != null))
+            {
+                return false;
+            }
+
+            LogCardRewardProbe(reward, owner);
+            LocalMultiControlLogger.Info(
+                $"[瓦库抓牌探针] 本次不自动领，卡牌奖励留给真人选: player={owner.NetId}, "
+                + $"reward={reward.GetType().Name}");
+            return true;
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"[瓦库抓牌探针] 判定异常，按正常领取处理: {exception.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 【探针】把这次卡牌奖励的**候选与三条口径候选信号**打到日志里（讨论-1 定阈值时直接用这一局的数据）。
+    ///
+    /// 只记不判：既有实现（融合抓取率 `WakuuStatBadgeQuery.BlendPickRate`、社区信号
+    /// `WakuuSkadaAdapter.TryGetCardSignal`、牌组张数）全部原样复用，不引入任何门槛。
+    /// 任何一步查不到（没装 SkadaHelper / 个人样本为 0 / 第三方卡没数据）都只写"无"，不影响跳过本身。
+    /// </summary>
+    private static void LogCardRewardProbe(Reward reward, Player owner)
+    {
+        try
+        {
+            if (reward is not CardReward cardReward)
+            {
+                return;
+            }
+
+            List<CardModel> cards = cardReward.Cards.ToList();
+            if (cards.Count == 0)
+            {
+                return;
+            }
+
+            string characterId = owner.Character.Id.Entry.ToUpperInvariant();
+            bool isMulti = owner.RunState?.Players.Count > 1;
+            PersonalStore store = LocalPersonalRecorder.Snapshot();
+            int deckSize = owner.Deck?.Cards?.Count ?? 0;
+
+            StringBuilder builder = new();
+            foreach (CardModel card in cards)
+            {
+                if (builder.Length > 0)
+                {
+                    builder.Append(", ");
+                }
+
+                PersonalCardSlice personal = WakuuPersonalQuery.CountCardOffers(store, card.Id.Entry, isMulti: isMulti);
+                WakuuCardSignal? community = WakuuSkadaAdapter.TryGetCardSignal(characterId, card.Id.Entry);
+                double blended = WakuuStatBadgeQuery.BlendPickRate(
+                    personal.Picked,
+                    personal.Offered,
+                    community?.PickRate,
+                    community?.OfferCount ?? 0);
+
+                builder.Append(card.Id.Entry)
+                    .Append("|融合=").Append(blended.ToString("P0"))
+                    .Append("|个人=").Append(personal.Picked).Append('/').Append(personal.Offered)
+                    .Append("|社区=").Append(community.HasValue ? community.Value.PickRate.ToString("P0") : "无");
+
+                if (community.HasValue)
+                {
+                    builder.Append('×').Append(community.Value.OfferCount)
+                        .Append("|胜率=").Append(community.Value.WinRateHeld.ToString("P0"));
+                }
+
+                // 分幕切片（2026-11-18 追加）：判断"过渡牌"（一层有人要、后两层没人要）必须有这一项，
+                // 否则只能看到跨局总抓取率、分不清"一直没人要"和"只在前两层有用"。
+                PersonalCardSlice act1 = WakuuPersonalQuery.CountCardOffers(
+                    store, card.Id.Entry, isMulti: isMulti, act: 1);
+                PersonalCardSlice act2 = WakuuPersonalQuery.CountCardOffers(
+                    store, card.Id.Entry, isMulti: isMulti, act: 2);
+                PersonalCardSlice act3 = WakuuPersonalQuery.CountCardOffers(
+                    store, card.Id.Entry, isMulti: isMulti, act: 3);
+                WakuuActPickProfile actProfile = new(
+                    act1Offered: act1.Offered,
+                    act1Picked: act1.Picked,
+                    laterOffered: act2.Offered + act3.Offered,
+                    laterPicked: act2.Picked + act3.Picked);
+
+                builder.Append("|幕=1层").Append(act1.Picked).Append('/').Append(act1.Offered)
+                    .Append("后").Append(actProfile.LaterPicked).Append('/').Append(actProfile.LaterOffered);
+
+                if (actProfile.IsTransitionCard)
+                {
+                    builder.Append("|过渡=").Append(actProfile.TransitionScore.ToString("P0"));
+                }
+            }
+
+            LocalMultiControlLogger.Info(
+                $"[瓦库抓牌探针] 卡牌奖励候选（本次不自动领，留给真人）: player={owner.NetId}, char={characterId}, "
+                + $"deck={deckSize}, offered=[{builder}], 若自动领={cards[0].Id.Entry}");
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"[瓦库抓牌探针] 记录候选信号失败（忽略）: {exception.Message}");
+        }
+    }
+
+    /// <summary>这次卡牌奖励的评估输入（一次性算好，重掷后重算一次）。</summary>
+    private readonly struct CardRewardEvaluation
+    {
+        public CardRewardEvaluation(
+            int act, int deckSize, int ordinal, double bestPickRate,
+            bool hasSignal, bool canSacrifice, bool canReroll)
+        {
+            Act = act;
+            DeckSize = deckSize;
+            Ordinal = ordinal;
+            BestPickRate = bestPickRate;
+            HasSignal = hasSignal;
+            CanSacrifice = canSacrifice;
+            CanReroll = canReroll;
+        }
+
+        public int Act { get; }
+
+        public int DeckSize { get; }
+
+        /// <summary>本局该席位第几次卡牌奖励（1 起；中卡组前三次保护用）。</summary>
+        public int Ordinal { get; }
+
+        /// <summary>候选里最高的融合抓取率。</summary>
+        public double BestPickRate { get; }
+
+        /// <summary>候选里有没有任何一张查得到数据（个人或社区）。</summary>
+        public bool HasSignal { get; }
+
+        /// <summary>这次奖励有没有献祭选项（佩尔之翼）。</summary>
+        public bool CanSacrifice { get; }
+
+        /// <summary>这张奖励还能不能重掷（浮木）。</summary>
+        public bool CanReroll { get; }
+    }
+
+    /// <summary>
+    /// 卡牌奖励结算（2026-11-19 抓牌档位）：
+    /// 先按「档位 / 幕 / 牌组张数」判断这次该不该抓，再决定
+    /// 照常抓 / 献祭（佩尔之翼）/ 重掷（浮木）/ 留给真人。
+    ///
+    /// <para>口径来源：用户 2026-11-19 —— 小卡组（上限 30）/ 中卡组（三张都烂不抓 + ≥40 抬门槛 +
+    /// 前三次不许跳）/ 大卡组（永不跳）；二三层不单独识别过渡牌，而是**提高抓牌要求**；
+    /// 有浮木时先 roll 再看；有佩尔之翼时直接献祭。</para>
+    /// </summary>
+    private static async Task<bool> SettleCardRewardAsync(CardReward reward, Player owner, bool canLeaveForHuman)
+    {
+        WakuuCardPickTier tier = LocalWakuuAutopilotConfig.CardPickTierValue;
+        CardRewardEvaluation eval = EvaluateCardReward(reward, owner, countOrdinal: true);
+        double required = WakuuCardPickPolicy.RequiredPickRate(tier, eval.Act, eval.DeckSize);
+        WakuuCardTakeDecision decision = WakuuCardPickPolicy.Decide(
+            tier,
+            eval.Act,
+            eval.DeckSize,
+            eval.Ordinal,
+            eval.BestPickRate,
+            eval.HasSignal,
+            eval.CanSacrifice,
+            eval.CanReroll);
+
+        // 「不抓」在没有真人能接的入口（事件/遗物自定义奖励）会变成"白丢一张牌" ⇒ 退化成照常抓。
+        if (decision == WakuuCardTakeDecision.Skip && !canLeaveForHuman)
+        {
+            LocalMultiControlLogger.Info(
+                $"[瓦库抓牌] 三张都不达标，但该入口没有真人能接（事件/遗物自定义奖励）⇒ 照常抓: "
+                + $"player={owner.NetId}, tier={LocalWakuuAutopilotConfig.CardPickTier}");
+            decision = WakuuCardTakeDecision.Take;
+        }
+
+        if (decision == WakuuCardTakeDecision.Reroll)
+        {
+            try
+            {
+                LocalMultiControlLogger.Info(
+                    $"[瓦库抓牌] 三张都不达标且有【浮木】，先重掷再看: player={owner.NetId}, "
+                    + $"tier={LocalWakuuAutopilotConfig.CardPickTier}, act={eval.Act}, deck={eval.DeckSize}, "
+                    + $"best={eval.BestPickRate:P0}, 要求={required:P0}");
+                reward.Reroll(); // 重掷后 CanReroll 自动变 false ⇒ 不会循环
+                eval = EvaluateCardReward(reward, owner, countOrdinal: false);
+                required = WakuuCardPickPolicy.RequiredPickRate(tier, eval.Act, eval.DeckSize);
+                decision = WakuuCardPickPolicy.Decide(
+                    tier,
+                    eval.Act,
+                    eval.DeckSize,
+                    eval.Ordinal,
+                    eval.BestPickRate,
+                    eval.HasSignal,
+                    eval.CanSacrifice,
+                    eval.CanReroll);
+                if (decision == WakuuCardTakeDecision.Skip && !canLeaveForHuman)
+                {
+                    decision = WakuuCardTakeDecision.Take;
+                }
+            }
+            catch (Exception exception)
+            {
+                LocalMultiControlLogger.Warn($"[瓦库抓牌] 重掷失败，按不抓处理: {exception.Message}");
+                decision = canLeaveForHuman ? WakuuCardTakeDecision.Skip : WakuuCardTakeDecision.Take;
+            }
+        }
+
+        LocalMultiControlLogger.Info(
+            $"[瓦库抓牌] 决策={decision}: player={owner.NetId}, tier={LocalWakuuAutopilotConfig.CardPickTier}, "
+            + $"act={eval.Act}, deck={eval.DeckSize}, 第{eval.Ordinal}次奖励, "
+            + $"best={eval.BestPickRate:P0}{(eval.HasSignal ? string.Empty : "(无数据)")}, 要求={required:P0}, "
+            + $"献祭可用={eval.CanSacrifice}, 可重掷={eval.CanReroll}");
+
+        if (decision == WakuuCardTakeDecision.Skip)
+        {
+            return false; // 留给真人：由调用方把这条奖励留在展示集里
+        }
+
+        string? preferAlternative = decision == WakuuCardTakeDecision.Sacrifice ? "SACRIFICE" : null;
+
+        // 用本 mod 的托管选择器（带奖励归属者，供社区统计按瓦库角色查表）；
+        // 关闭 skadaAssist 时其取牌结果与游戏原生 VakuuCardSelector 完全一致（最左）。
+        using (WakuuSelectorRegistry.Open(owner.NetId, new LocalWakuuStrategySelector(owner)
+               {
+                   PreferAlternativeOptionId = preferAlternative,
+               }))
+        {
+            // 用**深度计数**而不是布尔：结算可以嵌套（r143 起，"遗物效果自建的奖励集"
+            // 会在战后奖励结算的 await 链里再进一次本方法），布尔会被内层的 finally 提前清成 false，
+            // 外层那次卡牌奖励就会漏抑制 → 又弹出选牌界面。
+            _suppressCardRewardDepth++;
+            _autoClaimCardOwner.Value = owner.NetId;
+
+            // r134：**同步写入选牌归属者**（与 LocalWakuuEventAutoChoice / LocalWakuuRelicEffectAutoChoice 同一套做法）。
+            //
+            // 为什么这条链必须自己写：`CardReward.OnSelect` 读的是 `CardSelectCmd.Selector`，
+            // 而它**不经过** `CardSelectCmd.From*` 入口 —— 那些入口才会由
+            // CardSelectForegroundSwitchPatch 写入 `CurrentChoicePlayerId`。没人写，该 AsyncLocal
+            // 就保留**沿异步链残留的旧值**（多半是真人）⇒ `CardSelectCmdSelectorGuardPatch` 判成
+            // "真人选牌请求" → 把我们的选择器改成 null ⇒ `CardReward.OnSelect` 抛
+            // `Card selector unset during test!` ⇒ **卡牌奖励自动领取失败**。
+            // 金币/药水奖励不读 Selector，所以照常领到 —— 实机表现正是"只有卡牌奖励漏领"。
+            // 日志实证（2026-09-14）：同一局的 5 个瓦库全是
+            // `检测到真人选牌请求，本次跳过瓦库选择器改走正常UI: chooser=…326`
+            // + `瓦库奖励自动领取失败，保留为人工领取: reward=CardReward, error=Card selector unset during test!`。
+            ulong? savedChoicePlayerId = CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value;
+            if (savedChoicePlayerId.HasValue
+                && !LocalWakuuRelicRuntime.IsVakuuFormModeById(savedChoicePlayerId.Value))
+            {
+                // 只在**确实命中了这个坑**时记一条（正常路径不刷屏）：便于日后一眼确认修复生效。
+                LocalMultiControlLogger.Info(
+                    $"卡牌奖励自动领取：选牌归属者在异步链上残留为其他角色，已改写为奖励归属者: "
+                    + $"stale={savedChoicePlayerId.Value}, owner={owner.NetId}");
+            }
+
+            CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value = owner.NetId;
+            try
+            {
+                await reward.SelectUnsynchronized();
+                LocalMultiControlLogger.Info(
+                    $"瓦库卡牌奖励已自动领取: player={owner.NetId}, reward={reward.GetType().Name}, "
+                    + $"方式={decision}");
+                return true;
+            }
+            finally
+            {
+                CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value = savedChoicePlayerId;
+                _suppressCardRewardDepth = Math.Max(0, _suppressCardRewardDepth - 1);
+                _autoClaimCardOwner.Value = null;
+            }
+        }
+    }
+
+    /// <summary>算一次卡牌奖励的评估输入（候选最高融合抓取率 / 有没有数据 / 献祭与重掷可用性）。</summary>
+    private static CardRewardEvaluation EvaluateCardReward(CardReward reward, Player owner, bool countOrdinal)
+    {
+        double best = 0.0;
+        bool hasSignal = false;
+
+        try
+        {
+            string characterId = owner.Character.Id.Entry.ToUpperInvariant();
+            bool isMulti = owner.RunState?.Players.Count > 1;
+            PersonalStore store = LocalPersonalRecorder.Snapshot();
+
+            foreach (CardModel card in reward.Cards)
+            {
+                PersonalCardSlice personal = WakuuPersonalQuery.CountCardOffers(
+                    store, card.Id.Entry, isMulti: isMulti);
+                WakuuCardSignal? community = WakuuSkadaAdapter.TryGetCardSignal(characterId, card.Id.Entry);
+                bool cardHasSignal = personal.Offered > 0 || community.HasValue;
+                hasSignal |= cardHasSignal;
+                if (!cardHasSignal)
+                {
+                    continue;
+                }
+
+                double blended = WakuuStatBadgeQuery.BlendPickRate(
+                    personal.Picked,
+                    personal.Offered,
+                    community?.PickRate,
+                    community?.OfferCount ?? 0);
+                if (blended > best)
+                {
+                    best = blended;
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"[瓦库抓牌] 抓取率评估失败（按无数据处理）: {exception.Message}");
+            hasSignal = false;
+            best = 0.0;
+        }
+
+        int act = (owner.RunState?.CurrentActIndex ?? 0) + 1;
+        int deckSize = owner.Deck?.Cards?.Count ?? 0;
+        int ordinal = countOrdinal
+            ? LocalWakuuCardRewardCounter.Next(owner.NetId)
+            : Math.Max(1, LocalWakuuCardRewardCounter.Peek(owner.NetId));
+
+        return new CardRewardEvaluation(
+            act, deckSize, ordinal, best, hasSignal,
+            canSacrifice: HasSacrificeAlternative(reward),
+            canReroll: reward.CanReroll);
+    }
+
+    /// <summary>这次奖励有没有【佩尔之翼】的献祭选项（option id 固定 "SACRIFICE"）。</summary>
+    private static bool HasSacrificeAlternative(CardReward reward)
+    {
+        try
+        {
+            foreach (CardRewardAlternative alternative in CardRewardAlternative.Generate(reward))
+            {
+                if (alternative != null
+                    && string.Equals(alternative.OptionId, "SACRIFICE", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            // 生成选项本身失败（第三方改了 alternatives 之类）⇒ 当作没有献祭，别让它影响抓牌主链。
+            LocalMultiControlLogger.Warn($"[瓦库抓牌] 读取奖励额外选项失败（按无献祭处理）: {exception.Message}");
+        }
+
+        return false;
+    }
+
+    /// <param name="canLeaveForHuman">
+    /// 这个入口有没有真人能接这张卡牌奖励：合并战后奖励屏 = true（不抓就留在屏上给真人点）；
+    /// 事件/遗物自定义奖励（后台瓦库原版不弹屏）= false（"不抓"会退化成照常抓，否则那张牌就白丢）。
+    /// </param>
+    private static async Task<bool> TrySettleAsync(Reward reward, Player owner, bool canLeaveForHuman = true)
     {
         // R3 B2：作用域进出时保存/还原的都是「回环上下文原值」（等价于旧写法 LocalContext.NetId）。
         ulong? previousNetId = LocalSeatSource.ContextSeatId();
@@ -169,54 +574,8 @@ internal static class LocalWakuuRewardAutoClaim
 
             switch (reward)
             {
-                case CardReward:
-                    // 用本 mod 的托管选择器（带奖励归属者，供社区统计按瓦库角色查表）；
-                    // 关闭 skadaAssist 时其取牌结果与游戏原生 VakuuCardSelector 完全一致（最左）。
-                    using (WakuuSelectorRegistry.Open(owner.NetId, new LocalWakuuStrategySelector(owner)))
-                    {
-                        // 用**深度计数**而不是布尔：结算可以嵌套（r143 起，"遗物效果自建的奖励集"
-                        // 会在战后奖励结算的 await 链里再进一次本方法），布尔会被内层的 finally 提前清成 false，
-                        // 外层那次卡牌奖励就会漏抑制 → 又弹出选牌界面。
-                        _suppressCardRewardDepth++;
-                        _autoClaimCardOwner.Value = owner.NetId;
-
-                        // r134：**同步写入选牌归属者**（与 LocalWakuuEventAutoChoice / LocalWakuuRelicEffectAutoChoice 同一套做法）。
-                        //
-                        // 为什么这条链必须自己写：`CardReward.OnSelect` 读的是 `CardSelectCmd.Selector`，
-                        // 而它**不经过** `CardSelectCmd.From*` 入口 —— 那些入口才会由
-                        // CardSelectForegroundSwitchPatch 写入 `CurrentChoicePlayerId`。没人写，该 AsyncLocal
-                        // 就保留**沿异步链残留的旧值**（多半是真人）⇒ `CardSelectCmdSelectorGuardPatch` 判成
-                        // "真人选牌请求" → 把我们的选择器改成 null ⇒ `CardReward.OnSelect` 抛
-                        // `Card selector unset during test!` ⇒ **卡牌奖励自动领取失败**。
-                        // 金币/药水奖励不读 Selector，所以照常领到 —— 实机表现正是"只有卡牌奖励漏领"。
-                        // 日志实证（2026-09-14）：同一局的 5 个瓦库全是
-                        // `检测到真人选牌请求，本次跳过瓦库选择器改走正常UI: chooser=…326`
-                        // + `瓦库奖励自动领取失败，保留为人工领取: reward=CardReward, error=Card selector unset during test!`。
-                        ulong? savedChoicePlayerId = CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value;
-                        if (savedChoicePlayerId.HasValue
-                            && !LocalWakuuRelicRuntime.IsVakuuFormModeById(savedChoicePlayerId.Value))
-                        {
-                            // 只在**确实命中了这个坑**时记一条（正常路径不刷屏）：便于日后一眼确认修复生效。
-                            LocalMultiControlLogger.Info(
-                                $"卡牌奖励自动领取：选牌归属者在异步链上残留为其他角色，已改写为奖励归属者: "
-                                + $"stale={savedChoicePlayerId.Value}, owner={owner.NetId}");
-                        }
-
-                        CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value = owner.NetId;
-                        try
-                        {
-                            await reward.SelectUnsynchronized();
-                            LocalMultiControlLogger.Info(
-                                $"瓦库卡牌奖励已自动领取: player={owner.NetId}, reward={reward.GetType().Name}");
-                            return true;
-                        }
-                        finally
-                        {
-                            CardSelectForegroundSwitchPatch.CurrentChoicePlayerId.Value = savedChoicePlayerId;
-                            _suppressCardRewardDepth = Math.Max(0, _suppressCardRewardDepth - 1);
-                            _autoClaimCardOwner.Value = null;
-                        }
-                    }
+                case CardReward cardReward:
+                    return await SettleCardRewardAsync(cardReward, owner, canLeaveForHuman);
 
                 case GoldReward gold:
                     await reward.SelectUnsynchronized();

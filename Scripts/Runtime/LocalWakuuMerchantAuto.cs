@@ -18,6 +18,7 @@ using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Nodes;
+using MegaCrit.Sts2.Core.Nodes.Screens.Shops;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
 
@@ -517,6 +518,15 @@ internal static class LocalWakuuMerchantAuto
             return;
         }
 
+        // 大卡组档（2026-11-19 用户口径）：删牌只删 诅咒/状态/打击/防御 ⇒ 没有可删的垃圾就**别花这笔钱**。
+        if (WakuuCardPickPolicy.IsRemovalJunkOnly(LocalWakuuAutopilotConfig.CardPickTierValue)
+            && CountJunkableRemovalCards(player) == 0)
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库商店自动删牌跳过：大卡组档只删 诅咒/状态/打击/防御，牌组里没有可删的。player={player.NetId}");
+            return;
+        }
+
         int cost = SafeCost(entry);
         if (cost <= 0 || cost > player.Gold - WakuuMerchantPicking.DefaultGoldFloor)
         {
@@ -552,7 +562,35 @@ internal static class LocalWakuuMerchantAuto
                 await PlayerCmd.LoseGold(cost, player, GoldLossType.Spent);
                 await CardPileCmd.RemoveFromDeck(card);
                 player.ExtraFields.CardShopRemovalsUsed++;
-                NRun.Instance?.MerchantRoom?.Inventory.OnCardRemovalUsed();
+
+                // ⚠ 数据侧必须自己补 `SetUsed()`（2026-11-18 实机）：原版是在
+                // `MerchantCardRemovalEntry.OnTryPurchaseInternal` 里调它的，而我们是手写链，
+                // 之前只调了**节点**的 `Inventory.OnCardRemovalUsed()`（纯视觉刷新）⇒
+                // `entry.Used` 仍是 false（`IsStocked` 仍为 true）⇒ 切到该席位还能**再删一次**（实测同店删了两次，75→100 金）。
+                entry.SetUsed();
+
+                // 视觉刷新只在本店当前显示的库存**就是这一份**时做：商店界面按席位绑定库存
+                // （`NMerchantInventoryPatch` → `GetOrCreateInventory(player)`），显示的是别人的库存时
+                // 这个节点上挂的是别人的 `CardRemovalEntry`，不能拿它去刷（原版那行在 IsMe 保护里，
+                // 我们直接判引用相等更准）。该席位下次被显示时 `FillSlot → UpdateVisual` 读 `Used` 自然变灰。
+                NMerchantInventory? shownNode = NRun.Instance?.MerchantRoom?.Inventory;
+                MerchantInventory? shownInventory = shownNode?.Inventory;
+                bool refreshed = false;
+                if (shownNode != null
+                    && shownInventory != null
+                    && ReferenceEquals(shownInventory.CardRemovalEntry, entry))
+                {
+                    shownNode.OnCardRemovalUsed();
+                    refreshed = true;
+                }
+
+                // 判读锚点（2026-11-19）：把"数据侧已消费 + 视觉有没有当场刷新"写成一行，
+                // 下一局只要看到这行就能确认删牌服务不会再被重复使用，不必再去数删牌次数。
+                LocalMultiControlLogger.Info(
+                    $"瓦库商店自动删牌: 删牌服务已标记已用(entry.Used=true), "
+                    + $"当前界面库存={(refreshed ? "本席位已当场置灰" : "别的席位(切过去时 FillSlot 会按 Used 置灰)")}: "
+                    + $"player={player.NetId}");
+
                 await Hook.AfterItemPurchased(player.RunState, player, entry, cost);
                 entry.InvokePurchaseCompleted(entry);
 
@@ -699,7 +737,7 @@ internal static class LocalWakuuMerchantAuto
         return bestCardId != null && bestCardWinRate >= WakuuShopOrderPolicy.GoodCardWinRate;
     }
 
-    /// <summary>删牌服务现在能不能买（未使用 + 价格有效 + 付完仍保留金币保底）。</summary>
+    /// <summary>删牌服务现在能不能买（未使用 + 价格有效 + 付完仍保留金币保底 + 大卡组档还有可删的垃圾）。</summary>
     private static bool IsRemovalAffordable(Player player, MerchantInventory inventory)
     {
         MerchantCardRemovalEntry? entry = inventory.CardRemovalEntry;
@@ -708,8 +746,49 @@ internal static class LocalWakuuMerchantAuto
             return false;
         }
 
+        if (WakuuCardPickPolicy.IsRemovalJunkOnly(LocalWakuuAutopilotConfig.CardPickTierValue)
+            && CountJunkableRemovalCards(player) == 0)
+        {
+            return false;
+        }
+
         int cost = SafeCost(entry);
         return cost > 0 && cost <= player.Gold - WakuuMerchantPicking.DefaultGoldFloor;
+    }
+
+    /// <summary>牌组里有多少张「大卡组档允许删」的牌（诅咒/状态/打击/防御；牌组读不到时按 0 处理）。</summary>
+    private static int CountJunkableRemovalCards(Player player)
+    {
+        try
+        {
+            IReadOnlyList<CardModel>? cards = player.Deck?.Cards;
+            if (cards == null)
+            {
+                return 0;
+            }
+
+            int count = 0;
+            foreach (CardModel card in cards)
+            {
+                if (card == null)
+                {
+                    continue;
+                }
+
+                WakuuCardKind kind = WakuuPriorityPicking.ClassifyCard(
+                    card.Id.Entry, (int)card.Type, card.IsSlyThisTurn);
+                if (WakuuCardPickPolicy.IsRemovableInJunkOnly(kind))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     private static int SafeCost(MerchantEntry entry)

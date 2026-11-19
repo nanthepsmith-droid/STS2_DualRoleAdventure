@@ -328,6 +328,43 @@ public class WakuuConfigJsonTests
         });
     }
 
+    /// <summary>
+    /// 【探针】瓦库卡牌奖励不领（TODO §讨论-1 第一步）：**必须默认关** ——
+    /// 它是验证"只跳卡牌之后同组奖励还能不能领"的机制探针，不是成品功能，
+    /// 绝不能因为加了个字段就让老玩家升级后突然不抓牌。
+    /// </summary>
+    [Test]
+    public void 解析抓牌探针开关_缺省关闭_显式开生效()
+    {
+        Assert.That(new WakuuConfigData().vakuuSkipCardRewardProbe, Is.False, "探针默认必须关");
+
+        // 旧 json 里没有这个键 ⇒ 走属性初始值（默认关）。
+        WakuuConfigData legacy = WakuuConfigJson.Parse("""{ "useVakuuForm": true }""")!;
+        Assert.That(legacy.vakuuSkipCardRewardProbe, Is.False, "缺键时不能变成开");
+
+        WakuuConfigData on = WakuuConfigJson.Parse("""{ "vakuuSkipCardRewardProbe": true }""")!;
+        Assert.That(on.vakuuSkipCardRewardProbe, Is.True);
+    }
+
+    /// <summary>
+    /// 抓牌形态档位（用户 2026-11-19）：默认中卡组；缺键时不能变成别的档；非法值归一成中卡组。
+    /// </summary>
+    [Test]
+    public void 解析抓牌档位_缺省为中卡组_非法值归一()
+    {
+        Assert.That(new WakuuConfigData().vakuuCardPickTier, Is.EqualTo(WakuuCardPickPolicy.NormalTier));
+
+        WakuuConfigData legacy = WakuuConfigJson.Parse("""{ "useVakuuForm": true }""")!;
+        Assert.That(legacy.vakuuCardPickTier, Is.EqualTo(WakuuCardPickPolicy.NormalTier));
+
+        Assert.That(
+            WakuuConfigJson.Parse("""{ "vakuuCardPickTier": "big" }""")!.vakuuCardPickTier,
+            Is.EqualTo("big"));
+        Assert.That(
+            WakuuCardPickPolicy.NormalizeTier(WakuuConfigJson.Parse("""{ "vakuuCardPickTier": "LOL" }""")!.vakuuCardPickTier),
+            Is.EqualTo(WakuuCardPickPolicy.NormalTier));
+    }
+
     [Test]
     public void 解析null字面量_返回null()
     {
@@ -380,6 +417,8 @@ public class WakuuConfigJsonTests
             Assert.That(json, Does.Contain("\"allVakuuAutoEndTurn\""));
             Assert.That(json, Does.Contain("\"suppressVanillaEarring\""));
             Assert.That(json, Does.Contain("\"autoClaimPotions\""));
+            Assert.That(json, Does.Contain("\"vakuuSkipCardRewardProbe\""));
+            Assert.That(json, Does.Contain("\"vakuuCardPickTier\""));
             Assert.That(json, Does.Contain("\"shopAssistBuyNoData\""));
             Assert.That(json, Does.Contain("\"shopAssistBuyRelics\""));
             Assert.That(json, Does.Contain("\"shopAssistBuyPotions\""));

@@ -419,6 +419,22 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
                 "Auto-claims the leftmost card of Vakuu's own post-combat card reward; gold and relics follow the same rule."),
             () => LocalWakuuAutopilotConfig.AutoClaimCards,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("autoClaimCards", value));
+        column.AddChild(CreateCycleRow(
+            LocalModText.Select("抓牌形态档位", "Card Pick Tier"),
+            LocalModText.Select(
+                "默认中卡组。**中卡组**：三张的抓取率都不达标就不替瓦库抓（奖励留在奖励屏上给你自己点），卡组 ≥40 张时要求再抬一档，**前三次卡牌奖励一律抓**（开局牌太少，不许它自己跳过）。**小卡组**：同样的规则，但牌组到 30 张就开始收紧（更薄的卡组）。**大卡组**（原版大盘）：永不跳过卡牌奖励，且删牌只删 诅咒/状态/打击/防御。\n\n二、三层会自动提高抓取率要求（一层 30%、二层 40%、三层 50%）—— 过渡牌在后两幕本来就不该抓，不用单独识别。另外：有【浮木】时三张都不达标就先重掷再看；有【佩尔之翼】时直接献祭这张卡牌奖励（献祭优先于重掷）。",
+                "Default: Normal. Normal: if none of the three cards reaches the pick-rate bar, Vakuu does not take the reward (it stays on the rewards screen for you to click); the bar rises once the deck reaches 40 cards; the first three card rewards are always taken. Small: same rules but the deck bar kicks in at 30 cards. Big (vanilla-style): never skip a card reward, and card removal only removes Curses / Status / Strike / Defend.\n\nThe bar rises by act (act 1 30%, act 2 40%, act 3 50%) — transition cards naturally lose pick rate later, so no separate detection is needed. With Driftwood, a below-bar reward is rerolled once before deciding; with Pael's Wing the reward is sacrificed instead of skipped (sacrifice wins over reroll)."),
+            "vakuuCardPickTier",
+            () => LocalWakuuAutopilotConfig.CardPickTier,
+            NextCardPickTier,
+            GetCardPickTierDisplayText));
+        AddToggleRow(column,
+            LocalModText.Select("【探针】瓦库卡牌奖励不自动领（默认关）", "[Probe] Leave Vakuu Card Rewards to You (default OFF)"),
+            LocalModText.Select(
+                "默认关。**验证用探针，不是成品功能**：开启后瓦库形态的卡牌奖励托管不替它选，**奖励照旧留在奖励屏上**，你自己点那一行就能替它拿一张（点下去会临时把视角/控制切到那个席位），不想要就跟着奖励屏一起跳过。金币 / 药水 / 遗物照旧自动领。⚠ 它不含任何「抓取率 / 牌组大小」门槛（阈值口径还没定）；关闭 = 完全回到现状（卡牌奖励照旧自动领最左）。探针日志前缀「[瓦库抓牌探针]」。",
+                "Off by default. Validation probe, not a finished feature: when on, Vakuu Form's card reward is not auto-picked for it — the row stays on the rewards screen and you can click it yourself to take a card for that seat (the view/control switches to that seat temporarily); skip it along with the rest of the screen if you don't want it. Gold / potions / relics are still auto-claimed. No pick-rate or deck-size threshold yet; Off = exactly the current behavior."),
+            () => LocalWakuuAutopilotConfig.SkipCardRewardProbe,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("vakuuSkipCardRewardProbe", value));
         AddToggleRow(column,
             LocalModText.Select("金币/遗物奖励自动领", "Auto-Claim Gold/Relic Rewards"),
             LocalModText.Select(
@@ -805,6 +821,27 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             LocalWakuuAutopilotConfig.CharacterFirstTier => LocalWakuuAutopilotConfig.VolumeFirstTier,
             LocalWakuuAutopilotConfig.VolumeFirstTier => LocalWakuuAutopilotConfig.CharacterOnlyTier,
             _ => LocalWakuuAutopilotConfig.CharacterFirstTier,
+        };
+    }
+
+    /// <summary>抓牌形态档位显示文本（小卡组 → 中卡组 → 大卡组，循环）。</summary>
+    private static string GetCardPickTierDisplayText(string tier)
+    {
+        return WakuuCardPickPolicy.NormalizeTier(tier) switch
+        {
+            WakuuCardPickPolicy.SmallTier => LocalModText.Select("小卡组", "Small Deck"),
+            WakuuCardPickPolicy.BigTier => LocalModText.Select("大卡组", "Big Deck"),
+            _ => LocalModText.Select("中卡组", "Normal Deck"),
+        };
+    }
+
+    private static string NextCardPickTier(string tier)
+    {
+        return WakuuCardPickPolicy.NormalizeTier(tier) switch
+        {
+            WakuuCardPickPolicy.SmallTier => WakuuCardPickPolicy.NormalTier,
+            WakuuCardPickPolicy.NormalTier => WakuuCardPickPolicy.BigTier,
+            _ => WakuuCardPickPolicy.SmallTier,
         };
     }
 

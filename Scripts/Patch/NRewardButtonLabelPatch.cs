@@ -2,6 +2,7 @@ using System.Threading.Tasks;
 using HarmonyLib;
 using LocalMultiControl.Scripts.Rewards;
 using LocalMultiControl.Scripts.Runtime;
+using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Rewards;
 using MegaCrit.Sts2.Core.Rewards;
@@ -72,18 +73,47 @@ internal static class NRewardButtonMergedRewardSelectPatch
     private static async Task SelectMergedRewardAsync(NRewardButton button, Reward reward)
     {
         button.Disable();
-        if (await reward.SelectUnsynchronized())
+
+        // 真人手点「别的本地席位的卡牌奖励」时，必须先把控制上下文切到那个席位：
+        // 原版 `CardReward.OnSelect` 只在 `LocalContext.IsMe(owner)` 时弹选牌屏，否则走
+        // `WaitForRemoteChoice` —— 本地多控里没有任何远端会作答 ⇒ 点下去就永久卡住。
+        // 2026-11-18 起「探针让瓦库的卡牌奖励留在屏上给真人选」会真的走到这条路。
+        ulong? restoreSeat = null;
+        Player? owner = reward.Player;
+        if (reward is CardReward
+            && owner != null
+            && LocalSeatSource.IsLocalSeat(owner.NetId)
+            && !LocalSeatSource.IsContextSeat(owner.NetId))
         {
-            // 领完即检查：若所属展示集已全部领完，立刻在后端标记完成——否则 RewardCollectedFrom
-            // 在最后一张按钮被领走时会把 Error 刷出来（2026-09-06 实机：4/5 的
-            // "All rewards have been taken..." 都发生在这一刻，原版在 SelectLocalReward 里有这步）
-            CombatRewardMergeContext.OnRewardClaimed(reward);
-            button.EmitSignal(NRewardButton.SignalName.RewardClaimed, button);
-            return;
+            restoreSeat = LocalSeatSource.ContextSeatId();
+            LocalMultiControlRuntime.SwitchControlledPlayerTo(owner.NetId, "merged-reward-card-pick");
+            LocalMultiControlLogger.Info(
+                $"真人领其他席位的卡牌奖励，已临时切到该席位: owner={owner.NetId}, "
+                + $"原席位={restoreSeat?.ToString() ?? "无"}");
         }
 
-        button.Enable();
-        button.TryGrabFocus();
-        button.EmitSignal(NRewardButton.SignalName.RewardSkipped, button);
+        try
+        {
+            if (await reward.SelectUnsynchronized())
+            {
+                // 领完即检查：若所属展示集已全部领完，立刻在后端标记完成——否则 RewardCollectedFrom
+                // 在最后一张按钮被领走时会把 Error 刷出来（2026-09-06 实机：4/5 的
+                // "All rewards have been taken..." 都发生在这一刻，原版在 SelectLocalReward 里有这步）
+                CombatRewardMergeContext.OnRewardClaimed(reward);
+                button.EmitSignal(NRewardButton.SignalName.RewardClaimed, button);
+                return;
+            }
+
+            button.Enable();
+            button.TryGrabFocus();
+            button.EmitSignal(NRewardButton.SignalName.RewardSkipped, button);
+        }
+        finally
+        {
+            if (restoreSeat.HasValue)
+            {
+                LocalMultiControlRuntime.SwitchControlledPlayerTo(restoreSeat.Value, "merged-reward-card-pick-restore");
+            }
+        }
     }
 }
