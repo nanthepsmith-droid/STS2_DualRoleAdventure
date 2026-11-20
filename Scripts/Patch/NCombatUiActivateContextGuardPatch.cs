@@ -7,6 +7,7 @@ using LocalMultiControl.Scripts.Runtime;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Nodes.Combat;
+using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
 
 namespace LocalMultiControl.Scripts.Patch;
@@ -72,14 +73,37 @@ internal static class NCombatUiActivateContextGuardPatch
             return; // 正常路径：上下文席位确实在本场战斗里，一个字节都不改
         }
 
+        // 2026-11-20 第二次实机（黑屏复现）：这里读到 `Players` 为空，但 `Allies` 未必为空 ——
+        // `Players` / `PlayerCreatures` / `Creatures` 三个 getter 被我们自己的
+        // `CombatStateListCachePatch` 按 15ms 分桶缓存；`Allies` 直读原版字段、**不走缓存**。
+        // ⇒ "Allies 有生物但 Players 读空" 就是缓存端了 Setup 之前的旧值的铁证。
+        // 处理：强制失效一次再重读；真修好了就照常返回（这一屏就不会黑）。
+        int rawAllies = SafeAlliesCount(state);
+        if (rawAllies > 0)
+        {
+            CombatStateListCachePatch.InvalidateFromGuard("combat-ui-activate");
+            if (state.GetPlayer(netId.Value) != null)
+            {
+                LocalMultiControlLogger.Warn(
+                    "[上下文兜底] `Players` 读数为空但原始 `Allies` 有生物 ⇒ 列表缓存端了旧值，"
+                    + "已强制失效并重读（本次黑屏已避免）: "
+                    + $"原值={netId.Value}, 原始 Allies={rawAllies}, 同一房间状态={IsSameAsCurrentRoomState(state)}");
+                return;
+            }
+        }
+
         List<ulong> candidates = CollectCandidatesPresentInCombat(state);
         ulong? fallback = ContextSeatRecoveryPolicy.Decide(netId, candidates);
+        string details = $"原值={netId.Value}, 候选=[{string.Join(",", candidates)}], "
+                         + $"本场战斗玩家=[{string.Join(",", state.Players.Select((p) => p.NetId))}], "
+                         + $"原始 Allies={rawAllies}, 同一房间状态={IsSameAsCurrentRoomState(state)}, "
+                         + $"run 玩家=[{DescribeRunPlayers()}]";
+
         if (!fallback.HasValue)
         {
             LocalMultiControlLogger.Warn(
                 "[上下文兜底] 战斗界面初始化时上下文席位不在本场战斗里，且没有可用的本地席位可钉（本次可能黑屏）: "
-                + $"原值={netId.Value}, 候选=[], 本场战斗玩家=[{string.Join(",", state.Players.Select((p) => p.NetId))}], "
-                + $"run 玩家=[{DescribeRunPlayers()}]");
+                + details);
             return;
         }
 
@@ -89,9 +113,35 @@ internal static class NCombatUiActivateContextGuardPatch
 
         LocalMultiControlLogger.Warn(
             "[上下文兜底] 战斗界面初始化时上下文席位不在本场战斗里，已临时钉到本地席位（本次 Activate 返回后还原）: "
-            + $"原值={netId.Value}, 临时={fallback.Value}, 候选=[{string.Join(",", candidates)}], "
-            + $"本场战斗玩家=[{string.Join(",", state.Players.Select((p) => p.NetId))}], "
-            + $"run 玩家=[{DescribeRunPlayers()}] —— 2026-11-20 黑屏即此处 `LocalContext.GetMe` 抛异常所致");
+            + $"临时={fallback.Value}, " + details
+            + " —— 2026-11-20 黑屏即此处 `LocalContext.GetMe` 抛异常所致");
+    }
+
+    /// <summary>原始友方生物数（<c>Allies</c> 不走我们的列表缓存，是"数据到底在不在"的真值）。</summary>
+    private static int SafeAlliesCount(CombatState state)
+    {
+        try
+        {
+            return state.Allies?.Count ?? 0;
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
+    /// <summary>这份状态是不是 run 当前房间（CombatRoom）自己的状态 —— 区分"状态对象被换了"与"数据真的空"。</summary>
+    private static bool IsSameAsCurrentRoomState(CombatState state)
+    {
+        try
+        {
+            return RunManager.Instance.DebugOnlyGetState()?.CurrentRoom is CombatRoom room
+                   && ReferenceEquals(room.CombatState, state);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     // 排在最后还原：其它补丁在这个方法上的 Postfix（切人按钮刷新 / 按钮探针）仍然看到兜底后的值。

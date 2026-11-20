@@ -189,6 +189,20 @@ internal static class CombatStateListCachePatch
     }
 
     /// <summary>
+    /// 由「战斗界面初始化兜底」（<see cref="NCombatUiActivateContextGuardPatch"/>）调用：
+    /// 那边一旦观察到「`Players` 读数为空、但原始 `Allies` 有生物」，就是本缓存端了 Setup 之前的旧值
+    /// ⇒ 立刻丢掉这一桶重算，避免 `LocalContext.GetMe` 拿到空列表把整屏搞黑（2026-11-20 第二次黑屏）。
+    /// </summary>
+    internal static void InvalidateFromGuard(string reason)
+    {
+        Clear();
+        // 把桶对齐到当前时刻：否则同一毫秒内下一次 ShouldCache 会把刚清掉的缓存再"换桶清一次"，
+        // 语义上无害，但对齐后行为更好预测（只是稳定，不影响正确性）。
+        _bucket = Environment.TickCount64;
+        LocalMultiControlLogger.Warn($"[状态列表缓存] 由战斗界面兜底强制失效: reason={reason}");
+    }
+
+    /// <summary>
     /// 复制一份再存：原版返回的是 `List&lt;T&gt;`（`IReadOnlyList` 只是声明），
     /// 直接缓存同一个实例的话，任何把它转回 `List` 就地改动的代码都会把我们的缓存改脏。
     /// 每帧/每次生物变动才复制一次，代价可以忽略。
