@@ -29,19 +29,22 @@ internal static class LocalSeatLabels
     /// <summary>
     /// 解析本地席位显示名（<c>Bot N</c> / <c>Player N</c>）。
     /// 非本地席位 / 没开本地多角色 ⇒ **null**（调用方必须放行原版昵称）。
+    ///
+    /// <para>会话不在时（<b>读档 / 回放面板</b>从主菜单打开，那时本地多控会话早已结束）会再问一次
+    /// <see cref="RunHistorySeatLabels"/> —— 那里存着"正在看的那一局"的席位表（2026-11-20 收工 ④）。</para>
     /// </summary>
     internal static string? TryResolve(ulong playerId)
     {
         try
         {
-            if (playerId == 0UL || !LocalSelfCoopContext.IsEnabled)
+            if (playerId == 0UL)
             {
                 return null;
             }
 
-            if (!LocalSelfCoopContext.TryGetSlotIndex(playerId, out int slotIndex))
+            if (!LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.TryGetSlotIndex(playerId, out int slotIndex))
             {
-                return null;
+                return RunHistorySeatLabels.TryResolve(playerId);
             }
 
             SeatDisplayKind kind = LocalSelfCoopContext.IsWakuuEnabled(playerId)

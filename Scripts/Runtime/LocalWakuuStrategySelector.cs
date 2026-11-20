@@ -148,13 +148,16 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
                 .Select((c) => WakuuPriorityPicking.ClassifyCard(c.Id.Entry, (int)c.Type, c.IsSlyThisTurn))
                 .ToList();
 
-            // 删除场景追加「过渡牌」次级分值（用户 2026-11-18：一层抓取率高、二/三层低 ⇒ 按落差先删）。
+            // 删除 / 变化两个场景追加「过渡牌」次级分值：
+            // - 删除（用户 2026-11-18）：一层抓取率高、二/三层低 ⇒ 按落差先删；
+            // - 变化（用户 2026-11-20）：打击 → 防御 → **过渡牌** → 其余 ⇒ 没有打击/防御可变时才轮到过渡牌。
             // 只在同一优先级档内的「其余」之间比较，诅咒/状态/打击/防御/任务牌的硬规则不变。
-            IReadOnlyList<double>? removalScores = scenario == WakuuPickScenario.Remove
-                ? BuildRemovalTransitionScores(candidates)
-                : null;
+            IReadOnlyList<double>? transitionScores =
+                scenario == WakuuPickScenario.Remove || scenario == WakuuPickScenario.Transform
+                    ? BuildTransitionScores(candidates, scenario)
+                    : null;
 
-            List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(scenario, kinds, removalScores);
+            List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(scenario, kinds, transitionScores);
             List<CardModel> picked = ranked
                 .Take(maxSelect)
                 .Select((i) => candidates[i])
@@ -180,16 +183,18 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
     }
 
     /// <summary>
-    /// 删除场景的「过渡牌」次级分值（用户 2026-11-18 口径）：按个人记录器的**分幕抓取率**算
-    /// 「一层 − 二/三层」的落差。这些牌是撑过前期的过渡牌，进中后期删除很正常 ⇒ 落差越大越先删。
+    /// 删除 / 变化场景的「过渡牌」次级分值（用户 2026-11-18 / 2026-11-20 口径）：按个人记录器的
+    /// **分幕抓取率**算「一层 − 二/三层」的落差。这些牌是撑过前期的过渡牌 ⇒
+    /// 删除时先删、变化时先变（都只在同档「其余」之内比较）。
     ///
     /// 没有个人数据 / 样本不足（一层 &lt; 3 次、后两层合计 &lt; 2 次）⇒ 全 0，退化成原规则表。
     /// 切片优先用本次选牌的归属者（<see cref="CardSelectForegroundSwitchPatch.CurrentChoicePlayerId"/>），
     /// 拿不到就不按角色过滤 —— 宁可聚合也不要拿错角色的数据。
     /// </summary>
-    private double[] BuildRemovalTransitionScores(List<CardModel> options)
+    private double[] BuildTransitionScores(List<CardModel> options, WakuuPickScenario scenario)
     {
         double[] scores = new double[options?.Count ?? 0];
+        string sceneName = scenario == WakuuPickScenario.Transform ? "变化" : "删牌";
         try
         {
             if (options == null || options.Count == 0)
@@ -232,21 +237,21 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
             if (log != null)
             {
                 LocalMultiControlLogger.Info(
-                    $"瓦库删牌过渡牌优先（一层抓取率高、二/三层低）: char={character ?? "全部"}, "
+                    $"瓦库{sceneName}过渡牌优先（一层抓取率高、二/三层低）: char={character ?? "全部"}, "
                     + $"isMulti={(isMulti?.ToString() ?? "全部")}, 命中=[{log}]");
             }
             else
             {
                 // 未命中也要留一行（2026-11-19）：否则"没有过渡牌"和"这段代码没走到/没数据"在日志里长得一样。
                 LocalMultiControlLogger.Info(
-                    $"瓦库删牌过渡牌优先: 本屏未命中（无过渡牌或样本不足）: options={options.Count}, "
+                    $"瓦库{sceneName}过渡牌优先: 本屏未命中（无过渡牌或样本不足）: options={options.Count}, "
                     + $"char={character ?? "全部"}, isMulti={(isMulti?.ToString() ?? "全部")}, "
                     + $"个人 offer 记录={store.cardOffers.Count}");
             }
         }
         catch (Exception exception)
         {
-            LocalMultiControlLogger.Warn($"瓦库删牌过渡牌评分失败，回退规则表: {exception.Message}");
+            LocalMultiControlLogger.Warn($"瓦库{sceneName}过渡牌评分失败，回退规则表: {exception.Message}");
         }
 
         return scores;

@@ -886,7 +886,7 @@ public partial class Entry
     //   所以改为**在名牌节点上直接重写文字**（`NMultiplayerPlayerStateNameplatePatch`，用原版同一个
     //   `SetTextAutoSize`，非本地席位一个字不动）。
     //   0.111 线同一套 API 都在（`_nameplateLabel` / `SetTextAutoSize` / `GetPlayerNameRaw`），零改动差异。
-    private const string BuildMarker = "Revival v1.47.12 (game v0.111.0, marker=2026-11-20-r386-stable)";
+    private const string BuildMarker = "Revival v1.47.13 (game v0.111.0, marker=2026-11-20-r387-stable)";
 
     private static Harmony? _harmony;
 

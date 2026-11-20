@@ -6,12 +6,16 @@ namespace LocalMultiControl.Scripts.Runtime;
 /// </summary>
 internal enum WakuuCardPickTier
 {
-    /// <summary>小卡组：**牌组到 30 张就收紧**（门槛提前一档抬起来，其余规则同中卡组）。</summary>
+    /// <summary>
+    /// 小卡组：**牌组到 30 张就收紧**（门槛提前一档抬起来），规则同中卡组，
+    /// 但**抓取率门槛保持基准 30/40/50 不跟着下调**（用户 2026-11-20：「小卡组不变」）。
+    /// </summary>
     Small = 0,
 
     /// <summary>
     /// 中卡组（默认）：正常抓牌 / 删牌；**三张都烂就不抓**；**卡组 ≥ 40 抬门槛**；
-    /// **前三次卡牌奖励一律不跳**（开局牌太少时不许它自己把奖励跳过）。
+    /// **前三次卡牌奖励一律不跳**（开局牌太少时不许它自己把奖励跳过）；
+    /// **每幕门槛比基准低 10 个点**（20/30/40，用户 2026-11-20）。
     /// </summary>
     Normal = 1,
 
@@ -47,6 +51,8 @@ internal enum WakuuCardTakeDecision
 /// <item>第一幕要求 <see cref="BaseTakePickRate"/>；</item>
 /// <item>每往后一幕 +<see cref="ActStep"/>（二层 40%、三层 50%）—— 过渡牌在后两幕自然掉抓取率，
 ///   提高要求就等于"后期只拿真正的好牌"，不需要单独识别过渡牌；</item>
+/// <item>**中卡组**每幕再减 <see cref="NormalActDownshift"/>（2026-11-20 用户口径 ⇒ 20% / 30% / 40%）；
+///   小卡组保持原值（30% / 40% / 50%），一个字不动；</item>
 /// <item>牌组张数到档位上限（小 30 / 中 40）再 +<see cref="DeckLimitBump"/>。</item>
 /// </list>
 ///
@@ -77,6 +83,15 @@ internal static class WakuuCardPickPolicy
 
     /// <summary>牌组达到/超过档位上限后再抬多少。</summary>
     public const double DeckLimitBump = 0.15;
+
+    /// <summary>
+    /// **中卡组**每幕的向下修正（用户 2026-11-20 口径：「小卡组不变，中卡组每层都下调 10% 或者 20%」）。
+    ///
+    /// 取 10 个百分点 ⇒ 中卡组实际门槛 = 20% / 30% / 40%（原 30 / 40 / 50）。
+    /// 20 个点会让一层只要 10%，等于"几乎什么都抓"、这套「不达标就不抓」就废了 ⇒ 先按 10 个点。
+    /// **只作用于中卡组**：小卡组保持 30 / 40 / 50（用户明确"小卡组不变"），大卡组本来永不跳。
+    /// </summary>
+    public const double NormalActDownshift = 0.10;
 
     /// <summary>中卡组档：前 N 次卡牌奖励一律不跳。</summary>
     public const int NormalProtectFirstRewards = 3;
@@ -122,6 +137,7 @@ internal static class WakuuCardPickPolicy
     /// <summary>
     /// 该档 / 该幕 / 该牌组张数下，一张牌要多高的抓取率才值得抓。
     /// 大卡组永不跳，返回 0（调用方据此直接 Take）。
+    /// 中卡组每幕比基准低 <see cref="NormalActDownshift"/>（2026-11-20），小卡组保持基准。
     /// </summary>
     public static double RequiredPickRate(WakuuCardPickTier tier, int act, int deckSize)
     {
@@ -132,12 +148,22 @@ internal static class WakuuCardPickPolicy
 
         int effectiveAct = act < 1 ? 1 : act;
         double required = BaseTakePickRate + ActStep * (effectiveAct - 1);
+        if (tier == WakuuCardPickTier.Normal)
+        {
+            required -= NormalActDownshift;
+        }
+
         if (deckSize >= DeckLimitOf(tier))
         {
             required += DeckLimitBump;
         }
 
-        // 上限 1.0：三层 + 大卡组叠加也不会超过 100%。
+        // 下限 0 / 上限 1.0：阈值再怎么调也不会越界。
+        if (required < 0.0)
+        {
+            return 0.0;
+        }
+
         return required > 1.0 ? 1.0 : required;
     }
 
