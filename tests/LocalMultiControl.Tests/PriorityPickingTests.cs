@@ -260,7 +260,8 @@ public class PriorityPickingTests
     }
 
     // ---------------------------------------------------------------
-    // Transform（变化）：Strike > Defend > 其余；硬排除 Curse/Status/Quest
+    // Transform（变化）：Strike > Defend > 过渡牌 > 其余；硬排除 Curse/Status/Quest
+    // （过渡牌 = 2026-11-20 追加，复用删牌那条 WakuuTransitionCardTier）
     // ---------------------------------------------------------------
 
     [Test]
@@ -289,6 +290,54 @@ public class PriorityPickingTests
 
         List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Transform, kinds);
         Assert.That(ranked[0], Is.EqualTo(1)); // 只选 Other
+    }
+
+    [Test]
+    public void Transform_过渡牌排在其余之前_但不上越打击与防御()
+    {
+        // 用户 2026-11-20：打击 → 防御 → **过渡牌** → 其余。
+        List<WakuuCardKind> kinds = new()
+        {
+            K("FLAME_BARRIER", SKL),     // Other，不是过渡牌
+            K("ANGER", ATK),             // Other，过渡牌（落差 0.60）
+            K("STRIKE_IRONCLAD", ATK),   // BasicStrike → 最高
+            K("DEFEND_SILENT", SKL),     // BasicDefend
+        };
+
+        List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(
+            WakuuPickScenario.Transform, kinds, new double[] { 0.0, 0.60, 0.0, 0.0 });
+
+        Assert.That(ranked, Is.EqualTo(new[] { 2, 3, 1, 0 }), "打击 > 防御 > 过渡牌 > 其余");
+    }
+
+    [Test]
+    public void Transform_过渡牌按落差降序_同掉不越级盖过硬排除()
+    {
+        List<WakuuCardKind> kinds = new()
+        {
+            K("CURSE_OF_THE_BELL", CUR), // 硬排除：给它过渡分值也上不来
+            K("UPPERCUT", ATK),          // Other，过渡牌（落差 0.30）
+            K("CLOTHESLINE", ATK),       // Other，过渡牌（落差 0.75）
+        };
+
+        List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(
+            WakuuPickScenario.Transform, kinds, new double[] { 1.0, 0.30, 0.75 });
+
+        Assert.That(ranked, Is.EqualTo(new[] { 2, 1, 0 }), "落差大的先变；诅咒永远垫底");
+    }
+
+    [Test]
+    public void Transform_没有过渡分值时行为不变_从左到右()
+    {
+        List<WakuuCardKind> kinds = new()
+        {
+            K("FLAME_BARRIER", SKL),
+            K("UPPERCUT", ATK),
+        };
+
+        Assert.That(
+            WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Transform, kinds),
+            Is.EqualTo(new[] { 0, 1 }));
     }
 
     // ---------------------------------------------------------------

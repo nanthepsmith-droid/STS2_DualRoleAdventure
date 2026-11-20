@@ -2,8 +2,8 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-11-20 12:41  HEAD=f38d826
-# 统计: patch_classes=229 patch_rows=271 string_targets=236 descriptors=444
+# 生成时间=2026-11-20 20:48  HEAD=7769294
+# 统计: patch_classes=230 patch_rows=272 string_targets=237 descriptors=446
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	BgmProbeAudioManagerPatch	NAudioManager	-	no-target
@@ -192,6 +192,7 @@ P	NRestSiteRoomReadyGuardPatch	NRestSiteRoom	_Ready	nameof
 P	NRestSiteRoomReadyPatch	NRestSiteRoom	_Ready	nameof
 P	NRewardButtonLabelPatch	NRewardButton	Reload	string
 P	NRewardButtonMergedRewardSelectPatch	NRewardButton	GetReward	string
+P	NRunHistoryDisplayRunPatch	NRunHistory	DisplayRun	string
 P	NSettingsScreenConfigMenuPatch	NSettingsScreen	_Ready	string
 P	NTreasureRoomRelicCollectionFocusGuardPatch	NTreasureRoomRelicCollection	get_DefaultFocusedControl	string
 P	NTreasureRoomRelicCollectionHoldersPatch	NTreasureRoomRelicCollection	InitializeRelics	nameof
@@ -439,6 +440,7 @@ S	harmony	NRestSiteRoom	AfterSelectingOptionAsync	method
 S	harmony	NRestSiteRoom	OnPlayerChangedHoveredRestSiteOption	method
 S	harmony	NRewardButton	GetReward	method
 S	harmony	NRewardButton	Reload	method
+S	harmony	NRunHistory	DisplayRun	method
 S	harmony	NRunSubmenuStack	GetSubmenuType	method
 S	harmony	NSettingsScreen	_Ready	method
 S	harmony	NTreasureRoomRelicCollection	get_DefaultFocusedControl	method

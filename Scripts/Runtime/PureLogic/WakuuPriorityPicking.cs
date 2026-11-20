@@ -62,7 +62,8 @@ internal enum WakuuCardKind
 ///   其余场景见各分支注释。
 ///   Copy（复制）：首选非 {Curse/Status/Quest/Strike/基础防御} 的牌；候选全为坏牌时
 ///        倒序 防御 &gt; 打击 &gt; 任务 &gt; 状态 &gt; 诅咒
-///   Transform（变化）：Strike &gt; Defend &gt; 其余从左到右；硬排除 Curse/Status/Quest/Sly
+///   Transform（变化）：Strike &gt; Defend &gt; **过渡牌（按落差降序；2026-11-20）** &gt; 其余从左到右；
+///        硬排除 Curse/Status/Quest/Sly
 ///   Discard（弃牌，用户追加）：Sly(奇巧) &gt; Curse &gt; Status &gt; Quest &gt; Strike &gt; 基础防御 &gt; 其余
 ///        —— 奇巧牌丢弃后本回合自动打出，优先丢它是白嫖一次出牌。
 /// 跨场景对 Sly 的默认语义：Remove 视同 Other（不优先消耗正面牌）；Copy 视同 Other（可优先复制）；
@@ -202,16 +203,20 @@ internal static class WakuuPriorityPicking
     /// 稳定排序 → 同优先级保持原序（"其余从左到右"）。
     /// Unknown 场景直接返回原序（0..N-1）。
     /// </summary>
-    /// <param name="removeTransitionScores">
-    /// 可选：**删除场景**的「过渡牌」次级分值（下标对齐 kinds，0 = 不是过渡牌）。
-    /// 用户 2026-11-18 口径 = 「一层抓取率高、二/三层抓取率低的牌」按落差先删；
+    /// <param name="transitionScores">
+    /// 可选：**删除 / 变化**两个场景的「过渡牌」次级分值（下标对齐 kinds，0 = 不是过渡牌）。
+    /// 过渡牌 = 「一层抓取率高、二/三层抓取率低的牌」（<see cref="WakuuTransitionCardTier"/>），按落差降序。
+    /// <list type="bullet">
+    /// <item>删除（2026-11-18）：过渡牌先删；</item>
+    /// <item>变化（2026-11-20）：打击 → 防御 → **过渡牌** → 其余，只排在"其余"档之内。</item>
+    /// </list>
     /// 它只在**同一优先级档内的「其余」**之间参与比较 —— 诅咒 / 状态 / 打击 / 防御 / 任务牌的
     /// 硬规则一个字不动（见 <see cref="PriorityOf"/>）。其它场景传 null 即可。
     /// </param>
     public static List<int> RankIndicesByScenario(
         WakuuPickScenario scenario,
         IReadOnlyList<WakuuCardKind> kinds,
-        IReadOnlyList<double>? removeTransitionScores = null)
+        IReadOnlyList<double>? transitionScores = null)
     {
         int count = kinds?.Count ?? 0;
         List<int> indices = new(count);
@@ -229,23 +234,29 @@ internal static class WakuuPriorityPicking
         IReadOnlyList<WakuuCardKind> effectiveKinds = kinds ?? Array.Empty<WakuuCardKind>();
         return indices
             .OrderByDescending((i) => PriorityOf(scenario, effectiveKinds[i]))
-            .ThenByDescending((i) => SecondaryScoreOf(scenario, removeTransitionScores, i))
+            .ThenByDescending((i) => SecondaryScoreOf(scenario, transitionScores, i))
             .ToList();
     }
 
-    /// <summary>同一优先级档内的次级比较分值（目前只有删除场景的过渡牌用它）。</summary>
+    /// <summary>同一优先级档内的次级比较分值（过渡牌：删除 / 变化两个场景用它）。</summary>
     private static double SecondaryScoreOf(
         WakuuPickScenario scenario,
-        IReadOnlyList<double>? removeTransitionScores,
+        IReadOnlyList<double>? transitionScores,
         int index)
     {
-        if (scenario != WakuuPickScenario.Remove || removeTransitionScores == null
-            || index < 0 || index >= removeTransitionScores.Count)
+        // 删除 = 过渡牌先删；变化 =「打击 → 防御 → **过渡牌** → 其余」里过渡牌先变（用户 2026-11-20）。
+        // 其它场景一律不参与（弃牌 / 消耗 / 复制有自己的档位表）。
+        if (scenario != WakuuPickScenario.Remove && scenario != WakuuPickScenario.Transform)
         {
             return 0.0;
         }
 
-        double score = removeTransitionScores[index];
+        if (transitionScores == null || index < 0 || index >= transitionScores.Count)
+        {
+            return 0.0;
+        }
+
+        double score = transitionScores[index];
         return double.IsNaN(score) || double.IsInfinity(score) || score <= 0 ? 0.0 : score;
     }
 
