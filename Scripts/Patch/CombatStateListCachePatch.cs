@@ -34,14 +34,27 @@ namespace LocalMultiControl.Scripts.Patch;
 ///   而这两个属性每秒被调用十万次以上 ⇒ 采样里光这一次 icall 就吃掉主线程 35.7%。</item>
 /// </list>
 ///
-/// <para>⚠ 只在本地多控会话（<see cref="LocalSelfCoopContext.IsEnabled"/>）里启用；其它入口原样放行。
-/// 出问题可置环境变量 <c>LMC_NO_STATE_CACHE=1</c> 一键关掉（只记录不崩）。</para>
+/// <para>⚠ 只在本地多控会话（<see cref="LocalSelfCoopContext.IsEnabled"/>）里启用；其它入口原样放行。</para>
+///
+/// <para><b>2026-11-20：默认关闭</b>（要复测性能得显式 <c>LMC_STATE_CACHE=1</c>）。
+/// 它把「战斗刚建立、生物还没加进去」那一瞬间的空列表端给原版，造成过两次实机事故：
+/// 进战斗房黑屏、以及 `SetUpCombat` 遍历空的 `state.Players` ⇒ 真人没被
+/// `PopulateCombatState` ⇒ 有战斗 UI 但手牌一张都没有。重新设计（版本号 / setup 期强制直读）之前不再默认启用。</para>
 /// </summary>
 [HarmonyPatch(typeof(CombatState))]
 internal static class CombatStateListCachePatch
 {
+    /// <summary>
+    /// ⚠ **2026-11-20 起默认关闭**（正确性优先）：这个缓存两次把「战斗刚建立时的空列表」端给了原版 ——
+    /// ① 进战斗房黑屏（`NCombatUi.Activate` 里 `LocalContext.GetMe` 拿到空 `Players`）；
+    /// ② 更严重的一次：`CombatManager.SetUpCombat` 遍历 `state.Players` 时读到空 ⇒ **真人的
+    ///    `ResetCombatState` / `PopulateCombatState` 全被跳过** ⇒ 进战斗有 UI、回合也在转，但
+    ///    **手牌一张都没有（什么都干不了）**。
+    /// 现阶段一律不缓存；要复测性能得显式设 <c>LMC_STATE_CACHE=1</c>（12 席压测用），
+    /// 重新设计（按状态版本号 / 在 setup 期间强制直读）之后才考虑默认打开。
+    /// </summary>
     private static readonly bool Enabled =
-        !string.Equals(System.Environment.GetEnvironmentVariable("LMC_NO_STATE_CACHE"), "1", StringComparison.Ordinal);
+        string.Equals(System.Environment.GetEnvironmentVariable("LMC_STATE_CACHE"), "1", StringComparison.Ordinal);
 
     private static CombatState? _state;
 
