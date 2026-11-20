@@ -873,7 +873,7 @@ public partial class Entry
     //   同一时刻从别处调却能拿到 botN）。典型"小访问器被 JIT 内联、拦不住"（同 BUG-29 的 IsMine 那类），
     //   所以改为**在名牌节点上直接重写文字**（`NMultiplayerPlayerStateNameplatePatch`，用原版同一个
     //   `SetTextAutoSize`，非本地席位一个字不动）。
-    private const string BuildMarker = "Revival v1.49.0 (game v0.113.1, marker=2026-11-20-r385)";
+    private const string BuildMarker = "Revival v1.49.0 (game v0.113.1, marker=2026-11-20-r386)";
 
     private static Harmony? _harmony;
 
