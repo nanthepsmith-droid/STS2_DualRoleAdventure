@@ -76,6 +76,15 @@
 > ② 排期 6 关单 —— 席位称呼统一 **瓦库 `botN` / 真人 `playerN`**（共用同一套号位、语言无关）；真因是
 > 左侧列表走 `GetPlayerNameRaw`（此前只拦了 BBCode 版）且该调用点**被 JIT 内联、补丁拦不住**
 > ⇒ 改为在名牌节点上直接重写。两件均实机确认并回补 `stable/0.111`（v1.47.6 → **v1.47.7**）。
+> **2026-11-19~20（r377~r386，抓牌三档 + 两起战斗事故 + 称呼回改 + 删牌两件）**：
+> ① **讨论-1 / 讨论-2 关单** —— 抓牌三档（`vakuuCardPickTier` 小/中/大）+ 浮木重掷 + 佩尔之翼献祭，
+> 不抓时奖励**留在屏上给真人点**；删牌加「过渡牌」档 + 大卡组只删垃圾（不做删牌统计加权）。
+> ② 修 **进战斗房黑屏 / 进战斗后手牌恒 0** —— 同一根因：`CombatState` 的 `Players/Creatures` 热路径缓存
+> 把建战斗前的**空列表**端给原版（`NCombatUi.Activate` 抛 `Local player not found in combat`；
+> `SetUpCombat` 遍历空 `Players` ⇒ 真人没被 `PopulateCombatState`）。**该缓存已默认关闭**（`LMC_STATE_CACHE=1` 才开）。
+> ③ 称呼从 `botN` 回改成 **`Player 1` / `Bot 2`**；商店自动删牌补 `entry.SetUsed()`（不再白嫖删牌）。
+> 全部实机确认（7MB 长局第三幕：手牌正常、18 次决策 9 抓 7 跳、`turn loop died` 0），回补 `stable/0.111`
+> （v1.47.8 → **v1.47.12**）。详见 `开发进度记录.md` 第一百八十段。
 
 ---
 
@@ -147,62 +156,30 @@
 > 这几条是用户明确要求"进一步讨论分析后才开工"的，本段只记需求、**已核过的现状证据**与待拍口径；
 > 口径定完再各自开分支动手。
 
-### 讨论-1 瓦库抓牌优化：抓取率不行 / 卡组太大 ⇒ **这屏奖励不抓**（可开关，小卡组形态 ↔ 原版大盘抓牌形态）
+### 讨论-1 瓦库抓牌优化：三档形态 + 「不抓」留给真人 —— ✅ r377~r383 关单（2026-11-20 长局实机确认）
 
-> 用户原话（2026-11-16）：「瓦库抓牌优化，加个牌抓取率都不行或者卡组太大就不抓牌的设计
-> （可开关，从这样设计的普通卡组形态切换成原本抓牌的大卡组形态）」。
+> 落地：设置页 **「抓牌形态档位」**（`vakuuCardPickTier`，默认 `normal` 中卡组）—— 小卡组（上限 30）/ 中卡组
+> （三张都不达标不抓 + ≥40 拍门槛 + **前三次奖励必抓**）/ 大卡组（永不跳 + 删牌只删诅咒/状态/打击/防御）；
+> 门槛按幕 30% / 40% / 50%，牌组到上限再 +15 个点；三张都无数据时**照抓**。
+> 不抓 = **奖励留在屏上给真人点**（点它会临时切到该席位）；有【浮木】先重掷、还烂且有【佩尔之翼】才献祭。
+> 实机：18 次决策 = 9 Take / 7 Skip / 2「无真人可接→照常抓」。详见 `开发进度记录.md` 第一百八十段。
+> ⚠ 同轮修掉它引出的两起事故（黑屏 / 无手牌，根因 = `CombatState` 列表热缓存），**该缓存已默认关闭**。
+> 📦 需求正文（原话 / 代码现状 / 技术硬点 / 待拍口径 ①~⑥ / 风险）已切到
+> `maintenance-docs\decision-records\archive\TODO-归档（已完成 bug 与功能流水·r96~r226）.md`
+> 末尾「归档（2026-11-20·第一百八十段）：§讨论-1」。
+> 🔸 残留（随时可调，不算未完成）：阈值数字化后可再调（三层 50% 是否偏严）；`WakuuOpportunityCost` 那套"牌组厚度"
+> 判据本轮没用上，只用了张数门槛。
 
-- **现状（核过代码）**：`LocalWakuuRewardAutoClaim.TrySettleAsync` 的 `CardReward` 分支**一律**
-  `await reward.SelectUnsynchronized()`（选牌器 `LocalWakuuStrategySelector(owner)`）
-  ⇒ 结构上"永远会拿一张"，**根本没有"不拿"这条路**。
-- **已有可直接复用的判据（都已落地/带单测，不用另造）**：
-  - 抓取率信号：`WakuuStatBadgeQuery.BlendPickRate(个人 picked/offered, 社区 rate)`（个人 + 社区伪计数融合）
-    + `WakuuSkadaAdapter.TryGetCardSignal(characterId, cardId)`（社区 `PickRate` / `WinRateHeld`）；
-  - 牌组厚度代价：`WakuuOpportunityCost`（参考 30 张，张数越多"再加一张"的净收益越低）、
-    `WakuuDeckAssessment.needsThinning`、`WakuuShopOrderPolicy.BigDeckThreshold`
-    （商店侧已经在用"大卡组就先买删牌"）。
-- 🚧 **技术硬点（必须先做探针验证，否则整条做不成）**：原版**没有"跳过单个卡牌奖励"的入口**——
-  - `Reward.OnSkipped()` 基类是**空实现**；`CardReward.OnSkipped()` 只写历史
-    （`CardChoiceHistoryEntry(wasPicked: false)`）+ 解绑 `RelicObtained` 事件，
-    **不把自己从 `ParentRewardSet` 摘掉、也不推进奖励组**（`sts2src\src\Core\Rewards\CardReward.cs` L319）；
-  - `LinkedRewardSet.OnSelect()` 是 `protected`（外部程序集调不到）；唯一公开的跳过入口
-    `RewardsSetSynchronizer.SkipLocalRewardsSet()` 是**整组跳过**（金币 / 药水 / 遗物一起丢，不可接受）。
-  - ⇒ 要么反射 / Harmony 暴露一个等价于 `OnSkipped() + ParentRewardSet.RemoveReward(this) +
-    ParentRewardSet.OnSelect()` 的"单张跳过"，要么这条需求做不了。
-  - **第一步 = 先写探针局**：只验证"跳过这张卡之后，同组的金币 / 药水 / 遗物照常能领、奖励组正常完成"，
-    验证通过再谈策略与阈值。
-- **待拍口径（讨论清单）**：① 阈值形态 —— "三张的融合抓取率都 < X%" / "三张都不如牌组均卡" /
-  "拿了会让净收益变负"；② 卡组张数门槛（30 / 40 / 按幕递增）；③ 开关默认值（**建议默认关 = 完全现状**）；
-  ④ 小卡组形态是否**连带**约束商店买卡 / 事件拿牌 / 变化（否则只跳过奖励，卡组照样被撑大）；
-  ⑤ 跳过后怎么让玩家知道（日志锚点 + 奖励屏是否要显示"这屏被跳过"）；⑥ 是否只留一条
-  `wasPicked:false` 历史就够。
-- **风险**：跳过会少 3 条 `CardChoices` 历史（原版 skip 也是这么写的，属正常）；
-  ⚠ **不要**把整组判成 `RewardSetCompleteState.Skipped`（污染完成态与后续奖励链）。
+### 讨论-2 瓦库商店删牌优先级 —— ✅ 2026-11-20 按用户新口径关单（不做「删牌统计」加权，改过渡牌档）
 
-### 讨论-2 瓦库商店删牌：按「删牌统计」排优先级 + 同名牌优先删**无附魔**、其次**无升级**
-
-> 用户原话（2026-11-16）：「瓦库商店优化，加删牌统计功能，删牌优先度按照删牌统计来，
-> 同样的牌优先删没有附魔的，同样没有附魔就优先删没有升级的」。
-
-- **现状（核过代码）**：
-  - **统计底座已经有了**：`PersonalCardRemovalRecord`（真人每删一次记一行：
-    `runKey / isMulti / character / act / card / ts`）+ `WakuuPersonalQuery.CountCardRemovals /
-    CountAllCardRemovals`（只计已结束且非 abandon 的局，支持 角色 / 多人 / 幕 切片，已带单测）——
-    **但全仓只在单测里被调用一次都没接进决策** ⇒ 数据在、没接线；
-  - 删牌选取：`LocalWakuuMerchantAuto.TryAutoBuyRemovalAsync` → `CardSelectCmd.FromDeckForRemoval` +
-    `LocalWakuuStrategySelector(WakuuPickScenario.Remove)` → `WakuuPriorityPicking` 固定表
-    （诅咒 > 状态 > 打击 > 基础防御 > 其余 > 任务牌）；**不含统计项、也没有附魔/升级 tie-break**；
-  - 事件删牌 / 营地净化 / 删牌遗物走**同一张表**（`CardSelectDeckScenarioPatch`）⇒ 这里改排序会
-    **连带影响所有删牌场景**，要先明确"只改商店"还是"全场景生效"。
-- **字段可行性（已在反编译源核实）**：`CardModel.Enchantment`（`EnchantmentModel?`，L712）、
-  `CardModel.IsUpgraded` / `CurrentUpgradeLevel`（L864 / L845）。
-- **待拍口径（讨论清单）**：① 统计切片（同角色？多人 / 单人分开？跨幕合并？建议 = 同角色 + **多人优先**，
-  与现有 query 参数一致）；② 统计怎么进排序 —— 只在**同一类别内**做次级比较（保住"诅咒先删"这类硬规则），
-  还是加权进总分（有把该删的诅咒排到后面的风险）；③ 样本不足（0 次记录 ≠ 不该删）必须退化回现有表；
-  ④ "同样的牌" = `Id.Entry` 相同（同名多张）；⑤ 附魔 / 升级 tie-break 的层级 = 放**最后一级**
-  （升级/附魔花过资源，删了是纯亏，绝不能盖过"诅咒优先"）；⑥ 是否只作用于商店删牌。
-- **待定小设计**：统计窗口（全部历史 vs 最近 N 局）、是否按幕区分（一幕与三幕的删牌偏好不同）、
-  面板是否要展示"这张牌你删过几次"。
+> 用户 2026-11-18 改口径：「删牌统计什么的不好做的话优先度可以这样：诅咒 > 打击防御 > **一层抓取率高但是
+> 二、三层抓取率低的牌**（根据差值排。这些牌是过渡牌，因此后面删除也很正常）」。
+> 落地：`WakuuTransitionCardTier`（分幕落差，落到"其余"档内的次级比较）+ 大卡组档的"只删垃圾 + 没垃圾不花钱"；
+> 删牌顺序 = 诅咒 > 状态 > 打击 > 基础防御 > **过渡牌** > 其余 > 任务牌。
+> 📦 需求正文（原话 / 统计底座现状 / 附魔与升级 tie-break 待拍项）已切到（同上归档文件）末尾
+> 「归档（2026-11-20·第一百八十段）：§讨论-2」。
+> 🔸 未做：按「删牌统计」加权、同名牌"无附魔 → 无升级"tie-break（`PersonalCardRemovalRecord` 底座仍在、
+> 仍未接线）；要做得另开口径。
 
 ### 讨论-3 瓦库**战斗内出牌**要改进 —— 2026-11-18 用户登记，**怎么改后面再讨论**
 
