@@ -250,6 +250,10 @@ internal static class PatchDomainMap
             ["NCombatCardPilePatch"] = PatchDomain.Ui,
             ["NCombatUiReadyPatch"] = PatchDomain.Ui,
             ["NCombatUiActivatePatch"] = PatchDomain.Ui,
+            // 2026-11-20 黑屏：进战斗房时 `NCombatUi.Activate` 里 `LocalContext.GetMe(combatState)` 抛
+            // "Local player not found in combat"（上下文席位不在本场战斗里）⇒ 房间装一半 ⇒ 全黑。
+            // 兜底 = 只在"有值却不在本场"时临时钉到本场存在的本地席位，返回即还原。
+            ["NCombatUiActivateContextGuardPatch"] = PatchDomain.Ui,
             ["NCombatUiDeactivatePatch"] = PatchDomain.Ui,
             ["NCombatUiEnablePatch"] = PatchDomain.Ui,
             ["NCombatUiDisablePatch"] = PatchDomain.Ui,
