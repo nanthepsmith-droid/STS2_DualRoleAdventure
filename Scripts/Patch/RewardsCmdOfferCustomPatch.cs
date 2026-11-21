@@ -131,18 +131,48 @@ internal static class RewardsCmdOfferCustomPatch
                 // 探针只作用于战后合并奖励屏（SettleAsync 那条链）。
                 if (LocalWakuuRewardAutoClaim.IsAutoClaimable(reward, player))
                 {
-                    bool settled = await LocalWakuuRewardAutoClaim.TrySettleSingleRewardAsync(reward, player);
-                    if (settled)
+                    WakuuRewardSettleOutcome outcome =
+                        await LocalWakuuRewardAutoClaim.TrySettleSingleRewardAsync(reward, player);
+                    if (outcome == WakuuRewardSettleOutcome.Settled)
                     {
                         claimedCount++;
                         continue;
                     }
+
+                    // 走到这里只有两种可能，都不是"开关关了"（那已在 Prefix 门禁里交真人了）：
+                    // ① **按规则主动放弃**（例：药水稀有度不高于栏内最低，2026-08-25 拍板）⇒ INFO（r389：
+                    //   原来这里也打"结算未成功"WARN，一局 4 条全是设计如此，把排查引向错误方向）；
+                    // ② 结算真的失败了（异常/上游 false）⇒ WARN。
+                    // 两者都只能跳过以免事件挂起。
+                    try
+                    {
+                        reward.OnSkipped();
+                    }
+                    catch (Exception skipException)
+                    {
+                        LocalMultiControlLogger.Warn(
+                            $"瓦库自定义奖励跳过登记异常（忽略）: {reward.GetType().Name}, error={skipException.Message}");
+                    }
+
+                    skippedCount++;
+                    if (outcome == WakuuRewardSettleOutcome.SkippedByRule)
+                    {
+                        LocalMultiControlLogger.Info(
+                            $"瓦库自定义奖励按规则主动放弃（非故障，上一行已说明原因）: player={player.NetId}, "
+                            + $"reward={reward.GetType().Name}");
+                    }
+                    else
+                    {
+                        LocalMultiControlLogger.Warn(
+                            $"瓦库自定义奖励已跳过（结算未成功，非开关关闭）: player={player.NetId}, "
+                            + $"reward={reward.GetType().Name}");
+                    }
+
+                    continue;
                 }
 
-                // 走到这里只有两种可能，都不是"开关关了"（那已在 Prefix 门禁里交真人了）：
-                // ①药水换栏规则判定不值得领（设计如此，INFO 已记）；
-                // ②结算真的失败了（异常路径）。两者都只能跳过以免事件挂起，
-                //   但统一打 WARN——静默跳过后瓦库啥也没拿到，必须有痕迹可查。
+                // 这一类奖励本就不在自动领取范围（IsAutoClaimable=false）：照旧跳过但走 OnSkipped，
+                // 避免事件链挂起；这里也补一条 INFO 说明"是按种类不领"，不是失败。
                 try
                 {
                     reward.OnSkipped();
@@ -154,8 +184,8 @@ internal static class RewardsCmdOfferCustomPatch
                 }
 
                 skippedCount++;
-                LocalMultiControlLogger.Warn(
-                    $"瓦库自定义奖励已跳过（结算未成功，非开关关闭）: player={player.NetId}, "
+                LocalMultiControlLogger.Info(
+                    $"瓦库自定义奖励按种类不自动领取（非故障）: player={player.NetId}, "
                     + $"reward={reward.GetType().Name}");
             }
 

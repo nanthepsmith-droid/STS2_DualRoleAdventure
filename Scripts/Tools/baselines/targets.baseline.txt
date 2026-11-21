@@ -2,8 +2,8 @@
 # 只记「语义标识」（补丁类 / 目标类型 / 成员 / 种类），**不含文件与行号**：
 #   重构换文件、上下挪行号不会造成 diff；新增 / 删除 / 改名目标才会。
 # 列格式： P<TAB>补丁类<TAB>目标类型<TAB>目标方法<TAB>种类   /   S<TAB>种类<TAB>类型<TAB>成员<TAB>成员种类
-# 生成时间=2026-11-20 20:48  HEAD=7769294
-# 统计: patch_classes=230 patch_rows=272 string_targets=237 descriptors=446
+# 生成时间=2026-11-21 19:19  HEAD=896306d
+# 统计: patch_classes=230 patch_rows=271 string_targets=237 descriptors=445
 P	ActChangeSynchronizerPatch	ActChangeSynchronizer	SetLocalPlayerReady	nameof
 P	ActionQueueSynchronizerRequestEnqueueFailSafePatch	ActionQueueSynchronizer	RequestEnqueue	string
 P	BgmProbeAudioManagerPatch	NAudioManager	-	no-target
@@ -36,7 +36,6 @@ P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromDeckForTransformatio
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromDeckForUpgrade	nameof
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromDeckGeneric	nameof
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromHand	nameof
-P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromHandForDiscard	nameof
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromHandForUpgrade	nameof
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromSimpleGrid	nameof
 P	CardSelectWakuuTurnStartAutoAnswerPatch	CardSelectCmd	FromSimpleGridForRewards	nameof

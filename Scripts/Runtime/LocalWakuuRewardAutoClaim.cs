@@ -38,6 +38,25 @@ namespace LocalMultiControl.Scripts.Runtime;
 /// - 已结算的奖励从展示列表移除，真人看到的奖励界面干净无干扰。
 /// - RewardsCmdOfferCustomPatch 复用本类的单件结算入口处理事件/遗物自定义奖励。
 /// </summary>
+/// <summary>
+/// 单个奖励的自动结算结果（r389）。
+///
+/// <para><b>为什么要分三态</b>：调用方（<c>RewardsCmdOfferCustomPatch</c>）以前只看 bool，于是把
+/// 「按药水换栏规则**主动**放弃」也打成「结算未成功」WARN —— 2026-11-21 实机一局 4 条，全是设计如此，
+/// 却让排查以为奖励系统坏了。现在"主动放弃"与"真失败"分流，日志各自如实。</para>
+/// </summary>
+internal enum WakuuRewardSettleOutcome
+{
+    /// <summary>领到了。</summary>
+    Settled,
+
+    /// <summary>按既有规则**主动**放弃（例：药水稀有度不高于栏内最低）。这是设计行为，不是故障。</summary>
+    SkippedByRule,
+
+    /// <summary>真的没结算成功（拿不到、异常、上游返回 false）。需要留 WARN。</summary>
+    Failed,
+}
+
 internal static class LocalWakuuRewardAutoClaim
 {
     /// <summary>喝鲜血腾位时等待动作队列处理的超时。</summary>
@@ -119,8 +138,9 @@ internal static class LocalWakuuRewardAutoClaim
                 continue;
             }
 
-            bool settled = await TrySettleAsync(reward, owner);
-            if (!settled)
+            // r389：结算结果三态化（"按规则主动放弃"与"真失败"都算没领到 ⇒ 仍留在展示集里给真人）
+            WakuuRewardSettleOutcome outcome = await TrySettleAsync(reward, owner);
+            if (outcome != WakuuRewardSettleOutcome.Settled)
             {
                 remaining.Add(reward);
             }
@@ -170,8 +190,9 @@ internal static class LocalWakuuRewardAutoClaim
     /// <summary>
     /// 供 RewardsCmdOfferCustomPatch 结算单个奖励（内部含上下文对齐与异常兜底）。
     /// ⚠ 这条入口**没有真人能接**（后台瓦库原版不弹屏）⇒ "不抓"会退化成照常抓，见 <see cref="SettleCardRewardAsync"/>。
+    /// 返回三态（r389）：调用方据此决定"主动放弃"打 INFO 还是"真失败"打 WARN。
     /// </summary>
-    internal static Task<bool> TrySettleSingleRewardAsync(Reward reward, Player owner)
+    internal static Task<WakuuRewardSettleOutcome> TrySettleSingleRewardAsync(Reward reward, Player owner)
     {
         return TrySettleAsync(reward, owner, canLeaveForHuman: false);
     }
@@ -564,7 +585,7 @@ internal static class LocalWakuuRewardAutoClaim
     /// 这个入口有没有真人能接这张卡牌奖励：合并战后奖励屏 = true（不抓就留在屏上给真人点）；
     /// 事件/遗物自定义奖励（后台瓦库原版不弹屏）= false（"不抓"会退化成照常抓，否则那张牌就白丢）。
     /// </param>
-    private static async Task<bool> TrySettleAsync(Reward reward, Player owner, bool canLeaveForHuman = true)
+    private static async Task<WakuuRewardSettleOutcome> TrySettleAsync(Reward reward, Player owner, bool canLeaveForHuman = true)
     {
         // R3 B2：作用域进出时保存/还原的都是「回环上下文原值」（等价于旧写法 LocalContext.NetId）。
         ulong? previousNetId = LocalSeatSource.ContextSeatId();
@@ -580,12 +601,14 @@ internal static class LocalWakuuRewardAutoClaim
             switch (reward)
             {
                 case CardReward cardReward:
-                    return await SettleCardRewardAsync(cardReward, owner, canLeaveForHuman);
+                    return await SettleCardRewardAsync(cardReward, owner, canLeaveForHuman)
+                        ? WakuuRewardSettleOutcome.Settled
+                        : WakuuRewardSettleOutcome.Failed;
 
                 case GoldReward gold:
                     await reward.SelectUnsynchronized();
                     LocalMultiControlLogger.Info($"瓦库金币奖励已自动领取: player={owner.NetId}, amount={gold.Amount}");
-                    return true;
+                    return WakuuRewardSettleOutcome.Settled;
 
                 case RelicReward relic:
                     // 拾遗物时若遗物效果触发卡牌选择（如 YUI「灵草丹」等"获得遗物时把一张卡变化"的
@@ -597,7 +620,7 @@ internal static class LocalWakuuRewardAutoClaim
 
                     LocalMultiControlLogger.Info(
                         $"瓦库遗物奖励已自动领取: player={owner.NetId}, relic={relic.Relic?.Id.Entry ?? "?"}");
-                    return true;
+                    return WakuuRewardSettleOutcome.Settled;
 
                 case PotionReward potionReward:
                     return await TrySettlePotionRewardAsync(potionReward, owner);
@@ -613,17 +636,17 @@ internal static class LocalWakuuRewardAutoClaim
                     LocalMultiControlLogger.Info(
                         $"瓦库特殊卡牌奖励已自动领取（取回被偷走的牌/指定卡牌）: "
                         + $"player={owner.NetId}, reward={specialCardReward.GetType().Name}");
-                    return true;
+                    return WakuuRewardSettleOutcome.Settled;
 
                 default:
-                    return false;
+                    return WakuuRewardSettleOutcome.Failed;
             }
         }
         catch (Exception exception)
         {
             LocalMultiControlLogger.Warn(
                 $"瓦库奖励自动领取失败，保留为人工领取: reward={reward.GetType().Name}, error={exception.Message}");
-            return false;
+            return WakuuRewardSettleOutcome.Failed;
         }
         finally
         {
@@ -651,12 +674,12 @@ internal static class LocalWakuuRewardAutoClaim
     /// 奖励高于栏内最低才丢最低换领，等价或更低放弃（保留人工/跳过）。
     /// 稀有度直接按 PotionRarity 枚举序比较（Common&lt;Uncommon&lt;Rare&lt;Event&lt;Token）。
     /// </summary>
-    private static async Task<bool> TrySettlePotionRewardAsync(PotionReward reward, Player owner)
+    private static async Task<WakuuRewardSettleOutcome> TrySettlePotionRewardAsync(PotionReward reward, Player owner)
     {
         PotionModel? rewardPotion = reward.Potion;
         if (rewardPotion == null)
         {
-            return false;
+            return WakuuRewardSettleOutcome.Failed;
         }
 
         if (!owner.HasOpenPotionSlots)
@@ -682,15 +705,16 @@ internal static class LocalWakuuRewardAutoClaim
                 if (lowest == null)
                 {
                     LocalMultiControlLogger.Warn($"瓦库药水栏状态异常（无药水但无空位），放弃领取: player={owner.NetId}");
-                    return false;
+                    return WakuuRewardSettleOutcome.Failed;
                 }
 
                 if ((int)rewardPotion.Rarity <= (int)lowest.Rarity)
                 {
+                    // 设计如此（2026-08-25 拍板规则）⇒ SkippedByRule：调用方打 INFO、不打"结算未成功"。
                     LocalMultiControlLogger.Info(
                         $"瓦库药水奖励稀有度不高于栏内最低（{rewardPotion.Rarity} <= {lowest.Rarity}），放弃领取: "
                         + $"player={owner.NetId}, 奖励={rewardPotion.Id.Entry}, 栏内最低={lowest.Id.Entry}");
-                    return false;
+                    return WakuuRewardSettleOutcome.SkippedByRule;
                 }
 
                 LocalMultiControlLogger.Info(
@@ -703,7 +727,7 @@ internal static class LocalWakuuRewardAutoClaim
         bool claimed = await reward.SelectUnsynchronized();
         LocalMultiControlLogger.Info(
             $"瓦库药水奖励自动领取: player={owner.NetId}, potion={rewardPotion.Id.Entry}({rewardPotion.Rarity}), success={claimed}");
-        return claimed;
+        return claimed ? WakuuRewardSettleOutcome.Settled : WakuuRewardSettleOutcome.Failed;
     }
 
     /// <summary>轮询等待某瓶药水离开药水栏（动作队列异步结算），超时返回 false。</summary>

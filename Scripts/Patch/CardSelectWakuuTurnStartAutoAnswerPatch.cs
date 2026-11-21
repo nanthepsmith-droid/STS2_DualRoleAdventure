@@ -318,20 +318,13 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
         ProbeUncoveredEntry(player, "FromHandForUpgrade");
     }
 
-    [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromHandForDiscard), new[]
-    {
-        typeof(PlayerChoiceContext),
-        typeof(Player),
-        typeof(CardSelectorPrefs),
-        typeof(Func<CardModel, bool>),
-        typeof(AbstractModel),
-    })]
-    [HarmonyPriority(Priority.Low)]
-    [HarmonyPrefix]
-    private static void FromHandForDiscardProbe(Player player)
-    {
-        ProbeUncoveredEntry(player, "FromHandForDiscard");
-    }
+    // ⚠ r389（2026-11-21 实机日志）：`FromHandForDiscard` **不再挂"未适配"探针**。
+    //   原版实现（sts2src `CardSelectCmd.FromHandForDiscard`）整段就是
+    //   `prefs.ShouldGlowGold = …; return await FromHand(context, player, prefs, filter, source);`
+    //   ⇒ 一定会走到本类的 `FromHandPrefix`（已适配）自动作答。旧探针却在 `FromHand` 之前先打
+    //   「入口未适配…本次不会自动作答」，紧跟着下一行就是 `瓦库作用域外手牌选牌自动作答 … entry=FromHand`
+    //   —— 一句话把排查引向错误方向（实际那 5 次全部由 FromHand 链答掉了）。
+    //   `FromHandForUpgrade` 保留探针：它自己走 `NPlayerHand.SelectCards` UI，**不**委派 FromHand，确实未适配。
 
     /// <summary>
     /// 牌组选牌入口 —— **r174 探针实测第三方遗物「从牌组随机展示 N 张，选一张获得它的原始版本复制」就走这里**
