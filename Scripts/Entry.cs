@@ -896,7 +896,16 @@ public partial class Entry
     //   `AnyEnemy` / `AnyAlly` 传目标、随机取敌由卡自己完成 ⇒ 它本就属于「免目标」白名单。
     //   修法 = 白名单抽成纯逻辑 `WakuuPlayQueuePolicy.TargetTypeRequiresTarget`（+ `RandomEnemy`，含单测），
     //   运行时按 `TargetType` 一次性缓存（不产生每张牌的 `ToString()` 开销）。
-    private const string BuildMarker = "Revival v1.47.14 (game v0.111.0, marker=2026-11-21-r388-stable)";
+    // r389（2026-11-21，r388 实机日志判读）：① **手牌 UI 缺节点单点补建** —— `手牌UI与数据存在差异` 两局
+    //   58/50 次、恒为"数据比 UI 多 1 张"，压在 1/4 号席（真人看不见也点不到那张牌）。成因 =
+    //   `CardPileHandVisualOwnerGuardPatch` 在"归属者不是当时受控席位"时**故意跳过建节点**，
+    //   正常由切人整表重建补回来，但那次抽牌若发生在出牌途中/临时切上下文窗口里、之后又没切人，就没人补。
+    //   修法 = `TryRepairMissingHandNodes`（只**新增**缺失 holder，绝不删/重建）+ 闸门纯逻辑
+    //   `HandUiNodeRepairPolicy`（手牌空闲 + 无出牌作用域在飞 + 差异持续 ≥1.5s + 5s 冷却）；多余节点仍不动（r112）。
+    //   ② **两条日志如实化**（不改行为）：`FromHandForDiscard` 的"未适配"探针删掉（原版该入口整段就是
+    //   `return FromHand(...)`，自动作答在 FromHand 里，探针却先说"不会自动作答"）；自定义奖励结算结果三态化
+    //   （`WakuuRewardSettleOutcome`）—— 药水换栏"主动放弃"改 INFO，只有真失败才 WARN。
+    private const string BuildMarker = "Revival v1.47.15 (game v0.111.0, marker=2026-11-21-r389-stable)";
 
     private static Harmony? _harmony;
 

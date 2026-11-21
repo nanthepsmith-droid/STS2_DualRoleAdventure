@@ -3887,7 +3887,9 @@ internal static class LocalMultiControlRuntime
     /// ① 显示的手牌整个属于别的玩家 → **只记诊断**（重建由切人链路自己负责，这里不抢）；
     /// ② 选牌 / 拖牌 / 出牌 / 有牌等待打出时顺序不可比 → 一律不干预；
     /// ③ 牌是同一批、只是顺序不同 → 按数据顺序重排（**只动次序，不建节点、不删节点**）；
-    /// ④ 「多余 / 缺节点」这类差异 **一律不处理**，只在持续 ≥1.5s 时记一条 WARN 便于日后核对。
+    /// ④ 「**缺节点**」→ r389 起在「手牌空闲 + 无出牌作用域在飞 + 差异持续 ≥1.5s + 5s 冷却」时
+    /// 走 <see cref="TryRepairMissingHandNodes"/> **单点补建**（只加不删，绝不整表重建）；
+    /// 「多余节点」仍然**一律不处理**（清节点 = r112 那条会打断出牌链的动作）。
     ///
     /// ⚠ r112：④ 原本会「清多余节点 / 触发整表重建」，实机立刻回归（打出的「数据链」停在屏幕中间不消耗）——
     /// 原版手牌变换的视觉更新是**故意延迟约 0.9s** 的，这段窗口天然「数据新、UI 旧」，
@@ -4012,10 +4014,17 @@ internal static class LocalMultiControlRuntime
                 {
                     TrackHandOrderDiagnostic(
                         $"gap|{playerId}|{string.Join(",", extras)}|{string.Join(",", missing)}",
-                        "手牌UI与数据存在差异但未处理（仅记录）: "
+                        "手牌UI与数据存在差异: "
                         + $"player={playerId}, 多余=[{string.Join(",", extras.Select(LabelOfKey))}], "
                         + $"缺失=[{string.Join(",", missing.Select(LabelOfKey))}], "
                         + $"数据={pileKeys.Count}张, UI={uiKeys.Count}张, source={source}");
+
+                    // r389：**缺节点**在「手牌空闲 + 无出牌作用域在飞 + 差异已持续 1.5s」时补建（只加不删）。
+                    // 多余节点**仍然一律不动** —— r112 实机：清节点/整表重建会打断出牌结算链。
+                    if (missing.Count > 0)
+                    {
+                        TryRepairMissingHandNodes(combatUi, hand, player, pileCards, missing, source);
+                    }
                 }
 
                 return;
@@ -4233,6 +4242,118 @@ internal static class LocalMultiControlRuntime
 
         _handOrderDiagLoggedSignature = signature;
         LocalMultiControlLogger.Warn(message);
+    }
+
+    /// <summary>手牌缺节点补建的尝试时刻（只用于冷却，不参与复位契约：漏清最多多等 5 秒）。</summary>
+    private static long _lastHandNodeRepairMs;
+
+    /// <summary>
+    /// 手牌 UI「缺节点」的**单点补建**（r389）。
+    ///
+    /// <para><b>症状</b>（2026-11-21 两局实机，`手牌UI与数据存在差异` 58/50 次，恒为"数据比 UI 多 1 张"）：
+    /// 前台角色手牌数据里有这张牌、UI 里没有 holder ⇒ 玩家看不见也点不到那张牌（数据层一直正确，
+    /// 瓦库照样能从数据里把它打出去，所以不影响托管、只影响真人）。</para>
+    ///
+    /// <para><b>成因</b>：<see cref="Patch.CardPileHandVisualOwnerGuardPatch"/> 会在「进手牌那一刻
+    /// 归属者不是当前受控席位」时**跳过建节点**（防串手牌）——正常由切人链路整表重建补回来，
+    /// 但若那次抽牌发生在**出牌途中/临时切上下文的窗口**里、之后没有发生切人，就没有人来补这一个节点。</para>
+    ///
+    /// <para><b>为什么只补这一个节点</b>：r112 实机教训 —— 「差异 ⇒ 整表重建」会在出牌结算途中把出牌链
+    /// 打断（打出的牌数据卡在屏幕中间不消耗）。所以：只**新增**缺失的 holder，绝不删/重建；
+    /// 闸门见 <see cref="HandUiNodeRepairPolicy"/>（手牌空闲 + 无出牌作用域在飞 + 差异持续 1.5s + 5s 冷却）。</para>
+    ///
+    /// <para>走的是原版同一条材料：<c>NCard.Create</c> → 挂到 <c>NCombatRoom.Ui</c> → <c>UpdateVisuals(Hand)</c>
+    /// → <c>NPlayerHand.Add(node)</c>（原版进手牌链最后一步就是 <c>handNode?.Add(cardNode)</c>）。</para>
+    /// </summary>
+    private static void TryRepairMissingHandNodes(
+        NCombatUi combatUi,
+        NPlayerHand hand,
+        Player player,
+        IReadOnlyList<CardModel> pileCards,
+        IReadOnlyList<string> missingKeys,
+        string source)
+    {
+        try
+        {
+            if (pileCards.Count == 0 || missingKeys.Count == 0)
+            {
+                return;
+            }
+
+            long nowMs = (long)Time.GetTicksMsec();
+            bool handBusy = hand.InCardPlay
+                || hand.IsInCardSelection
+                || hand.CurrentMode != NPlayerHand.Mode.Play;
+            int playScopeInFlight = LocalWakuuRelicRuntime.SelectorScopeInFlight();
+            if (!HandUiNodeRepairPolicy.ShouldRepair(
+                    missingKeys.Count,
+                    handBusy,
+                    playScopeInFlight > 0,
+                    nowMs,
+                    _handOrderDiagFirstSeenMs,
+                    _lastHandNodeRepairMs))
+            {
+                return;
+            }
+
+            _lastHandNodeRepairMs = nowMs;
+            int repaired = 0;
+            int failed = 0;
+            foreach (CardModel card in pileCards)
+            {
+                if (!missingKeys.Contains(BuildHandCardKey(card)))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (hand.GetCardHolder(card) != null)
+                    {
+                        continue;   // 这段时间里已经被别人补上了
+                    }
+
+                    NCard? node = NCard.Create(card);
+                    if (node == null)
+                    {
+                        failed++;
+                        continue;
+                    }
+
+                    // 先落在手牌区再入 holder：`NPlayerHand.Add` 会拿节点当前位置当 holder 起点，
+                    // 不设的话会从画面左上角（0,0）闪一下再被 RefreshLayout 拉回去。
+                    node.Position = hand.GlobalPosition;
+                    combatUi.AddChildSafely(node);
+                    node.UpdateVisuals(PileType.Hand, CardPreviewMode.Normal);
+                    hand.Add(node);
+                    repaired++;
+                    LocalMultiControlLogger.Info(
+                        $"手牌UI单节点补建: player={player.NetId}, card={card.Id.Entry}, source={source}");
+                }
+                catch (Exception exception)
+                {
+                    failed++;
+                    LocalMultiControlLogger.Warn(
+                        $"手牌UI单节点补建失败（该张仍缺失，5s 后再试）: player={player.NetId}, "
+                        + $"card={card.Id.Entry}, error={exception.GetType().Name}: {exception.Message}");
+                }
+            }
+
+            if (repaired > 0)
+            {
+                // 补上了 ⇒ 下一帧应当一致；把诊断签名清空，让"再出一次差异"能重新计时/重新报。
+                _handOrderDiagSignature = string.Empty;
+                _handOrderDiagFirstSeenMs = 0L;
+                _handOrderDiagLoggedSignature = string.Empty;
+                LocalMultiControlLogger.Info(
+                    $"手牌UI缺节点已补建: player={player.NetId}, 补={repaired}, 失败={failed}, "
+                    + $"共缺={missingKeys.Count}, source={source}");
+            }
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"手牌UI缺节点补建异常（本次跳过）: {exception.GetType().Name}: {exception.Message}");
+        }
     }
 
     /// <summary>
