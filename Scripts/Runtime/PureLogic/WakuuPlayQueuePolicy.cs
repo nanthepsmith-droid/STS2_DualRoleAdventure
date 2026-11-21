@@ -122,6 +122,33 @@ internal static class WakuuPlayQueuePolicy
     }
 
     /// <summary>
+    /// 「明确**不需要显式目标**」的原版 <c>TargetType</c> 名单（r388）。
+    ///
+    /// <para><b>为什么单独抽出来</b>：这张表决定了 <see cref="ShouldAbstainForMissingTarget"/> 的第二项，
+    /// 差一个值就会让托管**整局不打某类牌**（r388 实机：名单里漏了 <c>RandomEnemy</c> ⇒ 瓦库 12 次
+    /// 放弃「圣光小风暴 / 银之斩 / 蛇之环」这类**随机敌人**牌，四席每人手里压着一张直到终局）。</para>
+    ///
+    /// <para><b>口径</b>：原版 <c>NCardPlay.TryPlayCard</c> 只对 <c>AnyEnemy</c> / <c>AnyAlly</c> 传目标，
+    /// 其余一律传 <c>null</c>（<c>RandomEnemy</c> 的随机取敌由卡自己完成）⇒ 这四类 + 两个 <c>All*</c> 都属"免目标"。
+    /// **名单之外一律按"需要目标"**（第三方自定义 <c>TargetType</c> 也落进来，宁可放弃也不要把空目标交出去）。</para>
+    ///
+    /// 用**枚举名**而不是游戏枚举类型：本层不引用游戏程序集，可直接单测；运行时按
+    /// <c>TargetType</c> 做一次性缓存（见 <c>LocalWakuuRelicRuntime.RequiresTarget</c>），不产生每张牌的开销。
+    /// </summary>
+    public static bool TargetTypeRequiresTarget(string? targetTypeName)
+    {
+        return targetTypeName switch
+        {
+            "None" => false,
+            "Self" => false,
+            "AllEnemies" => false,
+            "AllAllies" => false,
+            "RandomEnemy" => false,   // r388：随机敌人 = 卡自己挑，不需要我们给目标
+            _ => true,                // 含 AnyEnemy / AnyAlly / AnyPlayer / Osty / TargetedNoCreature / 第三方自定义
+        };
+    }
+
+    /// <summary>
     /// **要不要为"这张牌需要目标、但大脑没解析出目标"而放弃本次出牌**（r261 修）。
     ///
     /// 为什么必须放弃而不是"照原样打出去"：目标类型要求目标时，把 <c>null</c> 目标交给原版出牌链
@@ -131,7 +158,7 @@ internal static class WakuuPlayQueuePolicy
     ///
     /// ⚠ 判据第二项由调用方给（本层不引用游戏类型）：调用方把
     /// `card.TargetType` 归成"**明确不需要目标**的白名单之外都算需要目标"
-    /// （白名单 = `Self` / `None` / `AllEnemies` / `AllAllies`）——
+    /// （白名单见 <see cref="TargetTypeRequiresTarget"/>：`Self` / `None` / `AllEnemies` / `AllAllies` / `RandomEnemy`）——
     /// 关键在"之外**都算**"：**第三方 mod 自定义的 TargetType** 也会落进"需要目标"，
     /// 这正是本条的由来（自定义目标类型我们无从解析，宁可放弃这一张、让真人自己打）。
     /// </summary>
