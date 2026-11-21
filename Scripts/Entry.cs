@@ -886,7 +886,17 @@ public partial class Entry
     //   所以改为**在名牌节点上直接重写文字**（`NMultiplayerPlayerStateNameplatePatch`，用原版同一个
     //   `SetTextAutoSize`，非本地席位一个字不动）。
     //   0.111 线同一套 API 都在（`_nameplateLabel` / `SetTextAutoSize` / `GetPlayerNameRaw`），零改动差异。
-    private const string BuildMarker = "Revival v1.47.13 (game v0.111.0, marker=2026-11-20-r387-stable)";
+    // r387（2026-11-20）：① 中卡组抓牌门槛每幕 -10 个点（20/30/40，常量 `WakuuCardPickPolicy.NormalActDownshift`；
+    //   小卡组保持 30/40/50、大卡组不变）；② 战斗外变化牌接过渡牌次级档（打击 > 防御 > 过渡牌 > 其余，
+    //   复用 `WakuuTransitionCardTier`）；③ 回放面板玩家名不再是 NetId 原串（`NRunHistoryDisplayRunPatch`
+    //   在 `DisplayRun` 前缀登记该局席位表，会话不在时由 `RunHistorySeatLabels` 兜底解析成 Player N）。
+    // r388（2026-11-21，r387 实机日志判读）：**`RandomEnemy` 被误判成"需要目标" ⇒ 瓦库整局不打随机目标牌**。
+    //   证据 = 一局 12 条 `瓦库放弃「需要目标但解析不到目标」… targetType=RandomEnemy`（圣光小风暴 / 银之斩 /
+    //   蛇之环），四席每人手里压着一张到终局（那场 act1 Boss 打了 7 分多钟才输）。原版 `NCardPlay` 只对
+    //   `AnyEnemy` / `AnyAlly` 传目标、随机取敌由卡自己完成 ⇒ 它本就属于「免目标」白名单。
+    //   修法 = 白名单抽成纯逻辑 `WakuuPlayQueuePolicy.TargetTypeRequiresTarget`（+ `RandomEnemy`，含单测），
+    //   运行时按 `TargetType` 一次性缓存（不产生每张牌的 `ToString()` 开销）。
+    private const string BuildMarker = "Revival v1.47.14 (game v0.111.0, marker=2026-11-21-r388-stable)";
 
     private static Harmony? _harmony;
 

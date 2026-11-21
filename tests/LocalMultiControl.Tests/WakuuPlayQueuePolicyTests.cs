@@ -105,7 +105,7 @@ public class WakuuPlayQueuePolicyTests
     }
 
     [TestCase(true, true, true)]     // 需要目标 + 没解析到目标 ⇒ **放弃本次出牌**（r261）
-    [TestCase(true, false, false)]   // 不需要目标的牌（Self / None / AllEnemies / AllAllies）⇒ 照打
+    [TestCase(true, false, false)]   // 不需要目标的牌（Self / None / AllEnemies / AllAllies / RandomEnemy）⇒ 照打
     [TestCase(false, true, false)]   // 需要目标且解析到了 ⇒ 照打
     [TestCase(false, false, false)]
     public void 需要目标却没目标时放弃出牌(bool targetIsNull, bool targetTypeNeedsTarget, bool expected)
@@ -117,6 +117,47 @@ public class WakuuPlayQueuePolicyTests
         Assert.That(
             WakuuPlayQueuePolicy.ShouldAbstainForMissingTarget(targetIsNull, targetTypeNeedsTarget),
             Is.EqualTo(expected));
+    }
+
+    // ------------------------------------------------------------------
+    // TargetType 白名单（r388）：漏一个值 = 托管整局不打那类牌。
+    // ------------------------------------------------------------------
+
+    [TestCase("None", false)]
+    [TestCase("Self", false)]
+    [TestCase("AllEnemies", false)]
+    [TestCase("AllAllies", false)]
+    [TestCase("RandomEnemy", false)]   // ← r388 补上的那一个（实机 12 次误放弃）
+    public void 免目标类型不需要目标(string targetTypeName, bool expected)
+    {
+        Assert.That(WakuuPlayQueuePolicy.TargetTypeRequiresTarget(targetTypeName), Is.EqualTo(expected));
+    }
+
+    [TestCase("AnyEnemy", true)]
+    [TestCase("AnyAlly", true)]
+    [TestCase("AnyPlayer", true)]
+    [TestCase("Osty", true)]
+    [TestCase("TargetedNoCreature", true)]
+    [TestCase("PIG_HUG", true)]        // 第三方自定义值（猪猪 mod「抱猪」，r261 的由来）
+    [TestCase("", true)]
+    [TestCase(null, true)]
+    public void 需要目标的类型与未知类型一律算需要目标(string? targetTypeName, bool expected)
+    {
+        // 关键在"白名单之外**都算**"：第三方 mod 自定义的 TargetType 必须落进"需要目标"
+        //（宁可放弃这一张让真人自己打，也不要把空目标交给原版出牌链）。
+        Assert.That(WakuuPlayQueuePolicy.TargetTypeRequiresTarget(targetTypeName), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void 随机目标牌不再被放弃_端到端组合()
+    {
+        // r388 实机（2026-11-21 日志）：瓦库一局里 12 次放弃 RandomEnemy 牌
+        //（圣光小风暴 / 银之斩 / 蛇之环），四席各压一张到终局。
+        bool needsTarget = WakuuPlayQueuePolicy.TargetTypeRequiresTarget("RandomEnemy");
+        Assert.That(
+            WakuuPlayQueuePolicy.ShouldAbstainForMissingTarget(targetIsNull: true, targetTypeNeedsTarget: needsTarget),
+            Is.False,
+            "RandomEnemy 牌目标为空也要照打（随机取敌由卡自己完成）");
     }
 
     [TestCase(true, true)]    // 第一次放弃（本席位/回合新记入）⇒ 继续循环（去打别的牌）

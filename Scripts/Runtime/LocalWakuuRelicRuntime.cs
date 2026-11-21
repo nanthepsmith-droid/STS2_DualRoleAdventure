@@ -916,23 +916,34 @@ internal static class LocalWakuuRelicRuntime
     }
 
     /// <summary>
-    /// 这张牌**必须**有目标才能打吗？（r261）
+    /// 这张牌**必须**有目标才能打吗？（r261；r388 补上 `RandomEnemy`）
     ///
-    /// 白名单=**明确不需要目标**的目标类型（`Self` / `None` / `AllEnemies` / `AllAllies`），
+    /// 白名单=**明确不需要目标**的目标类型（`Self` / `None` / `AllEnemies` / `AllAllies` / **`RandomEnemy`**），
     /// **白名单之外一律按"需要目标"处理** —— 包括 **第三方 mod 自定义的 `TargetType`**：
     /// 本环境实测（2026-10-11）猪猪 mod 的「抱猪」`YUWANCARD-PIG_HUG` 就是自定义目标类型，
     /// 大脑的 `_ => null` 解析不到目标，而原实现把 `target=null` 直接交给原版出牌链
     /// ⇒ **出牌流程卡住、卡面停在屏幕中间**（用户实机现象）。
     /// 宁可**放弃这一张**（牌留在手牌、真人可自己打），也不要把"无目标的出牌"交出去。
+    ///
+    /// ⚠ r388（2026-11-21 实机日志）：漏了 `RandomEnemy` ⇒ 瓦库一局里 **12 次** 放弃「圣光小风暴 /
+    /// 银之斩 / 蛇之环」这类随机目标牌（四席每人手里压着一张到终局，等于每人少一张输出）。
+    /// 名单/判据统一在 <see cref="WakuuPlayQueuePolicy.TargetTypeRequiresTarget"/>（纯逻辑、可单测）；
+    /// 这里只用枚举名做**一次性缓存**，避免每张候选牌都 `ToString()`（r329 热路径教训）。
     /// </summary>
-    private static bool RequiresTarget(CardModel card) => card.TargetType switch
+    private static readonly Dictionary<TargetType, bool> _requiresTargetByType = new();
+
+    private static bool RequiresTarget(CardModel card)
     {
-        TargetType.Self => false,
-        TargetType.None => false,
-        TargetType.AllEnemies => false,
-        TargetType.AllAllies => false,
-        _ => true,
-    };
+        TargetType targetType = card.TargetType;
+        if (_requiresTargetByType.TryGetValue(targetType, out bool cached))
+        {
+            return cached;
+        }
+
+        bool requires = WakuuPlayQueuePolicy.TargetTypeRequiresTarget(targetType.ToString());
+        _requiresTargetByType[targetType] = requires;
+        return requires;
+    }
 
     /// <summary>
     /// 这张牌是否**必须场上有敌人**才有意义（AnyEnemy / AllEnemies / RandomEnemy）。
