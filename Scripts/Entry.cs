@@ -905,7 +905,13 @@ public partial class Entry
     //   ② **两条日志如实化**（不改行为）：`FromHandForDiscard` 的"未适配"探针删掉（原版该入口整段就是
     //   `return FromHand(...)`，自动作答在 FromHand 里，探针却先说"不会自动作答"）；自定义奖励结算结果三态化
     //   （`WakuuRewardSettleOutcome`）—— 药水换栏"主动放弃"改 INFO，只有真失败才 WARN。
-    private const string BuildMarker = "Revival v1.47.15 (game v0.111.0, marker=2026-11-21-r389-stable)";
+    // r390（2026-11-22，r389 实机判读）：**手牌缺节点补建的第一版闸门把唯一该修的时刻全挡掉了** ——
+    //   那局 `手牌UI与数据存在差异` 153 次、`手牌UI缺节点已补建` **0 次**。真凶 = 旧闸门要求
+    //   `SelectorScopeInFlight()==0`，而这种缺节点恰恰只发生在**别的席位正在出牌**的窗口里
+    //   （抽到牌那一刻归属不是受控席位 ⇒ 守卫跳过建节点）；等出牌链结束，差异往往已被别的重建路径消掉。
+    //   修法 = 只留「手牌自己不忙 + 差异持续 1.5s + 5s 冷却」，并新增 `手牌UI补建闸门: 暂不补, reason=…`
+    //   锚点（同"原因+席位+缺失清单"只打一条）—— 上次就是因为没有原因日志，只能靠猜。
+    private const string BuildMarker = "Revival v1.47.16 (game v0.111.0, marker=2026-11-22-r390-stable)";
 
     private static Harmony? _harmony;
 

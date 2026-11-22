@@ -3887,9 +3887,11 @@ internal static class LocalMultiControlRuntime
     /// ① 显示的手牌整个属于别的玩家 → **只记诊断**（重建由切人链路自己负责，这里不抢）；
     /// ② 选牌 / 拖牌 / 出牌 / 有牌等待打出时顺序不可比 → 一律不干预；
     /// ③ 牌是同一批、只是顺序不同 → 按数据顺序重排（**只动次序，不建节点、不删节点**）；
-    /// ④ 「**缺节点**」→ r389 起在「手牌空闲 + 无出牌作用域在飞 + 差异持续 ≥1.5s + 5s 冷却」时
+    /// ④ 「**缺节点**」→ r389 起在「手牌空闲 + 差异持续 ≥1.5s + 5s 冷却」时
     /// 走 <see cref="TryRepairMissingHandNodes"/> **单点补建**（只加不删，绝不整表重建）；
     /// 「多余节点」仍然**一律不处理**（清节点 = r112 那条会打断出牌链的动作）。
+    /// ⚠ r390：原来的第四条还要求「没有托管出牌作用域在飞」—— 2026-11-22 实测 153 次差异、**补建 0 次**，
+    /// 因为缺节点恰恰只发生在别的席位出牌的窗口里 ⇒ 那道闸门把唯一该修的时刻全挡了，已删。
     ///
     /// ⚠ r112：④ 原本会「清多余节点 / 触发整表重建」，实机立刻回归（打出的「数据链」停在屏幕中间不消耗）——
     /// 原版手牌变换的视觉更新是**故意延迟约 0.9s** 的，这段窗口天然「数据新、UI 旧」，
@@ -4019,7 +4021,7 @@ internal static class LocalMultiControlRuntime
                         + $"缺失=[{string.Join(",", missing.Select(LabelOfKey))}], "
                         + $"数据={pileKeys.Count}张, UI={uiKeys.Count}张, source={source}");
 
-                    // r389：**缺节点**在「手牌空闲 + 无出牌作用域在飞 + 差异已持续 1.5s」时补建（只加不删）。
+                    // r389/r390：**缺节点**在「手牌空闲 + 差异已持续 1.5s + 5s 冷却」时补建（只加不删）。
                     // 多余节点**仍然一律不动** —— r112 实机：清节点/整表重建会打断出牌结算链。
                     if (missing.Count > 0)
                     {
@@ -4260,7 +4262,8 @@ internal static class LocalMultiControlRuntime
     ///
     /// <para><b>为什么只补这一个节点</b>：r112 实机教训 —— 「差异 ⇒ 整表重建」会在出牌结算途中把出牌链
     /// 打断（打出的牌数据卡在屏幕中间不消耗）。所以：只**新增**缺失的 holder，绝不删/重建；
-    /// 闸门见 <see cref="HandUiNodeRepairPolicy"/>（手牌空闲 + 无出牌作用域在飞 + 差异持续 1.5s + 5s 冷却）。</para>
+    /// 闸门见 <see cref="HandUiNodeRepairPolicy"/>（手牌空闲 + 差异持续 1.5s + 5s 冷却；r390 已去掉
+    /// 「出牌作用域在飞」那道 —— 见策略里的教训）。被挡时打一条 `手牌UI补建闸门: 暂不补, reason=…`。</para>
     ///
     /// <para>走的是原版同一条材料：<c>NCard.Create</c> → 挂到 <c>NCombatRoom.Ui</c> → <c>UpdateVisuals(Hand)</c>
     /// → <c>NPlayerHand.Add(node)</c>（原版进手牌链最后一步就是 <c>handNode?.Add(cardNode)</c>）。</para>
@@ -4284,15 +4287,17 @@ internal static class LocalMultiControlRuntime
             bool handBusy = hand.InCardPlay
                 || hand.IsInCardSelection
                 || hand.CurrentMode != NPlayerHand.Mode.Play;
-            int playScopeInFlight = LocalWakuuRelicRuntime.SelectorScopeInFlight();
-            if (!HandUiNodeRepairPolicy.ShouldRepair(
-                    missingKeys.Count,
-                    handBusy,
-                    playScopeInFlight > 0,
-                    nowMs,
-                    _handOrderDiagFirstSeenMs,
-                    _lastHandNodeRepairMs))
+            HandUiNodeRepairDecision decision = HandUiNodeRepairPolicy.Evaluate(
+                missingKeys.Count,
+                handBusy,
+                nowMs,
+                _handOrderDiagFirstSeenMs,
+                _lastHandNodeRepairMs);
+            if (decision != HandUiNodeRepairDecision.Repair)
             {
+                // r390：被挡也要留证据（同一"原因+席位+缺失清单"只打一条），否则下次还是靠猜
+                // —— 2026-11-22 那局 153 次差异、补建 0 次，日志里完全看不出是哪道闸门挡的。
+                LogHandNodeRepairBlocked(decision, player, missingKeys, source, nowMs);
                 return;
             }
 
@@ -4345,6 +4350,7 @@ internal static class LocalMultiControlRuntime
                 _handOrderDiagSignature = string.Empty;
                 _handOrderDiagFirstSeenMs = 0L;
                 _handOrderDiagLoggedSignature = string.Empty;
+                _handNodeRepairBlockedKey = string.Empty;
                 LocalMultiControlLogger.Info(
                     $"手牌UI缺节点已补建: player={player.NetId}, 补={repaired}, 失败={failed}, "
                     + $"共缺={missingKeys.Count}, source={source}");
@@ -4353,6 +4359,41 @@ internal static class LocalMultiControlRuntime
         catch (Exception exception)
         {
             LocalMultiControlLogger.Warn($"手牌UI缺节点补建异常（本次跳过）: {exception.GetType().Name}: {exception.Message}");
+        }
+    }
+
+    /// <summary>补建闸门"被挡"日志的去重键（只影响日志条数，不参与复位契约）。</summary>
+    private static string _handNodeRepairBlockedKey = string.Empty;
+
+    /// <summary>
+    /// 记一条「补建被哪道闸门挡住」（r390）。同一个「原因 + 席位 + 缺失清单」只打一次，
+    /// 避免每 250ms 一条把日志淹掉；差异变了/原因变了会重新打。
+    /// </summary>
+    private static void LogHandNodeRepairBlocked(
+        HandUiNodeRepairDecision decision,
+        Player player,
+        IReadOnlyList<string> missingKeys,
+        string source,
+        long nowMs)
+    {
+        try
+        {
+            string key = $"{decision}|{player.NetId}|{string.Join(",", missingKeys)}";
+            if (string.Equals(key, _handNodeRepairBlockedKey, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _handNodeRepairBlockedKey = key;
+            long persistedMs = _handOrderDiagFirstSeenMs > 0 ? nowMs - _handOrderDiagFirstSeenMs : 0L;
+            LocalMultiControlLogger.Info(
+                $"手牌UI补建闸门: 暂不补, reason={decision}, player={player.NetId}, "
+                + $"缺失=[{string.Join(",", missingKeys.Select(LabelOfKey))}], 已持续={persistedMs}ms, "
+                + $"上次尝试={(_lastHandNodeRepairMs > 0 ? _lastHandNodeRepairMs.ToString() : "无")}, source={source}");
+        }
+        catch (Exception)
+        {
+            // 纯日志，任何异常都不影响主流程
         }
     }
 
