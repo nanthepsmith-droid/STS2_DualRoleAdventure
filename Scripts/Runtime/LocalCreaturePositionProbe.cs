@@ -29,18 +29,31 @@ namespace LocalMultiControl.Scripts.Runtime;
 ///   则由战斗 UI 跟踪器的**首次采样**补打一行 <c>source=first-tick</c>）打一行
 ///   `[立绘站位快照] … 从左到右=[…]` + 每席 `IsMe` 原判 + 当时的受控位 / 上下文位
 ///   ⇒ 一眼看出"布局时『我』是谁、谁在左"；</item>
-/// <item><b>位移探针</b>（战斗 UI 逐帧跟踪器，内部 250ms 节流）：任一玩家立绘的 **X 或父节点索引**变了就打一行
-///   （含 变化前→后 / 当前左右顺序 / 受控位 / 上下文位 / 开战以来毫秒）⇒ 定位"是谁在什么时候挪的"。</item>
+/// <item><b>位移探针</b>（战斗 UI 逐帧跟踪器，r391 起**内部 1 秒节流**，且纯 X 漂移要 ≥10px 才打行）：
+///   任一玩家立绘的 **X 或父节点索引**显著变化就打一行（含 变化前→后 / 当前左右顺序 / 受控位 /
+///   上下文位 / 开战以来毫秒）⇒ 定位"是谁在什么时候挪的"。</item>
 /// </list>
 /// 两条都**不改变任何行为**（只读 + 打日志）；正常战斗中位移为 0 ⇒ 平时一条都不会打。
 /// </summary>
 internal static class LocalCreaturePositionProbe
 {
-    /// <summary>位移探针的采样节流（站位不需要逐帧精度）。</summary>
-    private const long SampleIntervalMs = 250L;
+    /// <summary>
+    /// 位移探针的采样节流（站位不需要逐帧精度）。
+    /// 2026-11-22 用户口径：**改 1 秒**（原 250ms）—— 一局 85 分钟的日志里本探针打了 17802 行，
+    /// 是 22.5MB 日志的最大单一来源。
+    /// </summary>
+    private const long SampleIntervalMs = 1000L;
 
-    /// <summary>小于这个像素差当成抖动（浮点/缩放误差），不算"位移"。</summary>
+    /// <summary>小于这个像素差当成抖动（浮点/缩放误差），不算"位移"（只更新基线）。</summary>
     private const float MoveThresholdPx = 2f;
+
+    /// <summary>
+    /// **只在日志里报告**的位移阈值（r391）。立绘有常态呼吸动画：1 秒窗口里单席 X 会漂 5~10px，
+    /// 若照旧 ≥2px 就报，节流到 1 秒也只省 1/4 的量。本探针真正要找的是「**站位被重排**」
+    /// （实机证据：换位那次的 Δ 是 **-27.6px**，且常伴随父节点索引变化）⇒
+    /// 索引变了**必定**报；纯 X 漂移只有 ≥10px 才报，否则只更新基线不打行。
+    /// </summary>
+    private const float LogThresholdPx = 10f;
 
     private static long _lastSampleMs;
 
@@ -232,18 +245,26 @@ internal static class LocalCreaturePositionProbe
                     continue;
                 }
 
-                bool xChanged = Math.Abs(current.X - previous.X) >= MoveThresholdPx;
+                float deltaX = current.X - previous.X;
+                bool xChanged = Math.Abs(deltaX) >= MoveThresholdPx;
                 bool orderChanged = current.ParentIndex != previous.ParentIndex;
                 if (!xChanged && !orderChanged)
                 {
                     continue;
                 }
 
-                moved = true;
+                // 基线始终跟着走（否则慢慢漂会累积成假的大位移）；
+                // 但**是否打日志**按 r391 的阈值：索引变了必报，纯漂移要 ≥10px（过滤呼吸动画）。
                 LastSnapshots[player.NetId] = current;
+                if (!orderChanged && Math.Abs(deltaX) < LogThresholdPx)
+                {
+                    continue;
+                }
+
+                moved = true;
                 LocalMultiControlLogger.Info(
                     $"[立绘位移探针] {DescribeSeat(player.NetId)} 立绘移动: "
-                    + $"x {previous.X:0.#} -> {current.X:0.#} (Δ{current.X - previous.X:+0.#;-0.#;0}), "
+                    + $"x {previous.X:0.#} -> {current.X:0.#} (Δ{deltaX:+0.#;-0.#;0}), "
                     + $"节点索引 {previous.ParentIndex} -> {current.ParentIndex}, "
                     + $"战斗开始后={(long)(Time.GetTicksMsec() - room.CreatedMsec)}ms, source={source}");
             }

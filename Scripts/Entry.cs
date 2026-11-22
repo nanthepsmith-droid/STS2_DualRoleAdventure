@@ -911,7 +911,10 @@ public partial class Entry
     //   （抽到牌那一刻归属不是受控席位 ⇒ 守卫跳过建节点）；等出牌链结束，差异往往已被别的重建路径消掉。
     //   修法 = 只留「手牌自己不忙 + 差异持续 1.5s + 5s 冷却」，并新增 `手牌UI补建闸门: 暂不补, reason=…`
     //   锚点（同"原因+席位+缺失清单"只打一条）—— 上次就是因为没有原因日志，只能靠猜。
-    private const string BuildMarker = "Revival v1.47.16 (game v0.111.0, marker=2026-11-22-r390-stable)";
+    // r391（2026-11-22，日志卫生）：**立绘位移探针节流到 1 秒**（原 250ms）。那局 85 分钟打了 17802 行
+    //   `[立绘位移探针]`，是 22.5MB 日志的最大单一来源。同时纯 X 漂移要 **≥10px** 才打行（索引变化必报）——
+    //   立绘呼吸动画在 1 秒窗口里本来就会漂 5~10px，不区分的话节流只省 1/4；实机换位那次的 Δ 是 -27.6px。
+    private const string BuildMarker = "Revival v1.47.17 (game v0.111.0, marker=2026-11-22-r391-stable)";
 
     private static Harmony? _harmony;
 
