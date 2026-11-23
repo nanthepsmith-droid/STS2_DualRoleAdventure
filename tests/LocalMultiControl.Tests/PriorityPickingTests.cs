@@ -427,6 +427,25 @@ public class PriorityPickingTests
     }
 
     // ---------------------------------------------------------------
+    // r393：**牌组**通用入口（FromDeckGeneric）也按 prompt 标题识别删牌
+    //   —— 调用方传 sourceTypeName = null（牌组入口没有 source 模型可看）
+    // ---------------------------------------------------------------
+
+    [TestCase("card_selection/TO_REMOVE", (int)WakuuPickScenario.Remove)]
+    [TestCase("card_selection/TO_TRANSFORM", (int)WakuuPickScenario.Transform)]
+    [TestCase("card_selection/TO_EXHAUST", (int)WakuuPickScenario.Exhaust)]
+    [TestCase("custom/WOOD_CARVINGS", (int)WakuuPickScenario.Unknown)]
+    [TestCase("", (int)WakuuPickScenario.Unknown)]
+    public void 牌组入口按prompt标题判定场景(string prefsLocKey, int expectedScenario)
+    {
+        // 2026-11-23 实机：商店里一次 TO_REMOVE 选牌走 FromDeckGeneric ⇒ 旧实现按 cardPickMode=last
+        // 删掉了「有附魔的能力牌」，而牌组里还有打击/防御。
+        Assert.That(
+            WakuuPriorityPicking.ClassifyHandScenario(null, prefsLocKey),
+            Is.EqualTo((WakuuPickScenario)expectedScenario));
+    }
+
+    // ---------------------------------------------------------------
     // Sly（奇巧）：类别归类 + Discard 场景优先级
     // ---------------------------------------------------------------
 
