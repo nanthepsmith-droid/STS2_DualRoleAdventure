@@ -1,28 +1,28 @@
 {
-  "recorded_at": "2026-11-13 19:03:45",
+  "recorded_at": "2026-11-23 09:32:16",
   "game": {
-    "version": "v0.113.0",
-    "commit": "16ac0fe3",
-    "date": "2026-11-13T02:09:24+08:00",
-    "branch": "v0.113.0",
-    "main_assembly_hash": 2138858832,
-    "sts2_dll_sha256": "A6CC282C52B96AD2E01D5692B1144B33AA8E3BA4E969582F648ECB13B2F751D7",
-    "sts2_dll_size": 10646528,
-    "sts2_dll_mtime": "2026-11-13 12:15:03",
+    "version": "v0.113.1",
+    "commit": "d09d48e5",
+    "date": "2026-11-14T10:31:11+08:00",
+    "branch": "v0.113.1",
+    "main_assembly_hash": 358281912,
+    "sts2_dll_sha256": "62ECBE91093E1FA862DE4329AAC865209DCB297804CAF0F0520D92D8C0B4A9C3",
+    "sts2_dll_size": 10648064,
+    "sts2_dll_mtime": "2026-11-18 10:24:26",
     "harmony": "2.4.2.0",
     "godotsharp": "4.5.1.0"
   },
   "repo": {
-    "marker": "2026-11-13-r350",
-    "version": "1.47.0",
-    "head": "0e57f6f",
-    "patch_classes": 215,
-    "patch_rows": 255,
-    "semantic_descriptors": 418,
-    "string_targets": 215,
+    "marker": "2026-11-23-r392",
+    "version": "1.49.0",
+    "head": "dc8333c",
+    "patch_classes": 230,
+    "patch_rows": 271,
+    "semantic_descriptors": 445,
+    "string_targets": 237,
     "string_stale": 0,
-    "targets_baseline_sha256": "37DD8A22034CA990F84EAC02BB476AEBE16325DB6E6C24AF62B7D7BD60B056BB"
+    "targets_baseline_sha256": "25F9BE56B4B5FED26F7931992672E9F8B13491D4BF2F3F665BC0DAD581FE1E40"
   },
-  "own_dll_sha256": "E8B78DC699E8660962D16B9426372D4153DB74F055F5014C6922796E9B45C446",
-  "archive": "D:\\Download\\pain\\game-archives\\v0.111.0"
+  "own_dll_sha256": "26F95B720150B52553EED907AE6CDB614146DBD10F5EAE46EE35C1A413F7BB63",
+  "archive": "D:\\Download\\pain\\game-archives\\v0.113.1"
 }
