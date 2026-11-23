@@ -901,7 +901,10 @@ public partial class Entry
     // r391（2026-11-22，日志卫生）：**立绘位移探针节流到 1 秒**（原 250ms）。那局 85 分钟打了 17802 行
     //   `[立绘位移探针]`，是 22.5MB 日志的最大单一来源。同时纯 X 漂移要 **≥10px** 才打行（索引变化必报）——
     //   立绘呼吸动画在 1 秒窗口里本来就会漂 5~10px，不区分的话节流只省 1/4；实机换位那次的 Δ 是 -27.6px。
-    private const string BuildMarker = "Revival v1.49.0 (game v0.113.1, marker=2026-11-22-r391)";
+    // r392（2026-11-23，r391 实机判读）：① 补建**已生效**（`手牌UI缺节点已补建` 18 次 / 失败 0，差异 20 次）；
+    //   ② 闸门日志里 189/192 是 `reason=PersistPending`（差异刚出现的 1.5 秒正常态）⇒ 不再记它，
+    //   只留"手牌忙 / 冷却中"这两种真异常；③ 立绘探针行数 380/18min（原 17802/85min ≈ 209/min → 21/min）。
+    private const string BuildMarker = "Revival v1.49.0 (game v0.113.1, marker=2026-11-23-r392)";
 
     private static Harmony? _harmony;
 
