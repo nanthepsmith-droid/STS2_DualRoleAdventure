@@ -178,6 +178,23 @@ via the configured Vakuu players and re-grants the relic. Turning this off resto
   potions also consult **your own** win-rate delta (runs where you bought it vs. runs where you did not):
   a **negative delta vetoes the purchase** (veto only — it never proactively picks what to buy).
 
+#### Blitz shops (different rules, separate switch)
+
+Blitz shops are **not** the normal shop: 6 slots (5 regular + 1 cursed), **only 3 purchases per visit**, and
+entries **cost no gold** — the price is curses or changes to your deck. So they get their own switch,
+**"Blitz Shop Auto-Buy"** (off by default).
+
+- When on, all Vakuu seats buy **on entering the shop** (no need to switch seats first): heal to full when HP is
+  low (the map always puts an **elite right after** a Blitz shop) → use the cursed choice entry to top up picks
+  when short → card rewards → relics → upgrade the rare card → card removal → upgrade/enchant/transform →
+  potions; leftover picks are spent on non-cursed entries. Deck curse count is capped at 5.
+- Card-pick thresholds for Blitz are lowered separately (mid-deck 15% / 20% / 25% by act) — the normal-mode
+  30/40/50 is untouched.
+- Requires the three **reward auto-claim** switches (cards / gold+relics / potions) to stay on; otherwise the
+  feature skips itself and says so in the log (half of a Blitz shop is settled through reward screens).
+- Log anchors: `极速商店自动购买启动` / `极速商店决定购买` / `极速商店购买结果` / `极速商店不买: …` /
+  `极速商店自动购买完成`.
+
 ### The four Vakuu features (inside "Vakuu autopilot"; **all off by default**, and they need "Vakuu Form Autopilot (Master Toggle)" on)
 
 - **Purify at rest sites** (`purifyVakuu`): rest sites give you (the human) an extra "Purify" option —
@@ -267,9 +284,14 @@ When the third-party **Co-op Bots** mod (online AI teammates) is installed, this
   (main-keyboard digits are deliberately left to the game's "select the Nth hand card").
 - Each character owns their deck, hand, energy, gold, potions, relics, and choices. The UI (hand, energy, potion bar, status strip) follows whoever you control.
 - **Combat:** play each character's turn, switching freely; end turn per character.
+- **"Force End" button (combat)**: a button appears above the end-turn button **only while some hosted seat
+  (Vakuu form / War God) still has cards to play and is not ready yet**. One click makes those hosted seats stop
+  for this turn and end their turns — useful when you cannot switch into them. Human-controlled seats are never
+  touched (they still use the vanilla end-turn button). While a card is being played or picked, the click only
+  shows a hint and does nothing (so it cannot cut a selection chain in half).
 - **Turn-start animations:** with many players, "Other settings" offers **"Skip other players' turn-start draw animations"** (off by default) —
   only the character you are viewing plays its draw animation, the rest resolve instantly (data is unaffected).
-- **Rewards:** loot is generated per character and shown as one combined list, each entry prefixed with its owner (e.g. `player2` / `bot3`). Claim with the matching character.
+- **Rewards:** loot is generated per character and shown as one combined list, each entry prefixed with its owner (e.g. `Player 2` / `Bot 3`). Claim with the matching character.
 - **Events:** by default each character resolves the event independently — the mod walks you through them one by one. Shared-event votes are auto-completed where the game requires everyone to vote.
 - **Crystal Sphere:** each character pays for and divines on their own turn; revealed rewards (and the Payment Plan curse) belong only to the revealing character. Character switching is locked while a divination is in progress — finish your divinations first, the mod switches automatically.
 - **Rest sites:** each character chooses in sequence (rest, upgrade, etc.). **With 5+ players everyone's portrait and speech bubble show up**

@@ -18,11 +18,15 @@
 #   3. 生成 marker 建议串（Revival vX.Y.Z (game vX.Y.Z, marker=YYYY-MM-DD-rN)），
 #      可从 Entry.cs 当前 marker 自动取下一 rN
 #   4. dotnet build -c Release -warnaserror（0 警告 0 错误门禁）
-#   5. 拷贝 dll + json 到 workshop\content\
-#   5.5 生成 build-info.json（源码 commit + 依赖锁定；打进 zip，并在 release\ 留同名副本）
-#   6. 打 zip 到 release\DualRoleAdventure-v{major}.{minor}.zip
-#   7. 打印 SHA256（源 dll / zip / zip 内 dll）供发布时核对
-#   8. -PublishGitHub：提交版本改动 → 打 tag `v{major}.{minor}` →（-PushGit 时）推 origin
+#   4.2 重建双载荷 dist（build_dual.ps1 -SkipBetaBuild：薄 loader + lib\0.111.0 + lib\0.113.0）；
+#       -SkipDual 可退回旧的单版本扁平包（默认不要用）
+#   5. 同步 workshop\content\（双载荷时 = loader + lib\ 结构）
+#   5.5 生成 build-info.json（源码 commit + 依赖锁定 + 包内三份程序集指纹；
+#       打进 zip，并在 release\ 留同名副本）
+#   6. 打 zip 到 release\DualRoleAdventure-v{major}.{minor}.{patch}.zip
+#      （2026-11-17 口径：1.50 起用小版本 1.50.x，包名 / tag 带补丁位）
+#   7. 打印 zip 的 SHA256，并逐个比对包内文件与源文件
+#   8. -PublishGitHub：提交版本改动 → 打 tag `v{major}.{minor}.{patch}` →（-PushGit 时）推 origin
 #      → gh release create/upload（原 BuildRelease.ps1 已并入本脚本，2026-09-16；AGENTS.md §7 第 5 步）
 
 param(
@@ -32,6 +36,7 @@ param(
     [switch]$UpdateMarker,          # 自动把 Entry.cs 的 BuildMarker 更新为新 marker 串
     [switch]$DryRun,                # 只打印计划，不改文件、不构建
     [switch]$CompatOnly,            # 只打 compat-mods 附件（不动版本号/marker，不重建主 dll、不打主包）
+    [switch]$SkipDual,              # 不重建/不打包双载荷（退化成旧的单 dll 扁平包；只有明确知道不需要双版本时才用）
     [switch]$PublishGitHub,         # 提交版本改动 + 打 tag + gh release（原 BuildRelease.ps1 的能力，2026-09-16 并入）
     [switch]$PushGit,               # 仅与 -PublishGitHub 同用：git push origin master --follow-tags
     [string]$ReleaseNotes = "",     # GitHub Release 正文；缺省 "Automated release <tag>"
@@ -61,7 +66,10 @@ if ($Version -notmatch "^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$") {
 }
 $verMajor = [int]$Matches[1]
 $verMinor = [int]$Matches[2]
-$zipTag = "v{0}.{1}" -f $verMajor, $verMinor
+$verPatch = [int]$Matches[3]
+# 2026-11-17 口径：**1.50 起改用小版本 1.50.x** ⇒ zip 名 / git tag 也带补丁位
+# （旧规则是 v{major}.{minor}，1.50.1 会和 v1.50 撞名：脚本里"tag 已存在就跳过 + zip 覆盖"会静默复用旧 tag）。
+$zipTag = "v{0}.{1}.{2}" -f $verMajor, $verMinor, $verPatch
 
 # ---------------------------------------------------------------- 1.5 compat-mods 补丁附件
 # 口径（2026-10-07 用户拍板）：补丁 mod **不另开 Release**，作为主 Release 的**独立附件**分发
@@ -220,6 +228,48 @@ if (-not $DryRun) {
     }
 }
 
+# ---------------------------------------------------------------- 4.2 双载荷（薄 loader + 每版本一份 payload）
+# 形态见 Scripts\Tools\build_dual.ps1 头部：
+#   dist\DualRoleAdventure\
+#     DualRoleAdventure.json
+#     DualRoleAdventure.dll                      ← 薄 loader（游戏唯一加载的程序集）
+#     lib\0.111.0\DualRoleAdventure.Payload.dll  ← stable/0.111 代码线
+#     lib\0.113.0\DualRoleAdventure.Payload.dll  ← master（beta 线，即本次构建）
+# ⚠ 发布包**必须**按这个结构发：玩家日常玩的是 0.111 正式版，扁平单 dll 包会让他拿到
+#   只对 0.113 编的载荷 ⇒ 直接起不来（2026-11-23 发 1.50 时补上这一步）。
+$distDir       = Join-Path $projectRoot "dist\DualRoleAdventure"
+$loaderPath    = Join-Path $distDir "DualRoleAdventure.dll"
+$stablePayload = Join-Path $distDir "lib\0.111.0\DualRoleAdventure.Payload.dll"
+$betaPayload   = Join-Path $distDir "lib\0.113.0\DualRoleAdventure.Payload.dll"
+
+if ($SkipDual) {
+    Write-Step "跳过双载荷（-SkipDual）：将打出旧的单 dll 扁平包"
+} else {
+    Write-Step "重建双载荷 dist（build_dual.ps1 -SkipBetaBuild）..."
+    if ($DryRun) {
+        Write-Host "  [DRY] 调 Scripts\Tools\build_dual.ps1 -SkipBetaBuild -OutDir dist"
+    } else {
+        $buildDual = Join-Path $PSScriptRoot "build_dual.ps1"
+        if (-not (Test-Path -LiteralPath $buildDual)) { Write-Err "缺少 build_dual.ps1，无法出双载荷包（确需单版本包请显式加 -SkipDual）。" }
+        Push-Location $projectRoot
+        try {
+            & $buildDual -SkipBetaBuild -OutDir (Join-Path $projectRoot "dist")
+            if ($LASTEXITCODE -ne 0) { Write-Err "build_dual.ps1 失败（exit=$LASTEXITCODE），发布包没生成。" }
+        } finally {
+            Pop-Location
+        }
+        Write-Ok "双载荷已重建: $distDir"
+    }
+}
+
+$dualReady = (-not $SkipDual) -and (Test-Path -LiteralPath $loaderPath) -and
+             (Test-Path -LiteralPath $stablePayload) -and (Test-Path -LiteralPath $betaPayload)
+if (-not $SkipDual -and -not $dualReady) {
+    Write-Err ("双载荷产物不全（loader/0.111.0/0.113.0 至少缺一项）：`n" +
+               "  $loaderPath`n  $stablePayload`n  $betaPayload")
+}
+if ($dualReady) { Write-Ok "双载荷产物齐（loader + 0.111.0 + 0.113.0）" }
+
 # ---------------------------------------------------------------- 4.5 构建元数据：源码 commit + 依赖锁定
 # 产出 build-info.json（发布包内 + release\ 同名副本），回答三个问题：
 #   ① 这一版从哪个 commit 构建的？② 用哪套工具链？③ 对着哪几个游戏程序集（含 SHA256）构建？
@@ -319,10 +369,22 @@ if (Test-Path -LiteralPath $assetsPath) {
     } catch { }
 }
 
+$artifactList = if ($dualReady) {
+    # 双载荷包：包内三份程序集都要留指纹，事后能一眼看出"这一版的两个载荷分别是谁"
+    @(
+        @{ key = "loader";        path = $loaderPath;    name = "DualRoleAdventure.dll" },
+        @{ key = "payload_0_111"; path = $stablePayload; name = "lib/0.111.0/DualRoleAdventure.Payload.dll" },
+        @{ key = "payload_0_113"; path = $betaPayload;   name = "lib/0.113.0/DualRoleAdventure.Payload.dll" },
+        @{ key = "json";          path = $rootJson;      name = "DualRoleAdventure.json" }
+    )
+} else {
+    @(
+        @{ key = "dll";  path = $dllPath;  name = "DualRoleAdventure.dll" },
+        @{ key = "json"; path = $rootJson; name = "DualRoleAdventure.json" }
+    )
+}
 $artifacts = [ordered]@{}
-foreach ($artifact in @(
-        @{ key = "dll"; path = $dllPath; name = "DualRoleAdventure.dll" },
-        @{ key = "json"; path = $rootJson; name = "DualRoleAdventure.json" })) {
+foreach ($artifact in $artifactList) {
     $sizeBytes = 0
     if (Test-Path -LiteralPath $artifact.path) { $sizeBytes = (Get-Item -LiteralPath $artifact.path).Length }
     $artifacts[$artifact.key] = [ordered]@{
@@ -331,11 +393,13 @@ foreach ($artifact in @(
         sizeBytes = $sizeBytes
     }
 }
-$dllSha = "" + $artifacts["dll"].sha256
+$primaryKey = if ($dualReady) { "loader" } else { "dll" }
+$dllSha = "" + $artifacts[$primaryKey].sha256
 
 $buildInfo = [ordered]@{
     schemaVersion            = "dualroleadventure-release-build-info/v1"
     modId                    = "DualRoleAdventurefixed"
+    layout                   = $(if ($dualReady) { "dual" } else { "flat" })
     version                  = $Version
     tag                      = $zipTag
     marker                   = $markerSuggestion
@@ -367,13 +431,23 @@ if ($DryRun) {
 }
 
 # ---------------------------------------------------------------- 5. 拷贝到 workshop\content\
-Write-Step "拷贝 dll + json 到 workshop\content\ ..."
+# ⚠ 本仓库**不再走创意工坊上传**（README 已声明只发 GitHub Releases），这里只是让槽位目录与发布形态保持一致，
+#   别再往这里放裸的 beta 载荷 —— 双载荷下槽位必须是 loader + lib\ 结构，否则本地装配出来的槽位是坏的。
+$wsContent = Join-Path $projectRoot "workshop\content"
+Write-Step "同步 workshop\content\（槽位目录）..."
 if (-not $DryRun) {
-    Copy-Item -LiteralPath $dllPath -Destination (Join-Path (Join-Path $projectRoot "workshop\content") "DualRoleAdventure.dll") -Force
-    Copy-Item -LiteralPath $rootJson -Destination $wsJson -Force
-    Write-Ok "  workshop\content\DualRoleAdventure.dll + DualRoleAdventure.json 已更新"
+    if ($dualReady) {
+        Copy-Item -LiteralPath $loaderPath -Destination (Join-Path $wsContent "DualRoleAdventure.dll") -Force
+        Copy-Item -Path (Join-Path $distDir "lib") -Destination $wsContent -Recurse -Force
+        Copy-Item -LiteralPath $rootJson -Destination $wsJson -Force
+        Write-Ok "  workshop\content\ = loader + lib\（0.111.0 / 0.113.0）+ json 已更新"
+    } else {
+        Copy-Item -LiteralPath $dllPath -Destination (Join-Path $wsContent "DualRoleAdventure.dll") -Force
+        Copy-Item -LiteralPath $rootJson -Destination $wsJson -Force
+        Write-Ok "  workshop\content\DualRoleAdventure.dll + DualRoleAdventure.json 已更新（单载荷扁平形态）"
+    }
 } else {
-    Write-Host "  [DRY] 拷贝 dll + json -> workshop\content\"
+    Write-Host "  [DRY] 同步 workshop\content\（双载荷时 = loader + lib\ 结构）"
 }
 
 # ---------------------------------------------------------------- 6. 打 zip 到 release\
@@ -387,8 +461,14 @@ if (-not $DryRun) {
     $tempDir = Join-Path $releaseRoot "$releaseName.tmp"
     if (Test-Path -LiteralPath $tempDir) { Remove-Item -LiteralPath $tempDir -Recurse -Force }
     New-Item -ItemType Directory -Path $tempDir | Out-Null
-    Copy-Item -LiteralPath $dllPath -Destination (Join-Path $tempDir "DualRoleAdventure.dll") -Force
-    Copy-Item -LiteralPath $rootJson -Destination (Join-Path $tempDir "DualRoleAdventure.json") -Force
+    if ($dualReady) {
+        # 双载荷：整目录（loader + lib\0.111.0 + lib\0.113.0 + json）原样进包
+        Copy-Item -Path (Join-Path $distDir "*") -Destination $tempDir -Recurse -Force
+        Copy-Item -LiteralPath $rootJson -Destination (Join-Path $tempDir "DualRoleAdventure.json") -Force
+    } else {
+        Copy-Item -LiteralPath $dllPath -Destination (Join-Path $tempDir "DualRoleAdventure.dll") -Force
+        Copy-Item -LiteralPath $rootJson -Destination (Join-Path $tempDir "DualRoleAdventure.json") -Force
+    }
     # build-info.json 打进发布包（UTF-8 无 BOM），并在 release\ 留一份同名副本便于不开包核对/比对
     [System.IO.File]::WriteAllText((Join-Path $tempDir "build-info.json"), $buildInfoJson, (New-Object System.Text.UTF8Encoding($false)))
     [System.IO.File]::WriteAllText($buildInfoCopy, $buildInfoJson, (New-Object System.Text.UTF8Encoding($false)))
@@ -405,35 +485,59 @@ if (-not $DryRun) {
     # $dllSha 已在 4.5 步算好（build-info.json 里是同一份）
     $zipSha = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLower()
 
+    # 逐个比对"包内文件 vs 源文件"（双载荷时是 loader + 两个 payload + json）
+    $expected = if ($dualReady) {
+        @(
+            @{ entry = "DualRoleAdventure.dll";                        src = $loaderPath },
+            @{ entry = "lib/0.111.0/DualRoleAdventure.Payload.dll";    src = $stablePayload },
+            @{ entry = "lib/0.113.0/DualRoleAdventure.Payload.dll";    src = $betaPayload },
+            @{ entry = "DualRoleAdventure.json";                       src = $rootJson }
+        )
+    } else {
+        @(
+            @{ entry = "DualRoleAdventure.dll";  src = $dllPath },
+            @{ entry = "DualRoleAdventure.json"; src = $rootJson }
+        )
+    }
+
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zipEntrySha = ""
     $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+    $allOk = $true
     try {
-        $entry = $zip.Entries | Where-Object { $_.FullName -eq "DualRoleAdventure.dll" } | Select-Object -First 1
-        if ($entry) {
-            $sha256 = [System.Security.Cryptography.SHA256]::Create()
-            $stream = $entry.Open()
-            try {
-                $zipEntrySha = ([System.BitConverter]::ToString($sha256.ComputeHash($stream))).Replace("-", "").ToLower()
-            } finally {
-                $stream.Dispose()
-                $sha256.Dispose()
+        foreach ($item in $expected) {
+            $normalized = $item.entry.Replace("/", "\")
+            $entry = $zip.Entries | Where-Object { ($_.FullName.Replace("/", "\")) -eq $normalized } | Select-Object -First 1
+            $entrySha = ""
+            if ($entry) {
+                $sha256 = [System.Security.Cryptography.SHA256]::Create()
+                $stream = $entry.Open()
+                try {
+                    $entrySha = ([System.BitConverter]::ToString($sha256.ComputeHash($stream))).Replace("-", "").ToLower()
+                } finally {
+                    $stream.Dispose()
+                    $sha256.Dispose()
+                }
+            }
+            $srcSha = Get-Sha256OrEmpty $item.src
+            if ($entrySha -and $srcSha -and $entrySha -eq $srcSha) {
+                Write-Ok ("  [一致] {0}" -f $item.entry)
+            } else {
+                $allOk = $false
+                Write-Host ("  [不一致] {0}  包内={1}  源={2}" -f $item.entry, ($(if ($entrySha) { $entrySha } else { "<缺失>" })), $srcSha) -ForegroundColor Red
             }
         }
     } finally {
         $zip.Dispose()
     }
 
-    Write-Host "  源 dll     : $dllSha"
-    Write-Host "  zip        : $zipSha"
-    Write-Host "  zip 内 dll : $zipEntrySha"
-    if ($zipEntrySha -and $dllSha -eq $zipEntrySha) {
-        Write-Ok "zip 内 dll 与源 dll 一致"
+    Write-Host "  zip sha256 : $zipSha"
+    if ($allOk) {
+        Write-Ok "zip 内文件与源文件逐一一致"
     } else {
-        Write-Err "zip 内 dll 与源 dll 不一致，发布包异常！"
+        Write-Err "zip 内文件与源文件不一致，发布包异常！"
     }
 } else {
-    Write-Host "  [DRY] 打印 dll / zip / zip 内 dll 的 SHA256"
+    Write-Host "  [DRY] 打印 zip sha256 并逐个比对包内文件与源文件"
 }
 
 # ---------------------------------------------------------------- 7.5 compat-mods 补丁附件（主 Release 的独立附件）
