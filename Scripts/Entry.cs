@@ -923,7 +923,18 @@ public partial class Entry
     //   修法 = 该前缀也按 `prefs.Prompt` 的 loc key 判场景（只映射 `TO_REMOVE`，其余保持 Unknown = 行为不变），
     //   并把"选了哪几张"打成结果锚点（`瓦库作用域外牌组选牌结果 … 选中=[…]`）——
     //   这条链以前只有 options=N、没有结果，用户报"删错牌"时日志里根本看不出删的是哪张。
-    private const string BuildMarker = "Revival v1.47.19 (game v0.111.0, marker=2026-11-23-r393-stable)";
+    // r398（2026-11-23，§瓦库托管：变化牌处置 —— 「变成什么」那一半）：**变化成指定一张牌 ⇒ 出牌按消耗牌处理**。
+    //   判据 = `CardTransformation.Replacement != null`（随机变化走 CardFactory.CreateRandomCardForTransform，
+    //   候选过滤在 Common/Uncommon/Rare ⇒ 永不产 Token）；登记表按**结果牌实例**记（引用相等），
+    //   出牌评分侧只 OR 上既有的 Exhaust 位（-5），不另造评分。落地 = `WakuuTransformReplacementRegistry`
+    //   （+ 纯逻辑 `WakuuTransformReplacementSet`）+ `WakuuTransformReplacementRecordPatch`（`CardCmd.Transform`
+    //   前缀登记结果实例；刻意不挂"最终实例"那条 API —— 0.113/0.111 名字不同，保双版本同一份源码）。
+    // r399（2026-11-23 用户实机反馈）：**变化类的「变掉哪张」按结果形态分两刀** —— 结果是"指定的一张牌"时
+    //   （如【离去】→【仆从打击】），变掉哪张与结果无关 ⇒ 该"把最烂的牌换掉"（诅咒 > 状态 > 打击 > 防御 > 其余）；
+    //   随机变化仍先变打击/防御（变诅咒只会变成另一个诅咒 = 同池，白花一次变化）。判据
+    //   `WakuuTransformTargetPolicy`（按 source 类型名登记：Begone/Charge/Seance = 固定、EntropyPower = 随机；
+    //   未登记来源按随机处理 —— 选牌那一刻游戏不暴露"结果是不是固定牌"）。
+    private const string BuildMarker = "Revival v1.47.20 (game v0.111.0, marker=2026-11-23-r399-stable)";
 
     private static Harmony? _harmony;
 

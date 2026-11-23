@@ -64,6 +64,9 @@ internal enum WakuuCardKind
 ///        倒序 防御 &gt; 打击 &gt; 任务 &gt; 状态 &gt; 诅咒
 ///   Transform（变化）：Strike &gt; Defend &gt; **过渡牌（按落差降序；2026-11-20）** &gt; 其余从左到右；
 ///        硬排除 Curse/Status/Quest/Sly
+///   Transform + **固定目标**（2026-11-23，<c>WakuuTransformTargetPolicy</c> 判定）：
+///        Curse &gt; Status &gt; Strike &gt; Defend &gt; 其余；Quest/Sly 仍硬排除
+///        —— 结果与变掉哪张无关 ⇒ 这时该"把最烂的牌换掉"
 ///   Discard（弃牌，用户追加）：Sly(奇巧) &gt; Curse &gt; Status &gt; Quest &gt; Strike &gt; 基础防御 &gt; 其余
 ///        —— 奇巧牌丢弃后本回合自动打出，优先丢它是白嫖一次出牌。
 /// 跨场景对 Sly 的默认语义：Remove 视同 Other（不优先消耗正面牌）；Copy 视同 Other（可优先复制）；
@@ -213,10 +216,16 @@ internal static class WakuuPriorityPicking
     /// 它只在**同一优先级档内的「其余」**之间参与比较 —— 诅咒 / 状态 / 打击 / 防御 / 任务牌的
     /// 硬规则一个字不动（见 <see cref="PriorityOf"/>）。其它场景传 null 即可。
     /// </param>
+    /// <param name="fixedTargetTransform">
+    /// 仅 Transform 场景有意义（2026-11-23）：本次变化的**结果是"指定的一张牌"**（如【离去】→【仆从打击】）
+    /// ⇒ 改按「诅咒 &gt; 状态 &gt; 打击 &gt; 防御 &gt; 其余」排（结果与变掉哪张无关，这时该把最烂的牌换掉）。
+    /// 随机变化 / 判不出来的来源保持 <c>false</c>（旧顺序）。
+    /// </param>
     public static List<int> RankIndicesByScenario(
         WakuuPickScenario scenario,
         IReadOnlyList<WakuuCardKind> kinds,
-        IReadOnlyList<double>? transitionScores = null)
+        IReadOnlyList<double>? transitionScores = null,
+        bool fixedTargetTransform = false)
     {
         int count = kinds?.Count ?? 0;
         List<int> indices = new(count);
@@ -233,7 +242,7 @@ internal static class WakuuPriorityPicking
         // 容忍外部传 null（防御性），count 已在上面取到 0 时直接返回空序
         IReadOnlyList<WakuuCardKind> effectiveKinds = kinds ?? Array.Empty<WakuuCardKind>();
         return indices
-            .OrderByDescending((i) => PriorityOf(scenario, effectiveKinds[i]))
+            .OrderByDescending((i) => PriorityOf(scenario, effectiveKinds[i], fixedTargetTransform))
             .ThenByDescending((i) => SecondaryScoreOf(scenario, transitionScores, i))
             .ToList();
     }
@@ -260,7 +269,7 @@ internal static class WakuuPriorityPicking
         return double.IsNaN(score) || double.IsInfinity(score) || score <= 0 ? 0.0 : score;
     }
 
-    private static int PriorityOf(WakuuPickScenario scenario, WakuuCardKind kind)
+    private static int PriorityOf(WakuuPickScenario scenario, WakuuCardKind kind, bool fixedTargetTransform)
     {
         return scenario switch
         {
@@ -306,7 +315,21 @@ internal static class WakuuPriorityPicking
                 _ => 0,
             },
 
-            // 变化：优先变掉平庸的打击/防御；诅咒/状态/任务/奇巧硬排除（变掉奇巧会失去白嫖机制）
+            // 变化（**固定目标**，2026-11-23 用户口径）：结果是"指定的一张牌"（如【离去】→【仆从打击】），
+            // 与变掉哪张无关 ⇒ 这时该"把最烂的牌换掉"：诅咒 > 状态 > 打击 > 防御 > 其余。
+            // 任务牌（断线索）/奇巧（丢白嫖）仍硬排除。
+            // ⚠ 随机变化**不能**这么排：变诅咒只会变成另一个诅咒（同池），等于白花一次变化 ⇒ 走下面那条。
+            WakuuPickScenario.Transform when fixedTargetTransform => kind switch
+            {
+                WakuuCardKind.Curse => 6,
+                WakuuCardKind.Status => 5,
+                WakuuCardKind.BasicStrike => 3,
+                WakuuCardKind.BasicDefend => 2,
+                WakuuCardKind.Other => 1,
+                _ => ExcludedPriority,
+            },
+
+            // 变化（随机）：优先变掉平庸的打击/防御；诅咒/状态/任务/奇巧硬排除（变掉奇巧会失去白嫖机制）
             WakuuPickScenario.Transform => kind switch
             {
                 WakuuCardKind.BasicStrike => 3,

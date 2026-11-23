@@ -320,6 +320,8 @@ internal static class LocalMultiControlRuntime
         ResetAllWakuuAutoEndState();
         LocalPerfProbe.Reset("run-cleanup");
         LocalMerchantInventoryRuntime.Clear();
+        // r398：变化牌登记表（"变化成指定一张牌 ⇒ 按消耗牌处理"）按局累积的实例引用，退局必须清。
+        WakuuTransformReplacementRegistry.Clear("run-cleanup");
         LocalRestSiteSeatBubble.Reset("run-cleanup");
         // 瓦库四功能 · 我们联合：「本场战斗已发动」的记忆与流程中的防重入标记（R5 生命周期契约）。
         LocalWakuuUniteRuntime.ResetForRun("run-cleanup");
