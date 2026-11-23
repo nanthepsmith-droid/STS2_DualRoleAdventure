@@ -233,6 +233,8 @@ internal static class PatchDomainMap
             ["MerchantRoomEnterFoulThrowPatch"] = PatchDomain.Wakuu,
             ["PotionProcuredAutoDrinkPatch"] = PatchDomain.Wakuu,
             ["WakuuEventEnchantAutoAnswerPatch"] = PatchDomain.Wakuu,
+            // r398：变化牌登记（变化成指定一张牌 ⇒ 出牌按消耗牌处理）—— CardCmd.Transform 前缀登记结果实例
+            ["WakuuTransformReplacementRecordPatch"] = PatchDomain.Wakuu,
             ["WhisperingEarringPatch"] = PatchDomain.Wakuu,
             // 托管遗物守卫（r83）：第三方"吞噬/移除遗物"效果不得移除【瓦库形态】
             ["PlayerRemoveRelicInternalGuardPatch"] = PatchDomain.Wakuu,

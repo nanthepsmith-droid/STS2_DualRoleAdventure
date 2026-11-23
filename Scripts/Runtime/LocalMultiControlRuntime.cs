@@ -339,6 +339,8 @@ internal static class LocalMultiControlRuntime
         LocalMerchantInventoryRuntime.Clear();
         // r394：极速商店自动购买的「本店已跑过」「本局诅咒遗物次数」都是跨店/跨席位的记账，退局必须清。
         LocalWakuuBlitzShopAuto.Reset("run-cleanup");
+        // r398：变化牌登记表（"变化成指定一张牌 ⇒ 按消耗牌处理"）按局累积的实例引用，退局必须清。
+        WakuuTransformReplacementRegistry.Clear("run-cleanup");
         // r352 极速宝箱「每人 2 件」的两阶段投票状态（挂在 synchronizer 实例上，退局必须清）。
         LocalMultiControl.Scripts.Patch.BlitzTreasureDoublePickRuntime.Reset("run-cleanup");
         LocalRestSiteSeatBubble.Reset("run-cleanup");

@@ -40,6 +40,12 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
     private readonly WakuuPickScenario _scenario;
 
     /// <summary>
+    /// 变化类：本次变化的**结果是指定的一张牌**（如【离去】→【仆从打击】）⇒ 变掉哪张与结果无关，
+    /// 改按「诅咒 &gt; 状态 &gt; 打击 &gt; 防御 &gt; 其余」排。判据见 <see cref="WakuuTransformTargetPolicy"/>。
+    /// </summary>
+    private readonly bool _transformFixedTarget;
+
+    /// <summary>
     /// 选牌日志标记（可选）：非空时每次作答都打一条日志，便于实机核对"瓦库到底选了什么"。
     /// 默认不打——战斗自动出牌的选牌很频繁，不能刷屏。
     /// </summary>
@@ -78,8 +84,18 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
 
     /// <summary>带选牌场景的实例：供事件自动作答入口（删除/变化等）使用。</summary>
     public LocalWakuuStrategySelector(WakuuPickScenario scenario)
+        : this(scenario, transformFixedTarget: false)
+    {
+    }
+
+    /// <summary>
+    /// 带选牌场景 + 变化结果形态的实例（2026-11-23）：<paramref name="transformFixedTarget"/> = 本次变化的结果
+    /// 是**指定的一张牌**（如【离去】→【仆从打击】）⇒ 变化目标改成"先变掉最烂的牌（诅咒/状态）"。
+    /// </summary>
+    public LocalWakuuStrategySelector(WakuuPickScenario scenario, bool transformFixedTarget)
     {
         _scenario = scenario;
+        _transformFixedTarget = transformFixedTarget;
     }
 
     public Task<IEnumerable<CardModel>> GetSelectedCards(IEnumerable<CardModel> options, int minSelect, int maxSelect)
@@ -157,7 +173,8 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
                     ? BuildTransitionScores(candidates, scenario)
                     : null;
 
-            List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(scenario, kinds, transitionScores);
+            List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(
+                scenario, kinds, transitionScores, _transformFixedTarget);
             List<CardModel> picked = ranked
                 .Take(maxSelect)
                 .Select((i) => candidates[i])
@@ -166,6 +183,9 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
             LocalMultiControlLogger.Info(
                 $"瓦库智能选牌: scenario={scenario}, options={options.Count}"
                 + (candidates.Count != options.Count ? $"（大卡组档过滤后 {candidates.Count}）" : string.Empty)
+                + (scenario == WakuuPickScenario.Transform
+                    ? $", 变化目标={(_transformFixedTarget ? "固定牌(先变诅咒/状态)" : "随机牌(先变打击/防御)")}"
+                    : string.Empty)
                 + $", select={maxSelect}, picked={string.Join(",", picked.Select((c) => c.Id.Entry))}");
             return picked;
         }

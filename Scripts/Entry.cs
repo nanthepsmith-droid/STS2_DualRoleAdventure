@@ -914,7 +914,18 @@ public partial class Entry
     //   `LocalWakuuBlitzShopAuto` + 开关 `blitzShopAutoBuy` 默认关）；r395 修「非前台席位自动买完切过去货物还在」
     //   （库存必须与 UI 绑定同一份按房缓存）；r396 补个人偏好记录排除。
     // r397：把 r393 那笔合回 master ⇒ 重建部署（行为 = r396 + 删牌优先级走牌组通用入口）。
-    private const string BuildMarker = "Revival v1.49.0 (game v0.113.1, marker=2026-11-23-r397)";
+    // r398（2026-11-23，§瓦库托管：变化牌处置 —— 「变成什么」那一半）：**变化成指定一张牌 ⇒ 出牌按消耗牌处理**。
+    //   判据 = `CardTransformation.Replacement != null`（随机变化走 CardFactory.CreateRandomCardForTransform，
+    //   候选过滤在 Common/Uncommon/Rare ⇒ 永不产 Token）；登记表按**结果牌实例**记（引用相等），
+    //   出牌评分侧只 OR 上既有的 Exhaust 位（-5），不另造评分。落地 = `WakuuTransformReplacementRegistry`
+    //   （+ 纯逻辑 `WakuuTransformReplacementSet`）+ `WakuuTransformReplacementRecordPatch`（`CardCmd.Transform`
+    //   前缀登记结果实例；刻意不挂"最终实例"那条 API —— 0.113/0.111 名字不同，保双版本同一份源码）。
+    // r399（2026-11-23 用户实机反馈）：**变化类的「变掉哪张」按结果形态分两刀** —— 结果是"指定的一张牌"时
+    //   （如【离去】→【仆从打击】），变掉哪张与结果无关 ⇒ 该"把最烂的牌换掉"（诅咒 > 状态 > 打击 > 防御 > 其余）；
+    //   随机变化仍先变打击/防御（变诅咒只会变成另一个诅咒 = 同池，白花一次变化）。判据
+    //   `WakuuTransformTargetPolicy`（按 source 类型名登记：Begone/Charge/Seance = 固定、EntropyPower = 随机；
+    //   未登记来源按随机处理 —— 选牌那一刻游戏不暴露"结果是不是固定牌"）。
+    private const string BuildMarker = "Revival v1.49.0 (game v0.113.1, marker=2026-11-23-r399)";
 
     private static Harmony? _harmony;
 

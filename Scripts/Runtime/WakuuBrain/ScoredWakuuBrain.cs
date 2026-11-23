@@ -236,6 +236,14 @@ internal sealed class ScoredWakuuBrain : IWakuuCombatBrain
             keywords |= WakuuScoreKeywords.Exhaust;
         }
 
+        // 变化牌（2026-11-23）：变化成**指定**一张牌 ≈ 这张牌已经被消耗 ⇒ 按消耗牌处理（评分 -5），
+        // 随机变化（同角色）不打标记。不另造评分，只在这里 OR 上既有语义位（口径见
+        // WakuuTransformReplacementRegistry / WakuuTransformReplacementRecordPatch）。
+        if (WakuuTransformReplacementRegistry.IsFixedReplacementResult(card))
+        {
+            keywords |= WakuuScoreKeywords.Exhaust;
+        }
+
         if (applied.Contains(CardKeyword.Ethereal))
         {
             keywords |= WakuuScoreKeywords.Ethereal;

@@ -86,6 +86,13 @@ internal static class WakuuEffectExtractor
         WakuuScoreTargetKind targetKind = MapTargetKind(card.TargetType);
         WakuuCardKeywords keywords = MapKeywords(card.Keywords);
 
+        // 变化牌（2026-11-23）：变化成指定一张牌 ≈ 已被消耗 ⇒ 知识层与出牌评分同口径
+        // （否则同一张牌在"知识层"与"评分层"眼里一个带 Exhaust、一个不带）。
+        if (WakuuTransformReplacementRegistry.IsFixedReplacementResult(card))
+        {
+            keywords |= WakuuCardKeywords.Exhaust;
+        }
+
         List<WakuuEffectFeature> effects = new();
         int unknownSignals = 0;
         int knownSignals = 0;

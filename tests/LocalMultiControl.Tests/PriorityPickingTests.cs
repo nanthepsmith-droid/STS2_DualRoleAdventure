@@ -341,6 +341,61 @@ public class PriorityPickingTests
     }
 
     // ---------------------------------------------------------------
+    // Transform + **固定目标**（2026-11-23 用户口径）：结果是"指定的一张牌"（如【离去】→【仆从打击】），
+    // 变掉哪张与结果无关 ⇒ 改按「诅咒 > 状态 > 打击 > 防御 > 其余」——把最烂的牌换掉。
+    // ---------------------------------------------------------------
+
+    [Test]
+    public void Transform_固定目标时诅咒与状态排在打击防御之前()
+    {
+        List<WakuuCardKind> kinds = new()
+        {
+            K("STRIKE_IRONCLAD", ATK),   // BasicStrike
+            K("BURN", STA),              // Status
+            K("CURSE_OF_THE_BELL", CUR), // Curse
+            K("DEFEND_SILENT", SKL),     // BasicDefend
+        };
+
+        List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(
+            WakuuPickScenario.Transform, kinds, transitionScores: null, fixedTargetTransform: true);
+
+        Assert.That(ranked, Is.EqualTo(new[] { 2, 1, 0, 3 }), "诅咒 > 状态 > 打击 > 防御");
+    }
+
+    [Test]
+    public void Transform_固定目标时任务牌与奇巧仍硬排除()
+    {
+        List<WakuuCardKind> kinds = new()
+        {
+            K("NEOW_QUEST", QST),                                              // 任务牌：变掉可能断线索
+            WakuuPriorityPicking.ClassifyCard("SLY_KNIFE", ATK, isSly: true),   // 奇巧：变掉会失去白嫖机制
+            K("BURN", STA),
+        };
+
+        List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(
+            WakuuPickScenario.Transform, kinds, transitionScores: null, fixedTargetTransform: true);
+
+        Assert.That(ranked[0], Is.EqualTo(2), "只剩状态牌可挑");
+        Assert.That(ranked, Is.EqualTo(new[] { 2, 0, 1 }), "任务/奇巧垫底（原序保持）");
+    }
+
+    [Test]
+    public void Transform_随机变化保持打击优先_不受固定目标改口径影响()
+    {
+        // 随机变化时变诅咒只会变成另一个诅咒（同池）⇒ 必须仍然先变打击。
+        List<WakuuCardKind> kinds = new()
+        {
+            K("CURSE_OF_THE_BELL", CUR),
+            K("BURN", STA),
+            K("STRIKE_IRONCLAD", ATK),
+        };
+
+        List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Transform, kinds);
+
+        Assert.That(ranked, Is.EqualTo(new[] { 2, 0, 1 }));
+    }
+
+    // ---------------------------------------------------------------
     // Unknown：原序返回
     // ---------------------------------------------------------------
 

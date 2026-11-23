@@ -101,10 +101,19 @@ internal static class CardSelectHandScenarioPatch
             return true;
         }
 
+        // 变化类再分一刀（2026-11-23）：结果是**指定的一张牌**时（如【离去】→【仆从打击】），变掉哪张与结果无关
+        // ⇒ 该"把最烂的牌换掉"（诅咒 > 状态 > 打击 > 防御）；随机变化仍先变打击/防御。
+        // 判据只能看 source（选牌那一刻游戏不暴露"结果是不是固定牌"），见 WakuuTransformTargetPolicy。
+        bool transformFixedTarget = scenario == WakuuPickScenario.Transform
+            && WakuuTransformTargetPolicy.IsFixedTarget(source?.GetType().Name);
+
         LocalMultiControlLogger.Info(
             $"瓦库手牌智能选牌: player={player.NetId}, scenario={scenario}, source={source?.GetType().Name}, "
+            + (scenario == WakuuPickScenario.Transform
+                ? $"变化目标={(transformFixedTarget ? "固定牌" : "随机牌(或未登记来源)")}, "
+                : string.Empty)
             + $"options={candidates.Count}, select={prefs.MaxSelect}");
-        __result = new LocalWakuuStrategySelector(scenario)
+        __result = new LocalWakuuStrategySelector(scenario, transformFixedTarget)
             .GetSelectedCards(candidates, prefs.MinSelect, prefs.MaxSelect);
         return false;
     }
