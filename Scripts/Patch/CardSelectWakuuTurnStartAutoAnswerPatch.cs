@@ -401,12 +401,63 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
             candidates = candidates.OrderBy(sortingOrder).ToList();
         }
 
+        // 🆕 r393：牌组通用入口也按 **prompt 标题** 识别「删牌」语义。
+        // 实机（2026-11-23 Blitz 商店，`…322559__r391` 日志 L34606）：一次 `TO_REMOVE` 选牌走的是
+        // `FromDeckGeneric`（不是 `FromDeckForRemoval`），本前缀按 `cardPickMode=last` **取列表最后一张**
+        // ⇒ 先删掉了一张**有附魔的能力牌**，而牌组里还有打击/防御（用户当场发现）。
+        // 只映射 `TO_REMOVE`（`ClassifyHandScenario` 里同一套键）：`TO_TRANSFORM` 在牌组通用入口的调用方
+        // （木雕之类）语义尚未取证，保持 Unknown = 维持原策略，避免扩大改动面。
+        WakuuPickScenario scenario = WakuuPriorityPicking.ClassifyHandScenario(
+            sourceTypeName: null,
+            CardSelectHandScenarioPatch.BuildPrefsLocKey(prefs.Prompt));
+
         LocalMultiControlLogger.Info(
             $"瓦库作用域外牌组选牌自动作答: player={player.NetId}, options={candidates.Count}, "
-            + $"select={prefs.MinSelect}~{prefs.MaxSelect}, mode={LocalWakuuAutopilotConfig.CardPickMode}, source={entry}");
+            + $"select={prefs.MinSelect}~{prefs.MaxSelect}, mode={LocalWakuuAutopilotConfig.CardPickMode}, "
+            + $"scenario={scenario}, source={entry}");
 
-        __result = ComputeGridAnswerAsync(candidates, prefs);
+        __result = LogDeckAnswerPickAsync(ComputeGridAnswerAsync(candidates, prefs, scenario), player, scenario, entry);
         return false;
+    }
+
+    /// <summary>
+    /// 把「本屏最终选了哪几张」打出来（r393）。
+    ///
+    /// <para>为什么需要：这条链（`FromDeckGeneric` 自动作答）以前只打"options=N / 选几张"，**没有结果锚点** ——
+    /// 2026-11-23 用户报「先删了有附魔的能力牌」，从日志里根本看不出删的是哪张，只能靠反推规则。</para>
+    ///
+    /// 日志失败绝不影响选牌链（包 try/catch，异常只打 WARN）。
+    /// </summary>
+    private static async Task<IEnumerable<CardModel>> LogDeckAnswerPickAsync(
+        Task<IEnumerable<CardModel>> answerTask,
+        Player player,
+        WakuuPickScenario scenario,
+        string entry)
+    {
+        IEnumerable<CardModel> picked;
+        try
+        {
+            picked = await answerTask;
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"瓦库作用域外牌组选牌作答失败({entry}): {exception.GetType().Name}: {exception.Message}");
+            throw;   // 交回原版选择流程（原方法会对异常走它自己的兜底）
+        }
+
+        try
+        {
+            List<CardModel> list = picked?.ToList() ?? new List<CardModel>();
+            LocalMultiControlLogger.Info(
+                $"瓦库作用域外牌组选牌结果: player={player.NetId}, scenario={scenario}, "
+                + $"选中={list.Count} 张 [{string.Join(",", list.Select((card) => card?.Id.Entry ?? "?"))}], source={entry}");
+            return list;
+        }
+        catch (Exception exception)
+        {
+            LocalMultiControlLogger.Warn($"瓦库作用域外牌组选牌结果日志失败({entry}，忽略): {exception.Message}");
+            return picked ?? Array.Empty<CardModel>();
+        }
     }
 
     /// <summary>牌组「变化」选牌入口 —— 暂只探针（签名含 `CardTransformation`，真出现再适配）。</summary>
@@ -452,10 +503,13 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
 
     private static async Task<IEnumerable<CardModel>> ComputeGridAnswerAsync(
         IReadOnlyList<CardModel> cards,
-        CardSelectorPrefs prefs)
+        CardSelectorPrefs prefs,
+        WakuuPickScenario scenario = WakuuPickScenario.Unknown)
     {
         // 与 CardSelectCmd.FromSimpleGrid 走全局选择器时的口径一致：min/max 取自 prefs。
-        LocalWakuuStrategySelector selector = new();
+        // r393：带上场景 ⇒ 删牌屏会走删除优先级表（诅咒>状态>打击>基础防御>过渡牌>其余>任务），
+        //       Unknown 时行为与旧版完全一致（选择器内部只在 smartPick 开且场景明确时套表）。
+        LocalWakuuStrategySelector selector = new(scenario);
         return await selector.GetSelectedCards(cards, prefs.MinSelect, prefs.MaxSelect);
     }
 

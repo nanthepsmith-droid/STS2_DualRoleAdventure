@@ -904,7 +904,17 @@ public partial class Entry
     // r392（2026-11-23，r391 实机判读）：① 补建**已生效**（`手牌UI缺节点已补建` 18 次 / 失败 0，差异 20 次）；
     //   ② 闸门日志里 189/192 是 `reason=PersistPending`（差异刚出现的 1.5 秒正常态）⇒ 不再记它，
     //   只留"手牌忙 / 冷却中"这两种真异常；③ 立绘探针行数 380/18min（原 17802/85min ≈ 209/min → 21/min）。
-    private const string BuildMarker = "Revival v1.49.0 (game v0.113.1, marker=2026-11-23-r396)";
+    // r393（2026-11-23 用户实机）：**牌组通用入口的删牌没走删除优先级表** —— 商店里一次 `TO_REMOVE` 选牌走的是
+    //   `FromDeckGeneric`（不是 `FromDeckForRemoval`），`CardSelectWakuuTurnStartAutoAnswerPatch` 那条前缀
+    //   按 `cardPickMode=last` **取了列表最后一张** ⇒ 先删掉一张**有附魔的能力牌**，而牌组里还有打击/防御。
+    //   修法 = 该前缀也按 `prefs.Prompt` 的 loc key 判场景（只映射 `TO_REMOVE`，其余保持 Unknown = 行为不变），
+    //   并把"选了哪几张"打成结果锚点（`瓦库作用域外牌组选牌结果 … 选中=[…]`）——
+    //   这条链以前只有 options=N、没有结果，用户报"删错牌"时日志里根本看不出删的是哪张。
+    // r394~r396（2026-11-23）：**极速模式（Blitz）商店自动购买**（判定表 `BlitzShopBuyPolicy` + 运行层
+    //   `LocalWakuuBlitzShopAuto` + 开关 `blitzShopAutoBuy` 默认关）；r395 修「非前台席位自动买完切过去货物还在」
+    //   （库存必须与 UI 绑定同一份按房缓存）；r396 补个人偏好记录排除。
+    // r397：把 r393 那笔合回 master ⇒ 重建部署（行为 = r396 + 删牌优先级走牌组通用入口）。
+    private const string BuildMarker = "Revival v1.49.0 (game v0.113.1, marker=2026-11-23-r397)";
 
     private static Harmony? _harmony;
 
