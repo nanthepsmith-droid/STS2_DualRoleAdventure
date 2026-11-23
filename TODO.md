@@ -95,81 +95,20 @@
 > ⑤ **r391~r392 日志卫生** —— 立绘探针 250ms→1s + `LogThresholdPx=10`（17802 行 → 380 行 / 18min）、
 > 补建闸门不再记 `PersistPending`；⑥ 回放面板玩家名改 `Player N`。回补 `stable/0.111`（v1.47.13 → **v1.47.18**）。
 > 详见 `开发进度记录.md` 第一百八十一段。
+> **2026-11-23（r398~r399，变化牌处置收口 + 本文件大清理）**：**§瓦库托管：变化牌处置全部关单** ——
+> ① r387「变掉哪张」；② r398「变成什么」= 变化成**指定一张牌**（`CardTransformation.Replacement != null`）
+> 的结果牌按**消耗牌**处理（评分 −5，`WakuuTransformReplacementRegistry`）；③ r399 选牌按**结果形态**分刀：
+> 固定目标（离去/冲锋/降神）改按 诅咒 > 状态 > 打击 > 防御，随机变化仍打击优先（变垃圾只会换成另一个垃圾）。
+> 实机：`picked` 从 `STRIKE_IRONCLAD` → `FOLLY`。**同日清理本文件**：§排期 1~7 / §讨论-1 / §讨论-2 /
+> §逃跑·离场与建筑师 / §变化牌处置 + 已关单的 `待查-1/2/4/5/6/7/9/10/11/12/13` 共 15 段切进归档
+> （2408 → 1961 行），原位只留索引。详见 `开发进度记录.md` 第一百八十三段。
 
 ---
 
-## 🗓 排期（2026-11-13 用户拍板，按顺序）
-
-### 1. 新模式（Dread / 闪电战 Blitz）的**本地多角色**版本 —— ✅ r351~r355 关单（2026-11-14 用户「测了，应该没问题」）
-
-> r351：联机菜单加「本地·恐惧 / 本地·闪电战」两个小按钮（跟随官方卡「可见 + 可用」），两个大厅页接席位
-> reconcile / 人数面板 / 切席位高亮 / 出征前校正 sender；Blitz 商店切席位换库存。实现细节见
-> `开发进度记录.md` 第一百六十九段（大厅类型白名单、`StartRunLobby` 复用、`DreadNotUnlocked` 校验都走通了）。
-> r352/r353：宝箱两阶段投票 + 一次派发、遗物格改 0.113 **布局制**（原版只有 Layout1..6 ⇒ 7 件起一件都点不到）、
-> 第二阶段已选格子置灰；瓦库删牌把任务牌挪到最后。
-> **r355 订正**：「多人宝箱 = 人数 + 2 件、每人只选 1 件」是**原版设计**（用户官方联机实测）⇒ 那套「每人 2 件」
-> 收进开关 `blitzTreasureDoublePick`（**默认关 = 完全原版**，开 = 补池到 人数 × 2 + 两阶段），见 CHANGELOG `[Unreleased]`。
-
-### 2. 「强行结束回合」按钮 —— ✅ r364 关单（2026-11-17 beta / 11-18 正式版 0.111 均实机确认）
-
-> 用户原话（2026-11-13）：「排期后面做强行结束回合按钮（因为不能切换到战神视角，现在只能等战神打到上限，
-> 有时候要等好久）」。
-
-- **落地口径**（原待定的三件已定）：按钮放**切人按钮那一列的上方**（不跟切人钮/我们联合抢横向空间）；
-  点一次 = 让**托管席位（战神 / 瓦库形态）**本回合停手并结束它们的回合；**只在有托管席位没 ready 时显示**。
-- **实现**：纯逻辑 `ForceEndTurnPolicy`（门 + 逐席位判据，10 条单测）＋ `LocalMultiControlRuntime.RequestForceEndHostedTurns`
-  （出牌/选牌在飞时拒绝并提示）＋ 战斗 UI 按钮；结束**按外部结束记账**（不包 `BeginModIssuedEnd`）⇒ 托管链下一张牌前熔断。
-- **实机锚点**：`强行结束托管回合（按钮）` → `强行结束托管回合已发出: 已结束=[…], 未结束=[…]`；
-  12 席局里一次收掉 10 个战神（`已结束=[327,4097…4105]`），`turn loop died` 0。
-- 相关既有机制仍是硬约束：`TryEndIdleWarGodTurns` / `war-god-idle-tick`（空闲收口）、`HasHostedPlayableCards` 的
-  「仍有可出牌角色」门（**不要**绕开它，否则会回到 r263 那种死锁）。
-- **同时回补到正式版 0.111 线**（`stable/0.111`，v1.47.4 / marker `2026-11-17-r369-stable`）。
-
-### 3. 瓦库托管**删牌不要删任务牌** —— ✅ r353 已做（`WakuuPriorityPicking` 的 Remove 表把任务牌挪到最后）
-
-> 用户 2026-11-13 原话：「让瓦库托管尽量不要选择任务牌删除」。
-> 已落地：**删除**场景的优先级改为 诅咒 > 状态 > 打击 > 基础防御 > 其余 > **任务牌**（0，最低）；
-> 事件删牌 / 营地净化 / 商店删牌服务 / 删牌遗物都走同一张表。纯逻辑单测已跟（`PriorityPickingTests`）。
-> **r365 订正（2026-11-17 用户口径）**：只对**删除**生效 —— 战斗内**消耗**任务牌不影响战斗外任务使用，
-> 消耗走新增的 `WakuuPickScenario.Exhaust`，恢复原排位（诅咒 > 状态 > 任务 > 打击 > 防御 > 其余）。
-
-### 4. 全瓦库局：所有瓦库打完后**自动结束回合** —— ✅ r370/r371 关单（2026-11-18 实机两轮确认）
-
-> 落地：纯逻辑 `AllWakuuAutoEndPolicy`（观察窗 800ms）+ 开关 `allVakuuAutoEndTurn`（默认开，设置页瓦库托管区）；
-> 开 = 每回合 1 条 `source=all-wakuu-exhausted-auto-end`、`manual-end-turn` 0、`turn loop died` 0；
-> 关 = 整段零日志且回合停在原地（负对照）。详见 `开发进度记录.md` 第一百七十八段。
-> 📦 需求正文（现象 / 代码事实 / 四条口径 / 硬约束 / 验证契约）已切到
+> 📦 **§排期 1~7**（2026-11-13 拍板的七条排期，全部关单）已于 2026-11-23 切出 →
 > `maintenance-docs\decision-records\archive\TODO-归档（已完成 bug 与功能流水·r96~r226）.md`
-> 末尾「归档（2026-11-18·第一百七十八段）：§排期 4」。
-
-### 5. 小键盘 `1`~`9` `/` `*` `-` 快速切到 1~12 号席位 —— ✅ r372/r373 关单（2026-11-18 实机确认）
-
-> 落地：局内**小键盘** `1`~`9` / `/`(10) / `*`(11) / `-`(12) 直达对应席位（号位 = 会话席位序，与 Tab 同序）；
-> 判定在纯逻辑 `SeatHotkeyPolicy`（11 条单测），切人复用 Tab 循环那条链；开关 `seatHotkeySwitch` 默认开。
-> ⚠ 第一版用**大键盘**数字键，实机当场撞车（原版 `1`~`0` = 选第 N 张手牌）⇒ 改小键盘。
-> 📦 需求正文（现象 / 代码事实 / 待拍项 / 验证契约 / 内联坑）已切到
-> `maintenance-docs\decision-records\archive\TODO-归档（已完成 bug 与功能流水·r96~r226）.md`
-> 末尾「归档（2026-11-18·第一百七十九段）：§排期 5」。
-
-### 6. 战斗内左侧玩家列表：席位称呼统一 `botN` / `playerN` —— ✅ r374~r376 关单（2026-11-18 实机确认）
-
-> 落地：瓦库 = `botN`、真人 = `playerN`（**共用同一套号位** = 会话席位序 = 小键盘切人的号位），语言无关；
-> 三条待拍项取值 = ① 所有本地席位统一新称呼；② 只接管本机会话席位（真联机队友放行）；③ 战神等临时席位不编号。
-> 真因 = 左侧列表走 `GetPlayerNameRaw`（此前只拦了 BBCode 版），且该调用点**被 JIT 内联、补丁拦不住**
-> ⇒ 改为在名牌节点上直接重写文字。详见 `开发进度记录.md` 第一百七十九段。
-> 📦 需求正文已切到（同上归档文件）末尾「归档（2026-11-18·第一百七十九段）：§排期 6」。
-
-### 7. 极速模式（Blitz）商店自动购买 —— ✅ r394~r396 关单（2026-11-23 实机两店 24 件全成交 + 切席位货物同步）
-
-> 口径全部来自用户在 `maintenance-docs\极速商店自动购买-规则表（待填）.md` 里填的表（20 种条目 + 优先级 + 兜底）。
-> 落地：纯逻辑 `BlitzShopBuyPolicy`（判定 + 优先级 + 稳定原因码）+ 运行层 `LocalWakuuBlitzShopAuto`
-> （进店替**所有瓦库席位**买满 3 次机会、串行购买、四条选牌自动作答）+ 开关 `blitzShopAutoBuy`（默认关）。
-> 极速模式抓牌门槛另降一档（基准 0.25 / 每幕 +0.05 ⇒ 中卡组 15%/20%/25%），普通局不变。
->
-> 遗留观察（**不排期，自然遇到再说**）：
-> ① 优先级表里「删牌」排在卡牌奖励之后 ⇒ 先买 3 次卡牌奖励把牌组撑过档位上限、删牌就来不及了
->   （r395 实机店 2 的 327：36→41/40，最后一次买了遗物）。要改就把 `Priority` 的删牌提到 3 档前。
-> ② `诅咒选择` 的"值得换次数"门槛（剩 1 次要 ≥2 个想买、剩 2 次要 ≥3 个）纯经验值，可调。
+> 末尾「归档（2026-11-23·第一百八十三段）：§排期 1~7」。
+> **本文件不再有排期表**（当前没有排期项）—— 下一步只看下方 §待讨论 / §待办。
 
 ---
 
@@ -178,31 +117,10 @@
 > 这几条是用户明确要求"进一步讨论分析后才开工"的，本段只记需求、**已核过的现状证据**与待拍口径；
 > 口径定完再各自开分支动手。
 
-### 讨论-1 瓦库抓牌优化：三档形态 + 「不抓」留给真人 —— ✅ r377~r383 关单（2026-11-20 长局实机确认）
+> 📦 **§讨论-1（抓牌优化）/ §讨论-2（商店删牌优先级）** 均已关单，正文已于 2026-11-23 切出 →
+> 同上归档文件末尾「归档（2026-11-23·第一百八十三段）：§讨论-1 / §讨论-2」。
 
-> 落地：设置页 **「抓牌形态档位」**（`vakuuCardPickTier`，默认 `normal` 中卡组）—— 小卡组（上限 30）/ 中卡组
-> （三张都不达标不抓 + ≥40 拍门槛 + **前三次奖励必抓**）/ 大卡组（永不跳 + 删牌只删诅咒/状态/打击/防御）；
-> 门槛按幕 30% / 40% / 50%，牌组到上限再 +15 个点；三张都无数据时**照抓**。
-> 不抓 = **奖励留在屏上给真人点**（点它会临时切到该席位）；有【浮木】先重掷、还烂且有【佩尔之翼】才献祭。
-> 实机：18 次决策 = 9 Take / 7 Skip / 2「无真人可接→照常抓」。详见 `开发进度记录.md` 第一百八十段。
-> ⚠ 同轮修掉它引出的两起事故（黑屏 / 无手牌，根因 = `CombatState` 列表热缓存），**该缓存已默认关闭**。
-> 📦 需求正文（原话 / 代码现状 / 技术硬点 / 待拍口径 ①~⑥ / 风险）已切到
-> `maintenance-docs\decision-records\archive\TODO-归档（已完成 bug 与功能流水·r96~r226）.md`
-> 末尾「归档（2026-11-20·第一百八十段）：§讨论-1」。
-> 🔸 残留（随时可调，不算未完成）：~~阈值数字化后可再调（三层 50% 是否偏严）~~ → **2026-11-20 r387 已按用户口径调**：
-> 中卡组每幕 **-10 个点**（20/30/40%，小卡组保持 30/40/50），实机 5 幕确认（`.NormalActDownshift`）；
-> `WakuuOpportunityCost` 那套"牌组厚度"判据仍未用上，只用了张数门槛。
-
-### 讨论-2 瓦库商店删牌优先级 —— ✅ 2026-11-20 按用户新口径关单（不做「删牌统计」加权，改过渡牌档）
-
-> 用户 2026-11-18 改口径：「删牌统计什么的不好做的话优先度可以这样：诅咒 > 打击防御 > **一层抓取率高但是
-> 二、三层抓取率低的牌**（根据差值排。这些牌是过渡牌，因此后面删除也很正常）」。
-> 落地：`WakuuTransitionCardTier`（分幕落差，落到"其余"档内的次级比较）+ 大卡组档的"只删垃圾 + 没垃圾不花钱"；
-> 删牌顺序 = 诅咒 > 状态 > 打击 > 基础防御 > **过渡牌** > 其余 > 任务牌。
-> 📦 需求正文（原话 / 统计底座现状 / 附魔与升级 tie-break 待拍项）已切到（同上归档文件）末尾
-> 「归档（2026-11-20·第一百八十段）：§讨论-2」。
-> 🔸 未做：按「删牌统计」加权、同名牌"无附魔 → 无升级"tie-break（`PersonalCardRemovalRecord` 底座仍在、
-> 仍未接线）；要做得另开口径。
+---
 
 ### 讨论-3 瓦库**战斗内出牌**要改进 —— 2026-11-18 用户登记，**怎么改后面再讨论**
 
@@ -251,17 +169,10 @@
 
 ---
 
-## 逃跑 / 离场与建筑师（2026-11-12 r346~r349）—— ✅ 全部关单，仅剩 1 条明确不做
+> 📦 **§逃跑 / 离场与建筑师**（r346~r349）第 1~4 条均已关单/明确不做，正文已于 2026-11-23 切出 →
+> 同上归档文件末尾「归档（2026-11-23·第一百八十三段）：§逃跑 / 离场与建筑师」。
 
-> 实现与实机判读见 `开发进度记录.md` 第一百六十七段；玩家可见变化见 `CHANGELOG.md` `[Unreleased]`。
-
-1. ~~角色逃跑后手牌 / 战斗 UI 消失~~ ⇒ r347 探针 + 两条自愈（整块 `NCombatUi` / `NPlayerHand.Visible`）。
-2. ~~前台席位离场后仍被钉住、胜利结算 `Local player not found in combat` 被打断~~ ⇒ r348 自动交接前台。
-3. ~~全瓦库时建筑师由瓦库随机代答、真人不能选~~ ⇒ r349 本地多控内把 `THE_ARCHITECT` 按共享事件处理
-   （瓦库自动作答本来就跳过共享事件，配合既有的"共享事件自动补齐投票"实现"你选一次、全员跟随"）。
-4. **逃跑类 mod 药水黑名单 —— 用户 2026-11-12 拍板「先不做」**。若日后要做，两条路都不需要读懂效果代码：
-   ① 白名单（看不懂就不喝 = 停用 mod 药水随机消耗兜底）；② 喝完 2 秒内自证后果（角色离场/HP 骤降 ⇒ 永久拉黑）。
-5. 待观察：建筑师共享后"选项下标跨席位一致"目前只靠 Act4Coordinator 注入顺序相同，未加断言。
+**残余观察（未关）**：建筑师共享后"选项下标跨席位一致"目前只靠 Act4Coordinator 注入顺序相同，未加断言。
 
 ---
 
@@ -297,55 +208,11 @@
 
 ---
 
-## 瓦库托管：变化牌处置（2026-11-11 口径已定）—— ⏳ 待开工（排在更新日之后）
+> 📦 **§瓦库托管：变化牌处置** 已于 2026-11-23 **全部关单**（r387「变掉哪张」+ r398~r399「变成什么」），
+> 正文切出 → 同上归档文件末尾「归档（2026-11-23·第一百八十三段）：§瓦库托管：变化牌处置」。
 
-> 用户原话（2026-11-11）：「现在瓦库托管对于变化卡牌处理都是一样的吗？我的想法是变化成同角色的随机牌按照原先的处理，
-> 变化成特定的一张牌（比如储君的仆从系列牌）则按照消耗处理。」
-
-**现状（2026-11-11 核对代码，非推测）**：
-
-- 出牌侧**没有任何"这张牌是怎么来的"判据**：`LocalWakuuRelicRuntime.ResolveAutoplayHand` → `WakuuHazardPlayPolicy`
-  （只分 保命档 / 兜底档 / 普通牌）→ 大脑按**卡自身属性**打分 ⇒ 变化来的牌与奖励 / 商店 / 生成的牌走同一条路，
-  **处理完全一致**；
-- 唯一与"变化"相关的代码是 BUG-29 的**视觉归属**（`AutomatedSeatTransformVisualPolicy` / `CardTransformNetIdPolicy` /
-  `AutomatedSeatTransformVisualGate`），不参与任何出牌决策；
-- 变化的**选牌**侧（变掉哪张）已有 `smartPick` 表：优先变打击/防御、避开诅咒/状态/任务 —— 与"变成什么"无关；
-- ⚠ 卡自身关键词**已经在评分里**：`WakuuCardScoring` 对 `Exhaust` 扣 5（"谨慎打"）、`Ethereal` +10、`Retain` -8；
-  而储君仆从三张（`MINION_STRIKE` / `MINION_DIVE_BOMB` / `MINION_SACRIFICE`）本身就是
-  `CardRarity.Token` + `CardKeyword.Exhaust` + `CardTag.Minion` ⇒ **已经在吃那 -5**。
-
-**口径（2026-11-11 用户拍板，已定）**：变化成**固定的一张牌**（如储君仆从 `MINION_*`）时，这张牌**约等于已经被消耗**
-⇒ **直接套用瓦库托管对"消耗牌"的既有优先级**，不另造评分；变化成**同角色随机牌**则维持原有处理（不打任何特殊标记）。
-
-**判据（游戏侧已核实，不用卡名名单、也不用反推稀有度）**：
-
-- `CardTransformation.Replacement != null` ⇔ "变化成特定的一张牌"（`CardCmd.TransformTo<T>` / `Transform(original, replacement)`）；
-  `Replacement == null` ⇔ 随机 ⇒ 默认池 = `original.Pool`（**同角色**），且 `CardFactory.GetFilteredTransformationOptions`
-  把候选稀有度过滤在 Common / Uncommon / Rare 三档（`:193-200`）⇒ **随机变化永远不会产出 `CardRarity.Token`**。
-- 落地位置：在现有变换链（`CardTransformNetIdPinPatch` 旁边）加一处记录 —— `Replacement != null` 的**结果牌实例**进集合；
-  出牌打分侧对集合内的牌 OR 上 `Exhaust` 位（`ScoredWakuuBrain.BuildKeywords` → `WakuuScoreKeywords`、
-  `WakuuEffectExtractor.MapKeywords` → `WakuuCardKeywords`）⇒ "消耗牌优先级"天然统一（评分 −5、知识层 `risk+0.15`/`deckControl+0.1`），
-  不用在第二处再抄一遍口径。
-- 兜底（可选）：`CardRarity.Token` + `CardTag.Minion` 的结果牌也按消耗算，防止第三方用 `ReplacementOptions`（限定池）绕开 `Replacement == null` 的判定。
-
-**动手前还要定的两件小事**：
-
-1. 生命周期与清理：集合按 `CardModel` 实例引用记，换战斗 / 换局 / 牌被消耗后要清（否则实例复用会误判）；
-2. 是否连带影响"变化选哪张"（`smartPick` 的 transform 表）—— 按本口径**不影响**：那边选的是"变掉哪张"，与"变成什么"无关。
-
-**2026-11-20 追加口径 —— 战斗外变化牌的「变掉哪张」—— ✅ r387 已落地（2026-11-20 实机命中，见 `开发进度记录.md` 第一百八十一段）**：
-
-- 现有 `smartPick` 的 transform 表已经是"优先变打击/防御、避开诅咒/状态/任务"；用户要求在其后补一档：
-  **打击 → 防御 → 过渡牌 → 其余**。
-- 落地：`WakuuPriorityPicking` 的次级分值参数改名 `transitionScores`、对 **Remove + Transform** 都生效；
-  「过渡牌」复用删牌那条判据（`WakuuTransitionCardTier`），只在"没有打击/防御可变"时才轮到它。
-  实机：`瓦库变化过渡牌优先…` 命中 3 次（本屏无过渡牌）+ 删牌侧命中 2 张（`BUILD_SAND_WALL` / `SALT_STEALTH`）。
-- 🔸 **仍待开工的只有"变成什么"那一半**（本段上半部分：`Replacement != null` ⇒ 按消耗牌处理）。
-- 🔸 观察：过渡牌档目前**按角色切片**才有数据（LEX_NINJA2 命中、其它角色全"未命中"）；
-  要不要"先按角色、不够退回全角色聚合"**待拍板**（`WakuuTransitionCardTier.ScoreOf` 加一层回退即可）。
-- 影响面只有**战斗外**（事件 / 遗物 / 商店 / 营地等非战斗上下文）的变化选牌；战斗内的换牌视觉那条（待查-15）不受影响。
-
-**排期**：按 2026-11-10「更新前不开新功能线」的拍板，排到 **2026-11-13 游戏更新之后**；开工时先切分支。
+**残余观察（未关）**：过渡牌档目前**按角色切片**才有数据（LEX_NINJA2 命中、其它角色全"未命中"）——
+要不要"先按角色、不够退回全角色聚合"**待拍板**（`WakuuTransitionCardTier.ScoreOf` 加一层回退即可）。
 
 ---
 
@@ -486,15 +353,7 @@
   上游来源基本没了。**判据**：崩溃栈顶在 `NEndTurnButton.OnTurnStarted` 之外、且紧邻日志有
   `[手牌同步修复] … netId=… -> null`。
 
-### 待查-1 宝藏房共享选遗物界面手牌图像重复添加（`add hand … twice!`）—— ✅ **2026-10-24 已修（r318）**
-
-- **根因**：`NHandImageCollection.Initialize` 已给每个席位 `AddHand`，而我们切前台改 `LocalContext.NetId` 会让
-  `PeerInputSynchronizer.GetOrCreateStateForPlayer` 新建同一席位的输入态 ⇒ `StateAdded` ⇒ 再 `AddHand` 一次。
-- **修法**：前缀 `NHandImageCollection.AddHand`，`GetHand(playerId) != null` 时跳过（仅本地多控会话内）；
-  原版"已存在"分支只有一句 `Log.Error`、**什么都不做**（幂等）⇒ 行为不变，只关掉日志噪声
-  （首次命中打 `共享手牌图像已存在，跳过重复添加`）。
-- **复验锚点**：宝藏房共享选遗物界面进出 + 切角色若干次 ⇒ `Tried to add hand for player … twice!` 应为 **0 条**
-  （r246/r260/r288/r295/r298 单局曾 1~3 条）。
+📦 已关单的 **待查-1/2/4/5/6/7/9/10/11/12/13** 段已于 2026-11-23 切出 → 同上归档文件末尾「归档（2026-11-23·第一百八十三段）：§待办 中已关单的 待查-N」。
 
 ### 待查-3 战神被打**没有音效**（用户 2026-10-10 口径；**先跑探针定性，别直接改**）
 
@@ -516,97 +375,6 @@
   - 真人那次**有我们没有的调用** ⇒ 定位调用点并同款补上（大概率是"只给本地/前台席位"的 UI 反馈路径，
     ⚠ 与 `LocalContext.IsMe` 同源 —— 而我们**故意**让战神 `IsMe=False`，所以这类反馈需要**单独补**）。
 - **优先级**：低（纯表现，不影响玩法/结算）。
-
-### 待查-6 新出现的「表现层」ERROR（VFX `PlaySequence` 空引用 + 节点池 `back to pool`）—— ✅ **已定性：跟原版牌 `UPPERCUT` 的命中特效绑定，与 R10/战灵召唤无关**（r258 判读，剩一条"是否与托管出牌链有关"的小尾巴）
-
-- **现象**（marker r257 首现 3 条 / r258 复现 2 条；历史 12 份归档里这两类各 0 次）：
-  - `System.NullReferenceException`，栈顶 = **原版特效类**
-    `MegaCrit.Sts2.Core.Nodes.Vfx.NHeavyBluntVfx.PlaySequence()`（= 原版"重击"命中特效场景
-    `vfx/vfx_heavy_blunt`）/ `NLargeMagicMissileVfx.PlaySequence()`（r257 那次）。
-    读反编译源码：`PlaySequence()` 直接 `for (i…) _anticipationParticles[i].Restart(); … _impactParticles[j].Restart();`
-    ⇒ **NRE = 场景里那些导出粒子槽是 null**（资源/场景层问题，不是游戏逻辑）。纯表现。
-  - `Tried to free object <Control#…> (NCard) back to pool`（Godot 节点池，纯表现；r257 那次 1 条）。
-- ✅ **定性证据（跨会话相关性，零实机成本）** —— 用归档日志做"**卡名 ⇔ 异常**"的对照：
-  `NHeavyBluntVfx` 的 NRE **只出现在 `CARD.UPPERCUT` 被打出的那两场**（r257：UPPERCUT 3 条 / NRE 3 条；
-  r258：UPPERCUT 在场 / NRE 1 条），而**其余 12 场归档 UPPERCUT 出场 0 次、NRE 也是 0 次**。
-  且两场里紧邻 NRE 的伤害行都是 `cardSource=CARD.UPPERCUT`（r257 = 战神 4096 打出、r258 = **真人 327** 打出）
-  ⇒ **不是"战神当施法者"、也不是 R10 的重定向落点**（r258 那次根本没走重定向）。
-  反编译侧对照：`vfx_heavy_blunt` 被 `Uppercut / Bludgeon / Stomp / Mangle / Break / AllForOne / CrushUnder` 等
-  **原版牌**引用；**本仓库对这整套 VFX 零引用**（搜过了）⇒ 不是我们的功能代码。
-  两次 NRE 的紧邻上方都是第三方 `[figure_Saya] [SayaApiBridge][ResolveCard]` 卡面解析 +
-  `[PermanentEvolution] refresh-enter; … path=<outside-tree>` ⇒ 落在**第三方美术/特效层**。
-- ⚠ **剩一条没排除**：两次 UPPERCUT 都是**经我们的托管出牌链**打出的（r257 战神 inline / r258 真人席位走队列档，
-  且都伴随我们的 `已跳过非前台角色的进手牌视觉节点（防串手牌显示）`）⇒ 不能排除"**托管/非前台出牌**"
-  是触发条件的一环（第三方模块看到 `path=<outside-tree>` 的卡节点后去取特效资源）。
-- **最便宜的定性法（下轮）**：让**真人自己手打一张 `UPPERCUT`**（不走托管）⇒
-  NRE 还在 = 纯第三方资源层（**本条直接关单**）；不在 = 与"托管/非前台出牌"相关（再查我们那条视觉跳过）。
-- **影响**：**纯表现**（战斗/结算/存档正常，异常族全 0）；只把"`[ERROR]` 期望条数"这条卫生线搞脏。
-- **优先级**：低（已定性到"不是我们的功能逻辑"，只剩上面那条小尾巴）。
-- **登记**：2026-10-10（第八十六段收工块 ③ 首现 ⇒ 第八十八段收工块 ③ 定性）。
-- **同族新成员（2026-10-21，r294 局 3 条）**：`NStarryImpactVfx.PlaySequence()` 的 NRE —— 同一个模式
-  （原版/第三方特效场景的导出粒子槽为 null ⇒ `Restart()` NRE），落在异步 VFX 链上，**纯表现、不影响战斗**
-  （该局 `turn loop died` 0、`托管出牌抛异常` 0）。⇒ 这条按同族**一并归为"非我方 + 低优先"**，不单独修。
-
-### 待查-7 退出到主菜单时 `PlayCardAction … Nullable object must have a value`（**已定性 = r299 同族，不改代码**）
-
-- **现象**（2026-10-26 r321 局 / 2026-10-27 r322 局各 1 次，日志里出现 2~3 行）：
-  `GameAction PlayCardAction card: CARD.FEEL_NO_PAIN … completed with exception: AggregateException
-  (InvalidOperationException: Nullable object must have a value.)`，栈顶是第三方一串 `After(card, Task)` 包装
-  + 原版 `CardModel+<OnPlayWrapper>d__339.MoveNext_Patch3` ← `PlayPowerCardFlyVfx`。
-- **根因**（反编译源码定位）：`OnPlayWrapper` 里的
-  `new BranchingPlayerChoiceContext(this, LocalContext.NetId.Value, …)` —— 本局**正在退出到主菜单**时
-  `RunManager.CleanUp` 已把 `LocalContext.NetId` 置空，而这张能力牌的 `PlayPowerCardFlyVfx` 的 tween
-  await 还没回来 ⇒ 回来时 `.Value` 抛。**与 r299 定过因的"退出期自动用药"是同一族**。
-- **为什么不修**：退出瞬间的收尾，玩家已经不在战斗里；实测**无卡死**（`turn loop died` 0、
-  `战斗胜利结算被异常打断` 0、后续回主菜单/存档写盘正常）。在"出牌链"上再加一道 teardown 闸门
-  只能省掉这条日志，代价是给第三方托管出牌加一处新的时序分支 —— 收益不成比例。
-- **判读口径**：看到它先确认三件事 —— ① 是否发生在**回主菜单/退局前后**；② `turn loop died` 是否为 0；
-  ③ 上方是否有 `Quit` / `Time to main menu`。三条都符合 = 本条（良性），不用再查。
-- **登记**：2026-10-27（第一百五十五段收工块 ④）。
-
-### 待查-5 休息区「悬停索引越界」WARN 是误报（`index=-1` = 没有悬停）—— ✅ **2026-10-24 已修（r318）**
-
-- **根因**：`RestSiteSynchronizer.GetHoveredOptionIndex` 在"没有悬停任何选项"时返回 **`-1`**（`null` 才是"没记录"），
-  而 `RestSitePatch` 的判据把负数也当越界 ⇒ 每次鼠标移开刷一条 WARN（纯日志，行为本来就对）。
-- **修法**：负数视为"无悬停"**静默忽略**（`option` 保持 `null` = 清掉上一次气泡），只在 `>= options.Count` 时才 WARN。
-- **复验锚点**：火堆里反复悬停/移开选项 ⇒ `休息区悬停索引越界` 应为 **0 条**。
-
-### 待查-4 「同回合多个战神」时后面的那个可能整场不出牌（inline 路径抢全局闸门 ⇒ 串行；r254 判读发现）—— ✅ **已关单（2026-10-10，r255 判读给出反证）**
-
-> **✅ 结论（2026-10-10，`logs-archive/godot__20261010-182625__r255.log`）**：同一场景（一场战斗内 2 个战神：
-> `seat=4096` 罕见档 / `seat=4097` 普通档）下 **两个都正常出牌、且都打出了 `战神已自动结束回合`**
-> （4096 打 rounds 2/3/4、4097 打 round 3；战斗持续到第 4 回合）⇒ r254 那次确实是**"战斗提前结束、没轮到它"**，
-> 不是"第二个战神永远拿不到闸门"。**结论：良性，不需要修**（inline 抢全局闸门的串行化是 r253 定稿的已知代价，见坑 AE-8/AE-10）。
-> 下面保留当时的现象与时间线备查。
-
-- **现象（marker r254，`logs-archive/godot__20261010-145141__r254.log`）**：同一场战斗里召唤了 2 个战神
-  （Common=4096 / Rare=4097），`①a 预设卡组已替换` 与 `②b 抽牌堆=14 张` 都对，
-  但**4097 整场 0 出牌**（`瓦库评分出牌: player=4097` 0 条），而 4096 正常出了 3 张。
-- **时间线（判读结论：很可能是"没轮到"）**：4097 在第 3 回合才首次轮到
-  （`L11603 战神回合开始：交由瓦库托管链出牌（Phase 3）: seat=4097`），
-  而 4096 在第 3 回合打完后**战斗立刻胜利结算**（`L11996 击杀动作链已走完（当前无动作在执行），触发战斗胜利结算。`）
-  ⇒ 战斗结束早于 4097 拿到闸门。期间 `瓦库看门狗调度统计` 一直是 `rejected=selector-scope-busy:176,watchdog-in-flight:47, lastPlayer=4096`。
-- **为什么是"已知代价"而非 bug**：r253 定稿 = **战神走 inline 出牌路径**（队列/并发档对"不进 `runState.Players` 的实体"
-  结构性不可行，见 references 坑 **AE-9 / AE-10**），而 inline 要抢**全局 1 槽选择器闸门** ⇒
-  **同回合多个战神天然串行**，前一个没打完，后一个进不来（见坑 AE-8）。
-- **怎么定性（下次）**：让**两个战神在同一场持久战**（血量厚、至少打 3~4 回合）里各走一轮，
-  看第二个战神（同档 / 不同档都试）是否会出牌：
-  - 会 ⇒ 本次只是"战斗提前结束"，**关单**；
-  - 不会 ⇒ 再查"第二个临时席位的调度为什么一直被 `selector-scope-busy` 拒绝"（届时别急着改路径 —— 路径口径见 AE-10）。
-- **优先级**：中低（只在"同场多战神 + 战斗很快结束"时出现；单战神场景无影响）。
-- **登记**：2026-10-10（第八十段收工块 ②）。
-
-### 待查-2 进入本地多控流程时删旧多人 run 存档报 `Error deleting path` —— ✅ **2026-10-24 已修（r318）**
-
-- **根因**：三个入口（单人多角色 / 每日 / 自定义）都调游戏 `SaveManager.DeleteCurrentMultiplayerRun()`，
-  它**无条件删两个文件**（`current_run_mp.save` + `.backup`），而 `GodotFileIo.DeleteFile` 对不存在的文件
-  会打 `[ERROR] Error deleting path …: Failed` ⇒ 没旧存档时每次进入刷 2~4 条（r239/r240/r247 都见过）。
-- **修法**：新增 `MultiplayerRunSaveCleaner.DeleteIfPresent(reason)`：先看 `SaveManager.HasMultiplayerRunSave`，
-  再反射取 `RunSaveManager.CurrentMultiplayerRunSavePath` + `_saveStore` **逐个文件判存在再删**；
-  反射面任何一步拿不到就**退回游戏原 API**（宁可多一条日志，不漏清存档）。三处调用点已替换。
-- **复验锚点**：从主菜单进本地多控（三个入口各一次）⇒ 应见
-  `历史多人存档本来就不存在，跳过清理（…）` 或 `已清理（…）: 删除 N 个、跳过不存在 M 个`，
-  且 `Error deleting path modded/profile*/saves/current_run_mp.save` 应为 **0 条**。
 
 ### BUG-17 事件末页效果是「牌组选牌」时，非共享事件房间推不动（2026-09-25 第一幕实机发现，**r147 只加了诊断，未定死根因**）
 
@@ -826,214 +594,6 @@
   且我们**没法**从外部给它补 `__state`（Harmony 的 `ref` 参数要求类型精确匹配，而它是个私有嵌套类型）。
 - **下一步（用户 1 分钟可验）**：游戏内**关掉「圣主历险记」**再打一场 ⇒ 若不再 `turn loop died` = 确认是它（要留这个 mod 就带栈反馈给作者）；
   若关掉后仍复现 ⇒ 回来找我们，按判读流程重跑（先看"我方锚点在不在" + 跨会话对比）。
-
-### 待查-9 局内**经常没有背景音乐** —— ✅ **已定性并关单（2026-10-21）：第三方幕 `BgMusicOptions` 为空；按口径不修、不做兼容补丁**
-
-> **✅ 判读结果**（`logs-archive/godot__20261021-132230__r292.log`）：`UpdateMusic: act=index0, 候选=0, 选中=none`
-> 而 `Audio.PlayMusic: event=event:/music/menu_update, audioNode=ok` 正常 ⇒ 本局跑的是 **ArknightsBoss 的幕**
-> （`Preloading 'Act=ARKNIGHTS_BOSS_ACT_GARDEN_OF_GROTESQUERIES_ACT1'`），它的 `BgMusicOptions` 是**空数组**
-> ⇒ 原版 `ResolveMusic` 返回 null ⇒ 整幕不放音乐；主菜单走另一条入口所以有声音。
-> **拍板（用户 2026-10-21）**：**纯第三方缺内容 ⇒ 主 mod 不修、也不做独立兼容补丁**（暂时没这个需求）。
-> r293 曾加过的"原版第一幕兜底"已按此在 **r294 移除**；只读探针 `[BGM探针]` 保留（下次遇到别的幕能一眼看出
-> 是不是同一个原因；`LMC_BGM_PROBE=0` 可关）。
-> **若将来再提**：先看探针 `候选=` 是否为 0 —— 是 ⇒ 同一个第三方原因（去催那个 mod 补音乐）；
-> 不是 0 却仍没声音 ⇒ 看 `失败=<track>`（bank 加载失败）或 `StopMusic` 的调用方。
-
-- **现象（用户原话）**：「最近玩感觉好像经常没有背景音乐」—— 不崩、不是音量设置（音效仍在）。
-- **本次零成本排除**（`logs-archive/godot__20261021-124341__r290.log`）：
-  - 原版**唯一会动总音量**的 `NMuteInBackgroundHandler` 全程正常：4 次焦点切换全部 `FocusOut → FocusIn →
-    Unmuted, restored volume to 1`；只有**退出游戏时**一条 `NullReferenceException @ _Notification`
-    （`SaveManager.Instance` 已销毁），与本现象无关。
-  - 我方仓里**没有任何 BGM 代码**（全仓搜 `Music|BGM` 只命中 `LocalQuickRestartLoader` 的
-    `SfxCmd.Play(CharacterTransitionSfx)`）⇒ 现有日志里**根本没有音乐锚点**，先别猜。
-- **下轮判据（按顺序，别跳）**：
-  1. **先问用户三件事**：① 整局一直没有 / 还是某次切场景后不再回来？② 与 alt-tab、过场、切角色有关吗？
-     ③ 主菜单有音乐、进局内没有？—— 三种答案指向三条完全不同的链路。
-  2. **加只读探针**（先让它可观测）：在音乐入口（反编译找 `AudioManager` / `MusicCmd` / 进局的音乐播放点）
-     挂**只打日志的前缀**（`[BGM探针] play=…, key=…, source=…`）+ 换场景/开战/战斗结束时打一次"当前曲目"。
-     **不打补丁干预**，先要一行能数的事实。
-  3. **跨会话 A/B**：同一台机**关掉本 mod** 打一局对照；再区分"第三方 / 原版 / 我们"（
-     `references/diagnostics-and-triage.md` §一 三分法）。
-- **当前怀疑面（未验证，不是结论）**：本机至少三处会动音乐 —— `IntegratedStrategyEvents`
-  （`IntegratedStrategyMusicReturnToMainMenuPatch` / `...AfterRunPatch`，自带战斗音乐）、`Oddmelt`（预载自己的 BGM）、
-  `NinjaSlayer` + `RitsuLib`（FMOD bank / `EventMusicGUIDs`）；任一处"切场景后不恢复"都长得像"没 BGM"。
-- **优先级**：中（纯体验）；**登记即可，未排期**。
-
-### 待查-10 第三方「悬停 tooltip」与「血条节点」两族 ERROR（2026-10-21 判读；**均为第三方自身缺陷、只登记不动手**）
-
-- **`System.ArgumentOutOfRangeException` @ `BaseLib.Patches.UI.ModSourceTooltip.Fold`**（r298 长局 39 次）：
-  栈固定 `ModSourceTooltip.Fold → List.get_Item`，宿主 `NCreature.OnFocus()`（30 次 = 鼠标悬停生物）
-  与 `NCreatureStateDisplay.OnHovered()`（9 次 = 悬停状态图标）⇒ BaseLib 折叠 tooltip 时对空/单项列表取下标越界。
-  **栈里没有任何我方帧**；影响面 = 悬停提示可能不显示，战斗流程正常（`turn loop died` 0）。
-  后续局（20:22）同族还多出 12 条 **`ERROR: Exception thrown while trying to log another exception...`** ——
-  看 `### Exception ###` / `### Logger exception ###` 两段可知**同一根因**：Godot 记这条越界时自己又 NRE
-  （`ExceptionUtils.LogException`）⇒ 以后见到这一对，不用另开条目。
-- **`ERROR: Node not found: "MintyIncomingDamageText"`**（同局 9 次）：MintySpire2 的
-  `SummedIncomingDamageRender.RepositionLabel` ← RitsuLib 血条 graft `NHealthBarGraftCompat.TryResizeHpBarContainer`，
-  节点路径在 `AllyContainer`（**托管席位血条**）。紧跟在我们「第三方询问本地玩家身份，已按同机席位放行」之后，
-  但栈里**只有第三方帧**；与 ⑱「战神血条挪到本体玩家旁边」是同一条血条链。
-- **动作**：两条都**不做兜底**（按 compat-mods 口径：第三方自身缺陷 ⇒ 登记 + 探针就行）；若将来真的影响可玩
-  （tooltip 卡死 / 血条消失）再谈。
-
-### 待查-11 瓦库自动用药抛异常后把药水留在 `PlayerChoiceContext` 栈顶 ⇒ 原版 pop 遗物报 ERROR（**✅ 已定因并修复（r299）；实机两局无回归，竞态窗口本身靠运气**）
-
-**日志**（`logs-archive/godot2026-10-21T20.52.32__20261021-205232__r298.log`）：
-
-```
-[WARN]  [LocalMultiControl] 瓦库自动用药异常（跳过该瓶）: potion=FIRE_POTION, error=Nullable object must have a value.
-[ERROR] Tried to pop model RELIC.LOCAL_WAKUU_FORM_RELIC (65152824) from stack of player choice context
-        HookPlayerChoiceContext but POTION.FIRE_POTION (26879195) was on the top of the stack instead! (Stack size: 2)
-        at PlayerChoiceContext.PopModel ← Hook.AfterAutoPrePlayPhaseEntered
-```
-
-**✅ 真因（2026-10-21 r299 定案）：不是「目标为空」，是这一按撞上了「退出这一局」**。
-同一段日志的时序（按行号）：
-
-| 行 | 事件 |
-|---|---|
-| 63118 | `[BGM探针] StopMusic … 调用方=<CloseToMenu>` ⇒ **玩家此刻已经在退出到主菜单** |
-| 63159 | 我们的 `瓦库自动用药: potion=FIRE_POTION, target=灵魂枢纽`（目标合法） |
-| 63185 | `检测到 RunManager.CleanUp(graceful=True)` |
-| 63332 | `瓦库自动用药异常 … Nullable object must have a value`（异步 catch 直到主菜单加载完才回来） |
-| 63333 | 原版 `PopModel` 错位 ERROR |
-
-反编译核对（`src/Core/Models/PotionModel.cs:297-354`）：`OnUseWrapper` 在 `PushModel(this)` 之后、
-走到 `new BranchingPlayerChoiceContext(this, LocalContext.NetId.Value, …)` 之前还有 **~0.5s 的投掷动画
-`await Cmd.Wait(0.5f)`**；而 `RunManager.CleanUp` 会把 `LocalContext.NetId` 置 **null**
-（`src/Core/Runs/RunManager.cs:1612`）⇒ **`.Value` 抛 `InvalidOperationException: Nullable object must have a value`**。
-这是药水使用链上唯一没有 `HasValue` 保护的那处（`CardModel.cs:1931` 同款，`CombatManager` 各 hook 派发点都做了保护）。
-药水自己的 `PopModel` 在异常路径上永远不执行 ⇒ 模型留在栈顶 ⇒ 同 hook 里原版遗物模型 pop 错位。
-**影响**：那一瓶没喝成（跳过）、一条原版 ERROR；不影响出牌/回合（该局 `turn loop died` 0）。属**时序竞态**，
-不是每局必现。
-
-**r299 修法（三层，均无新反射面）**：
-1. **进入清理期就不再开新的用药**：循环内每瓶前 `LocalWakuuRelicRuntime.IsRunTeardown()`（既有口径 =
-   `!RunManager.IsInProgress || RunState==null`）⇒ 打 `瓦库自动用药中止（运行已进入清理期）` 并整段退出；
-2. **catch 里摘残留**：只在「栈顶**就是这瓶药水的同一个实例**」时调原版 `PopModel`（`RepairChoiceContextStack`
-   + 纯逻辑 `PotionUseAbortPolicy.ShouldPopResidualModel`，上限 4 层防死循环），摘到即停、打
-   `瓦库自动用药后已摘除残留的药水模型（防后续 PopModel 错位）: … 层数=N`；
-   **栈顶是别人一律不动**（原版 `PopModel` 不匹配时只打 ERROR 且不 pop，不能拿它当清栈工具）；
-3. **异常日志改口径**：`PotionUseAbortPolicy.DescribeException` = `类型名: 消息 | 栈帧压成一行`（截断 900 字），
-   并且清理期的异常降级为 INFO `瓦库自动用药在运行清理期中止（预期内）`（与 r110 的选择器清理期口径一致）。
-
-**复测契约（r299）**：正常打完一局（中途**从战斗里按 ESC 退回主菜单**最理想）⇒
-① `Tried to pop model … POTION.… was on the top of the stack` **应为 0**；
-② 若又撞上清理期，应看到 `瓦库自动用药中止（运行已进入清理期）` 或
-`瓦库自动用药在运行清理期中止（预期内，跳过该瓶）`，且异常详情里带**类型名 + 栈帧**；
-③ 正常用药路径的锚点 `瓦库自动用药: …` 与之前完全一致（本修不改行为）。
-
-**✅ 实机两局（2026-10-21 / 10-22：第一局无用药；第二局 3 瓶药 + 立刻退出）**：
-两局都 `Tried to pop model` **0**、`turn loop died` 0、我方 `[ERROR]` 0；第二局顺带确认
-`瓦库自动用药: …` 三条正常、`退局复位自检: 无残留`。
-⚠ **竞态窗口本身没被打中**（第二局：`POTION_SHAPED_ROCK` 的伤害 `L12447` → `CloseToMenu` `L12448` →
-`RunManager.CleanUp` `L12520`，药水已经收尾完了）⇒ r299 的两条新锚点（清理期闸门 / 摘残留）
-**都未触发**，属**防御性修复**：逻辑按"栈顶即自己才弹"设计、正常路径零行为变化，能跑就一直留着。
-
-### 待查-12 12 席规模的「卡」—— ✅ **2026-10-31 关单（r324~r332）**：我方全部修完（采样已归零），剩下的全是第三方
-
-> **结论（一句话）**：`12 席 / 11 瓦库` 本身能跑 **50~60 fps**；「越打越卡」= 第三方 mod 在**每次 hook**
-> 里做全栈回溯之外的重活（`YUICore.YuiRelicTriggerReplay` 每次 hook 写 AsyncLocal + `figure_Saya` /
-> `Koishi` / `newsanguo` 三个 Filter），12 席把这套按"牌数 × 人数"放大 10 倍以上。
->
-> **我方已修（三层 + r332 三处，全部实机验证）**
-> - **r329** `LocalContextThirdPartyIsMePatch`：第三方每问一次 `IsMe` 都做**全栈回溯**（采样显示主线程 63.9%
->   在 `StackTrace.CaptureStackTrace`）⇒ 改**每帧 2ms 预算** + 调用点方法句柄记忆化 + 探针新槽位。
-> - **r330** `CombatStateListCachePatch`：原版 `Creatures/PlayerCreatures/Players` **每次访问都
->   Concat+ToList**，而 hook 分发对每个订阅者都取一次（采样 58.6% 在 `List.CopyTo`）⇒ 一帧一缓存 +
->   `CreaturesChanged` 事件失效。
-> - **r331** 同上补丁：缓存自身在热路径里调了 Godot icall（`Engine.GetProcessFrames`）⇒ 占主线程 **35.7%**，
->   改 `Environment.TickCount64` 分桶。
-> - **r332** 同一条链最后三处：① `ModelDb.GetId<T>()` 每次都跑 `Slugify → Regex.Replace`
->   （采样主线程 **30.2%**）⇒ 瓦库遗物 id 改静态缓存；② `WakuuOwnerSelectorMap.TryGet` 每次 `lock`
->   （**5.6%**）⇒ 写时复制快照、读零锁零分配；③ 栈回溯提到席位资格判定之前 + 预算窗口换托管时钟。
->   复采：主线程 `DualRoleAdventurefixed!` **0 条**，用户「纵享丝滑了」。
->
-> **量出来的事实（判读口径见 skill `references/diagnostics-and-triage.md`）**
-> - 关掉绝大多数 mod：12 席 floor 2→18、13 分钟，fps 中位 **50~60**、帧时 17~21ms、长帧 0、GC 1~4%。
-> - 只加回 `YUICore,figure_Saya,Koishi,newsanguo,YUISpireExpansion,GensokyoSpire,MokouMod,Watcher,
->   Oddmelt,FlawTheFunction,STS2_Things`：fps 28→10（随楼层继续掉），GC 25~39%，分配 300MB/s。
-> - 再关掉 `YUICore,figure_Saya,Koishi,newsanguo`（其余 11 个留着）：**floor 12~13 仍有 59/40/47 fps**。
-> - 归因链：`Hook.ModifyKeywordsInCombat / AttackIntent.GetTexture → YUICore.YuiRelicTriggerReplay.Wrap
->   → Saya.GeneralizedResistanceSuppressionPatch.Filter → Koishi.SealAllRelicPatch.Filter
->   → newsanguo.AbilitySuppressionPatch.Filter`。
->
-> **⭐ 下一轮任务（用户 2026-10-31 点名，非我方 bug）**：
-> **`古明地恋 Koishi` / `沙耶之歌 figure_Saya` / `新三国 newsanguo` / `YUI 系列` 四家的兼容优化**。
-> 起步口径（按 r332 采样）：
-> 1. 三家各挂一个 `Hook.ModifyKeywordsInCombat` 的 `Filter`（`Koishi.SealAllRelicPatch` /
->    `figure_Saya.GeneralizedResistanceSuppression` / `newsanguo.AbilitySuppression`），**叠加时每问一次
->    关键词就把三份全量扫描跑一遍**（`IsInstanceOfClass` 16.3%、三家 Filter 合计 ≈5%）。
-> 2. `YUICore.YuiRelicTriggerReplay.Wrap` 每条 hook 写一次 AsyncLocal（上一段实测主线程 10.7%）。
-> 3. 做法：先反编译四家的 Filter / Replay 入口，判断能否 compat 成「**结果按帧或按版本号缓存**」/
->    「**只在关键词/遗物集合变化时重算**」；落地按 `compat-mods/` 规矩（独立 dll、**默认关**、只在本地多控会话启用、
->    随主 Release 出 `compat-mods-v<major>.<minor>.zip`）。
-> 4. 注意：这三家**不是**「第三方自身缺陷」⇒ 属于主 mod ↔ 第三方交互，符合 compat 收录范围；
->    但**不要**给它们加"缺内容兜底"（2026-10-21 口径）。
-> 5. ⚠ 关 mod 前先确认当前存档没有引用它（否则原版读档校验失败会把存档改名成 `*.VAL.corrupt`，
->    `tools\restore_corrupt_save.ps1` 可还原）。
->
-> **遗留未定性（登记，不阻塞）**：`手牌UI与数据存在差异` 1→17、`Couldn't get hand node` 1 条、
-> `finished execution, but was in state Canceled` 17 条（疑为"真人插队撤动作"副作用，r127 口径内但变多了）。
->
-> **同类噪声（纯第三方，只登记不修）**：`MintySpire2` 的 `MintyIncomingDamageText` 节点找不到
-> （`SummedIncomingDamageRender.RepositionLabel ← CatchBarResize ← RitsuLib 血条 graft`），每条 ERROR 带 ~20 行栈。
->
-> 📦 旧的三次结论（r324~r326 的探针读数、"牌慢 vs 帧慢"、solo 对照前的推断）已切到
-> `maintenance-docs\decision-records\archive\TODO-归档（已完成 bug 与功能流水·r96~r226）.md`。
-
-### 待查-13 「怪打死了不结束战斗」= 第三方胜利 hook 抛异常冒穿结算链 —— ✅ **软锁已解决（2026-10-24，保命补丁 v1.0.8；附魔「重新选」过滤待下一局验证挂载）**
-
-- **现象**：12 席 + 11 瓦库局，敌全灭后战斗迟迟不结束（用户等了几十秒）。
-- **日志铁证**（`logs/godot.log`，marker r320，L14706→L14763→L15171）：
-  `检测到敌方已全部死亡，登记延迟胜利结算观察器` → `触发战斗胜利结算` →
-  `[ERROR] InvalidOperationException: Cannot enchant CARD.DEFEND_IRONCLAD with ENCHANTMENT.THINGS_DISPERSE
-  because it already has enchantment ENCHANTMENT.NIMBLE` at
-  `HextechRunesSponsorPack.EnchantmentMasterRune.AfterCombatVictory` ← `Hook.AfterCombatVictory` ←
-  `CombatManager.EndCombatInternal` ← `CheckWinCondition` → **约 40 秒后**才 `Combat state becomes NotInCombat`。
-- **根因**：① 第三方【附魔大师】没判"这张牌已有附魔"；② 原版 `Hook.AfterCombatVictory` 是**裸 foreach**，
-  没有逐 listener 容错 ⇒ 一个第三方 hook 抛异常就冒穿整条结算链（不切房间、不发奖励）。
-  中间的 40 秒 = 11 个瓦库还在动作队列里逐个排队（每个 3~5s）。
-- **主 mod 侧（r321，只做诊断）**：`CreatureCmdKillWinCheckPatch.TryFinishCombatAsync` 里 catch，
-  打一条点名 ERROR（异常类型 + 消息 + 前四帧栈），**不重试**（那张牌状态没变，重试必然再抛）。
-- **根治（仓库外保命补丁，已部署）**：`D:\Download\pain\CombatVictoryHookGuard\`（不进 git、不随 Release 分发）
-  —— 前缀重写 `Hook.AfterCombatVictory`，保持原版两轮遍历与调用顺序，只给每个 listener 包 try/catch：
-  谁抛就跳过谁、记一条点名 WARN（同 listener/hook/异常类型只记一次），结算继续。没人抛时行为与原来一致。
-  代价：那个 listener 这次的效果丢掉（本例 = 那张牌这次不附魔）。
-- **复验锚点**：敌全灭后应见
-  `[CombatVictoryHookGuard] INIT_OK: 已接管 Hook.AfterCombatVictory`（启动时一次）与
-  `[WARN] [CombatVictoryHookGuard] 第三方 hook 抛异常，已跳过并继续战斗结算: model=…EnchantmentMasterRune…`，
-  **紧接着**就是奖励界面 / `Combat state becomes NotInCombat`，不再等几十秒。
-- **第二轮实机（2026-10-24，marker r321）：v1.0.0 没修好** —— 它吞掉了第一个异常（日志有那条 WARN），
-  但**自己随后抛了 NRE**：`NullReferenceException | at Hook.AfterCombatVictory_Patch4(IRunState, ICombatState, CombatRoom)`
-  ← `EndCombatInternal` ← `CheckWinCondition` ← `SawatariWinCheckPatch.Postfix`（NinjaSlayer）。
-  栈顶是**同步帧** ⇒ 出在 `RunTolerantAsync` 的同步段（不在被 try 包住的 listener 调用里）。
-  同时暴露第二个会抛的第三方：`HextechRunes.HextechMayhemModifier.AfterCombatVictory` →
-  `HextechMaxHpScaling.ReapplyScale` → `CreatureCmd.SetMaxHp` → `NHealthBar.RefreshValues` →
-  `MintySpire2.RepositionLabel`（`MintyIncomingDamageText` 节点不存在 ⇒ NRE，本局 19 处栈内提及）。
-  ⇒ **v1.0.1 两条加固**：① **整体 try/catch**（整个方法体任何异常都吞 ⇒ 返回的 Task 永远成功）；
-  ② **先物化 listener 列表**（惰性 `IterateHookListeners` 一次取完并包 try/catch，避免上位 listener
-  把状态搞半损后迭代器自己炸）。**铁律：兜底方法自身绝不允许抛。**
-- **第三~五轮实机（v1.0.2 → v1.0.5）：每吞一层就冒下一层** ——
-  v1.0.2 加 `Hook.AfterCombatVictory` 的 **finalizer**（实机证明我们 prefix 返回 false 后，
-  **同方法上别人家的 postfix 仍会抛**，finalizer 是唯一盖住整条 wrapper 链的位置）；
-  v1.0.3 想兜 YUI 的 `Cancel` NRE 但**类型没挂上**（`YuiExtra` 程序集在 Init 后才加载，v1.0.4 改成
-  AssemblyLoad 重试 + 候选类型自检）；v1.0.5 换打法——**已知必抛的第三方进结算前整家跳过**
-  （黑名单 `HextechRunes*`）⇒ 软锁解决（一整局 15 场全部正常结算），但代价是海克斯战后符文全废（36 个 listener）。
-- **v1.0.6 精准修复（用户拍板方向）**：反编译确认【附魔大师】选牌逻辑本身已会"全不可附魔就跳过、选完复核"，
-  唯一漏判 = **没排除"牌上已有别的附魔"**（`EnchantmentModel.CanEnchant` 只看类型/关键字；
-  `CardCmd.Enchant` 才判已有附魔，同类型=叠加合法、不同类型=抛）⇒ postfix
-  `RandomEnchantmentPool.GetLegalEnchantments(CardModel, pool)`：已有附魔的牌只保留**同类型**候选，
-  没有就上层自动重选/跳过 ⇒ **黑名单收窄**到只剩 `HextechMayhemModifier`（Minty 缺陷独立存在），海克斯符文恢复。
-- **v1.0.7/v1.0.8**：v1.0.6 的过滤没挂上 —— SponsorPack 的**变体 dll**（`lib/0.111.0/`）不走
-  `AssemblyLoad` 可见路径（v1.0.7 加了候选自检 dump 也没触发）⇒ v1.0.8 改**惰性挂载**：
-  我们的 `Hook.AfterCombatVictory` prefix 在每次结算时执行，那时 SponsorPack 必然已加载，
-  顺手把过滤挂上（对本场后续调用立即生效）。
-- **复验锚点（下一局）**：启动见 `INIT_OK v1.0.8` + `附魔大师「重新选」修法已挂上`；
-  战后若它又抽到已附魔牌 ⇒ `附魔大师候选过滤: CARD.X 已有附魔 … 候选 N → 只留同类型 M 个`，
-  且 `已跳过…` 只剩 `HextechMayhemModifier`；`战斗胜利结算被异常打断` 保持 **0**。
-- **归属**：第三方自身缺陷（单人装同一个 mod 也会触发）⇒ 按口径不进 `compat-mods/`、不随 Release 分发；
-  已登记 `mod_registry.json`（带 ⚠ 说明）。上游修好后本补丁可静默保留（没人抛时无副作用）。
-- **优先级**：中（软锁级，但只要持有该遗物 + 有已附魔牌就必现）。
 
 ## 维护性改进 backlog（门禁体系 2026-09-08 之后的那批）
 
@@ -2402,6 +1962,9 @@ skill 侧 `references/`、各提案里都有 `TODO.md §xxx` 的写法；这些 
 - **其它已定性 / 已收口**：§原作者遗留 4 项 Known Issues（勿重开）/ §r149 /
   §维护：经验固化（r160）/ §维护：防回归门禁（r162）/ §Co-op Bots 4 人上限 / §大厅席位卡按钮 /
   §重瞳 / §就地复核结论 / §过期待办状态订正
+- **2026-11-23 切出（第一百八十三段）**：§排期 1~7（七条全部关单）/ §讨论-1（抓牌三档）/
+  §讨论-2（商店删牌优先级）/ §逃跑·离场与建筑师（r346~r349）/ §瓦库托管：变化牌处置（r398~r399 收口）/
+  §待办 的 `待查-1`·`2`·`4`·`5`·`6`·`7`·`9`·`10`·`11`·`12`·`13`
 
 配套去处：玩家可见的变化 → `CHANGELOG.md`；做法与教训 → skill 侧 `references/`；
 逐轮验收流水 → `D:\Download\pain\开发进度记录.md`；R3~R5 逐轮 → `archive\TODO-归档（重构线 R3~R5 逐轮记录·r177~r205）.md`。
