@@ -71,6 +71,11 @@ internal static class RewardsCmdOfferCustomPatch
         // 弹屏等真人点「只有一张牌的卡牌奖励」，本局发生 3 次。
         bool autoClaimScope = LocalWakuuRewardAutoClaim.IsAutoClaimingFor(player);
 
+        // 极速模式商店自动购买（r394）：商店条目一半靠奖励界面结算（卡牌/遗物/药水），
+        // 而购买期间上下文被对齐到瓦库 ⇒ `LocalContext.IsMe` 恒为 true，同 r143 那个坑。
+        // 商店购买没有人会去点奖励屏（后台席位原版连弹屏都不给），必须由这里接管。
+        bool blitzShopScope = LocalWakuuBlitzShopAuto.IsAutoBuyingFor(player);
+
         // 开关门禁（r54）：整批里只要有一项不满足自动领取条件（对应开关关闭 / 未知奖励类型），
         // 能交真人的就交真人——正常弹奖励界面由真人点，**绝不静默跳过**。
         // 静默跳过会让"开关关了"和"瓦库漏领/结算失败"在体感上完全一样，事后排查分不清是配置还是 bug。
@@ -79,7 +84,8 @@ internal static class RewardsCmdOfferCustomPatch
         Reward? notClaimable = rewards.FirstOrDefault((r) => !LocalWakuuRewardAutoClaim.IsAutoClaimable(r, player));
         if (notClaimable != null)
         {
-            if (LocalContext.IsMe(player))
+            // 极速商店自动购买作用域内**不能**交真人：购买链正 await 这份奖励，弹屏没人点 = 商店卡死。
+            if (LocalContext.IsMe(player) && !blitzShopScope)
             {
                 LocalMultiControlLogger.Info(
                     $"瓦库自定义奖励不满足自动领取条件，弹屏交真人处理: player={player.NetId}, "
@@ -88,11 +94,17 @@ internal static class RewardsCmdOfferCustomPatch
             }
 
             LocalMultiControlLogger.Warn(
-                $"瓦库自定义奖励不满足自动领取条件，但后台瓦库原版不弹屏（交回会挂起），只能跳过: "
+                $"瓦库自定义奖励不满足自动领取条件，但没有人会去点（后台瓦库 / 极速商店自动购买），只能跳过: "
                 + $"player={player.NetId}, reward={notClaimable.GetType().Name}");
         }
 
-        if (eventAutoScope)
+        if (blitzShopScope)
+        {
+            LocalMultiControlLogger.Info(
+                $"瓦库自定义奖励改由自动结算（极速商店自动购买作用域内，前台是瓦库也接管）: "
+                + $"player={player.NetId}, rewards={rewards.Count}");
+        }
+        else if (eventAutoScope)
         {
             LocalMultiControlLogger.Info(
                 $"瓦库事件奖励改由自动结算（事件自动选择作用域内，控制权在瓦库身上）: "

@@ -41,5 +41,9 @@ internal static class NMerchantInventoryPatch
 
         // Phase 4：瓦库角色的商店视图打开 → 触发自动采购（默认关 shopAssist）
         LocalWakuuMerchantAuto.OnMerchantInventoryShown(currentPlayer);
+
+        // r394：极速模式（Blitz）商店是另一套库存（6 格 / 3 次机会 / 不花钱），走独立的判定表与流程。
+        // 触发点仍是这里（进店即 Initialize，不需要真人打开商人界面），内部会按游戏模式与开关自行分流。
+        LocalWakuuBlitzShopAuto.OnShopRoomReady(currentPlayer);
     }
 }

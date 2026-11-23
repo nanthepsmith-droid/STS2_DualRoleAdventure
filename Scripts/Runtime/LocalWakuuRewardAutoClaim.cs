@@ -380,8 +380,10 @@ internal static class LocalWakuuRewardAutoClaim
     private static async Task<bool> SettleCardRewardAsync(CardReward reward, Player owner, bool canLeaveForHuman)
     {
         WakuuCardPickTier tier = LocalWakuuAutopilotConfig.CardPickTierValue;
+        // 极速模式（Blitz）卡牌奖励机会少 ⇒ 门槛降低（2026-11-23 用户口径，见 WakuuCardPickPolicy）。
+        bool isBlitz = owner.RunState?.GameMode == MegaCrit.Sts2.Core.Runs.GameMode.Blitz;
         CardRewardEvaluation eval = EvaluateCardReward(reward, owner, countOrdinal: true);
-        double required = WakuuCardPickPolicy.RequiredPickRate(tier, eval.Act, eval.DeckSize);
+        double required = WakuuCardPickPolicy.RequiredPickRate(tier, eval.Act, eval.DeckSize, isBlitz);
         WakuuCardTakeDecision decision = WakuuCardPickPolicy.Decide(
             tier,
             eval.Act,
@@ -390,7 +392,8 @@ internal static class LocalWakuuRewardAutoClaim
             eval.BestPickRate,
             eval.HasSignal,
             eval.CanSacrifice,
-            eval.CanReroll);
+            eval.CanReroll,
+            isBlitz);
 
         // 「不抓」在没有真人能接的入口（事件/遗物自定义奖励）会变成"白丢一张牌" ⇒ 退化成照常抓。
         if (decision == WakuuCardTakeDecision.Skip && !canLeaveForHuman)
@@ -411,7 +414,7 @@ internal static class LocalWakuuRewardAutoClaim
                     + $"best={eval.BestPickRate:P0}, 要求={required:P0}");
                 reward.Reroll(); // 重掷后 CanReroll 自动变 false ⇒ 不会循环
                 eval = EvaluateCardReward(reward, owner, countOrdinal: false);
-                required = WakuuCardPickPolicy.RequiredPickRate(tier, eval.Act, eval.DeckSize);
+                required = WakuuCardPickPolicy.RequiredPickRate(tier, eval.Act, eval.DeckSize, isBlitz);
                 decision = WakuuCardPickPolicy.Decide(
                     tier,
                     eval.Act,
@@ -420,7 +423,8 @@ internal static class LocalWakuuRewardAutoClaim
                     eval.BestPickRate,
                     eval.HasSignal,
                     eval.CanSacrifice,
-                    eval.CanReroll);
+                    eval.CanReroll,
+                    isBlitz);
                 if (decision == WakuuCardTakeDecision.Skip && !canLeaveForHuman)
                 {
                     decision = WakuuCardTakeDecision.Take;

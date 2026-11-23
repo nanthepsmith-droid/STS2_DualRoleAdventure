@@ -174,6 +174,61 @@ public class WakuuCardPickPolicyTests
     }
 
     [Test]
+    public void 极速模式门槛_基准更低且幕间上升更缓()
+    {
+        // 2026-11-23 用户口径：极速模式卡牌奖励很少 ⇒ 门槛降低，二/三幕的上升也降低。
+        // 中卡组 15% / 20% / 25%（普通 20 / 30 / 40），小卡组 25 / 30 / 35（普通 30 / 40 / 50）。
+        Assert.That(
+            WakuuCardPickPolicy.RequiredPickRate(WakuuCardPickTier.Normal, act: 1, deckSize: 10, isBlitz: true),
+            Is.EqualTo(0.15).Within(1e-9));
+        Assert.That(
+            WakuuCardPickPolicy.RequiredPickRate(WakuuCardPickTier.Normal, act: 2, deckSize: 10, isBlitz: true),
+            Is.EqualTo(0.20).Within(1e-9));
+        Assert.That(
+            WakuuCardPickPolicy.RequiredPickRate(WakuuCardPickTier.Normal, act: 3, deckSize: 10, isBlitz: true),
+            Is.EqualTo(0.25).Within(1e-9));
+
+        Assert.That(
+            WakuuCardPickPolicy.RequiredPickRate(WakuuCardPickTier.Small, act: 1, deckSize: 10, isBlitz: true),
+            Is.EqualTo(0.25).Within(1e-9));
+        Assert.That(
+            WakuuCardPickPolicy.RequiredPickRate(WakuuCardPickTier.Small, act: 3, deckSize: 10, isBlitz: true),
+            Is.EqualTo(0.35).Within(1e-9));
+
+        Assert.That(
+            WakuuCardPickPolicy.RequiredPickRate(WakuuCardPickTier.Big, act: 3, deckSize: 200, isBlitz: true),
+            Is.EqualTo(0.0), "大卡组照样永不跳");
+
+        // 普通局一个字不动（默认参数路径）。
+        Assert.That(
+            WakuuCardPickPolicy.RequiredPickRate(WakuuCardPickTier.Normal, act: 2, deckSize: 10),
+            Is.EqualTo(0.30).Within(1e-9));
+    }
+
+    [Test]
+    public void 极速模式_0点26的牌在三层能抓_普通模式照样跳()
+    {
+        // 极速三层门槛 25% ⇒ 0.26 达标；普通三层门槛 40% ⇒ 同一张牌被跳过。
+        Assert.That(
+            WakuuCardPickPolicy.Decide(
+                WakuuCardPickTier.Normal, act: 3, deckSize: 20, rewardOrdinal: 6,
+                bestPickRate: 0.26, hasAnySignal: true, canSacrifice: false, canReroll: false, isBlitz: true),
+            Is.EqualTo(WakuuCardTakeDecision.Take));
+        Assert.That(
+            WakuuCardPickPolicy.Decide(
+                WakuuCardPickTier.Normal, act: 3, deckSize: 20, rewardOrdinal: 6,
+                bestPickRate: 0.26, hasAnySignal: true, canSacrifice: false, canReroll: false),
+            Is.EqualTo(WakuuCardTakeDecision.Skip), "普通模式三层门槛 40%");
+
+        // 极速三层 0.24 仍不达标（25%）⇒ 跳；确认不是"极速一律照抓"。
+        Assert.That(
+            WakuuCardPickPolicy.Decide(
+                WakuuCardPickTier.Normal, act: 3, deckSize: 20, rewardOrdinal: 6,
+                bestPickRate: 0.24, hasAnySignal: true, canSacrifice: false, canReroll: false, isBlitz: true),
+            Is.EqualTo(WakuuCardTakeDecision.Skip));
+    }
+
+    [Test]
     public void 大卡组删牌只删垃圾()
     {
         Assert.That(WakuuCardPickPolicy.IsRemovalJunkOnly(WakuuCardPickTier.Big), Is.True);

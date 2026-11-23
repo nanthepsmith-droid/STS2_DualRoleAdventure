@@ -31,6 +31,7 @@ public class WakuuConfigJsonTests
             Assert.That(data.statBadge, Is.False);
             Assert.That(data.skipTurnStartDrawAnim, Is.False);
             Assert.That(data.blitzTreasureDoublePick, Is.False); // 极速宝箱每人 2 件：默认关 = 原版多人口径（每人 1 件）
+            Assert.That(data.blitzShopAutoBuy, Is.False); // 极速商店自动购买：默认关（r394）
             // 方案 D 队列档 / 并发档已于 2026-09-26 转正为「默认开」（断言已移入下方「默认开」组）
             // 默认开
             Assert.That(data.playAllCards, Is.True);
@@ -443,6 +444,7 @@ public class WakuuConfigJsonTests
             Assert.That(json, Does.Contain("\"shopAssistBuyRemoval\""));
             Assert.That(json, Does.Contain("\"statBadge\""));
             Assert.That(json, Does.Contain("\"blitzTreasureDoublePick\""));
+            Assert.That(json, Does.Contain("\"blitzShopAutoBuy\""));
             Assert.That(json, Does.Contain("\"skipTurnStartDrawAnim\""));
             Assert.That(json, Does.Contain("\"fastVakuuPlay\""));
             Assert.That(json, Does.Contain("\"vakuuPlayQueue\""));

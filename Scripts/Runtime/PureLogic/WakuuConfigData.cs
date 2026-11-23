@@ -387,6 +387,21 @@ internal sealed class WakuuConfigData
     public bool blitzTreasureDoublePick { get; set; }
 
     /// <summary>
+    /// **极速模式（Blitz）商店自动购买**（**默认关**，2026-11-23 用户口径）。
+    ///
+    /// <para>极速商店与原版不同：6 个格子（5 个非诅咒档 + 1 个诅咒档）、**每次进店 3 次购买机会**、
+    /// 条目全部 <c>Cost = 0</c>（不花金币，代价只有诅咒 / 牌组被改动）。</para>
+    ///
+    /// <para>开启后进店即替**所有瓦库形态席位**按判定表买（<see cref="BlitzShopBuyPolicy"/>）：
+    /// 保命回复 → 诅咒选择（补次数）→ 卡牌奖励类 → 遗物 → 升级稀有卡 → 删牌 → 升级/附魔/变化 → 药水；
+    /// 次数用不完时允许用非诅咒档填满（用户原话「允许买非诅咒」）。</para>
+    ///
+    /// <para>⚠ 前置：奖励自动领取三个开关（<c>autoClaimCards</c> / <c>autoClaimGoldRelics</c> /
+    /// <c>autoClaimPotions</c>）必须全开 —— 商店条目一半靠奖励界面结算，关着会弹屏等人点。</para>
+    /// </summary>
+    public bool blitzShopAutoBuy { get; set; }
+
+    /// <summary>
     /// 跳过「其他人」的回合开始抽牌演出（改进-1，默认关）。
     /// 本地多控下回合开始会依次把前台切到每个真人玩家、逐个播完自动抽牌动画再切下一个，
     /// 满员（10+ 玩家）时要等很久。开启后回合开始**只保留当前正在看的那位**的演出：

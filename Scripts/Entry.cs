@@ -904,7 +904,7 @@ public partial class Entry
     // r392（2026-11-23，r391 实机判读）：① 补建**已生效**（`手牌UI缺节点已补建` 18 次 / 失败 0，差异 20 次）；
     //   ② 闸门日志里 189/192 是 `reason=PersistPending`（差异刚出现的 1.5 秒正常态）⇒ 不再记它，
     //   只留"手牌忙 / 冷却中"这两种真异常；③ 立绘探针行数 380/18min（原 17802/85min ≈ 209/min → 21/min）。
-    private const string BuildMarker = "Revival v1.49.0 (game v0.113.1, marker=2026-11-23-r392)";
+    private const string BuildMarker = "Revival v1.49.0 (game v0.113.1, marker=2026-11-23-r395)";
 
     private static Harmony? _harmony;
 

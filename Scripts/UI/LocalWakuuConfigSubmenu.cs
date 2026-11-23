@@ -531,6 +531,15 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
                 "Off by default; requires the \"Auto-Buy at Shop\" master switch. Buys the card-removal service once (when the gold floor allows) and auto-picks a card: with \"Smart Pick Priority\" on it follows the removal priority (Curse > Status > Strike > Defend > rest > Quest), otherwise the in-combat card-pick strategy."),
             () => LocalWakuuAutopilotConfig.ShopAssistBuyRemoval,
             value => LocalWakuuAutopilotConfig.TrySetAndSave("shopAssistBuyRemoval", value));
+        AddToggleRow(column,
+            LocalModText.Select("极速模式商店自动购买", "Blitz Shop Auto-Buy"),
+            LocalModText.Select(
+                "默认关。极速模式（Blitz）商店与原版不同：6 个格子、每次进店只有 3 次购买机会、条目都不花钱（代价是诅咒/牌组变化）。"
+                + "开启后进店即替所有瓦库形态席位按填好的规则表买满次数：低血先回满（商店后面必是精英）→ 次数不够时用「诅咒选择」补 → 卡牌奖励类 → 遗物 → 升级稀有卡 → 删牌 → 升级/附魔/变化 → 药水；"
+                + "次数用不完时允许用非诅咒档填满。需要「奖励自动领取」的三个开关保持开启（否则会弹奖励屏等人点）。",
+                "Off by default. The Blitz shop works differently: 6 slots, only 3 purchases per shop, and every entry costs no gold (the price is curses / deck changes). When on, all Vakuu seats buy on entering the shop following the user-filled rule table: heal to full when low (an elite always follows the shop) -> more choices via the cursed choice entry when picks are short -> card rewards -> relics -> upgraded rare card -> card removal -> upgrade/enchant/transform -> potions; leftover picks are spent on non-cursed entries. Requires the three reward auto-claim switches to stay on (otherwise reward screens pop up and wait for a click)."),
+            () => LocalWakuuAutopilotConfig.BlitzShopAutoBuy,
+            value => LocalWakuuAutopilotConfig.TrySetAndSave("blitzShopAutoBuy", value));
         column.AddChild(CreateStrategyRow(
             LocalModText.Select("事件选项策略", "Event Choice Strategy"),
             LocalModText.Select(

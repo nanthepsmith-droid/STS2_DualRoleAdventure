@@ -93,6 +93,18 @@ internal static class WakuuCardPickPolicy
     /// </summary>
     public const double NormalActDownshift = 0.10;
 
+    /// <summary>
+    /// **极速模式（Blitz）专用**的基准抓取率（2026-11-23 用户口径「极速模式卡牌奖励很少 ⇒ 门槛降低」）。
+    /// 只在 <c>GameMode.Blitz</c> 的局里生效，普通局的 0.30 一个字不动。
+    /// </summary>
+    public const double BlitzBaseTakePickRate = 0.25;
+
+    /// <summary>
+    /// **极速模式专用**的每幕递增（用户口径「进入第二、三幕的门槛上升也降低」）。
+    /// 普通局是 0.10；极速 0.05 ⇒ 中卡组实际门槛 15% / 20% / 25%。
+    /// </summary>
+    public const double BlitzActStep = 0.05;
+
     /// <summary>中卡组档：前 N 次卡牌奖励一律不跳。</summary>
     public const int NormalProtectFirstRewards = 3;
 
@@ -141,13 +153,24 @@ internal static class WakuuCardPickPolicy
     /// </summary>
     public static double RequiredPickRate(WakuuCardPickTier tier, int act, int deckSize)
     {
+        return RequiredPickRate(tier, act, deckSize, isBlitz: false);
+    }
+
+    /// <summary>
+    /// 同上，但可指定**极速模式**（2026-11-23 用户口径）：基准 0.25（普通 0.30）、每幕 +0.05（普通 +0.10），
+    /// 中卡组每幕再减 <see cref="NormalActDownshift"/> ⇒ 实际 15% / 20% / 25%。
+    /// </summary>
+    public static double RequiredPickRate(WakuuCardPickTier tier, int act, int deckSize, bool isBlitz)
+    {
         if (tier == WakuuCardPickTier.Big)
         {
             return 0.0;
         }
 
         int effectiveAct = act < 1 ? 1 : act;
-        double required = BaseTakePickRate + ActStep * (effectiveAct - 1);
+        double baseRate = isBlitz ? BlitzBaseTakePickRate : BaseTakePickRate;
+        double actStep = isBlitz ? BlitzActStep : ActStep;
+        double required = baseRate + actStep * (effectiveAct - 1);
         if (tier == WakuuCardPickTier.Normal)
         {
             required -= NormalActDownshift;
@@ -178,6 +201,7 @@ internal static class WakuuCardPickPolicy
     /// <param name="hasAnySignal">三张里有没有任何一张查得到数据（个人或社区）。</param>
     /// <param name="canSacrifice">这次奖励有没有献祭选项（佩尔之翼）。</param>
     /// <param name="canReroll">这张奖励还能不能重掷（浮木 / <c>CardReward.CanReroll</c>）。</param>
+    /// <param name="isBlitz">是否极速模式（影响门槛，见 <see cref="RequiredPickRate(WakuuCardPickTier, int, int, bool)"/>）。</param>
     public static WakuuCardTakeDecision Decide(
         WakuuCardPickTier tier,
         int act,
@@ -186,7 +210,8 @@ internal static class WakuuCardPickPolicy
         double bestPickRate,
         bool hasAnySignal,
         bool canSacrifice,
-        bool canReroll)
+        bool canReroll,
+        bool isBlitz = false)
     {
         if (tier == WakuuCardPickTier.Big)
         {
@@ -204,7 +229,7 @@ internal static class WakuuCardPickPolicy
             return WakuuCardTakeDecision.Take; // 前三次不跳（开局牌太少）
         }
 
-        if (bestPickRate >= RequiredPickRate(tier, act, deckSize))
+        if (bestPickRate >= RequiredPickRate(tier, act, deckSize, isBlitz))
         {
             return WakuuCardTakeDecision.Take;
         }
