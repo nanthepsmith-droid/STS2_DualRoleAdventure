@@ -439,6 +439,13 @@ internal static class PersonalShopPurchasePatch
                 return;
             }
 
+            // 极速模式（Blitz）商店自动购买（r396）同样不是真人决策：极速商店不花金币、
+            // 条目靠"6 格 3 次"选择，买什么完全是策略表决定的，记进个人偏好会把样本带歪。
+            if (LocalWakuuBlitzShopAuto.IsAutoBuyingFor(owner))
+            {
+                return;
+            }
+
             string kind;
             string? itemId;
             switch (__instance)
