@@ -21,6 +21,11 @@
   python dll_check.py --deployed --marker "2026-08-19-r5"       # 自动检查测试槽位 DLL
   python dll_check.py --deployed --expect-deployed               # 部署位与仓库根字节一致
 
+双载荷槽位（v1.50 起 loader + lib\\<版本>\\*.Payload.dll）：
+  --deployed 会自动识别槽位里的 lib\\ ，断言逐个打到**载荷**上（存在类 = 任一载荷满足，
+  不存在类 = 全部载荷都不含），--expect-deployed 比对"仓库根 dll 与某一个载荷逐字节相同"
+  （loader 本身不含版本 marker 与补丁类，拿它做断言只会假阴性）。
+
 退出码：0 = 全部断言通过；1 = 有缺失/意外出现；2 = 用法/文件错误。
 """
 
@@ -39,7 +44,7 @@ if hasattr(sys.stdout, "reconfigure"):
 DEFAULT_DEPLOYED = r"D:\SteamLibrary\steamapps\common\Slay the Spire 2\mods\DualRoleAdventure\DualRoleAdventurefixed.dll"
 DEFAULT_ROOT = r"D:\Download\pain\STS2_DualRoleAdventure-itriedtofix\DualRoleAdventure.dll"
 
-MARKER_RE = re.compile(r"20\d\d-\d\d-\d\d-r\d+")
+MARKER_RE = re.compile(r"20\d\d-\d\d-\d\d-r\d+(?:-stable)?")
 
 # UTF-16 明文（.NET 用户字符串堆 #US：每个字符两字节 LE，前有长度前缀）里找 ASCII 子串。
 # 简单方案：把整个 UTF-16 空间按 2 字节步进解出来再 Contains；对大文件（几百 KB）完全够快。
@@ -133,6 +138,27 @@ def check_u16(data, needle):
     return needle.encode("utf-16-le") in data
 
 
+def find_dual_payloads(slot_dll):
+    """v1.50 起槽位是双载荷形态：<slot>\\DualRoleAdventurefixed.dll（薄 loader）+ lib\\<版本>\\*.Payload.dll。
+
+    返回 [(variant, payload_path), ...]（variant 形如 "0.111.0"）；不是双载荷形态时返回 []。
+    loader 里没有版本 marker、也没有各条代码线的补丁类 —— 断言必须打到载荷上才有意义。
+    """
+    slot_dir = os.path.dirname(os.path.abspath(slot_dll))
+    lib_dir = os.path.join(slot_dir, "lib")
+    if not os.path.isdir(lib_dir):
+        return []
+    out = []
+    for variant in sorted(os.listdir(lib_dir)):
+        vdir = os.path.join(lib_dir, variant)
+        if not os.path.isdir(vdir):
+            continue
+        for name in sorted(os.listdir(vdir)):
+            if name.lower().endswith(".payload.dll"):
+                out.append((variant, os.path.join(vdir, name)))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description="DLL 部署校验器（.NET 程序集字节内容检查）")
     ap.add_argument("dll", nargs="?", help="要检查的 DLL 路径")
@@ -198,15 +224,47 @@ def main():
         pe_ok, pe_detail = validate_pe_structure(data)
         ok(pe_ok, "是结构完整的 .NET 程序集: %s" % pe_detail)
 
-    # 断言
+    # 断言来源：单载荷 = 目标文件本身；双载荷槽位 = 逐个载荷求值，
+    # 「存在」类断言任一载荷满足即可（0.111 / 0.113 两条线的 marker 与类型集合本来就不同），
+    # 「不存在」类断言要求所有载荷都不含。
+    payloads = find_dual_payloads(args.slot_dll) if args.deployed else []
+    sources = payloads if payloads else [("(单一文件)", target)]
+    source_bytes = {}
+    for variant, path in sources:
+        try:
+            with open(path, "rb") as fh:
+                source_bytes[variant] = fh.read()
+        except OSError as exc:
+            print("读取失败: %s (%s)" % (path, exc), file=sys.stderr)
+            return 2
+    if payloads:
+        info["layout"] = "dual"
+        info["payloads"] = [{"variant": v, "path": p, "markers": find_utf16_markers(source_bytes[v])}
+                            for v, p in payloads]
+    else:
+        info["layout"] = "flat"
+
+    def where(matched):
+        return "" if not payloads else "  [载荷: %s]" % (", ".join(matched) if matched else "无")
+
+    def any_source(fn):
+        return [variant for variant, _ in sources if fn(source_bytes[variant])]
+
+    def all_sources(fn):
+        return [variant for variant, _ in sources if fn(source_bytes[variant])]
+
     for needle in args.utf8_needles:
-        ok(check_utf8(data, needle), "UTF-8 存在: %s" % needle)
+        hit = any_source(lambda d: check_utf8(d, needle))
+        ok(bool(hit), "UTF-8 存在: %s%s" % (needle, where(hit)))
     for needle in args.u16_needles + args.marker:
-        ok(check_u16(data, needle), "UTF-16 存在: %s" % needle)
+        hit = any_source(lambda d: check_u16(d, needle))
+        ok(bool(hit), "UTF-16 存在: %s%s" % (needle, where(hit)))
     for needle in args.absent_utf8:
-        ok(not check_utf8(data, needle), "UTF-8 不存在: %s" % needle)
+        hit = all_sources(lambda d: check_utf8(d, needle))
+        ok(not hit, "UTF-8 不存在: %s%s" % (needle, "  [出现在载荷: %s]" % ", ".join(hit) if hit else ""))
     for needle in args.absent_u16:
-        ok(not check_u16(data, needle), "UTF-16 不存在: %s" % needle)
+        hit = all_sources(lambda d: check_u16(d, needle))
+        ok(not hit, "UTF-16 不存在: %s%s" % (needle, "  [出现在载荷: %s]" % ", ".join(hit) if hit else ""))
 
     if args.expect_deployed:
         # false-green 修复：缺文件一律 FAIL，绝不允许「跳过即绿」
@@ -214,6 +272,13 @@ def main():
             ok(False, "仓库根 DLL 不存在（--expect-deployed 无法完成比对）: %s" % args.root_dll)
         elif not os.path.isfile(args.slot_dll):
             ok(False, "部署位 DLL 不存在（--expect-deployed 无法完成比对）: %s" % args.slot_dll)
+        elif payloads:
+            # 双载荷：仓库根 dll = 当前分支（beta 线）载荷，只要与某一个载荷逐字节相同即可
+            with open(args.root_dll, "rb") as fh2:
+                h_root = hashlib.sha256(fh2.read()).hexdigest()
+            hit = [v for v, _ in sources if hashlib.sha256(source_bytes[v]).hexdigest() == h_root]
+            ok(bool(hit), "仓库根 DLL 与某个载荷字节一致 (sha256=%s...)%s"
+                          % (h_root[:12], where(hit)))
         else:
             h1 = hashlib.sha256(data).hexdigest()
             with open(args.root_dll, "rb") as fh2:
@@ -240,6 +305,11 @@ def main():
         print("大小: %s 字节  修改时间: %s" % (st.st_size, st.st_mtime))
         if markers:
             print("发现 marker: %s" % ", ".join(markers))
+        if payloads:
+            print("布局: 双载荷（loader + lib\\<版本>\\*.Payload.dll）")
+            for variant, path in payloads:
+                print("  载荷 %-10s %s  markers=%s" % (
+                    variant, os.path.basename(path), ", ".join(find_utf16_markers(source_bytes[variant])) or "-"))
         for check, msg in results:
             print("[%s] %s" % ("OK " if check else "MISS", msg))
         if not results:
