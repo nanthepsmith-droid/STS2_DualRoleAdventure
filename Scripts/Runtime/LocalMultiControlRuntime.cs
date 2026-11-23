@@ -4368,6 +4368,10 @@ internal static class LocalMultiControlRuntime
     /// <summary>
     /// 记一条「补建被哪道闸门挡住」（r390）。同一个「原因 + 席位 + 缺失清单」只打一次，
     /// 避免每 250ms 一条把日志淹掉；差异变了/原因变了会重新打。
+    ///
+    /// <para>r392：<see cref="HandUiNodeRepairDecision.PersistPending"/> **不再单独记** —— 那是差异刚出现
+    /// 的 1.5 秒正常态（原版手牌变换的视觉更新本就故意延迟约 0.9s）。2026-11-23 实测：一局 192 条闸门日志里
+    /// 189 条都是它，纯噪声；真正有价值的只有"手牌忙"和"冷却中"（那两种才说明有人抢/在重试）。</para>
     /// </summary>
     private static void LogHandNodeRepairBlocked(
         HandUiNodeRepairDecision decision,
@@ -4378,6 +4382,11 @@ internal static class LocalMultiControlRuntime
     {
         try
         {
+            if (decision == HandUiNodeRepairDecision.PersistPending)
+            {
+                return;   // 正常态，不记（见上面的 r392 说明）
+            }
+
             string key = $"{decision}|{player.NetId}|{string.Join(",", missingKeys)}";
             if (string.Equals(key, _handNodeRepairBlockedKey, StringComparison.Ordinal))
             {
