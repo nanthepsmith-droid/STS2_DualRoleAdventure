@@ -35,3 +35,5 @@ release/
 # 双版本出包产物（Scripts/Tools/build_dual.ps1）
 dist/
 /DualRoleAdventure.Payload.dll
+# release_build.ps1 会把 loader + lib\ 同步进工坊槽位目录（只保留 json 入库）
+workshop/content/lib/

@@ -4,6 +4,16 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+## [1.50.0] - 2026-11-23
+
+### 安装包结构变成「双载荷」（v1.50.0）
+
+- 从本版起，一个 zip 里同时装两份载荷，**不用再按游戏版本选下载**：
+  `lib\0.111.0\`（正式版 0.111.x）与 `lib\0.113.0\`（beta 0.113.x），由启动时的 loader 按你的游戏版本自动挑。
+- 升级方式：**整个目录替换**（别只换 `DualRoleAdventure.dll`，也别把 `lib\` 删掉/挪走）。
+  正确的安装形态见 README「Installation」。
+- 验证：启动日志里应出现 `INIT_OK`，且 marker 行版本号与 zip 名一致。
+
 ### 变化成「指定的一张牌」的结果，托管当消耗牌对待（r398~r399；2026-11-23 实机确认）
 
 - 某张牌被效果变成**指定的那一张**时（例如【离去】固定变成【仆从打击】），托管会把变出来的这张牌

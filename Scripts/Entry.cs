@@ -925,7 +925,7 @@ public partial class Entry
     //   随机变化仍先变打击/防御（变诅咒只会变成另一个诅咒 = 同池，白花一次变化）。判据
     //   `WakuuTransformTargetPolicy`（按 source 类型名登记：Begone/Charge/Seance = 固定、EntropyPower = 随机；
     //   未登记来源按随机处理 —— 选牌那一刻游戏不暴露"结果是不是固定牌"）。
-    private const string BuildMarker = "Revival v1.49.0 (game v0.113.1, marker=2026-11-23-r399)";
+    private const string BuildMarker = "Revival v1.50.0 (game v0.113.1, marker=2026-11-23-r399)";
 
     private static Harmony? _harmony;
 
