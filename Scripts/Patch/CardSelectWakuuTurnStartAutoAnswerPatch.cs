@@ -506,7 +506,7 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
         WakuuPickScenario scenario = WakuuPickScenario.Unknown)
     {
         // 与 CardSelectCmd.FromSimpleGrid 走全局选择器时的口径一致：min/max 取自 prefs。
-        // r393：带上场景 ⇒ 删牌屏会走删除优先级表（诅咒>状态>打击>基础防御>过渡牌>其余>任务），
+        // r393：带上场景 ⇒ 删牌屏会走删除优先级表（诅咒>状态>打击>基础防御>【愧疚】>过渡牌>其余>任务），
         //       Unknown 时行为与旧版完全一致（选择器内部只在 smartPick 开且场景明确时套表）。
         LocalWakuuStrategySelector selector = new(scenario);
         return await selector.GetSelectedCards(cards, prefs.MinSelect, prefs.MaxSelect);

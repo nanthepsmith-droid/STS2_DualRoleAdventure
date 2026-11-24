@@ -934,7 +934,10 @@ public partial class Entry
     //   随机变化仍先变打击/防御（变诅咒只会变成另一个诅咒 = 同池，白花一次变化）。判据
     //   `WakuuTransformTargetPolicy`（按 source 类型名登记：Begone/Charge/Seance = 固定、EntropyPower = 随机；
     //   未登记来源按随机处理 —— 选牌那一刻游戏不暴露"结果是不是固定牌"）。
-    private const string BuildMarker = "Revival v1.47.20 (game v0.111.0, marker=2026-11-23-r399-stable)";
+    // r400（2026-11-24 用户口径）：删牌优先级小改 ——【愧疚】（`GUILTY`）在牌组里待满 5 场战斗后**自己移除**，
+    //   删它等于白烧一次删除机会 ⇒ 单独归入 `WakuuCardKind.SelfRemovingCurse`，删除场景排到 打击/防御 之后
+    //   （其它场景仍与普通诅咒同档）。判据 `WakuuCardId.IsSelfRemovingCurseId`。
+    private const string BuildMarker = "Revival v1.47.21 (game v0.111.0, marker=2026-11-24-r400-stable)";
 
     private static Harmony? _harmony;
 

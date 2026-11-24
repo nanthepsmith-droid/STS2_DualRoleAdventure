@@ -50,14 +50,23 @@ internal enum WakuuCardKind
 
     /// <summary>奇巧（Sly）牌：带奇巧标签或被效果临时赋予奇巧，丢弃后本回合自动打出。</summary>
     Sly,
+
+    /// <summary>
+    /// **会自己消失的诅咒**（r400，用户 2026-11-24 口径）：【愧疚】（`GUILTY`）在牌组里待满
+    /// 5 场战斗后自己从牌组移除 ⇒ 删除场景里把它排到 打击/防御 之后（但仍在「其余」之前），
+    /// 免得瓦库把一次删除机会烧在它身上。其它场景与普通诅咒完全同档。
+    /// </summary>
+    SelfRemovingCurse,
 }
 
 /// <summary>
 /// 智能选牌优先级纯函数（可行性分析 §9.2 规则表）。不依赖任何游戏类型，可直接单测。
 ///
 /// 规则表（§9.2）：
-///   Remove（删除）：Curse &gt; Status &gt; Strike &gt; 基础防御 &gt;
+///   Remove（删除）：Curse &gt; Status &gt; Strike &gt; 基础防御 &gt; **SelfRemovingCurse【愧疚】（r400）** &gt;
 ///        **过渡牌（一层抓取率高、二/三层低，按落差降序；2026-11-18）** &gt; 其余 &gt; **Quest（最后，r353）**
+///   【愧疚】自己会在 5 场战斗后离场 ⇒ 删它等于白烧一次删除，排到 打击/防御 之后（仍在「其余」之前：
+///   宁可删它也不删一张能用的牌）。其它场景它与普通诅咒同档。
 ///   Exhaust（消耗）：Curse &gt; Status &gt; Quest &gt; Strike &gt; 基础防御 &gt; 其余（r365 与删除拆开）
 ///   其余场景见各分支注释。
 ///   Copy（复制）：首选非 {Curse/Status/Quest/Strike/基础防御} 的牌；候选全为坏牌时
@@ -175,7 +184,10 @@ internal static class WakuuPriorityPicking
 
         if (cardType == CardTypeCurse)
         {
-            return WakuuCardKind.Curse;
+            // r400：【愧疚】会在 5 场战斗后自己离场 ⇒ 删除场景里单独降档（其它场景同普通诅咒）。
+            return WakuuCardId.IsSelfRemovingCurseId(id)
+                ? WakuuCardKind.SelfRemovingCurse
+                : WakuuCardKind.Curse;
         }
 
         if (cardType == CardTypeStatus)
@@ -281,10 +293,13 @@ internal static class WakuuPriorityPicking
             // 不会越级盖过诅咒/状态/打击/防御，也不会掉到任务牌下面。
             WakuuPickScenario.Remove => kind switch
             {
-                WakuuCardKind.Curse => 6,
-                WakuuCardKind.Status => 5,
-                WakuuCardKind.BasicStrike => 3,
-                WakuuCardKind.BasicDefend => 2,
+                WakuuCardKind.Curse => 8,
+                WakuuCardKind.Status => 7,
+                WakuuCardKind.BasicStrike => 5,
+                WakuuCardKind.BasicDefend => 4,
+                // r400：【愧疚】自己 5 场战斗后会从牌组消失 ⇒ 删它等于白烧一次删除机会，
+                // 排到 打击/防御 之后（但仍在「其余」之前 —— 宁可删它也不删一张能用的牌）。
+                WakuuCardKind.SelfRemovingCurse => 3,
                 WakuuCardKind.Quest => 0,
                 _ => 1,
             },
@@ -292,9 +307,11 @@ internal static class WakuuPriorityPicking
             // 消耗（r365，用户 2026-11-17 口径）：**保持 r353 之前的排位** ——
             // 「战斗中消耗任务牌不影响战斗外任务牌使用」，没有删除那种不可逆代价，
             // 所以任务牌仍然排在诅咒/状态之后、打击/防御之前（4 > 3 > 2）。
+            // 【愧疚】在这里与普通诅咒同档（消耗/弃牌都不是"永久删掉"，没有白烧一说）。
             WakuuPickScenario.Exhaust => kind switch
             {
                 WakuuCardKind.Curse => 6,
+                WakuuCardKind.SelfRemovingCurse => 6,
                 WakuuCardKind.Status => 5,
                 WakuuCardKind.Quest => 4,
                 WakuuCardKind.BasicStrike => 3,
@@ -312,6 +329,7 @@ internal static class WakuuPriorityPicking
                 WakuuCardKind.Quest => 3,
                 WakuuCardKind.Status => 2,
                 WakuuCardKind.Curse => 1,
+                WakuuCardKind.SelfRemovingCurse => 1,
                 _ => 0,
             },
 
@@ -322,6 +340,7 @@ internal static class WakuuPriorityPicking
             WakuuPickScenario.Transform when fixedTargetTransform => kind switch
             {
                 WakuuCardKind.Curse => 6,
+                WakuuCardKind.SelfRemovingCurse => 6,
                 WakuuCardKind.Status => 5,
                 WakuuCardKind.BasicStrike => 3,
                 WakuuCardKind.BasicDefend => 2,
@@ -343,6 +362,7 @@ internal static class WakuuPriorityPicking
             {
                 WakuuCardKind.Sly => 7,
                 WakuuCardKind.Curse => 6,
+                WakuuCardKind.SelfRemovingCurse => 6,
                 WakuuCardKind.Status => 5,
                 WakuuCardKind.Quest => 4,
                 WakuuCardKind.BasicStrike => 3,

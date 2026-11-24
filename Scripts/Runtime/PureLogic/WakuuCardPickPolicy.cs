@@ -236,6 +236,7 @@ internal static class WakuuCardPickPolicy
         return kind switch
         {
             WakuuCardKind.Curse => true,
+            WakuuCardKind.SelfRemovingCurse => true, // 【愧疚】仍是诅咒（只是删除档位更低）
             WakuuCardKind.Status => true,
             WakuuCardKind.BasicStrike => true,
             WakuuCardKind.BasicDefend => true,
