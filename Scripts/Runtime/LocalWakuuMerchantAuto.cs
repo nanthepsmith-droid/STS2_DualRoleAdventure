@@ -132,7 +132,11 @@ internal static class LocalWakuuMerchantAuto
             {
                 // 2026-11-10：顺序不再固定，按牌组状况排（见 WakuuShopOrderPolicy）
                 int deckSize = CountDeckCards(player, null);
-                int curseCount = CountDeckCards(player, CardType.Curse);
+                int allCurseCount = CountDeckCards(player, CardType.Curse);
+                // r401（用户口径 B）：只有**可删的普通诅咒**才算"该先删牌"——
+                // ①【永恒】词条的不可删诅咒（进阶 5 起送的【进阶之灾】等）删牌屏根本不显示；
+                // ②【愧疚】5 场战斗后自己离场。两类都不值得花钱删。
+                int curseCount = CountRemovalWorthyCurses(player);
                 bool hasGoodCard = HasGoodCardCandidate(player, inventory, out string? bestCardId, out double bestCardWinRate);
                 bool removalAffordable = IsRemovalAffordable(player, inventory);
                 IReadOnlyList<WakuuShopStep> order = WakuuShopOrderPolicy.Decide(
@@ -150,7 +154,8 @@ internal static class LocalWakuuMerchantAuto
                 }
 
                 LocalMultiControlLogger.Info(
-                    $"瓦库商店采购顺序: player={player.NetId}, 卡组={deckSize}, 诅咒={curseCount}, "
+                    $"瓦库商店采购顺序: player={player.NetId}, 卡组={deckSize}, "
+                    + $"诅咒={curseCount}(全部={allCurseCount}), "
                     + $"店里有好牌={hasGoodCard}(胜率≥{WakuuShopOrderPolicy.GoodCardWinRate}"
                     + (hasGoodCard ? $"，最好={bestCardId}@{bestCardWinRate:F2}" : string.Empty) + "), "
                     + $"删牌可用={removalAffordable}, 预留删牌金={removalReserve}, "
@@ -757,8 +762,51 @@ internal static class LocalWakuuMerchantAuto
         return cost > 0 && cost <= player.Gold - WakuuMerchantPicking.DefaultGoldFloor;
     }
 
-    /// <summary>牌组里有多少张「大卡组档允许删」的牌（诅咒/状态/打击/防御；牌组读不到时按 0 处理）。</summary>
+    /// <summary>
+    /// 牌组里有多少张「大卡组档允许删」的牌（诅咒/状态/打击/防御；牌组读不到时按 0 处理）。
+    /// r401：额外要求 `IsRemovable` —— 带【永恒】词条的牌（如【进阶之灾】）删牌屏根本不显示，
+    /// 算进来会让"有垃圾才买删牌"这道闸门永远放行、白花钱。
+    /// </summary>
     private static int CountJunkableRemovalCards(Player player)
+    {
+        try
+        {
+            IReadOnlyList<CardModel>? cards = player.Deck?.Cards;
+            if (cards == null)
+            {
+                return 0;
+            }
+
+            int count = 0;
+            foreach (CardModel card in cards)
+            {
+                if (card == null || !card.IsRemovable)
+                {
+                    continue;
+                }
+
+                WakuuCardKind kind = WakuuPriorityPicking.ClassifyCard(
+                    card.Id.Entry, (int)card.Type, card.IsSlyThisTurn);
+                if (WakuuCardPickPolicy.IsRemovableInJunkOnly(kind))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// 牌组里"值得为它买删牌服务"的诅咒张数（r401 用户口径 B）：
+    /// 只算**可删的普通诅咒** —— 不可删（【永恒】词条，如【进阶之灾】）与会自己消失的【愧疚】都不算。
+    /// 牌组读不到时按 0 处理（宁可不动采购顺序，也不能把整店采购卡住）。
+    /// </summary>
+    private static int CountRemovalWorthyCurses(Player player)
     {
         try
         {
@@ -778,7 +826,7 @@ internal static class LocalWakuuMerchantAuto
 
                 WakuuCardKind kind = WakuuPriorityPicking.ClassifyCard(
                     card.Id.Entry, (int)card.Type, card.IsSlyThisTurn);
-                if (WakuuCardPickPolicy.IsRemovableInJunkOnly(kind))
+                if (WakuuCardPickPolicy.IsRemovalWorthyCurse(kind, card.IsRemovable))
                 {
                     count++;
                 }

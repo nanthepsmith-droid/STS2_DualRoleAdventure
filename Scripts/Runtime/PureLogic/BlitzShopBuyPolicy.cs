@@ -71,6 +71,13 @@ internal sealed class BlitzShopContext
 
     public int CurseCount { get; set; }
 
+    /// <summary>
+    /// 牌组里**值得为它买删牌**的诅咒数（r401）：只算可删的普通诅咒 ——
+    /// 带【永恒】词条的不可删诅咒（如【进阶之灾】）与会自己消失的【愧疚】都不算。
+    /// 与 <see cref="CurseCount"/>（用于诅咒上限 <see cref="CanTakeCurse"/>，必须算**全部**诅咒）分开。
+    /// </summary>
+    public int RemovableCurseCount { get; set; }
+
     /// <summary>可升级的「非打击 / 非防御 / 非诅咒 / 非状态」牌数（随机升级与升级服务都看它）。</summary>
     public int UpgradableNonBasicCount { get; set; }
 
@@ -256,12 +263,13 @@ internal static class BlitzShopBuyPolicy
                     return BlitzShopDecision.No("没有可删的垃圾牌");
                 }
 
-                if (context.CurseCount <= 0 && context.DeckSize <= context.DeckLimit)
+                // r401：判据用**可删的**诅咒数（不可删的【永恒】诅咒 / 会自己消失的【愧疚】都不算）。
+                if (context.RemovableCurseCount <= 0 && context.DeckSize <= context.DeckLimit)
                 {
-                    return BlitzShopDecision.No("没诅咒且牌组没超上限");
+                    return BlitzShopDecision.No("没可删诅咒且牌组没超上限");
                 }
 
-                return BlitzShopDecision.Yes(context.CurseCount > 0 ? "有诅咒牌可删" : "牌组超上限");
+                return BlitzShopDecision.Yes(context.RemovableCurseCount > 0 ? "有诅咒牌可删" : "牌组超上限");
 
             case BlitzShopEntryKind.Potions:
                 if (context.HasOpenPotionSlot || context.HasBloodPotion)

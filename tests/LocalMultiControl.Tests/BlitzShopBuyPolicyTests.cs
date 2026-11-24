@@ -126,11 +126,11 @@ public class BlitzShopBuyPolicyTests
         ctx.DeckSize = 20;
         Assert.That(Decide(BlitzShopEntryKind.CardRemoval, ctx).Buy, Is.False, "没诅咒也没超上限");
 
-        ctx.CurseCount = 1;
+        ctx.RemovableCurseCount = 1;
         ctx.RemovableJunkCount = 1;
-        Assert.That(Decide(BlitzShopEntryKind.CardRemoval, ctx).Buy, Is.True, "有诅咒就删");
+        Assert.That(Decide(BlitzShopEntryKind.CardRemoval, ctx).Buy, Is.True, "有可删诅咒就删");
 
-        ctx.CurseCount = 0;
+        ctx.RemovableCurseCount = 0;
         ctx.RemovableJunkCount = 3;
         ctx.DeckSize = 41;
         ctx.DeckLimit = 40;
@@ -141,6 +141,20 @@ public class BlitzShopBuyPolicyTests
         noJunk.DeckLimit = 40;
         noJunk.RemovableJunkCount = 0;
         Assert.That(Decide(BlitzShopEntryKind.CardRemoval, noJunk).Buy, Is.False, "没有垃圾牌可删");
+    }
+
+    [Test]
+    public void 删牌_只有不可删诅咒时不买_r401()
+    {
+        // 【进阶之灾】带【永恒】词条 ⇒ 删牌屏不显示 ⇒ 它单独在牌组里不该触发"买删牌"。
+        var ctx = Base();
+        ctx.DeckSize = 20;
+        ctx.DeckLimit = 40;
+        ctx.CurseCount = 1;           // 牌组里确实有 1 张诅咒（进阶之灾）
+        ctx.RemovableCurseCount = 0;  // 但可删的为 0
+        ctx.RemovableJunkCount = 1;   // 还有一张打击可删（所以第一条闸门不挡）
+        Assert.That(Decide(BlitzShopEntryKind.CardRemoval, ctx).Buy, Is.False,
+            "没可删诅咒、牌组也没超上限 ⇒ 不花钱删打击");
     }
 
     [Test]

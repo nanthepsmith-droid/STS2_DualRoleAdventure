@@ -148,8 +148,9 @@ internal sealed class LocalWakuuStrategySelector : ICardSelector
             if (scenario == WakuuPickScenario.Remove
                 && WakuuCardPickPolicy.IsRemovalJunkOnly(LocalWakuuAutopilotConfig.CardPickTierValue))
             {
+                // r401：带【永恒】词条的牌（如【进阶之灾】）删不了，别让它占住"有垃圾可删"这个位置。
                 candidates = options
-                    .Where((c) => c != null && WakuuCardPickPolicy.IsRemovableInJunkOnly(
+                    .Where((c) => c != null && c.IsRemovable && WakuuCardPickPolicy.IsRemovableInJunkOnly(
                         WakuuPriorityPicking.ClassifyCard(c.Id.Entry, (int)c.Type, c.IsSlyThisTurn)))
                     .ToList();
                 if (candidates.Count == 0)

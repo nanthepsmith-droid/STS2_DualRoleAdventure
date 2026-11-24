@@ -306,7 +306,8 @@ internal static class LocalWakuuBlitzShopAuto
                             LocalMultiControlLogger.Info(
                                 $"极速商店不买: 条目={BlitzShopBuyPolicy.Describe(kind)}, 原因={decision.Reason}, "
                                 + $"player={player.NetId}, 剩余次数={inventory.BlitzChoicesRemaining}, "
-                                + $"诅咒数={entryContext.CurseCount}, 牌组={entryContext.DeckSize}/{entryContext.DeckLimit}, "
+                                + $"诅咒数={entryContext.CurseCount}(可删={entryContext.RemovableCurseCount}), "
+                                + $"牌组={entryContext.DeckSize}/{entryContext.DeckLimit}, "
                                 + $"HP={entryContext.HpPercent:P0}");
                         }
 
@@ -562,6 +563,7 @@ internal static class LocalWakuuBlitzShopAuto
     {
         List<CardModel> deck = ReadDeck(player);
         int curseCount = 0;
+        int removableCurseCount = 0;
         int upgradableNonBasic = 0;
         int changeableBasic = 0;
         int removableJunk = 0;
@@ -580,13 +582,20 @@ internal static class LocalWakuuBlitzShopAuto
             bool basic = kind is WakuuCardKind.BasicStrike or WakuuCardKind.BasicDefend;
             // 【愧疚】仍算诅咒（SelfRemovingCurse 只影响删除档位，不改变"这是坏牌"的判定）。
             bool junk = kind is WakuuCardKind.Curse or WakuuCardKind.SelfRemovingCurse or WakuuCardKind.Status || basic;
+            // r401：带【永恒】词条的牌删牌屏不显示 ⇒ 不进"可删垃圾/可删诅咒"计数（但仍算诅咒位/仍未基本牌过滤）。
+            bool removable = card.IsRemovable;
 
             if (card.Type == CardType.Curse)
             {
                 curseCount++;
             }
 
-            if (junk)
+            if (WakuuCardPickPolicy.IsRemovalWorthyCurse(kind, removable))
+            {
+                removableCurseCount++;
+            }
+
+            if (junk && removable)
             {
                 removableJunk++;
             }
@@ -626,6 +635,7 @@ internal static class LocalWakuuBlitzShopAuto
             DeckSize = deck.Count,
             DeckLimit = WakuuCardPickPolicy.DeckLimitOf(LocalWakuuAutopilotConfig.CardPickTierValue),
             CurseCount = curseCount,
+            RemovableCurseCount = removableCurseCount,
             UpgradableNonBasicCount = upgradableNonBasic,
             ChangeableBasicCount = changeableBasic,
             RemovableJunkCount = removableJunk,

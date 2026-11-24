@@ -229,6 +229,30 @@ public class WakuuCardPickPolicyTests
     }
 
     [Test]
+    public void 只有可删的普通诅咒才值得买删牌_r401()
+    {
+        // 普通可删诅咒 ⇒ 值得（会触发"先删诅咒"的采购顺序）
+        Assert.That(
+            WakuuCardPickPolicy.IsRemovalWorthyCurse(WakuuCardKind.Curse, isRemovable: true),
+            Is.True);
+
+        // 【进阶之灾】等带【永恒】词条的诅咒：删牌屏根本不显示 ⇒ 不值得
+        Assert.That(
+            WakuuCardPickPolicy.IsRemovalWorthyCurse(WakuuCardKind.Curse, isRemovable: false),
+            Is.False,
+            "不可删诅咒（Eternal）不该让瓦库为它买删牌服务");
+
+        // 【愧疚】：可删，但 5 场战斗后自己消失 ⇒ 也不值得
+        Assert.That(
+            WakuuCardPickPolicy.IsRemovalWorthyCurse(WakuuCardKind.SelfRemovingCurse, isRemovable: true),
+            Is.False);
+
+        // 非诅咒一律不算
+        Assert.That(WakuuCardPickPolicy.IsRemovalWorthyCurse(WakuuCardKind.Status, true), Is.False);
+        Assert.That(WakuuCardPickPolicy.IsRemovalWorthyCurse(WakuuCardKind.Other, true), Is.False);
+    }
+
+    [Test]
     public void 大卡组删牌只删垃圾()
     {
         Assert.That(WakuuCardPickPolicy.IsRemovalJunkOnly(WakuuCardPickTier.Big), Is.True);

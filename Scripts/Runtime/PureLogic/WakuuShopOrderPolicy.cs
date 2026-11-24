@@ -38,7 +38,11 @@ internal static class WakuuShopOrderPolicy
     /// 决定本轮采购顺序。
     /// </summary>
     /// <param name="deckSize">牌组总张数（含诅咒/状态）。</param>
-    /// <param name="curseCount">牌组里的诅咒张数。</param>
+    /// <param name="curseCount">
+    /// **值得为它买删牌**的诅咒张数（r401 用户口径 B）：只算可删的普通诅咒 ——
+    /// 带【永恒】词条的不可删诅咒（如【进阶之灾】）与 5 场战斗后自己消失的【愧疚】都要排除，
+    /// 判据见 <see cref="WakuuCardPickPolicy.IsRemovalWorthyCurse"/>。
+    /// </param>
     /// <param name="hasGoodCard">店里是否有胜率 ≥ <see cref="GoodCardWinRate"/> 的卡。</param>
     /// <param name="removalAffordable">删牌服务是否可用且买得起（付完仍保留金币保底）。</param>
     public static IReadOnlyList<WakuuShopStep> Decide(
