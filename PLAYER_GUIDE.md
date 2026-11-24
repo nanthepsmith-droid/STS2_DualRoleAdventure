@@ -173,7 +173,10 @@ via the configured Vakuu players and re-grants the relic. Turning this off resto
   potions additionally require a free potion slot.
 - **Auto card removal** (off by default, same master switch): when the gold floor allows it, Vakuu buys the
   shop's card-removal service once and removes one card by pick priority (with "smart pick priority" on:
-  Curse > Status > Strike > basic Defend > the rest > Quest cards last).
+  Curse > Status > Strike > basic Defend > Guilty > the rest > Quest cards last). Only **removable** curses
+  make removal jump to the front of the shopping order — unremovable ones (Eternal keyword, e.g.
+  Ascender's Bane from Ascension 5) and Guilty (which removes itself after 5 combats) never do, and those two
+  can never be removed at all.
 - With "Personal-stats decision assist" on and at least 3 finished runs that bought something, relics and
   potions also consult **your own** win-rate delta (runs where you bought it vs. runs where you did not):
   a **negative delta vetoes the purchase** (veto only — it never proactively picks what to buy).
