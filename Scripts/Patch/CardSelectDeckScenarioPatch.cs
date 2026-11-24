@@ -16,7 +16,7 @@ namespace LocalMultiControl.Scripts.Patch;
 /// 背景：遗物「获得时触发选牌」的作用域（<see cref="LocalWakuuRelicEffectAutoChoice"/>）在压栈时
 /// 还不知道这个遗物会触发"变化"还是"删除"，只能给一个兜底场景；
 /// 但两者优先级表差别很大——Transform 表**硬排除**诅咒/状态/任务（变牌时留着它们也算合理），
-/// 而 Remove 表恰恰**优先删诅咒**。smartPick 开启时用错表会明显变差。
+/// 而 Remove 表恰恰**优先删诅咒**（【愧疚】除外，它自己会消失）。smartPick 开启时用错表会明显变差。
 /// 因此在这里按实际入口前缀写入场景，选择器作答时动态读取。
 ///
 /// 只在入口前缀写值、不清理：该值是 AsyncLocal 且只有遗物作用域内的选择器会读它，

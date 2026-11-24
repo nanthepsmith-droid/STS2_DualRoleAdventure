@@ -31,4 +31,15 @@ internal static class WakuuCardId
     {
         return id != null && id.ToUpperInvariant().Contains("DEFEND", StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// **会自己消失的诅咒**识别（r400，用户 2026-11-24 口径）：目前只有【愧疚】（`Guilty`，id `GUILTY`）
+    /// —— 在牌组里待满 5 场战斗后由它自己 `RemoveFromDeck`。
+    /// ⇒ 删牌时不该像普通诅咒那样优先烧掉这次删除机会（等价于白删），排到打击/防御之后。
+    /// null 返回 false。
+    /// </summary>
+    public static bool IsSelfRemovingCurseId(string? id)
+    {
+        return id != null && id.ToUpperInvariant().Contains("GUILTY", StringComparison.Ordinal);
+    }
 }

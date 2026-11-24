@@ -23,6 +23,7 @@ public class PriorityPickingTests
     // ---------------------------------------------------------------
 
     [TestCase("CURSE_OF_THE_BELL", CUR, 5)] // WakuuCardKind.Curse
+    [TestCase("GUILTY", CUR, 7)]            // SelfRemovingCurse（【愧疚】5 场战斗后自己消失）
     [TestCase("BURN", STA, 4)]              // Status
     [TestCase("STRIKE_IRONCLAD", ATK, 2)]   // BasicStrike
     [TestCase("DEFEND_SILENT", SKL, 1)]     // BasicDefend
@@ -559,6 +560,64 @@ public class PriorityPickingTests
 
         List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Discard, kinds);
         Assert.That(ranked, Is.EqualTo(new[] { 1, 2, 0 }));
+    }
+
+    // ---------------------------------------------------------------
+    // 【愧疚】（r400，用户 2026-11-24 口径）：它会在 5 场战斗后从牌组自己消失
+    //   ⇒ 删除时排到 打击/防御 之后（否则等于白烧一次删除机会），但仍在「其余」之前。
+    //   其它场景（消耗/弃牌/复制/变化）与普通诅咒完全同档。
+    // ---------------------------------------------------------------
+
+    [Test]
+    public void Remove_愧疚排在打击防御之后_但仍在其余之前()
+    {
+        List<WakuuCardKind> kinds = new()
+        {
+            K("FLAME_BARRIER", SKL),     // Other
+            K("GUILTY", CUR),            // SelfRemovingCurse
+            K("CURSE_OF_THE_BELL", CUR), // Curse（普通诅咒仍最优先）
+            K("DEFEND_SILENT", SKL),     // BasicDefend
+            K("STRIKE_IRONCLAD", ATK),   // BasicStrike
+        };
+
+        List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Remove, kinds);
+        Assert.That(ranked, Is.EqualTo(new[] { 2, 4, 3, 1, 0 }),
+            "普通诅咒 > 打击 > 防御 > 【愧疚】 > 其余");
+        Assert.That(ranked.IndexOf(1), Is.GreaterThan(ranked.IndexOf(3)), "【愧疚】不能排在基础防御之前");
+    }
+
+    [Test]
+    public void Remove_只有愧疚时仍会删它()
+    {
+        List<WakuuCardKind> kinds = new()
+        {
+            K("FLAME_BARRIER", SKL),
+            K("GUILTY", CUR),
+        };
+
+        List<int> ranked = WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Remove, kinds);
+        Assert.That(ranked[0], Is.EqualTo(1), "没别的坏牌时该删的还是要删（不能什么都不删）");
+    }
+
+    [Test]
+    public void 愧疚在消耗与弃牌场景与普通诅咒同档()
+    {
+        List<WakuuCardKind> kinds = new()
+        {
+            K("STRIKE_IRONCLAD", ATK),
+            K("GUILTY", CUR),
+            K("BURN", STA),
+        };
+
+        Assert.That(
+            WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Exhaust, kinds),
+            Is.EqualTo(new[] { 1, 2, 0 }),
+            "消耗：愧疚与诅咒同档，仍排在状态与打击之前");
+
+        Assert.That(
+            WakuuPriorityPicking.RankIndicesByScenario(WakuuPickScenario.Discard, kinds),
+            Is.EqualTo(new[] { 1, 2, 0 }),
+            "弃牌：同上");
     }
 
     [Test]

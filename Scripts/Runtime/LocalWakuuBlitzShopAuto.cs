@@ -578,7 +578,8 @@ internal static class LocalWakuuBlitzShopAuto
             WakuuCardKind kind = WakuuPriorityPicking.ClassifyCard(
                 card.Id.Entry, (int)card.Type, card.IsSlyThisTurn);
             bool basic = kind is WakuuCardKind.BasicStrike or WakuuCardKind.BasicDefend;
-            bool junk = kind is WakuuCardKind.Curse or WakuuCardKind.Status || basic;
+            // 【愧疚】仍算诅咒（SelfRemovingCurse 只影响删除档位，不改变"这是坏牌"的判定）。
+            bool junk = kind is WakuuCardKind.Curse or WakuuCardKind.SelfRemovingCurse or WakuuCardKind.Status || basic;
 
             if (card.Type == CardType.Curse)
             {
@@ -595,7 +596,7 @@ internal static class LocalWakuuBlitzShopAuto
                 changeableBasic++;
             }
 
-            if (basic || kind is WakuuCardKind.Curse or WakuuCardKind.Status)
+            if (basic || kind is WakuuCardKind.Curse or WakuuCardKind.SelfRemovingCurse or WakuuCardKind.Status)
             {
                 continue;
             }

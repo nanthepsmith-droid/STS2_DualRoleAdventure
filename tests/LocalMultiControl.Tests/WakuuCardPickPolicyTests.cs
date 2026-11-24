@@ -238,6 +238,7 @@ public class WakuuCardPickPolicyTests
         foreach (WakuuCardKind junk in new[]
                  {
                      WakuuCardKind.Curse,
+                     WakuuCardKind.SelfRemovingCurse, // 【愧疚】仍是诅咒（只是删除档位更低）
                      WakuuCardKind.Status,
                      WakuuCardKind.BasicStrike,
                      WakuuCardKind.BasicDefend,
