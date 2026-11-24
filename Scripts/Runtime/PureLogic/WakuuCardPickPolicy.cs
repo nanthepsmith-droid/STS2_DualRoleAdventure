@@ -243,4 +243,27 @@ internal static class WakuuCardPickPolicy
             _ => false,
         };
     }
+
+    /// <summary>
+    /// 这张牌值不值得为它花一次删牌（付费删牌服务 / 大卡组档的"有垃圾才删"闸门）—— r401 用户口径 B。
+    ///
+    /// 判据 = **可删** + 类别。两条"看着像垃圾但删不了/不用删"的诅咒要排除：
+    /// <list type="bullet">
+    /// <item><b>带【永恒】词条（Eternal）的不可删诅咒</b> —— 例：进阶 5 起送的【进阶之灾】
+    ///   <c>ASCENDERS_BANE</c>，以及诅咒之钟 / 厄运 / 贪婪 / 禁忌魔典 / 受缚 等。游戏侧判据就是
+    ///   `CardModel.IsRemovable`（`!Keywords.Contains(CardKeyword.Eternal)`），且删牌屏
+    ///   `CardSelectCmd.FromDeckForRemoval` 自己就把它们过滤掉了 ⇒ 它们从来不会被删，
+    ///   却会让"牌组里有诅咒"永远成立（每进一次商店都先把删牌钱花掉）。</item>
+    /// <item><b>【愧疚】（<see cref="WakuuCardKind.SelfRemovingCurse"/>）</b> —— 5 场战斗后自己离场，
+    ///   同样不值得为它买删牌。</item>
+    /// </list>
+    /// 注意：**"诅咒上限"那种判据不能套这里**（如极速模式的 `CanTakeCurse`）—— 不可删的诅咒
+    /// 照样占着牌组的诅咒位，那里的统计必须保持"全部诅咒"。
+    /// </summary>
+    /// <param name="kind">卡的优先级类别（<see cref="WakuuPriorityPicking.ClassifyCard"/>）。</param>
+    /// <param name="isRemovable">游戏侧可删性（`CardModel.IsRemovable`，= 不带【永恒】词条）。</param>
+    public static bool IsRemovalWorthyCurse(WakuuCardKind kind, bool isRemovable)
+    {
+        return isRemovable && kind == WakuuCardKind.Curse;
+    }
 }

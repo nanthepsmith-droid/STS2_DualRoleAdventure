@@ -937,7 +937,12 @@ public partial class Entry
     // r400（2026-11-24 用户口径）：删牌优先级小改 ——【愧疚】（`GUILTY`）在牌组里待满 5 场战斗后**自己移除**，
     //   删它等于白烧一次删除机会 ⇒ 单独归入 `WakuuCardKind.SelfRemovingCurse`，删除场景排到 打击/防御 之后
     //   （其它场景仍与普通诅咒同档）。判据 `WakuuCardId.IsSelfRemovingCurseId`。
-    private const string BuildMarker = "Revival v1.47.21 (game v0.111.0, marker=2026-11-24-r400-stable)";
+    // r401（2026-11-24 用户口径 B）：**"有诅咒 ⇒ 先买删牌服务"只认可删的普通诅咒** ——
+    //   ① 带【永恒】词条（Eternal）的不可删诅咒（进阶 5 起送的【进阶之灾】/ 诅咒之钟 / 厄运 …）
+    //      删牌屏 `FromDeckForRemoval` 自己就过滤掉了，却会让 curseCount 永远 > 0（每店先花删牌钱）；
+    //   ② 【愧疚】5 场战斗后自己离场。判据 `WakuuCardPickPolicy.IsRemovalWorthyCurse(kind, IsRemovable)`；
+    //   "诅咒上限"那类判据（极速 `CanTakeCurse`）仍用全部诅咒数，不要混。
+    private const string BuildMarker = "Revival v1.47.22 (game v0.111.0, marker=2026-11-24-r401-stable)";
 
     private static Harmony? _harmony;
 
