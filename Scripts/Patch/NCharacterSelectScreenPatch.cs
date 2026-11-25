@@ -58,11 +58,15 @@ internal static class NCharacterSelectScreenSelectCharacterPatch
     }
 }
 
+// ⚠ 0.114：原版 `PlayerChanged(StartRunLobbyPlayer player, bool isRandomCharacterResolution)`
+// 去掉了第二个参数（`NCharacterSelectScreen.cs: public void PlayerChanged(StartRunLobbyPlayer player)`）。
+// 旧签名留着会让 Harmony 报 `Parameter "isRandomCharacterResolution" not found` ⇒ **整个补丁类被跳过**
+// （补丁本身不致命，但大厅"换角色"通知就断了）。
 [HarmonyPatch(typeof(NCharacterSelectScreen), nameof(NCharacterSelectScreen.PlayerChanged))]
 internal static class NCharacterSelectScreenPatch
 {
     [HarmonyPostfix]
-    private static void Postfix(StartRunLobbyPlayer player, bool isRandomCharacterResolution)
+    private static void Postfix(StartRunLobbyPlayer player)
     {
         LocalSelfCoopContext.NotifyCharacterSelectPlayerChanged(player.id);
     }

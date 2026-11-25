@@ -63,20 +63,6 @@ internal sealed class WakuuConfigData
     /// </summary>
     public string vakuuCardPickTier { get; set; } = WakuuCardPickPolicy.NormalTier;
 
-    /// <summary>
-    /// 【探针】**瓦库托管不自动领卡牌奖励**（讨论-1 第一步，**默认关**）。
-    ///
-    /// <para>开 = 瓦库形态的卡牌奖励**托管这次不选**，奖励**照旧留在奖励屏上**让真人自己决定
-    /// （上一版是把奖励收掉，实机反馈那一行会直接消失，已改）。同组的金币 / 药水 / 遗物照旧自动领。</para>
-    ///
-    /// <para>⚠ 这是**验证用探针**，不是成品：它没有任何「抓取率 / 牌组大小」门槛（阈值口径尚未拍板），
-    /// 开着就一定不替瓦库选牌。口径定下来后由正式的取舍判据取代。判据见
-    /// <see cref="WakuuCardRewardSkipProbePolicy"/>。</para>
-    ///
-    /// <para>键名用官方拼写 <c>vakuu</c>（r140 口径：序列化里不许出现 <c>Wakuu</c>）。</para>
-    /// </summary>
-    public bool vakuuSkipCardRewardProbe { get; set; }
-
     public bool autoClaimGoldRelics { get; set; } = true;
 
     /// <summary>药水奖励自动领取（满栏按稀有度换药/先喝鲜血），默认开。</summary>
@@ -371,20 +357,6 @@ internal sealed class WakuuConfigData
     /// 只做显示，不改变任何玩法判定；0 层不显示。
     /// </summary>
     public bool seatStatusBadge { get; set; } = true;
-
-    /// <summary>
-    /// 极速模式（Blitz）宝箱「每人 2 件」（**默认关**，2026-11-14 用户实机联机确认后追加开关）。
-    ///
-    /// <para><b>原版多人口径就是这个</b>：<c>TreasureRoomRelicSynchronizer.BeginRelicPicking</c> 里
-    /// 多人分支 = 遗物「人数 + 2」件、<c>_roundsLeft = 1</c> ⇒ **每人只选 1 件**（多出来的按"没人投"丢弃），
-    /// 只有单人极速才是每人 2 件。我们 r352/r353 曾按"这是 bug"改成每人 2 件，
-    /// 现在改成**开关（默认关 = 完全回到原版）**。</para>
-    ///
-    /// <para>开启后：池子补到「人数 × 2」件 + 两阶段投票，每人先各选 1 件、第二阶段再各选 1 件，
-    /// 一次性派发（12 席局 = 24 件）。只作用于**本地多角色极速**，不影响官方联机。
-    /// 见 <c>BlitzTreasureDoublePickRuntime</c> / <see cref="BlitzTreasurePickPolicy"/>。</para>
-    /// </summary>
-    public bool blitzTreasureDoublePick { get; set; }
 
     /// <summary>
     /// **极速模式（Blitz）商店自动购买**（**默认关**，2026-11-23 用户口径）。

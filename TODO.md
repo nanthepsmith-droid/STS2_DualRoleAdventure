@@ -102,6 +102,23 @@
 > 实机：`picked` 从 `STRIKE_IRONCLAD` → `FOLLY`。**同日清理本文件**：§排期 1~7 / §讨论-1 / §讨论-2 /
 > §逃跑·离场与建筑师 / §变化牌处置 + 已关单的 `待查-1/2/4/5/6/7/9/10/11/12/13` 共 15 段切进归档
 > （2408 → 1961 行），原位只留索引。详见 `开发进度记录.md` 第一百八十三段。
+> **2026-11-25（r402~r407，游戏 0.114 适配 + 三处实机修复 + 两处删除 + 清理工具）**：
+> ① **0.114.0 适配**：编译零改动、字符串目标 STALE=0；真变化 = 宝箱改多轮（`_rounds`/`_currentRound`）⇒
+> 原版每轮都会给"假玩家"随机代投，新增 `TreasureRoomRelicDummyVoteSuppressPatch` 在本地多控里整条跳过；
+> 另修 **三处编译期看不见的签名漂移**（`NCharacterSelectScreen.PlayerChanged` 少一参、`VfxCmd.PlayOnCreature(Center)`
+> 与 `CardSelectCmd.FromChooseABundleScreen` 多一个可选参 ⇒ `Type[]` 精确匹配失败、整类被跳过），并新增构建期哨兵
+> `HarmonyTargetResolvableTests`（在真实游戏程序集里逐条解析 + 逐参数核对）。
+> ② **首启"启动不了"不是我们**：第三方 `Loadout v0.6.2` 的 `PatchAll` 在 `LoseHpInternal(decimal,bool)` 上抛
+> `Parameter "props" not found`，冒穿 `NGame.GameStartup` ⇒ 官方启动错误框（按口径不兜底，让玩家禁用）。
+> ③ **删除两处我们自己的东西**（用户拍板）：极速宝箱「每人 2 件」整套（0.114 官方就是每人 2 件）+
+> 【探针】瓦库卡牌奖励不自动领（抓牌只由形态档位决定）。
+> ④ **出牌取消 ERROR 降噪**（`GameActionCanceledNoiseFilterPatch`：排队期间目标阵亡导致的原版 `Canceled` 告警
+> 降级为 INFO，只认 PlayCardAction）。
+> ⑤ **手牌自愈把正在打出的牌补回手牌**（用户实机）：补建前查 `NCard.FindOnTable`（节点在出牌区/队列 ⇒ 不补）+
+> 选牌候选剔除"正在打出的牌"（变化/消耗/丢弃不再选中自己）+ 这类"缺失"不再记差异 WARN。
+> ⑥ 新增离线工具 `Scripts/Tools/clean_unknown_model_entries.py`：按日志里的 `Unknown ModelId` 清理
+> `progress.save` 里指向已卸载 mod 的残留（0.114 起每局刷 7000+ 条 `Progress parse` WARN 的根因；默认 dry-run + 自动备份）。
+> 详见 `开发进度记录.md` 第一百八十五段。
 
 ---
 

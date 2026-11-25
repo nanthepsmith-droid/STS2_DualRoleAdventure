@@ -30,7 +30,6 @@ public class WakuuConfigJsonTests
             Assert.That(data.shopAssistBuyRemoval, Is.False); // Phase 4 增量 v3：自动删牌默认关
             Assert.That(data.statBadge, Is.False);
             Assert.That(data.skipTurnStartDrawAnim, Is.False);
-            Assert.That(data.blitzTreasureDoublePick, Is.False); // 极速宝箱每人 2 件：默认关 = 原版多人口径（每人 1 件）
             Assert.That(data.blitzShopAutoBuy, Is.False); // 极速商店自动购买：默认关（r394）
             // 方案 D 队列档 / 并发档已于 2026-09-26 转正为「默认开」（断言已移入下方「默认开」组）
             // 默认开
@@ -310,23 +309,6 @@ public class WakuuConfigJsonTests
     }
 
     /// <summary>
-    /// 极速宝箱「每人 2 件」开关（2026-11-14，**默认关**）：关 = 原版多人口径（人数 + 2 件、每人 1 件）。
-    /// </summary>
-    [Test]
-    public void 解析极速宝箱双选开关_true生效_默认关()
-    {
-        Assert.That(new WakuuConfigData().blitzTreasureDoublePick, Is.False, "默认必须关 = 保持原版");
-
-        WakuuConfigData data = WakuuConfigJson.Parse("""{ "blitzTreasureDoublePick": true }""")!;
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(data.blitzTreasureDoublePick, Is.True);
-            Assert.That(data.vakuuDaddy, Is.False, "未提供的字段保持默认值");
-        });
-    }
-
-    /// <summary>
     /// 全瓦库局「打光后自动结束回合」开关（r370，**默认开**）：旧配置里没有这个键时也必须保持开启
     /// （否则老玩家升级后功能静默消失）。
     /// </summary>
@@ -345,24 +327,6 @@ public class WakuuConfigJsonTests
             Assert.That(off.allVakuuAutoEndTurn, Is.False);
             Assert.That(off.vakuuDaddy, Is.False, "未提供的字段保持默认值");
         });
-    }
-
-    /// <summary>
-    /// 【探针】瓦库卡牌奖励不领（TODO §讨论-1 第一步）：**必须默认关** ——
-    /// 它是验证"只跳卡牌之后同组奖励还能不能领"的机制探针，不是成品功能，
-    /// 绝不能因为加了个字段就让老玩家升级后突然不抓牌。
-    /// </summary>
-    [Test]
-    public void 解析抓牌探针开关_缺省关闭_显式开生效()
-    {
-        Assert.That(new WakuuConfigData().vakuuSkipCardRewardProbe, Is.False, "探针默认必须关");
-
-        // 旧 json 里没有这个键 ⇒ 走属性初始值（默认关）。
-        WakuuConfigData legacy = WakuuConfigJson.Parse("""{ "useVakuuForm": true }""")!;
-        Assert.That(legacy.vakuuSkipCardRewardProbe, Is.False, "缺键时不能变成开");
-
-        WakuuConfigData on = WakuuConfigJson.Parse("""{ "vakuuSkipCardRewardProbe": true }""")!;
-        Assert.That(on.vakuuSkipCardRewardProbe, Is.True);
     }
 
     /// <summary>
@@ -436,14 +400,12 @@ public class WakuuConfigJsonTests
             Assert.That(json, Does.Contain("\"allVakuuAutoEndTurn\""));
             Assert.That(json, Does.Contain("\"suppressVanillaEarring\""));
             Assert.That(json, Does.Contain("\"autoClaimPotions\""));
-            Assert.That(json, Does.Contain("\"vakuuSkipCardRewardProbe\""));
             Assert.That(json, Does.Contain("\"vakuuCardPickTier\""));
             Assert.That(json, Does.Contain("\"shopAssistBuyNoData\""));
             Assert.That(json, Does.Contain("\"shopAssistBuyRelics\""));
             Assert.That(json, Does.Contain("\"shopAssistBuyPotions\""));
             Assert.That(json, Does.Contain("\"shopAssistBuyRemoval\""));
             Assert.That(json, Does.Contain("\"statBadge\""));
-            Assert.That(json, Does.Contain("\"blitzTreasureDoublePick\""));
             Assert.That(json, Does.Contain("\"blitzShopAutoBuy\""));
             Assert.That(json, Does.Contain("\"skipTurnStartDrawAnim\""));
             Assert.That(json, Does.Contain("\"fastVakuuPlay\""));

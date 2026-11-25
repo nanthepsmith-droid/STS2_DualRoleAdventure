@@ -341,8 +341,7 @@ internal static class LocalMultiControlRuntime
         LocalWakuuBlitzShopAuto.Reset("run-cleanup");
         // r398：变化牌登记表（"变化成指定一张牌 ⇒ 按消耗牌处理"）按局累积的实例引用，退局必须清。
         WakuuTransformReplacementRegistry.Clear("run-cleanup");
-        // r352 极速宝箱「每人 2 件」的两阶段投票状态（挂在 synchronizer 实例上，退局必须清）。
-        LocalMultiControl.Scripts.Patch.BlitzTreasureDoublePickRuntime.Reset("run-cleanup");
+        LocalMultiControl.Scripts.Patch.GameActionCanceledNoiseFilterPatch.Reset("run-cleanup");
         LocalRestSiteSeatBubble.Reset("run-cleanup");
         // 瓦库四功能 · 我们联合：「本场战斗已发动」的记忆与流程中的防重入标记（R5 生命周期契约）。
         LocalWakuuUniteRuntime.ResetForRun("run-cleanup");
@@ -3265,6 +3264,11 @@ internal static class LocalMultiControlRuntime
         _handOrderDiagSignature = string.Empty;
         _handOrderDiagFirstSeenMs = 0L;
         _handOrderDiagLoggedSignature = string.Empty;
+        // r405：补建跳过（该牌正在打出）的日志去重也每场清一次，否则同一张牌名只会在第一场留下证据。
+        _midPlayRepairSkipLogged.Clear();
+        _midPlayRepairSkipSummaryKey = string.Empty;
+        // r406：同一件事在"差异诊断"侧的日志去重（缺失的全是正在打出的牌）同样每场清一次。
+        _handMidPlayWindowLogged.Clear();
         LocalMultiControlLogger.Info($"战斗UI归属诊断已重置: source={source}");
     }
 
@@ -4240,6 +4244,15 @@ internal static class LocalMultiControlRuntime
                 {
                     TrackHandOrderDiagnostic(string.Empty, string.Empty);
                 }
+                else if (extras.Count == 0 && missing.Count > 0 && AllMissingCardsAreMidPlay(pileCards, missing, player))
+                {
+                    // r406（2026-11-25 实机判读）：缺失的**全是正在打出的牌** = 原版排队的正常窗口
+                    // （节点已飞进出牌队列/出牌区，数据要等 `AddDuringManualCardPlay` 才搬走，
+                    // 12 席并发时这个窗口实测能到 4 秒）。这不是"手牌不同步"，不记差异 WARN、也不补建
+                    // （补了就是"屏幕中间一张 + 手里一张"，r405 用户实机症状）。
+                    TrackHandOrderDiagnostic(string.Empty, string.Empty);
+                    LogHandMidPlayWindowOnce(player, missing, source);
+                }
                 else
                 {
                     TrackHandOrderDiagnostic(
@@ -4532,6 +4545,7 @@ internal static class LocalMultiControlRuntime
             _lastHandNodeRepairMs = nowMs;
             int repaired = 0;
             int failed = 0;
+            int skippedMidPlay = 0;
             foreach (CardModel card in pileCards)
             {
                 if (!missingKeys.Contains(BuildHandCardKey(card)))
@@ -4544,6 +4558,24 @@ internal static class LocalMultiControlRuntime
                     if (hand.GetCardHolder(card) != null)
                     {
                         continue;   // 这段时间里已经被别人补上了
+                    }
+
+                    // r405（2026-11-25 用户实机）：桌面上**已经有这张牌的节点**（出牌队列 / 出牌区）
+                    // ⇒ 它正在被打出，只是数据还留在手牌堆（原版时序本不会这样，属并发出牌的异常窗口）。
+                    // 这时再补一个手牌节点 = **屏幕中间一张 + 手里一张**；而且那张牌会被"变化/消耗/丢弃"
+                    // 当成手牌目标（用户实测能让它变化它自己）。所以这里**不补**，只在日志里留证。
+                    NCard? existingOnTable = NCard.FindOnTable(card);
+                    if (existingOnTable != null && GodotObject.IsInstanceValid(existingOnTable))
+                    {
+                        skippedMidPlay++;
+                        if (LogMidPlayRepairSkipOnce(card))
+                        {
+                            LocalMultiControlLogger.Info(
+                                $"手牌UI补建跳过: 该牌节点已在出牌区/出牌队列（正在打出，数据却还在手牌堆）: "
+                                + $"player={player.NetId}, card={card.Id.Entry}, source={source}");
+                        }
+
+                        continue;
                     }
 
                     NCard? node = NCard.Create(card);
@@ -4581,7 +4613,15 @@ internal static class LocalMultiControlRuntime
                 _handNodeRepairBlockedKey = string.Empty;
                 LocalMultiControlLogger.Info(
                     $"手牌UI缺节点已补建: player={player.NetId}, 补={repaired}, 失败={failed}, "
-                    + $"共缺={missingKeys.Count}, source={source}");
+                    + $"跳过(出牌中)={skippedMidPlay}, 共缺={missingKeys.Count}, source={source}");
+            }
+            else if (skippedMidPlay > 0 && LogMidPlayRepairSkipSummaryOnce(player, skippedMidPlay))
+            {
+                // 全部被 r405 的"该牌正在打出"挡下来：说明这局确实存在「数据留在手牌堆」的窗口，
+                // 值得单独一条锚点（下一局判读直接 grep 这句）。
+                LocalMultiControlLogger.Info(
+                    $"手牌UI补建全部跳过（缺的都是正在打出的牌）: player={player.NetId}, "
+                    + $"跳过={skippedMidPlay}, 共缺={missingKeys.Count}, source={source}");
             }
         }
         catch (Exception exception)
@@ -4592,6 +4632,105 @@ internal static class LocalMultiControlRuntime
 
     /// <summary>补建闸门"被挡"日志的去重键（只影响日志条数，不参与复位契约）。</summary>
     private static string _handNodeRepairBlockedKey = string.Empty;
+
+    /// <summary>r405：补建被跳过（该牌正在打出）的去重集合，键 = 席位:牌名（每场战斗清一次）。</summary>
+    private static readonly HashSet<string> _midPlayRepairSkipLogged = new(StringComparer.Ordinal);
+
+    /// <summary>r405：整批"缺的都是正在打出的牌"摘要的去重键（每场战斗清一次）。</summary>
+    private static string _midPlayRepairSkipSummaryKey = string.Empty;
+
+    /// <summary>r405：同一张牌只打一条"补建跳过"（返回 true = 首次，可以打）。</summary>
+    private static bool LogMidPlayRepairSkipOnce(CardModel card)
+    {
+        try
+        {
+            return _midPlayRepairSkipLogged.Add($"{card.Owner?.NetId}:{card.Id.Entry}");
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>r405：同一席位 + 同一跳过数量的摘要只打一条（返回 true = 首次，可以打）。</summary>
+    private static bool LogMidPlayRepairSkipSummaryOnce(Player player, int skipped)
+    {
+        string key = $"{player.NetId}:{skipped}";
+        if (string.Equals(key, _midPlayRepairSkipSummaryKey, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _midPlayRepairSkipSummaryKey = key;
+        return true;
+    }
+
+    /// <summary>r406："缺的那几张全是正在打出的牌"的日志去重集合（键 = 席位:缺失清单，每场战斗清一次）。</summary>
+    private static readonly HashSet<string> _handMidPlayWindowLogged = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// r406：手牌缺的这一批**是否全是"正在打出"的牌**（排队窗口的正常态）。
+    /// 只有"全部命中"才算正常 —— 只要有一张是真缺节点，就还得走原来的差异诊断 + 补建。
+    /// </summary>
+    private static bool AllMissingCardsAreMidPlay(
+        IReadOnlyList<CardModel> pileCards,
+        IReadOnlyList<string> missingKeys,
+        Player player)
+    {
+        try
+        {
+            if (pileCards.Count == 0 || missingKeys.Count == 0)
+            {
+                return false;
+            }
+
+            HashSet<string> missing = new(missingKeys, StringComparer.Ordinal);
+            bool anyMissing = false;
+            foreach (CardModel card in pileCards)
+            {
+                if (!missing.Contains(BuildHandCardKey(card)))
+                {
+                    continue;
+                }
+
+                anyMissing = true;
+                if (!LocalHandSelectionGuard.IsCardMidPlay(card, player.NetId))
+                {
+                    return false;
+                }
+            }
+
+            return anyMissing;
+        }
+        catch (Exception)
+        {
+            return false;   // 判不出来就按"不是正常窗口"处理（保持原有诊断/补建路径）
+        }
+    }
+
+    /// <summary>r406：同一席位 + 同一缺失清单只打一条（排队窗口不刷屏）。</summary>
+    private static void LogHandMidPlayWindowOnce(
+        Player player,
+        IReadOnlyList<string> missingKeys,
+        string source)
+    {
+        try
+        {
+            string key = $"{player.NetId}:{string.Join(",", missingKeys)}";
+            if (!_handMidPlayWindowLogged.Add(key))
+            {
+                return;
+            }
+
+            LocalMultiControlLogger.Info(
+                $"手牌缺的这一张正在打出（排队窗口，不补建也不记差异）: player={player.NetId}, "
+                + $"缺失=[{string.Join(",", missingKeys.Select(LabelOfKey))}], source={source}");
+        }
+        catch (Exception)
+        {
+            // 纯日志
+        }
+    }
 
     /// <summary>
     /// 记一条「补建被哪道闸门挡住」（r390）。同一个「原因 + 席位 + 缺失清单」只打一次，

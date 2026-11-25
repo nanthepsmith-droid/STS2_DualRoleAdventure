@@ -37,7 +37,7 @@ param(
     [string]$MainSlotDll = "DualRoleAdventurefixed.dll",
     # 主 mod 是**双版本**（正式版 / beta）：主工程要对着 beta 程序集编（否则切到正式版后编不过），
     # 部署走 build_dual.ps1（loader + lib\<版本>\ 两份载荷），不再把单个 dll 直接盖到槽位。
-    [string]$MainBetaGameDir = "D:\Download\pain\game-archives\v0.113.1",
+    [string]$MainBetaGameDir = "D:\Download\pain\game-archives\v0.114.0",
     # 兼容旧用法：显式给出清单时只处理这些（缺省 = 自动发现）
     [string[]]$FixRepos = @(),
     # 已知的非 mod 目录（无 csproj 也会自动排除，这里只是加速 + 防止将来误放 csproj）

@@ -250,6 +250,35 @@ internal static class TreasureRoomRelicSynchronizerPatch
     }
 }
 
+/// <summary>
+/// 关掉原版给"假玩家"代投的 <c>VoteForDummyPlayers</c>（0.114 适配）。
+///
+/// <para><b>为什么要关</b>：0.114 起宝箱改成**多轮**（`_rounds` / `_currentRound`，极速模式固定 2 轮），
+/// 而 `VoteForDummyPlayers` 不再只在 `BeginRelicPicking` 里叫一次 —— 每轮票齐、原版 `OnPicked` 把
+/// `_currentRound++` 之后会**再调一次**（`TreasureRoomRelicSynchronizer.cs:297`），给"非本机玩家"
+/// 随机写票。本地多控里那些席位全是人操作的：第二轮一开，除当前操控席位以外的所有人就被随机代投完，
+/// 玩家根本没机会自己选（0.113 只有一整轮，我们的 Begin 后置清票还能兜住；0.114 兜不住第二轮的代投）。</para>
+///
+/// <para><b>口径</b>：只在本地多控会话里跳过。真·假玩家测试场景（原版 bootstrap）不走我们的
+/// <see cref="LocalSelfCoopContext.IsEnabled"/>，行为保持原版。</para>
+/// </summary>
+[HarmonyPatch(typeof(TreasureRoomRelicSynchronizer), "VoteForDummyPlayers")]
+internal static class TreasureRoomRelicDummyVoteSuppressPatch
+{
+    [HarmonyPrefix]
+    private static bool Prefix(TreasureRoomRelicSynchronizer __instance)
+    {
+        if (!LocalSelfCoopContext.IsEnabled || !LocalSelfCoopContext.UseSingleAdventureMode)
+        {
+            return true;
+        }
+
+        LocalMultiControlLogger.Info(
+            $"宝箱代投已跳过（本地多控：{__instance.CurrentRelics?.Count ?? 0} 件遗物，每个席位都由本机人选）");
+        return false;
+    }
+}
+
 [HarmonyPatch(typeof(TreasureRoomRelicSynchronizer), nameof(TreasureRoomRelicSynchronizer.BeginRelicPicking))]
 internal static class TreasureRoomRelicSynchronizerBeginPatch
 {

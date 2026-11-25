@@ -429,13 +429,6 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             NextCardPickTier,
             GetCardPickTierDisplayText));
         AddToggleRow(column,
-            LocalModText.Select("【探针】瓦库卡牌奖励不自动领（默认关）", "[Probe] Leave Vakuu Card Rewards to You (default OFF)"),
-            LocalModText.Select(
-                "默认关。**验证用探针，不是成品功能**：开启后瓦库形态的卡牌奖励托管不替它选，**奖励照旧留在奖励屏上**，你自己点那一行就能替它拿一张（点下去会临时把视角/控制切到那个席位），不想要就跟着奖励屏一起跳过。金币 / 药水 / 遗物照旧自动领。⚠ 它不含任何「抓取率 / 牌组大小」门槛（阈值口径还没定）；关闭 = 完全回到现状（卡牌奖励照旧自动领最左）。探针日志前缀「[瓦库抓牌探针]」。",
-                "Off by default. Validation probe, not a finished feature: when on, Vakuu Form's card reward is not auto-picked for it — the row stays on the rewards screen and you can click it yourself to take a card for that seat (the view/control switches to that seat temporarily); skip it along with the rest of the screen if you don't want it. Gold / potions / relics are still auto-claimed. No pick-rate or deck-size threshold yet; Off = exactly the current behavior."),
-            () => LocalWakuuAutopilotConfig.SkipCardRewardProbe,
-            value => LocalWakuuAutopilotConfig.TrySetAndSave("vakuuSkipCardRewardProbe", value));
-        AddToggleRow(column,
             LocalModText.Select("金币/遗物奖励自动领", "Auto-Claim Gold/Relic Rewards"),
             LocalModText.Select(
                 "战后瓦库的金币与遗物奖励自动领取。",
@@ -616,13 +609,6 @@ internal sealed partial class LocalWakuuConfigSubmenu : NSubmenu
             20, new Color(0.72f, 0.72f, 0.72f)));
         column.AddChild(CreateSpacer(10));
 
-        AddToggleRow(column,
-            LocalModText.Select("极速宝箱每人 2 件", "Blitz Chest: 2 Relics Each"),
-            LocalModText.Select(
-                "默认关 = 完全走原版多人口径：极速模式宝箱只有「人数 + 2」件遗物，每人只选 1 件（2026-11-14 用官方联机实机确认过，这就是原版设计，不是 bug；只有单人极速才是每人 2 件）。开启后本 mod 把遗物池补到「人数 × 2」件，并改成两阶段投票：每人先各选 1 件，第二阶段再各选 1 件，最后一次性派发（12 人局 = 24 件）。只作用于「本地多角色极速」，官方联机入口不受影响。",
-                "Off by default = vanilla multiplayer behavior: the Blitz chest holds (players + 2) relics and each player picks only ONE (confirmed in official multiplayer on 2026-11-14 — this is by design, not a bug; only solo Blitz gives 2 each). When on, the mod tops the pool up to players × 2 and uses two voting phases: everyone picks one, then everyone picks one more, then all rewards are granted at once (12 players = 24 relics). Only affects \"Local Multi-Co-op Blitz\"; the official multiplayer entry is untouched."),
-            () => LocalWakuuAutopilotConfig.BlitzTreasureDoublePick,
-            value => LocalWakuuAutopilotConfig.TrySetAndSave("blitzTreasureDoublePick", value));
         AddToggleRow(column,
             LocalModText.Select("跨角色卡组（战后奖励）", "Cross-Character Card Offers (Post-Combat)"),
             LocalModText.Select(

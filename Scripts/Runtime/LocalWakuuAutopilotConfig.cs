@@ -56,13 +56,6 @@ internal static class LocalWakuuAutopilotConfig
     /// <summary>瓦库形态：战后卡牌奖励自动领最左（仅瓦库角色自己的奖励）。</summary>
     public static bool AutoClaimCards { get; private set; } = true;
 
-    /// <summary>
-    /// 【探针】瓦库托管**不自动领卡牌奖励**（讨论-1 第一步，**默认关**）：
-    /// 开 = 瓦库形态的卡牌奖励托管这次不选，**奖励留在奖励屏上让真人自己点**；
-    /// 同组金币/药水/遗物照常自动领。
-    /// 判据见 <see cref="WakuuCardRewardSkipProbePolicy"/>；阈值口径未拍板，探针本身不含任何门槛。
-    /// </summary>
-    public static bool SkipCardRewardProbe { get; private set; }
 
     /// <summary>
     /// 瓦库抓牌形态档位（用户 2026-11-19 口径，默认中卡组）：<c>small</c> / <c>normal</c> / <c>big</c>。
@@ -286,13 +279,6 @@ internal static class LocalWakuuAutopilotConfig
     /// </summary>
     public static bool SeatStatusBadge { get; private set; } = true;
 
-    /// <summary>
-    /// 极速模式宝箱「每人 2 件」（**默认关**，2026-11-14 用户实机联机确认后改成开关）：
-    /// 关 = 原版多人口径（遗物 = 人数 + 2 件、每人只选 1 件）；
-    /// 开 = 本 mod 把池子补到 人数 × 2 件 + 两阶段投票（每人 2 件）。
-    /// 见 <see cref="Patch.BlitzTreasureDoublePickRuntime"/> / <see cref="BlitzTreasurePickPolicy"/>。
-    /// </summary>
-    public static bool BlitzTreasureDoublePick { get; private set; }
 
     /// <summary>
     /// **极速模式（Blitz）商店自动购买**（默认关，2026-11-23）：进店即替所有瓦库形态席位按
@@ -406,7 +392,6 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.suppressVanillaEarring): data.suppressVanillaEarring = value; break;
                     case nameof(WakuuConfigData.keepVakuuFormRelic): data.keepVakuuFormRelic = value; break;
                     case nameof(WakuuConfigData.autoClaimCards): data.autoClaimCards = value; break;
-                    case nameof(WakuuConfigData.vakuuSkipCardRewardProbe): data.vakuuSkipCardRewardProbe = value; break;
                     case nameof(WakuuConfigData.autoClaimGoldRelics): data.autoClaimGoldRelics = value; break;
                     case nameof(WakuuConfigData.autoClaimPotions): data.autoClaimPotions = value; break;
                     case nameof(WakuuConfigData.autoChooseEvents): data.autoChooseEvents = value; break;
@@ -438,7 +423,6 @@ internal static class LocalWakuuAutopilotConfig
                     case nameof(WakuuConfigData.statBadge): data.statBadge = value; break;
                     case nameof(WakuuConfigData.petHpBadge): data.petHpBadge = value; break;
                     case nameof(WakuuConfigData.seatStatusBadge): data.seatStatusBadge = value; break;
-                    case nameof(WakuuConfigData.blitzTreasureDoublePick): data.blitzTreasureDoublePick = value; break;
                     case nameof(WakuuConfigData.blitzShopAutoBuy): data.blitzShopAutoBuy = value; break;
                     case nameof(WakuuConfigData.skipTurnStartDrawAnim): data.skipTurnStartDrawAnim = value; break;
                     case nameof(WakuuConfigData.fastVakuuPlay): data.fastVakuuPlay = value; break;
@@ -862,7 +846,6 @@ internal static class LocalWakuuAutopilotConfig
                 + $"seatHotkeySwitch={data.seatHotkeySwitch}, "
                 + $"keepVakuuFormRelic={data.keepVakuuFormRelic}, "
                 + $"autoClaimCards={data.autoClaimCards}, autoClaimGoldRelics={data.autoClaimGoldRelics}, "
-                + $"vakuuSkipCardRewardProbe={data.vakuuSkipCardRewardProbe}, "
                 + $"vakuuCardPickTier={WakuuCardPickPolicy.NormalizeTier(data.vakuuCardPickTier)}, "
                 + $"autoClaimPotions={data.autoClaimPotions}, "
                 + $"autoChooseEvents={data.autoChooseEvents}, autoRestChoice={data.autoRestChoice}, "
@@ -875,7 +858,7 @@ internal static class LocalWakuuAutopilotConfig
                 + $"shopAssistBuyRelics={data.shopAssistBuyRelics}, shopAssistBuyPotions={data.shopAssistBuyPotions}, "
                 + $"shopAssistBuyRemoval={data.shopAssistBuyRemoval}, "
                 + $"blitzShopAutoBuy={data.blitzShopAutoBuy}, "
-                + $"statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, seatStatusBadge={data.seatStatusBadge}, blitzTreasureDoublePick={data.blitzTreasureDoublePick}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, fastVakuuPlay={data.fastVakuuPlay}, vakuuPlayQueue={data.vakuuPlayQueue}, vakuuPlayOverlap={data.vakuuPlayOverlap}, vakuuViewMode={WakuuViewModes.Normalize(data.vakuuViewMode)}, "
+                + $"statBadge={data.statBadge}, " + $"statBadgeCorner={WakuuStatBadgeCorner.Normalize(data.statBadgeCorner)}, statBadgeSource={WakuuStatBadgeSource.Normalize(data.statBadgeSource)}, petHpBadge={data.petHpBadge}, seatStatusBadge={data.seatStatusBadge}, skipTurnStartDrawAnim={data.skipTurnStartDrawAnim}, fastVakuuPlay={data.fastVakuuPlay}, vakuuPlayQueue={data.vakuuPlayQueue}, vakuuPlayOverlap={data.vakuuPlayOverlap}, vakuuViewMode={WakuuViewModes.Normalize(data.vakuuViewMode)}, "
                 + $"personalTier={NormalizePersonalTier(data.personalTier) ?? CharacterFirstTier}, "
                 + $"purifyVakuu={data.purifyVakuu}, uniteVakuu={data.uniteVakuu}, "
                 + $"refineVakuu={data.refineVakuu}, "
@@ -906,7 +889,6 @@ internal static class LocalWakuuAutopilotConfig
         SuppressVanillaEarring = data.suppressVanillaEarring;
         KeepWakuuFormRelic = data.keepVakuuFormRelic;
         AutoClaimCards = data.autoClaimCards;
-        SkipCardRewardProbe = data.vakuuSkipCardRewardProbe;
         CardPickTier = WakuuCardPickPolicy.NormalizeTier(data.vakuuCardPickTier);
         CardPickTierValue = WakuuCardPickPolicy.ParseTier(CardPickTier);
         AutoClaimGoldRelics = data.autoClaimGoldRelics;
@@ -952,7 +934,6 @@ internal static class LocalWakuuAutopilotConfig
         StatBadgeSource = WakuuStatBadgeSource.Normalize(data.statBadgeSource);
         PetHpBadge = data.petHpBadge;
         SeatStatusBadge = data.seatStatusBadge;
-        BlitzTreasureDoublePick = data.blitzTreasureDoublePick;
         BlitzShopAutoBuy = data.blitzShopAutoBuy;
         SkipTurnStartDrawAnim = data.skipTurnStartDrawAnim;
         FastWakuuPlay = data.fastVakuuPlay;

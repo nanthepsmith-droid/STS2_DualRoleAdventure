@@ -101,6 +101,14 @@ internal static class CardSelectHandScenarioPatch
             return true;
         }
 
+        // r405：打出中的那张牌不属于手牌 —— 别让"变化/消耗/丢弃"选中它自己
+        //（实机：多席位并发时它的节点停在屏幕中间，数据却还在手牌堆）。
+        candidates = LocalHandSelectionGuard.ExcludeMidPlayCards(candidates, player, "scenario-hand");
+        if (candidates.Count == 0)
+        {
+            return true;
+        }
+
         // 变化类再分一刀（2026-11-23）：结果是**指定的一张牌**时（如【离去】→【仆从打击】），变掉哪张与结果无关
         // ⇒ 该"把最烂的牌换掉"（诅咒 > 状态 > 打击 > 防御）；随机变化仍先变打击/防御。
         // 判据只能看 source（选牌那一刻游戏不暴露"结果是不是固定牌"），见 WakuuTransformTargetPolicy。

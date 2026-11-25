@@ -38,15 +38,20 @@ internal static class VfxCmdNullTargetGuardPatch
     private static readonly object Lock = new();
     private static readonly HashSet<string> Warned = new();
 
+    // ⚠ 0.114：两个单数版入口多了第三个可选参数
+    // （`PlayOnCreatureCenter(Creature target, string path, bool forceIfDead = false)`、
+    //   `PlayOnCreature(Creature target, string path, bool forceIfDead = false)`）。
+    // `Type[]` 是**精确签名匹配**（可选参数不会生成重载）⇒ 不补 `typeof(bool)` 就解析不到方法，
+    // Harmony 报 "Patching exception in method null" ⇒ 整个护栏类被跳过（0.114 首次启动实测）。
     [HarmonyFinalizer]
     [HarmonyPatch(typeof(VfxCmd), nameof(VfxCmd.PlayOnCreatureCenter),
-        new[] { typeof(Creature), typeof(string) })]
+        new[] { typeof(Creature), typeof(string), typeof(bool) })]
     private static Exception? PlayOnCreatureCenterFinalizer(Exception __exception, Creature? target)
         => Swallow(__exception, nameof(VfxCmd.PlayOnCreatureCenter), Describe(target));
 
     [HarmonyFinalizer]
     [HarmonyPatch(typeof(VfxCmd), nameof(VfxCmd.PlayOnCreature),
-        new[] { typeof(Creature), typeof(string) })]
+        new[] { typeof(Creature), typeof(string), typeof(bool) })]
     private static Exception? PlayOnCreatureFinalizer(Exception __exception, Creature? target)
         => Swallow(__exception, nameof(VfxCmd.PlayOnCreature), Describe(target));
 

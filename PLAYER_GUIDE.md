@@ -56,10 +56,10 @@ Enter via the **"Local Dread Run" (本地·恐惧) / "Local Blitz Run" (本地·
 - **Up to 12 seats**, same as a normal local run; both screens have the `-/+` panel, seat switching and Vakuu
   hosting checkboxes.
 - **Characters are picked by hand** (multiplayer Dread forbids random/rotating characters; Blitz allows Random).
-- **Blitz chests follow vanilla by default**: `players + 2` relics, each player picks only one (that is how
-  official multiplayer works — not a bug). Tick "Blitz Chest: 2 Relics Each" in the mod settings to get
-  `players × 2` relics and two picking rounds instead — after round one, a "Chest round 2" banner appears and
-  **the relics already taken are greyed out**; with many seats the grid shrinks automatically so everything
+- **Blitz chests give every player 2 relics** (that is how the game works since 0.114: the pool is
+  `players × 2` and everyone picks once per round, two rounds in total). The mod no longer changes this
+  rule — it only makes sure **every seat can pick for itself** (no random auto-votes); with many seats the
+  grid shrinks automatically so everything
   still fits.
 - **Blitz shops are per character**: switch to a seat and you see that seat's own three choices (same as
   vanilla multiplayer).

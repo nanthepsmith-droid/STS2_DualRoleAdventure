@@ -5,7 +5,7 @@
 #     DualRoleAdventure.json                        manifest（min_game_version = 0.111.0）
 #     DualRoleAdventure.dll                         ← 薄 loader（Loader\ 工程，唯一被游戏加载的程序集）
 #     lib\0.111.0\DualRoleAdventure.Payload.dll     ← **stable/0.111 代码线**（git 1824cb5 起）
-#     lib\0.113.0\DualRoleAdventure.Payload.dll     ← **master（beta 线）**
+#     lib\0.114.0\DualRoleAdventure.Payload.dll     ← **master（beta 线）**
 #
 # 为什么 0.111 那份不用 master + 条件编译：
 #   0.111 的原版 API 与 0.113 差得不少（选择器栈 / 商店库存 / 商店房间节点 / 愚者 / 恐惧 / 闪电战…）。
@@ -26,13 +26,13 @@
 param(
     [string]$RepoDir = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path,
     [string]$StableWorktree = "D:\Download\pain\_worktrees\stable0111",
-    [string]$BetaGameDir = "D:\Download\pain\game-archives\v0.113.1",
+    [string]$BetaGameDir = "D:\Download\pain\game-archives\v0.114.0",
     # ⚠ 必须是 **0.111 的归档**，不能写"当前安装目录"：用户随时会在正式版/beta 之间切换，
     # 一旦装的是 0.113，稳定载荷就会对着 0.113 的 dll 编 ⇒ 一堆"0.111 没有这个成员"的错（2026-11-17 踩过）。
     [string]$StableGameDir = "D:\Download\pain\game-archives\v0.111.1",
     [string]$OutDir = "",
     [string]$ModsDir = "D:\SteamLibrary\steamapps\common\Slay the Spire 2\mods",
-    [string]$BetaVariant = "0.113.0",
+    [string]$BetaVariant = "0.114.0",
     [string]$StableVariant = "0.111.0",
     [string]$ModId = "",
     [switch]$SkipStable,

@@ -84,10 +84,9 @@ internal static class PatchDomainMap
             ["RestSiteSynchronizerChooseLocalOptionPatch"] = PatchDomain.Core,
             ["TreasureRoomRelicSynchronizerPatch"] = PatchDomain.Core,
             ["TreasureRoomRelicSynchronizerBeginPatch"] = PatchDomain.Core,
-            // r352 极速模式宝箱的可选「每人 2 件」（开关 blitzTreasureDoublePick 默认关；
-            // 关 = 原版多人口径「人数 + 2 件、每人 1 件」）：池子补齐 + 两阶段投票后一次性派发
-            ["BlitzTreasureDoublePickPatch"] = PatchDomain.Core,
-            ["BlitzTreasurePoolTopUpPatch"] = PatchDomain.Core,
+            // 0.114：宝箱多轮（`_rounds`/`_currentRound`）⇒ 原版每轮都会给"假玩家"随机代投，
+            // 本地多控里每席都是人 ⇒ 整条代投在本地多控会话里跳过（见补丁类注释）
+            ["TreasureRoomRelicDummyVoteSuppressPatch"] = PatchDomain.Core,
             ["OneOffSynchronizerSpoilsMapPatch"] = PatchDomain.Core,
             ["RewardsSetSynchronizerSelectLocalRewardPatch"] = PatchDomain.Core,
             ["SynchronizationOwnershipLogPatch"] = PatchDomain.Core,
@@ -186,6 +185,9 @@ internal static class PatchDomainMap
             ["CombatManagerDoTurnEndForegroundPatch"] = PatchDomain.Combat,
             ["CombatManagerFlushPlayerHandForegroundPatch"] = PatchDomain.Combat,
             ["CreatureCmdKillWinCheckPatch"] = PatchDomain.Combat,
+            // r404：原版「PlayCardAction 在 Canceled 状态下跑完」的 ERROR 噪声（排队期间目标阵亡的竞态）
+            // 降级成我们自己的 INFO（行为不变，只压日志/Sentry；其它动作类型原样保留）
+            ["GameActionCanceledNoiseFilterPatch"] = PatchDomain.Combat,
             ["CrystalSpherePaymentPlanPatch"] = PatchDomain.Combat,
             ["CrystalSphereUncoverFuturePatch"] = PatchDomain.Combat,
             ["CrystalSphereMinigameProceedGuardPatch"] = PatchDomain.Combat,

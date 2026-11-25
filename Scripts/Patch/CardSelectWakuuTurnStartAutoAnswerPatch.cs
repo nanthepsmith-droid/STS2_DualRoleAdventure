@@ -213,6 +213,13 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
             return true;
         }
 
+        // r405：打出中的那张牌不属于手牌（见 LocalHandSelectionGuard）
+        candidates = LocalHandSelectionGuard.ExcludeMidPlayCards(candidates, player, "turnstart-hand");
+        if (candidates.Count == 0)
+        {
+            return true;
+        }
+
         WakuuPickScenario scenario = WakuuPriorityPicking.ClassifyHandScenario(
             source?.GetType().Name,
             CardSelectHandScenarioPatch.BuildPrefsLocKey(prefs.Prompt));
@@ -469,10 +476,14 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
         ProbeUncoveredEntry(player, "FromDeckForTransformation");
     }
 
+    // ⚠ 0.114：`FromChooseABundleScreen(Player player, IReadOnlyList<IReadOnlyList<CardModel>> bundles,
+    // bool canSkip = false)` —— 多了第三个可选参数；`Type[]` 是精确签名匹配 ⇒ 不补 `typeof(bool)`
+    // 就解析不到（Harmony "Patching exception in method null" ⇒ 整个类被跳过，瓦库回合开始自动作答全失效）。
     [HarmonyPatch(typeof(CardSelectCmd), nameof(CardSelectCmd.FromChooseABundleScreen), new[]
     {
         typeof(Player),
         typeof(IReadOnlyList<IReadOnlyList<CardModel>>),
+        typeof(bool),
     })]
     [HarmonyPriority(Priority.Low)]
     [HarmonyPrefix]

@@ -18,7 +18,7 @@
 #   3. 生成 marker 建议串（Revival vX.Y.Z (game vX.Y.Z, marker=YYYY-MM-DD-rN)），
 #      可从 Entry.cs 当前 marker 自动取下一 rN
 #   4. dotnet build -c Release -warnaserror（0 警告 0 错误门禁）
-#   4.2 重建双载荷 dist（build_dual.ps1 -SkipBetaBuild：薄 loader + lib\0.111.0 + lib\0.113.0）；
+#   4.2 重建双载荷 dist（build_dual.ps1 -SkipBetaBuild：薄 loader + lib\0.111.0 + lib\0.114.0）；
 #       -SkipDual 可退回旧的单版本扁平包（默认不要用）
 #   5. 同步 workshop\content\（双载荷时 = loader + lib\ 结构）
 #   5.5 生成 build-info.json（源码 commit + 依赖锁定 + 包内三份程序集指纹；
@@ -234,13 +234,13 @@ if (-not $DryRun) {
 #     DualRoleAdventure.json
 #     DualRoleAdventure.dll                      ← 薄 loader（游戏唯一加载的程序集）
 #     lib\0.111.0\DualRoleAdventure.Payload.dll  ← stable/0.111 代码线
-#     lib\0.113.0\DualRoleAdventure.Payload.dll  ← master（beta 线，即本次构建）
+#     lib\0.114.0\DualRoleAdventure.Payload.dll  ← master（beta 线，即本次构建）
 # ⚠ 发布包**必须**按这个结构发：玩家日常玩的是 0.111 正式版，扁平单 dll 包会让他拿到
-#   只对 0.113 编的载荷 ⇒ 直接起不来（2026-11-23 发 1.50 时补上这一步）。
+#   只对当前 beta 编的载荷 ⇒ 直接起不来（2026-11-23 发 1.50 时补上这一步）。
 $distDir       = Join-Path $projectRoot "dist\DualRoleAdventure"
 $loaderPath    = Join-Path $distDir "DualRoleAdventure.dll"
 $stablePayload = Join-Path $distDir "lib\0.111.0\DualRoleAdventure.Payload.dll"
-$betaPayload   = Join-Path $distDir "lib\0.113.0\DualRoleAdventure.Payload.dll"
+$betaPayload   = Join-Path $distDir "lib\0.114.0\DualRoleAdventure.Payload.dll"
 
 if ($SkipDual) {
     Write-Step "跳过双载荷（-SkipDual）：将打出旧的单 dll 扁平包"
@@ -265,10 +265,10 @@ if ($SkipDual) {
 $dualReady = (-not $SkipDual) -and (Test-Path -LiteralPath $loaderPath) -and
              (Test-Path -LiteralPath $stablePayload) -and (Test-Path -LiteralPath $betaPayload)
 if (-not $SkipDual -and -not $dualReady) {
-    Write-Err ("双载荷产物不全（loader/0.111.0/0.113.0 至少缺一项）：`n" +
+    Write-Err ("双载荷产物不全（loader/0.111.0/0.114.0 至少缺一项）：`n" +
                "  $loaderPath`n  $stablePayload`n  $betaPayload")
 }
-if ($dualReady) { Write-Ok "双载荷产物齐（loader + 0.111.0 + 0.113.0）" }
+if ($dualReady) { Write-Ok "双载荷产物齐（loader + 0.111.0 + 0.114.0）" }
 
 # ---------------------------------------------------------------- 4.5 构建元数据：源码 commit + 依赖锁定
 # 产出 build-info.json（发布包内 + release\ 同名副本），回答三个问题：
@@ -374,7 +374,7 @@ $artifactList = if ($dualReady) {
     @(
         @{ key = "loader";        path = $loaderPath;    name = "DualRoleAdventure.dll" },
         @{ key = "payload_0_111"; path = $stablePayload; name = "lib/0.111.0/DualRoleAdventure.Payload.dll" },
-        @{ key = "payload_0_113"; path = $betaPayload;   name = "lib/0.113.0/DualRoleAdventure.Payload.dll" },
+        @{ key = "payload_0_114"; path = $betaPayload;   name = "lib/0.114.0/DualRoleAdventure.Payload.dll" },
         @{ key = "json";          path = $rootJson;      name = "DualRoleAdventure.json" }
     )
 } else {
@@ -440,7 +440,7 @@ if (-not $DryRun) {
         Copy-Item -LiteralPath $loaderPath -Destination (Join-Path $wsContent "DualRoleAdventure.dll") -Force
         Copy-Item -Path (Join-Path $distDir "lib") -Destination $wsContent -Recurse -Force
         Copy-Item -LiteralPath $rootJson -Destination $wsJson -Force
-        Write-Ok "  workshop\content\ = loader + lib\（0.111.0 / 0.113.0）+ json 已更新"
+        Write-Ok "  workshop\content\ = loader + lib\（0.111.0 / 0.114.0）+ json 已更新"
     } else {
         Copy-Item -LiteralPath $dllPath -Destination (Join-Path $wsContent "DualRoleAdventure.dll") -Force
         Copy-Item -LiteralPath $rootJson -Destination $wsJson -Force
@@ -462,7 +462,7 @@ if (-not $DryRun) {
     if (Test-Path -LiteralPath $tempDir) { Remove-Item -LiteralPath $tempDir -Recurse -Force }
     New-Item -ItemType Directory -Path $tempDir | Out-Null
     if ($dualReady) {
-        # 双载荷：整目录（loader + lib\0.111.0 + lib\0.113.0 + json）原样进包
+        # 双载荷：整目录（loader + lib\0.111.0 + lib\0.114.0 + json）原样进包
         Copy-Item -Path (Join-Path $distDir "*") -Destination $tempDir -Recurse -Force
         Copy-Item -LiteralPath $rootJson -Destination (Join-Path $tempDir "DualRoleAdventure.json") -Force
     } else {
@@ -490,7 +490,7 @@ if (-not $DryRun) {
         @(
             @{ entry = "DualRoleAdventure.dll";                        src = $loaderPath },
             @{ entry = "lib/0.111.0/DualRoleAdventure.Payload.dll";    src = $stablePayload },
-            @{ entry = "lib/0.113.0/DualRoleAdventure.Payload.dll";    src = $betaPayload },
+            @{ entry = "lib/0.114.0/DualRoleAdventure.Payload.dll";    src = $betaPayload },
             @{ entry = "DualRoleAdventure.json";                       src = $rootJson }
         )
     } else {

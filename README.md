@@ -10,7 +10,7 @@ A **Slay the Spire 2** mod that turns the official online multiplayer into a *lo
 
 - Local multiplayer party of 2–12 characters, started from the normal multiplayer menu (`Multiplayer → Host → Local Multi-Control`)
 - **Local multi-character Daily Climb** (v1.43): via the "Local Daily Run" button below the multiplayer card row — up to 4 seats, characters assigned from the date, never uploads to the Daily leaderboard
-- **Local multi-character Dread / Blitz** (v1.48): via the "Local Dread Run" / "Local Blitz Run" buttons below the card row; Blitz chests keep the vanilla rule (players + 2 relics, one pick each) with an optional "2 relics each" toggle, and shops are per character
+- **Local multi-character Dread / Blitz** (v1.48): via the "Local Dread Run" / "Local Blitz Run" buttons below the card row; Blitz chests give every player 2 relics (the vanilla 0.114 rule), and shops are per character
 - **Co-op Bots compatibility** (v1.43, optional): coexists with the online-AI-teammates mod; choose which seats the online bots take
 - Instant character switching in and out of combat: `Tab` / `Shift+Tab` (legacy `[` `]` `R` `T` `/` still work)
 - Per-character everything: decks, energy, gold, potions, relics, event choices, reward claims

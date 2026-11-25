@@ -933,7 +933,68 @@ public partial class Entry
     //      删牌屏 `FromDeckForRemoval` 自己就过滤掉了，却会让 curseCount 永远 > 0（每店先花删牌钱）；
     //   ② 【愧疚】5 场战斗后自己离场。判据 `WakuuCardPickPolicy.IsRemovalWorthyCurse(kind, IsRemovable)`；
     //   "诅咒上限"那类判据（极速 `CanTakeCurse`）仍用全部诅咒数，不要混。
-    private const string BuildMarker = "Revival v1.50.0 (game v0.113.1, marker=2026-11-24-r401)";
+    // r402（2026-11-25）**游戏 0.114.0 适配**（反编译树已重生成到 v0.114.0）：
+    //   ① 编译期零改动（0 错误 0 警告）、字符串/反射目标 STALE=0 ⇒ 无成员改名；
+    //   ② 唯一行为变化 = **宝箱改成多轮**（`_rounds`/`_currentRound`，极速模式固定 2 轮）：
+    //      原版每轮票齐后会再调一次 `VoteForDummyPlayers` 给"非本机玩家"随机写票（0.114 新增），
+    //      本地多控里每席都是人在选 ⇒ 新增 `TreasureRoomRelicDummyVoteSuppressPatch` 在本地多控会话里整条跳过；
+    //      否则极速宝箱第二轮除当前操控席位外全部被随机代投（0.113 只有一整轮，Begin 后置清票还能兜住）；
+    //   ③ 极速「每人 2 件」开关在 0.114 变成**与原版等价**（原版已统一 2 轮 + 每人 2 件）⇒ 见 r403 删除。
+    //   ④ `Creature.LoseHpInternal/DamageBlockInternal` 加 `dryRun`、`HpLossResult` 取代 `DamageResult`、
+    //      `ArrowStatus.Destroyed`/`DestroyAfterImpaled` 删除、`CardModel.UpgradeInternal(silent)`/`DowngradeInternal(int)`
+    //      —— 我们都没直接调用（0 编译错误即证）；
+    //   ⑤ 存档三份迁移（Run V21→V22 / History V11→V12 / Progress V24→V25）只改了
+    //      `CARD.RAPID_SHOT → CARD.TWIN_SHOT`（0.114 新增同名卡池内容，旧 id 仍存在）⇒ 我们的预设/硬编码 id 全部命中。
+    //   ⑥ **编译期看不见的三处签名漂移**（首启实机日志：`补丁类应用失败 ⇒ HarmonyException`，且 `INIT_OK` 仍绿）：
+    //      a. `NCharacterSelectScreen.PlayerChanged(player)` 少了第二参 ⇒ 我们的后缀声明 `bool isRandomCharacterResolution`
+    //         报 `Parameter ... not found`（整个 `NCharacterSelectScreenPatch` 被跳过 ⇒ 大厅换角色通知断）；
+    //      b. `VfxCmd.PlayOnCreature(Center)(Creature, string, bool forceIfDead = false)` 多了可选参 ⇒ `Type[]` 是
+    //         **精确签名匹配**（可选参数不生成重载）⇒ `VfxCmdNullTargetGuardPatch` 整类解析不到；
+    //      c. `CardSelectCmd.FromChooseABundleScreen(player, bundles, bool canSkip = false)` 同理 ⇒
+    //         `CardSelectWakuuTurnStartAutoAnswerPatch` 整类被跳过（瓦库回合开始自动作答失效）。
+    //      兜底 = 新增构建期哨兵 `tests/HarmonyTargetResolvableTests.cs`：逐条把 `[HarmonyPatch]` 的
+    //      类型/方法名/Type[] 在**真实游戏程序集**里解析，并逐参数核对"补丁参数名 ∈ 目标参数名"。
+    //   ⑦ 首启"启动不了"的真凶**不是我们**：第三方 `Loadout v0.6.2` 在 `AfterLocManagerInitialized` 里
+    //      `Harmony.PatchAll` 抛 `Parameter "props" not found in Creature.LoseHpInternal(decimal, bool dryRun)`，
+    //      冒穿 `NGame.GameStartup` ⇒ 原版弹启动错误框。按"第三方自身缺陷不兜底"的口径：让玩家禁用该 mod。
+    // r403（2026-11-25 用户实机后的两条口径）：**删掉两处我们自己的重复实现 / 探针**。
+    //   ① 极速宝箱「每人 2 件」整条移除：0.114 原版极速宝箱 = `_rounds = 2` + 遗物池「人数 × 2」
+    //      ⇒ 官方已经是每人 2 件（实机日志 `极速宝箱沿用原版口径: 玩家=4, 遗物=8` 与 `玩家=12, 遗物=24` 均成立）。
+    //      删 `BlitzTreasureDoublePickPatch` / `BlitzTreasurePoolTopUpPatch` / `BlitzTreasurePickPolicy` /
+    //      `LocalModText.BlitzTreasureSecondPick` / 配置键 `blitzTreasureDoublePick` / 设置页那一行 / 对应单测；
+    //      退局复位里那条 `BlitzTreasureDoublePickRuntime.Reset` 一并删。**宝箱格子补齐（12 席 = 24 格）保留**
+    //      —— 原版布局制仍只到 6 件，那是 `TreasureRelicHoldersRuntime` 的活。
+    //   ② 【探针】瓦库卡牌奖励不自动领整条移除（`WakuuCardRewardSkipProbePolicy` + `[瓦库抓牌探针]` 两条日志 +
+    //      配置键 `vakuuSkipCardRewardProbe` + 设置页行 + 单测）。抓牌不抓现在只由「抓牌形态档位」
+    //      （`WakuuCardPickPolicy`，r389 起）决定；旧 json 里残留这两个键会被序列化器忽略（未知键默认丢弃）。
+    // r404（2026-11-25 用户口径「那个压掉」）：**出牌取消 ERROR 噪声降级为 INFO**
+    //   （`GameActionCanceledNoiseFilterPatch`）。病灶 = 瓦库走动作队列入队前目标合法，**排队期间**那只敌人
+    //   被别的席位打死 ⇒ 执行时 `GetCreatureAsync(TargetId)` 拿到 null ⇒ 原版自己 `Cancel()` ⇒
+    //   `GameAction.Execute` 的 finally 打 `finished execution, but was in state Canceled` + Sentry 上报。
+    //   行为本来就正确（牌留手牌、下一轮重选目标），这条只是"动作在暂停态被取消"的通用告警；实测一局 24 条、
+    //   此前各会话 0 条，纯噪声。过滤范围**只**限「本地多控 + PlayCardAction + 该精确措辞」，
+    //   其它动作类型（药水 / 回合结束…）原样保留；每次过滤由我们自己打一条 INFO（带牌名、去重）留证。
+    // r405（2026-11-25 用户实机：**手牌自愈把正在打出的牌又补回手牌**）：
+    //   症状 = 多席位并发出牌时，一张牌打出后因为别人的牌还在飞、节点停在屏幕中间，手牌自愈又给它
+    //   补了一个手牌节点（"回到了手牌"）；若它是「变化手牌里其它牌」的效果，还能**选中它自己**。
+    //   ① 补建前先查 `NCard.FindOnTable(card)`：桌上**已有这张牌的节点**（出牌队列 / 出牌区）⇒ 不补，
+    //      只打 `手牌UI补建跳过: 该牌节点已在出牌区/出牌队列`，整批跳过时再打一条摘要；
+    //   ② 选牌候选过滤 `LocalHandSelectionGuard`：正在打出的牌（三条判据 = 我们托管入队的在飞动作 /
+    //      出牌队列节点 / 出牌区节点）从手牌候选里剔除，命中打 WARN 留证 —— 覆盖变化/消耗/丢弃/升级
+    //      三条自动作答入口（`CardSelectHandScenarioPatch` / 作用域外选牌 / 事件选牌）；
+    //      纯逻辑 = `WakuuMidPlayCardGuardPolicy`（有单测）。语义回到原版：正在打出的牌不属于手牌。
+    // r406（同日 r405 实机复测后的判读）：**排队窗口不再算"手牌不同步"**。
+    //   实机那局 13 次差异**全部**是"数据比 UI 多 1，缺的正是刚打出的那张"（`STRIKE_IRONCLAD` / `BASH` /
+    //   `DEFEND_IRONCLAD` / `CRESCENT_SPEAR` / `HEGEMONY` / `STRIKE_REGENT`），随后全部命中 r405 的"补建跳过"，
+    //   补建成功 0 次 ⇒ 视觉重复已消失。但原版时序里这本来就是正常窗口：节点先飞进出牌队列/出牌区，
+    //   数据要等 `AddDuringManualCardPlay` 才搬走（12 席并发实测这个窗口能到 4 秒）。
+    //   所以 r406 = 缺失**全部**是"正在打出"的牌时，既不记 `手牌UI与数据存在差异` WARN、也不补建，
+    //   只打一条 `手牌缺的这一张正在打出（排队窗口，不补建也不记差异）`（按席位+清单每场去重）；
+    //   只要有一张是真缺节点，仍走原来的差异诊断 + 补建闸门。
+    // r407（收工）：**只加离线工具、不改行为代码** —— `Scripts/Tools/clean_unknown_model_entries.py`
+    //   （按日志里的 `Unknown ModelId` 清 `progress.save` 残留；0.114 起一局实测 7000+ 条 `Progress parse` WARN 的根因；
+    //   默认 dry-run，`--apply` 才写且自动备份）。本 marker 仅用于标识"这一版含该工具"。
+    private const string BuildMarker = "Revival v1.50.0 (game v0.114.0, marker=2026-11-25-r407)";
 
     private static Harmony? _harmony;
 
