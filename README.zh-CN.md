@@ -23,7 +23,7 @@
 
 ## 兼容性
 
-- **一个包内含两份载荷**（v1.50 起）：**v0.111.x**（正式版分支，多数玩家在玩）与 **v0.113.x**（beta 分支）。`lib\<游戏版本>\` 里各一份，由 loader 启动时按游戏版本自动挑，不需要按版本下不同包。游戏每次更新后本仓库会尽快发布适配版——这是本分支的首要职责。
+- **一个包内含两份载荷**（v1.50 起）：**v0.111.x**（正式版分支，多数玩家在玩）与 **v0.114.x**（beta 分支）。`lib\<游戏版本>\` 里各一份，由 loader 启动时按游戏版本自动挑，不需要按版本下不同包。游戏每次更新后本仓库会尽快发布适配版——这是本分支的首要职责。
 - **Oddmelt**：自 v1.33 起内置兼容守卫——重建战斗手牌 UI 时自动跳过 Oddmelt 未注册卡池的隐藏 Gauge 输入卡（此前会导致切人失败回滚），无需再安装单独的修复 mod。
 
 ### ⚠ 性能：装了「内容型」第三方 mod 时，**别开人多的战斗**
@@ -68,14 +68,14 @@
 
 **Steam 创意工坊：** 工坊上有多个「本地多角色」条目，各自独立、更新节奏不同：原作者的[原条目](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)、[GuyGinat 的社区接续条目](https://steamcommunity.com/sharedfiles/filedetails/?id=3772900244)，以及[上一节介绍的另一个已授权分支](https://steamcommunity.com/sharedfiles/filedetails/?id=3810171053)。注意：**本仓库的修正版只通过本仓库的 Releases 分发**（不随任何工坊条目更新）。
 
-**手动安装（本仓库构建）：** 从 [Releases](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/releases) 下载 `DualRoleAdventure-v1.50.0.zip`，**整个解压**后应是这样：
+**手动安装（本仓库构建）：** 从 [Releases](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/releases) 下载 `DualRoleAdventure-v1.50.1.zip`，**整个解压**后应是这样：
 
 ```
 <杀戮尖塔2安装目录>\mods\DualRoleAdventure\
     DualRoleAdventure.json
     DualRoleAdventure.dll                        ← 薄 loader（游戏唯一加载的程序集）
     lib\0.111.0\DualRoleAdventure.Payload.dll    ← 正式版（游戏 0.111.x）的载荷
-    lib\0.113.0\DualRoleAdventure.Payload.dll    ← beta（游戏 0.113.x）的载荷
+    lib\0.114.0\DualRoleAdventure.Payload.dll    ← beta（游戏 0.114.x）的载荷
 ```
 
 **别**把 dll 单独挪出来、也别丢掉 `lib\` 目录——从 v1.50 起一个包内含**两份载荷**，

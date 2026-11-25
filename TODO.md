@@ -119,6 +119,11 @@
 > ⑥ 新增离线工具 `Scripts/Tools/clean_unknown_model_entries.py`：按日志里的 `Unknown ModelId` 清理
 > `progress.save` 里指向已卸载 mod 的残留（0.114 起每局刷 7000+ 条 `Progress parse` WARN 的根因；默认 dry-run + 自动备份）。
 > 详见 `开发进度记录.md` 第一百八十五段。
+> **2026-11-25（r408，**发版 v1.50.1**）**：0.114 适配线正式出包 —— 版本 **1.50.1** / marker `2026-11-25-r408`，
+> 双载荷 zip（`lib\0.111.0` = r407-stable / `lib\0.114.0` = r408）+ `compat-mods-v1.50.1.zip` 已发 GitHub Release
+> （tag `v1.50.1`），本机部署位同步并 `dll_check --deployed --expect-deployed` 通过。
+> **无新增排期项**：下一步 = 下方 §待做「Progress parse 噪音过滤」（用户已拍板**不清存档**，
+> `clean_unknown_model_entries.py` 只作按需维护手段）。详见 `开发进度记录.md` 第一百八十六段。
 
 ---
 
