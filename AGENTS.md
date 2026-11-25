@@ -95,6 +95,12 @@ references AE-24）。分类 `INDEXED/GUARDED/REVIEW` + 可达性（战斗内/�
 `sts2src`，缺则 SKIP），但已挂进 `preflight` 的 **G2b**（基线外新增"当索引用 + 战神可能在场"⇒ FAIL）。
 基线刷新：`python Scripts/Tools/scan_slot_index_consumers.py --repo . --update-baseline`（先人审新增明细）。
 
+`Scripts/Tools/clean_unknown_model_entries.py`（r407）是**按需维护工具、不在门禁链**：游戏 0.114 起
+`ProgressSaveManager.LoadProgress` 会对存档里"当前认不出的 ModelId"逐条打 `Progress parse: ValidationError`
+（一局实测 7009 条，来源是已卸载 mod 留下的 `discovered_*` / `*_stats` 残留）。工具**按日志里游戏自己报的
+Unknown ModelId** 清理 `progress.save` —— 默认只打印计划，`--apply` 才写且**写前自动备份**（`progress.save.bak-<时间戳>`）。
+用法见脚本头部；跨 profile 默认扫 `%APPDATA%\SlayTheSpire2\steam\*\*\saves\progress.save`。
+
 `Scripts/Tools/build_all_mods.ps1` runs build → tests → clr_compat_check → deploy → SHA256 in one shot.
 **One command for the whole gate chain**: `.\Scripts\Tools\preflight.ps1 [-Build] [-Deploy] [-WithLogs] [-Lint]`
 （静态层默认秒级；`-Deploy` 才碰游戏槽位）。
