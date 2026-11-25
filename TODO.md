@@ -571,7 +571,7 @@
   怀疑 orb 归属可能受「上下文短暂钉在瓦库身上」影响 → 顺 `OrbCmd.Channel` 的 `player` 参数来源追。
 - **优先级**：低（偶发、自愈、不影响数据）。
 
-### 已知项（游戏侧告警）：被取消的动作仍跑完 → `ActionExecutor` 报 `was in state Canceled`（r151 实机发现，**暂不修**）
+### 已知项（游戏侧告警）：被取消的动作仍跑完 → `ActionExecutor` 报 `was in state Canceled`（r151 发现，**r404 已降噪 ⇒ 视作关闭**）
 
 - **现象（marker r151，2026-09-26，归档 `logs-archive/godot__20260926-184411__r151.log` L11738）**：
   ```
@@ -589,6 +589,39 @@
 - **影响：不阻塞**。紧随其后 L11747 `Completed execution of action … attempting to find new action`、
   L11750 `Action … becomes new ready action` ⇒ 队列正常推进，未卡、未软锁。
 - **决策（沿用 BUG-8 口径）**：**暂不改代码、不降级日志**。
+- ~~**2026-11-25 r404 更新**~~：0.114 下这条从"单局偶发 1 条"变成"单局 24 条"（多席位并发出牌时，排队期间目标阵亡
+  ⇒ 原版自己 `Cancel()` ⇒ `GameAction.Execute` 的 finally 看到 `state != Executing` 就打 ERROR + Sentry）。
+  行为本来就正确（该牌留手牌、下一轮重选目标），所以**改成降级为 INFO**：
+  `GameActionCanceledNoiseFilterPatch`（拦 `Log.Error(string,int)` + `SentryService.CaptureException(Exception)`，
+  只认"本地多控 + `PlayCardAction` + 该精确措辞"；纯逻辑 `GameActionCanceledNoisePolicy` + 4 条单测）。
+  每次过滤由我们打一条 `[出牌取消噪声已过滤]`（按牌名去重）留证。**本项关闭**。
+
+---
+
+### 待做（日志卫生）：过滤 0.114 新增的「Progress parse: ValidationError」噪音（2026-11-25 用户登记，**下一轮做**）
+
+> 用户口径：存档里那些"未启用 mod 的残留条目"**不要清**（这些 mod 以后还要玩，清了战绩/图鉴就没了）
+> ⇒ 改成**从日志侧过滤**，做一个"让游戏不报这些错"的能力。
+
+- **现象**：游戏 0.114 起 `ProgressSaveManager.LoadProgress` 会把存档里认不出的 ModelId 逐条打
+  `[WARN] Progress parse: ValidationError { Severity = Warning, Path = DiscoveredCards, Message = Unknown CardModel ID: …, IsFatal = False }`。
+  实机一局 **7009 条**（占该局日志 36%），来源 = 已装但**当前未启用**的 mod（GensokyoSpire / MokouMod / YuWanCard / Slugcat / LexNinja2 …）。
+  0.113 没有这层校验，所以这是**版本新增噪音**，不是回归。
+- **已具备但不采用**：`Scripts/Tools/clean_unknown_model_entries.py`（按日志清 `progress.save` 残留，写前备份）——
+  用户明确不清存档，工具保留作按需维护手段（`--apply` 才写）。
+- **方案（照 r404 那套做，成本很低）**：新增一个补丁类（建议名 `ProgressParseNoiseFilterPatch`）：
+  ① 前缀拦 `Log.Warn(string text, int skipFrames)`（必要时连带 `Log.LogMessage`），判据 = 文本以 `Progress parse:` 开头
+     且含 `ValidationError` 且 `IsFatal = False`（或含 `Unknown ` + ` ID:`）—— **只压"未知 mod 内容"这一类**；
+  ② **`IsFatal = True` 与其它 `ValidationError`（真正的存档损坏）原样放行**，绝不能被这条补丁吃掉；
+  ③ 过滤时按段（Path）计数，每次读档结束时汇总打一条 INFO：
+     `[进度校验噪音已过滤] 共 N 条 / 段=DiscoveredCards(3717)、DiscoveredRelics(1449)… 例=<前 3 个 id>`
+     —— 既压噪音又保留"哪些 mod 有残留"的可追溯性（想彻底看原始明细就关掉开关）；
+  ④ 建议做成开关（默认**开** = 过滤），写进 `vakuu_autopilot.json`；关闭即恢复原版逐条 WARN；
+  ⑤ 纯逻辑抽到 `Scripts/Runtime/PureLogic/ProgressParseNoisePolicy.cs`（`ShouldFilter(text)` + `ClassifySection(text)` + 计数聚合）+ 单测。
+- **范围**：0.114 载荷（beta 线）；0.111 没有这层校验 ⇒ **不回补**。
+- **验收口径**：一局里 `Progress parse: ValidationError` 计数从 ~7000 → **0**，同时出现 1 条汇总 INFO；
+  且人为制造一条 `IsFatal = True` 的校验错误（或临时改判据）时仍然照原样打 WARN。
+- **风险**：如果哪天真的要逐条看是哪些 mod 残留，得关开关重开一次（所以必须有开关 + 汇总行）。
 
 ---
 
