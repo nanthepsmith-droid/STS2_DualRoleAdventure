@@ -212,6 +212,13 @@ internal static class CardSelectWakuuTurnStartAutoAnswerPatch
             return true;
         }
 
+        // r405（0.111 回补）：打出中的那张牌不属于手牌（见 LocalHandSelectionGuard）
+        candidates = LocalHandSelectionGuard.ExcludeMidPlayCards(candidates, player, "turnstart-hand");
+        if (candidates.Count == 0)
+        {
+            return true;
+        }
+
         WakuuPickScenario scenario = WakuuPriorityPicking.ClassifyHandScenario(
             source?.GetType().Name,
             CardSelectHandScenarioPatch.BuildPrefsLocKey(prefs.Prompt));

@@ -1858,6 +1858,27 @@ internal static class LocalWakuuRelicRuntime
     /// 只认我们自己登记的动作（`_pendingQueuePlays`）；inline `CardCmd.AutoPlay` 是就地执行、
     /// 牌早已离开手牌，天然落进"不在手牌里"那一档。
     /// </summary>
+    /// <summary>
+    /// 该席位此刻**正在打出**的那张牌（我们自己入队、还没跑完的托管出牌），没有则 null。
+    ///
+    /// 用途（r405，0.111 回补）：选牌候选过滤 —— 打出去的那张牌不该再被"变化/消耗/丢弃"选中它自己
+    /// （实机症状见 <see cref="LocalHandSelectionGuard"/>）。
+    /// 只覆盖托管入队路径；节点层的判定（出牌队列 / 出牌区）由 <see cref="LocalHandSelectionGuard"/> 叠加。
+    /// </summary>
+    public static CardModel? TryGetHostedPlayingCard(ulong playerNetId)
+    {
+        try
+        {
+            return _pendingQueuePlays.TryGetValue(playerNetId, out PlayCardAction? action)
+                ? action.NetCombatCard.ToCardModelOrNull()
+                : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     public static bool IsCardPendingQueuePlay(CardModel card)
     {
         foreach (PlayCardAction action in _pendingQueuePlays.Values)

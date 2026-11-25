@@ -942,7 +942,7 @@ public partial class Entry
     //      删牌屏 `FromDeckForRemoval` 自己就过滤掉了，却会让 curseCount 永远 > 0（每店先花删牌钱）；
     //   ② 【愧疚】5 场战斗后自己离场。判据 `WakuuCardPickPolicy.IsRemovalWorthyCurse(kind, IsRemovable)`；
     //   "诅咒上限"那类判据（极速 `CanTakeCurse`）仍用全部诅咒数，不要混。
-    private const string BuildMarker = "Revival v1.47.22 (game v0.111.0, marker=2026-11-24-r401-stable)";
+    private const string BuildMarker = "Revival v1.47.23 (game v0.111.0, marker=2026-11-25-r407-stable)";
 
     private static Harmony? _harmony;
 

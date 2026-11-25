@@ -126,6 +126,13 @@ internal static class WakuuEventEnchantAutoAnswerPatch
             return true;
         }
 
+        // r405（0.111 回补）：打出中的那张牌不属于手牌（见 LocalHandSelectionGuard）
+        candidates = LocalHandSelectionGuard.ExcludeMidPlayCards(candidates, player, "event-hand");
+        if (candidates.Count == 0)
+        {
+            return true;
+        }
+
         // 事件内手牌选牌：按 source 类型名 / prefs 标题 loc key 判定场景（§9.1 ★★），
         // 命中 Copy/Remove/Transform 时套优先级表，否则维持既有策略。
         return TryAutoAnswer(player, candidates, prefs, "FromHand", ref __result,
