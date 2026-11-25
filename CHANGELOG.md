@@ -4,6 +4,8 @@ Notable versions and key changes of `LocalMultiControl` / `DualRoleAdventure`. E
 
 ## [Unreleased]
 
+## [1.50.1] - 2026-11-25
+
 ### 支持游戏 0.114.0（r402~r407；2026-11-25 实机确认）
 
 - **本版起对着游戏 0.114.0 构建**：安装包结构不变，`lib\` 里的 beta 载荷目录从 `0.113.0` 换成 **`0.114.0`**

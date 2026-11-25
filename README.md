@@ -23,7 +23,7 @@ See the **[Player Guide](PLAYER_GUIDE.md)** ([简体中文](PLAYER_GUIDE.zh-CN.m
 
 ## Compatibility
 
-- **Two payloads in one package** (v1.50+): **v0.111.x** (stable branch — what most players run) and **v0.113.x** (beta branch). `lib\<game version>\` holds one payload each and the loader picks the matching one at startup, so you do not need to pick a download by game version. When the game patches, expect a short turnaround for a compatibility release — that is this fork's primary job.
+- **Two payloads in one package** (v1.50+): **v0.111.x** (stable branch — what most players run) and **v0.114.x** (beta branch). `lib\<game version>\` holds one payload each and the loader picks the matching one at startup, so you do not need to pick a download by game version. When the game patches, expect a short turnaround for a compatibility release — that is this fork's primary job.
 - **Oddmelt**: compatible since v1.33 — a built-in guard skips Oddmelt's hidden Gauge input cards during combat UI rebuilds (previously these broke character switching); no separate fix mod is needed.
 
 ### ⚠ Performance: with "content-heavy" third-party mods, **do not run large battles**
@@ -72,14 +72,14 @@ present, it cannot make the content itself cheaper.
 
 **Steam Workshop:** several separate "local multi-control" items exist, each on its own release cadence: the original author's item ([3747538947](https://steamcommunity.com/sharedfiles/filedetails/?id=3747538947)), [GuyGinat's community continuation](https://steamcommunity.com/sharedfiles/filedetails/?id=3772900244), and [the other authorized fork](https://steamcommunity.com/sharedfiles/filedetails/?id=3810171053) described in the section above. Note: **this repository's builds are distributed only via this repository's Releases** (they are not shipped through any Workshop item).
 
-**Manual (this fork's builds):** download `DualRoleAdventure-v1.50.0.zip` from [Releases](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/releases) and **extract the whole archive** so that it lands as:
+**Manual (this fork's builds):** download `DualRoleAdventure-v1.50.1.zip` from [Releases](https://github.com/nanthepsmith-droid/STS2_DualRoleAdventure/releases) and **extract the whole archive** so that it lands as:
 
 ```
 <Slay the Spire 2 install>\mods\DualRoleAdventure\
     DualRoleAdventure.json
     DualRoleAdventure.dll                        <- thin loader (the only assembly the game loads)
     lib\0.111.0\DualRoleAdventure.Payload.dll    <- payload for the stable branch (game 0.111.x)
-    lib\0.113.0\DualRoleAdventure.Payload.dll    <- payload for the beta branch   (game 0.113.x)
+    lib\0.114.0\DualRoleAdventure.Payload.dll    <- payload for the beta branch   (game 0.114.x)
 ```
 
 Do **not** move the `.dll` out of the folder or drop the `lib\` directory — since v1.50 one package ships

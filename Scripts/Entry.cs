@@ -994,7 +994,7 @@ public partial class Entry
     // r407（收工）：**只加离线工具、不改行为代码** —— `Scripts/Tools/clean_unknown_model_entries.py`
     //   （按日志里的 `Unknown ModelId` 清 `progress.save` 残留；0.114 起一局实测 7000+ 条 `Progress parse` WARN 的根因；
     //   默认 dry-run，`--apply` 才写且自动备份）。本 marker 仅用于标识"这一版含该工具"。
-    private const string BuildMarker = "Revival v1.50.0 (game v0.114.0, marker=2026-11-25-r407)";
+    private const string BuildMarker = "Revival v1.50.1 (game v0.114.0, marker=2026-11-25-r408)";
 
     private static Harmony? _harmony;
 
